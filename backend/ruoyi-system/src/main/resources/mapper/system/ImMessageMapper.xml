@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.ImMessageMapper">
+
+    <resultMap type="ImMessage" id="ImMessageResult">
+        <id     property="messageId"      column="imsg_id"              />
+        <result property="sessionId"      column="imsg_session_id"      />
+        <result property="senderId"       column="imsg_sender_id"       />
+        <result property="type"           column="imsg_type"            />
+        <result property="content"        column="imsg_content"         />
+        <result property="attachmentUrl"  column="imsg_attachment_url"  />
+        <result property="isRecalled"     column="imsg_is_recalled"     />
+        <result property="sendTime"       column="imsg_created_at"      />
+    </resultMap>
+
+    <select id="selectMessageListBySession" parameterType="Long" resultMap="ImMessageResult">
+        select imsg_id, imsg_session_id, imsg_sender_id, imsg_type, imsg_content,
+               imsg_attachment_url, imsg_is_recalled, imsg_created_at
+        from t_im_message
+        where imsg_session_id = #{sessionId} and imsg_is_recalled = 0
+        order by imsg_created_at asc, imsg_id asc
+    </select>
+
+    <insert id="insertMessage" parameterType="ImMessage" useGeneratedKeys="true" keyProperty="messageId">
+        insert into t_im_message (imsg_session_id, imsg_sender_id, imsg_type, imsg_content, imsg_attachment_url, imsg_created_at)
+        values (#{sessionId}, #{senderId}, #{type}, #{content}, #{attachmentUrl}, sysdate())
+    </insert>
+
+</mapper>
