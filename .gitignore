@@ -51,6 +51,7 @@ node_modules/
 dist/
 dist-ssr/
 .npm/
+.npm-cache/
 .pnpm-store/
 .yarn/
 .pnp.*
