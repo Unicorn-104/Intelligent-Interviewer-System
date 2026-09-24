@@ -1,6 +1,6 @@
 <script setup>
 import { useRoute } from 'vue-router'
-import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, UserRound, Settings, UsersRound } from '@/views/enterprise/components/icons'
+import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound } from '@/views/enterprise/components/icons'
 import AppLogo from './AppLogo.vue'
 
 const route = useRoute()
@@ -10,7 +10,6 @@ const menus = [
   { label: '候选人管理', to: '/enterprise/candidates', icon: UsersRound, match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
   { label: '面试安排中心', to: '/enterprise/interviews', icon: CalendarDays, match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation'] },
   { label: '消息中心', to: '/enterprise/messages', icon: MessageCircle, match: 'EnterpriseMessages', badge: 5 },
-  { label: '个人中心', to: '/enterprise/profile', icon: UserRound, match: 'EnterpriseProfile' },
   { label: '系统设置', to: '/enterprise/settings', icon: Settings, match: 'EnterpriseSettings' }
 ]
 const active = (item) => Array.isArray(item.match) ? item.match.includes(route.name) : route.name === item.match
