@@ -1,0 +1,473 @@
+// ========================================
+// AI招聘管理系统 - 全局品牌主题 v3
+// #136BFD | 干净利落的输入框和按钮
+// ========================================
+
+// ========== 1. 表格全面品牌化 ==========
+.el-table {
+  --el-table-border-color: #ebeef5;
+  --el-table-header-bg-color: #f8f9fb !important;
+  --el-table-header-text-color: #303133 !important;
+  --el-table-row-hover-bg-color: #fafbfc !important;
+  --el-table-current-row-bg-color: #eef4ff !important;
+  --el-table-body-text-color: #303133;
+  font-size: 13px;
+
+  th.el-table__cell {
+    background-color: #f8f9fb !important;
+    color: #303133 !important;
+    font-weight: 600;
+    height: 44px;
+    border-bottom: 1px solid #ebeef5;
+  }
+
+  .el-table__body tr:hover > td.el-table__cell {
+    background-color: #fafbfc !important;
+  }
+
+  td.el-table__cell,
+  th.el-table__cell {
+    padding: 12px 0;
+  }
+}
+
+// ========== 2. 搜索区域表单布局优化 ==========
+.app-container {
+  // 搜索框行 — 对齐整齐，有间距呼吸感
+  .el-form--inline {
+    .el-form-item {
+      margin-bottom: 0;
+      margin-right: 16px;
+
+      .el-form-item__label {
+        font-size: 13px;
+        line-height: 32px;
+        color: #606266;
+        height: 32px;
+      }
+
+      // 确保每个 item 宽度足够
+      .el-input,
+      .el-select,
+      .el-date-editor {
+        width: 200px;
+      }
+    }
+  }
+}
+
+// ========== 3. 输入框 - 保持 Element Plus 原生外观，只微调品牌色 ==========
+.el-input__wrapper,
+.el-textarea__inner {
+  border-radius: 4px;
+  font-size: 13px;
+  transition: none;
+}
+
+.el-input__wrapper:focus-within {
+  // Element Plus 自己管 shadow，我们不管
+}
+
+.el-select .el-input__wrapper {
+  border-radius: 4px;
+}
+
+// ========== 4. 按钮品牌化 ==========
+.el-button--primary {
+  background: #7c3aed !important;
+  border-color: #7c3aed !important;
+  &:hover,
+  &:active {
+    background: #6d28d9 !important;
+    border-color: #6d28d9 !important;
+  }
+
+  &.is-plain {
+    background: transparent !important;
+    border-color: #7c3aed !important;
+    color: #7c3aed !important;
+    &:hover {
+      background: rgba(124, 58, 237, 0.06) !important;
+      border-color: #6d28d9 !important;
+    }
+  }
+
+  // link 类型按钮：透明背景 + 品牌色文字 + 图标（保持 Element Plus 原生）
+  &.is-link {
+    background: transparent !important;
+    border: none !important;
+    color: #7c3aed !important;
+    &:hover {
+      color: #6d28d9 !important;
+    }
+  }
+
+  &:disabled {
+    background: #c4b5fd !important;
+    border-color: #c4b5fd !important;
+    color: #fff !important;
+  }
+}
+
+.el-button--success {
+  --el-button-bg-color: #22c55e;
+  --el-button-border-color: #22c55e;
+  background: #22c55e !important;
+  border-color: #22c55e !important;
+  color: #fff !important;
+  &:hover {
+    background: #16a34a !important;
+    border-color: #16a34a !important;
+    color: #fff !important;
+  }
+  &.is-link {
+    background: transparent !important;
+    border: none !important;
+    color: #22c55e !important;
+    &:hover {
+      color: #16a34a !important;
+    }
+  }
+}
+
+.el-button--danger {
+  --el-button-bg-color: #ef4444;
+  --el-button-border-color: #ef4444;
+  background: #ef4444 !important;
+  border-color: #ef4444 !important;
+  color: #fff !important;
+  &:hover {
+    background: #dc2626 !important;
+    border-color: #dc2626 !important;
+    color: #fff !important;
+  }
+  &.is-link {
+    background: transparent !important;
+    border: none !important;
+    color: #ef4444 !important;
+    &:hover {
+      color: #dc2626 !important;
+    }
+  }
+}
+
+.el-button--warning {
+  --el-button-bg-color: #f59e0b;
+  --el-button-border-color: #f59e0b;
+  background: #f59e0b !important;
+  border-color: #f59e0b !important;
+  color: #fff !important;
+  &:hover {
+    background: #d97706 !important;
+    border-color: #d97706 !important;
+    color: #fff !important;
+  }
+  &.is-link {
+    background: transparent !important;
+    border: none !important;
+    color: #f59e0b !important;
+    &:hover {
+      color: #d97706 !important;
+    }
+  }
+}
+
+.el-button--info {
+  --el-button-bg-color: #909399;
+  --el-button-border-color: #909399;
+  background: #909399 !important;
+  border-color: #909399 !important;
+  color: #fff !important;
+  &:hover {
+    background: #73767a !important;
+    border-color: #73767a !important;
+    color: #fff !important;
+  }
+  &.is-link {
+    background: transparent !important;
+    border: none !important;
+    color: #909399 !important;
+    &:hover {
+      color: #73767a !important;
+    }
+  }
+}
+
+// ========== 5. Tag 状态标签 ==========
+.el-tag {
+  border-radius: 4px;
+  font-weight: 400;
+  font-size: 12px;
+  border: none;
+
+  &.el-tag--primary {
+    background: rgba(124, 58, 237, 0.08) !important;
+    color: #7c3aed !important;
+    border-color: transparent !important;
+  }
+  &.el-tag--success {
+    background: rgba(34, 197, 94, 0.08) !important;
+    color: #22c55e !important;
+    border-color: transparent !important;
+  }
+  &.el-tag--warning {
+    background: rgba(245, 158, 11, 0.08) !important;
+    color: #f59e0b !important;
+    border-color: transparent !important;
+  }
+  &.el-tag--danger {
+    background: rgba(239, 68, 68, 0.08) !important;
+    color: #ef4444 !important;
+    border-color: transparent !important;
+  }
+  &.el-tag--info {
+    background: rgba(144, 147, 153, 0.08) !important;
+    color: #909399 !important;
+    border-color: transparent !important;
+  }
+
+  // effect="light" 变体
+  &.el_tag--light.el-tag--primary {
+    background: rgba(124, 58, 237, 0.08) !important;
+    color: #7c3aed !important;
+  }
+  &.el_tag--light.el-tag--success {
+    background: rgba(34, 197, 94, 0.08) !important;
+    color: #22c55e !important;
+  }
+  &.el_tag--light.el-tag--warning {
+    background: rgba(245, 158, 11, 0.08) !important;
+    color: #f59e0b !important;
+  }
+  &.el_tag--light.el-tag--danger {
+    background: rgba(239, 68, 68, 0.08) !important;
+    color: #ef4444 !important;
+  }
+}
+
+// ========== 6. 分页器品牌化 ==========
+.el-pagination {
+  .btn-prev,
+  .btn-next,
+  .el-pager li {
+    border-radius: 4px;
+    min-width: 32px;
+    height: 28px;
+    font-size: 13px;
+  }
+
+  .el-pager li.is-active {
+    background: #7c3aed !important;
+    color: #fff !important;
+  }
+
+  .btn-prev,
+  .btn-next,
+  .el-pager li:hover:not(.is-active) {
+    color: #7c3aed;
+  }
+}
+
+// ========== 7. 对话框品牌化 ==========
+.el-dialog {
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+  margin-top: 6vh !important;
+
+  .el-dialog__header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #ebeef5;
+
+    .el-dialog__title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1d2129;
+    }
+  }
+
+  .el-dialog__body {
+    padding: 20px 24px;
+  }
+
+  .el-dialog__footer {
+    padding: 12px 24px 16px;
+    border-top: 1px solid #ebeef5;
+    background: #fafbfc;
+  }
+}
+
+// ========== 8. 抽屉品牌化 ==========
+.el-drawer {
+  .el-drawer__header {
+    padding: 16px 24px;
+    margin-bottom: 0;
+    border-bottom: 1px solid #ebeef5;
+
+    .el-drawer__title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1d2129;
+    }
+  }
+
+  .el-drawer__body {
+    padding: 20px 24px;
+  }
+}
+
+// ========== 9. Switch 开关品牌化 ==========
+.el-switch__core {
+  background: #d0d5dc;
+  border-radius: 12px;
+}
+.el-switch.is-checked .el-switch__core {
+  background: #7c3aed;
+  border-color: #7c3aed;
+}
+
+// ========== 10. 步骤条品牌化 ==========
+.el-step__head.is-process {
+  color: #7c3aed;
+  border-color: #7c3aed;
+}
+.el-step__title.is-process {
+  color: #7c3aed;
+}
+.el-step__head.is-wait {
+  color: #d0d5dc;
+  border-color: #d0d5dc;
+}
+
+// ========== 11. 通知消息品牌化 ==========
+.el-message {
+  border-radius: 6px;
+  padding: 12px 16px;
+  border: none;
+}
+
+// ========== 12. Section 标题装饰线 ==========
+.section-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  background: #7c3aed;
+  border-radius: 2px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+// ========== 13. 企业后台基础视觉规范 ==========
+:root {
+  --el-color-primary: #7c3aed;
+  --el-color-primary-light-3: #a78bfa;
+  --el-color-primary-light-5: #c4b5fd;
+  --el-color-primary-light-7: #ddd6fe;
+  --el-color-primary-light-9: #f3e8ff;
+  --el-color-primary-dark-2: #6d28d9;
+  --el-border-radius-base: 4px;
+  --el-border-radius-small: 3px;
+  --el-fill-color-light: #f5f7fa;
+  --el-bg-color-page: #f4f6f9;
+}
+
+body,
+#app,
+.main-container,
+.app-main {
+  background: #f4f6f9;
+}
+
+#app {
+  .navbar {
+    background: #ffffff;
+    border-bottom: 1px solid #e8edf3;
+    box-shadow: none;
+
+    .right-menu .right-menu-item {
+      color: #4e5969;
+      &:hover {
+        background: #f5f7fa;
+      }
+    }
+  }
+
+  .tags-view-container {
+    background: #ffffff;
+    border-bottom: 1px solid #e8edf3;
+  }
+
+  .app-container {
+    padding: 20px 24px;
+  }
+
+  .el-form .el-form-item__label {
+    color: #4e5969;
+    font-weight: 500;
+  }
+
+  .el-input__wrapper,
+  .el-textarea__inner,
+  .el-select .el-input__wrapper,
+  .el-date-editor.el-input__wrapper {
+    box-shadow: 0 0 0 1px #dfe5ed inset;
+    background: #ffffff;
+    &:hover {
+      box-shadow: 0 0 0 1px #b8c4d4 inset;
+    }
+    &:focus-within {
+      box-shadow:
+        0 0 0 1px #7c3aed inset,
+        0 0 0 3px rgba(124, 58, 237, 0.08);
+    }
+  }
+
+  .el-button {
+    border-radius: 4px;
+    font-weight: 500;
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      color 0.2s ease;
+  }
+
+  .el-table {
+    border: 1px solid #e8edf3;
+    border-radius: 4px;
+    overflow: hidden;
+    --el-table-header-bg-color: #f5f7fa !important;
+    --el-table-row-hover-bg-color: #f7faff !important;
+
+    th.el-table__cell {
+      height: 42px;
+      color: #4e5969 !important;
+      font-size: 12px;
+      letter-spacing: 0.01em;
+    }
+
+    td.el-table__cell,
+    th.el-table__cell {
+      padding: 10px 0;
+    }
+  }
+
+  .el-dialog,
+  .el-drawer {
+    border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(23, 32, 51, 0.16);
+  }
+
+  .el-dialog .el-dialog__header,
+  .el-drawer .el-drawer__header {
+    border-bottom: 1px solid #e8edf3;
+  }
+
+  .el-tabs__item {
+    color: #86909c;
+    font-size: 13px;
+    &.is-active {
+      color: #7c3aed;
+      font-weight: 600;
+    }
+  }
+}
