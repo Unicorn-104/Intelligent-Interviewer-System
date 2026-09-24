@@ -39,7 +39,7 @@ function handleLogout() {
       <button class="bell"><Bell :size="19" /><i /></button>
       <el-dropdown trigger="hover" class="account-dropdown">
         <div class="account">
-          <MiniAvatar :name="nickName" :size="34" color="#8b5e83" :src="userStore.avatar" />
+          <MiniAvatar :name="nickName" :size="34" color="#8b5e83" :src="userStore.avatar" title="点击进入个人中心" @click="goProfile" />
           <div><b>{{ nickName }}</b><small>招聘管理员</small></div>
           <ChevronDown :size="14" />
         </div>
