@@ -13,19 +13,12 @@ let downloadLoadingInstance
 export let isRelogin = { show: false }
 
 axios.defaults.headers['Content-Type'] = 'application/json;charset=utf-8'
-const API_PREFIX = '/api/v1'
 
+// 直接使用 RuoYi 原生接口路径（/login、/getInfo、/logout、/captchaImage）
+// 业务接口若以 /api/v1 开头则保持原样，待后端对应接口开发后对接
 function normalizeApiUrl(url) {
-  if (!url || /^https?:\/\//.test(url) || url.startsWith(API_PREFIX)) return url
-  const aliases = {
-    '/login': '/auth/login',
-    '/register': '/auth/register',
-    '/getInfo': '/me',
-    '/logout': '/auth/logout',
-    '/captchaImage': '/auth/captcha',
-    '/unlockscreen': '/auth/unlock'
-  }
-  return API_PREFIX + (aliases[url] || url)
+  if (!url || /^https?:\/\//.test(url)) return url
+  return url
 }
 
 function normalizeResponse(payload) {
