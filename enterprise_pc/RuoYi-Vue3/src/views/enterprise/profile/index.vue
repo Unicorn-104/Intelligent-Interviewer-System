@@ -131,25 +131,36 @@ async function submitPwd() {
 // ---------- 头像上传 ----------
 async function handleAvatarChange(e) {
   const file = e.target.files?.[0]
+  // 清空 input，保证选同一个文件也能触发 change
+  e.target.value = ''
   if (!file) return
+  // 类型校验（与后端 MimeTypeUtils.IMAGE_EXTENSION 保持一致）
+  if (!/\.(jpe?g|png|gif|bmp|webp)$/i.test(file.name)) {
+    return ElMessage.warning('图片格式仅限 jpg、jpeg、png、gif、bmp、webp')
+  }
+  if (file.size / 1024 / 1024 >= 5) {
+    return ElMessage.warning('图片大小不能超过 5MB')
+  }
   avatarLoading.value = true
   try {
     const fd = new FormData()
     fd.append('avatarfile', file)
+    // 后端 AjaxResult 将 imgUrl 放在响应体顶层，而非 data 字段
     const res = await uploadAvatar(fd)
-    const imgUrl = res.data?.imgUrl
+    const imgUrl = res?.imgUrl
     if (imgUrl) {
-      const fullUrl = import.meta.env.VITE_APP_BASE_API + imgUrl
+      // 加时间戳避免浏览器缓存同名旧图
+      const fullUrl = import.meta.env.VITE_APP_BASE_API + imgUrl + '?t=' + Date.now()
       display.avatar = fullUrl
       userStore.avatar = fullUrl
       ElMessage.success('头像上传成功')
+    } else {
+      ElMessage.error(res?.msg || '头像上传失败，请联系管理员')
     }
-  } catch (e) {
-    ElMessage.error(e?.message || '头像上传失败')
+  } catch (err) {
+    ElMessage.error(err?.message || '头像上传失败')
   } finally {
     avatarLoading.value = false
-    // 清空 input，保证选同一个文件也能触发 change
-    e.target.value = ''
   }
 }
 
@@ -209,8 +220,9 @@ onMounted(() => {
     <section class="card profile-hero">
       <div class="avatar-wrap">
         <MiniAvatar :name="heroName" :size="76" color="#8d5579" :src="display.avatar" />
-        <label class="avatar-upload" :title="avatarLoading ? '上传中…' : '更换头像'">
-          <Camera :size="13" />
+        <label class="avatar-upload" :class="{loading:avatarLoading}" :title="avatarLoading ? '上传中…' : '更换头像'">
+          <span v-if="avatarLoading" class="avatar-spinner"></span>
+          <Camera v-else :size="13" />
           <input type="file" accept="image/*" style="display:none" :disabled="avatarLoading" @change="handleAvatarChange" />
         </label>
       </div>
@@ -394,6 +406,9 @@ onMounted(() => {
 .avatar-wrap{position:relative}
 .avatar-upload{position:absolute;right:-2px;bottom:0;width:26px;height:26px;border:2px solid white;border-radius:50%;background:#2563eb;color:white;display:grid;place-items:center;cursor:pointer}
 .avatar-upload:hover{background:#1d4ed8}
+.avatar-upload.loading{cursor:wait;opacity:.8}
+.avatar-spinner{width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:avatar-spin .7s linear infinite}
+@keyframes avatar-spin{to{transform:rotate(360deg)}}
 .profile-hero h1{display:flex;align-items:center;gap:9px;font-size:21px}
 .profile-hero p{font-size:12px;color:#64748b;margin-top:7px}
 .profile-hero small{display:block;color:#94a2b5;font-size:10px;margin-top:8px}
