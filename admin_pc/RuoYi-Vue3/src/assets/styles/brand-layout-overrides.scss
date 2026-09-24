@@ -1,0 +1,113 @@
+#app .sidebar-container,
+#app .sidebar-container .scrollbar-wrapper,
+#app .sidebar-container .el-menu {
+  background-color: #102a43 !important;
+}
+
+#app .sidebar-container.theme-light .el-menu .el-menu-item,
+#app .sidebar-container.theme-light .el-menu .el-sub-menu__title,
+#app .sidebar-container.theme-dark .el-menu .el-menu-item,
+#app .sidebar-container.theme-dark .el-menu .el-sub-menu__title {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+#app .sidebar-container.theme-light .el-menu .el-menu-item.is-active,
+#app .sidebar-container.theme-light .el-menu .el-sub-menu.is-active > .el-sub-menu__title,
+#app .sidebar-container.theme-dark .el-menu .el-menu-item.is-active,
+#app .sidebar-container.theme-dark .el-menu .el-sub-menu.is-active > .el-sub-menu__title {
+  color: #ffffff !important;
+}
+
+#app .sidebar-container.theme-light .el-menu .el-menu-item.is-active,
+#app .sidebar-container.theme-light .el-menu .el-sub-menu .el-menu-item,
+#app .sidebar-container.theme-light .el-menu .el-sub-menu > .el-sub-menu__title,
+#app .sidebar-container.theme-dark .el-menu .el-menu-item.is-active,
+#app .sidebar-container.theme-dark .el-menu .el-sub-menu .el-menu-item,
+#app .sidebar-container.theme-dark .el-menu .el-sub-menu > .el-sub-menu__title {
+  background: #102a43 !important;
+}
+
+#app .sidebar-container.theme-light .el-menu .el-menu-item.is-active,
+#app .sidebar-container.theme-dark .el-menu .el-menu-item.is-active {
+  background: #2f80ed !important;
+}
+
+#app .sidebar-container.theme-light .el-menu .el-menu-item:hover,
+#app .sidebar-container.theme-light .el-menu .el-sub-menu__title:hover,
+#app .sidebar-container.theme-dark .el-menu .el-menu-item:hover,
+#app .sidebar-container.theme-dark .el-menu .el-sub-menu__title:hover {
+  background: #1c4265 !important;
+  color: #ffffff !important;
+}
+
+#app .sidebar-container .el-menu .menu-title,
+#app .sidebar-container .el-menu .svg-icon,
+#app .sidebar-container .el-menu .el-sub-menu__icon-arrow {
+  color: inherit !important;
+}
+
+#app .sidebar-container .el-menu-item.is-active::before,
+#app .sidebar-container .el-menu-item.is-active::after,
+#app .sidebar-container .el-sub-menu.is-active > .el-sub-menu__title::before,
+#app .sidebar-container .el-sub-menu.is-active > .el-sub-menu__title::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Collapsed sidebar menus are teleported outside #app's sidebar container. */
+.el-menu--vertical > .el-menu--popup,
+.el-popper.el-menu--popup-container .el-menu--popup {
+  min-width: 200px !important;
+  padding: 6px 0 !important;
+  background: #102a43 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 10px 24px rgba(16, 42, 67, 0.24) !important;
+}
+
+.el-menu--vertical > .el-menu--popup .el-menu-item,
+.el-menu--vertical > .el-menu--popup .el-sub-menu__title,
+.el-popper.el-menu--popup-container .el-menu--popup .el-menu-item,
+.el-popper.el-menu--popup-container .el-menu--popup .el-sub-menu__title {
+  height: 42px !important;
+  margin: 2px 6px !important;
+  padding-left: 16px !important;
+  line-height: 42px !important;
+  color: rgba(255, 255, 255, 0.78) !important;
+  background: transparent !important;
+  border-radius: 6px !important;
+}
+
+.el-menu--vertical > .el-menu--popup .el-menu-item:hover,
+.el-menu--vertical > .el-menu--popup .el-sub-menu__title:hover,
+.el-popper.el-menu--popup-container .el-menu--popup .el-menu-item:hover,
+.el-popper.el-menu--popup-container .el-menu--popup .el-sub-menu__title:hover {
+  color: #ffffff !important;
+  background: #1c4265 !important;
+}
+
+.el-menu--vertical > .el-menu--popup .el-menu-item.is-active,
+.el-menu--vertical > .el-menu--popup .el-sub-menu.is-active > .el-sub-menu__title,
+.el-popper.el-menu--popup-container .el-menu--popup .el-menu-item.is-active,
+.el-popper.el-menu--popup-container .el-menu--popup .el-sub-menu.is-active > .el-sub-menu__title {
+  color: #ffffff !important;
+  background: #2f80ed !important;
+}
+
+.el-menu--vertical > .el-menu--popup .menu-title,
+.el-menu--vertical > .el-menu--popup .svg-icon,
+.el-menu--vertical > .el-menu--popup .el-sub-menu__icon-arrow,
+.el-popper.el-menu--popup-container .el-menu--popup .menu-title,
+.el-popper.el-menu--popup-container .el-menu--popup .svg-icon,
+.el-popper.el-menu--popup-container .el-menu--popup .el-sub-menu__icon-arrow {
+  color: inherit !important;
+}
+
+.page-container,
+.app-main {
+  background: #f4f7fa;
+}
+
+.el-loading-mask {
+  background-color: rgba(244, 247, 250, 0.82);
+}

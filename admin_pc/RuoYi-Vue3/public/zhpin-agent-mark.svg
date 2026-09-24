@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">智聘 Agent icon</title>
+  <desc id="desc">深海军蓝对话气泡，结合智能节点与面试确认勾选。</desc>
+  <rect x="16" y="16" width="224" height="224" rx="50" fill="#102A43"/>
+  <path d="M64 88c0-15.46 12.54-28 28-28h56c30.93 0 56 25.07 56 56v16c0 30.93-25.07 56-56 56h-32l-36 27 8-27h-4c-11.05 0-20-8.95-20-20V88Z" fill="#FFFFFF"/>
+  <path d="m94 134 25 25 52-54" fill="none" stroke="#2F80ED" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+  <circle cx="94" cy="94" r="8" fill="#2DBE9B"/>
+  <circle cx="172" cy="94" r="8" fill="#2DBE9B"/>
+  <path d="M94 94h78" stroke="#2DBE9B" stroke-linecap="round" stroke-width="6"/>
+</svg>

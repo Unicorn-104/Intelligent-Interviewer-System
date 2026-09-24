@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="192" viewBox="0 0 720 192" role="img" aria-labelledby="title desc">
+  <title id="title">智聘 Agent logo</title>
+  <desc id="desc">深海军蓝对话气泡，结合智能节点与面试确认勾选，旁边是智聘 Agent 字标。</desc>
+  <g transform="translate(24 24)">
+    <rect width="144" height="144" rx="32" fill="#102A43"/>
+    <path d="M36 48c0-9.94 8.06-18 18-18h36c19.88 0 36 16.12 36 36v12c0 19.88-16.12 36-36 36H70l-23 17 5-17h-2c-7.73 0-14-6.27-14-14V48Z" fill="#FFFFFF"/>
+    <path d="m55 77 16 16 33-34" fill="none" stroke="#2F80ED" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"/>
+    <circle cx="55" cy="52" r="5" fill="#2DBE9B"/>
+    <circle cx="104" cy="52" r="5" fill="#2DBE9B"/>
+    <path d="M55 52h49" stroke="#2DBE9B" stroke-linecap="round" stroke-width="4"/>
+  </g>
+  <g transform="translate(208 42)">
+    <text x="0" y="64" fill="#102A43" font-family="Microsoft YaHei, PingFang SC, sans-serif" font-size="52" font-weight="700">智聘</text>
+    <text x="122" y="64" fill="#2F80ED" font-family="Inter, Arial, sans-serif" font-size="47" font-weight="700" letter-spacing="1">AGENT</text>
+    <text x="4" y="108" fill="#52667A" font-family="Microsoft YaHei, PingFang SC, sans-serif" font-size="20" letter-spacing="3">智能招聘面试官</text>
+    <path d="M4 128h286" stroke="#D7E2EC" stroke-width="2"/>
+    <circle cx="306" cy="128" r="4" fill="#2DBE9B"/>
+  </g>
+</svg>

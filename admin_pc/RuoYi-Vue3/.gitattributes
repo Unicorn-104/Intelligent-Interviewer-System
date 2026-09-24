@@ -1,0 +1,33 @@
+# 默认自动识别文本，统一用 LF 行尾
+* text=auto eol=lf
+
+# 明确按 LF 处理的源码
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.cjs  text eol=lf
+*.vue  text eol=lf
+*.ts   text eol=lf
+*.jsx  text eol=lf
+*.tsx  text eol=lf
+*.json text eol=lf
+*.css  text eol=lf
+*.scss text eol=lf
+*.html text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.env  text eol=lf
+
+# 二进制
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.svg  text
+*.ico  binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.zip  binary
+*.jar  binary
