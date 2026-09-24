@@ -28,6 +28,7 @@ Desktop.ini
 ######################################################################
 target/
 build/
+!**/src/**/build/
 !.mvn/wrapper/maven-wrapper.jar
 !.gradle/wrapper/gradle-wrapper.jar
 *.class
