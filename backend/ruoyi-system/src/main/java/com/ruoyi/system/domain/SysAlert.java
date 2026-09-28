@@ -25,9 +25,20 @@ public class SysAlert extends BaseEntity
     /** 告警内容 */
     private String salContent;
 
-    /** 告警时间 */
+    /** 处理状态：0-未处理，1-已处理 */
+    private Integer salStatus;
+
+    /** 处理时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private Date salAlertTime;
+    private Date salHandledAt;
+
+    /** 创建时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date salCreatedAt;
+
+    /** 更新时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date salUpdatedAt;
 
     public Long getSalId() { return salId; }
     public void setSalId(Long salId) { this.salId = salId; }
@@ -37,6 +48,12 @@ public class SysAlert extends BaseEntity
     public void setSalLevel(Integer salLevel) { this.salLevel = salLevel; }
     public String getSalContent() { return salContent; }
     public void setSalContent(String salContent) { this.salContent = salContent; }
-    public Date getSalAlertTime() { return salAlertTime; }
-    public void setSalAlertTime(Date salAlertTime) { this.salAlertTime = salAlertTime; }
+    public Integer getSalStatus() { return salStatus; }
+    public void setSalStatus(Integer salStatus) { this.salStatus = salStatus; }
+    public Date getSalHandledAt() { return salHandledAt; }
+    public void setSalHandledAt(Date salHandledAt) { this.salHandledAt = salHandledAt; }
+    public Date getSalCreatedAt() { return salCreatedAt; }
+    public void setSalCreatedAt(Date salCreatedAt) { this.salCreatedAt = salCreatedAt; }
+    public Date getSalUpdatedAt() { return salUpdatedAt; }
+    public void setSalUpdatedAt(Date salUpdatedAt) { this.salUpdatedAt = salUpdatedAt; }
 }

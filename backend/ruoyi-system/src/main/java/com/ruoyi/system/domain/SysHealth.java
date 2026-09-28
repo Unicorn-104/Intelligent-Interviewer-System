@@ -25,9 +25,13 @@ public class SysHealth extends BaseEntity
     /** 响应时间（毫秒） */
     private Integer sthResponseTimeMs;
 
-    /** 监控时间 */
+    /** 检查时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private Date sthCheckTime;
+    private Date sthCheckedAt;
+
+    /** 创建时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date sthCreatedAt;
 
     public Long getSthId() { return sthId; }
     public void setSthId(Long sthId) { this.sthId = sthId; }
@@ -37,6 +41,8 @@ public class SysHealth extends BaseEntity
     public void setSthStatus(Integer sthStatus) { this.sthStatus = sthStatus; }
     public Integer getSthResponseTimeMs() { return sthResponseTimeMs; }
     public void setSthResponseTimeMs(Integer sthResponseTimeMs) { this.sthResponseTimeMs = sthResponseTimeMs; }
-    public Date getSthCheckTime() { return sthCheckTime; }
-    public void setSthCheckTime(Date sthCheckTime) { this.sthCheckTime = sthCheckTime; }
+    public Date getSthCheckedAt() { return sthCheckedAt; }
+    public void setSthCheckedAt(Date sthCheckedAt) { this.sthCheckedAt = sthCheckedAt; }
+    public Date getSthCreatedAt() { return sthCreatedAt; }
+    public void setSthCreatedAt(Date sthCreatedAt) { this.sthCreatedAt = sthCreatedAt; }
 }

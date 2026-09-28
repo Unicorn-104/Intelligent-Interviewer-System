@@ -34,7 +34,7 @@ public class SysHealthServiceImpl implements ISysHealthService
     @Override
     public int insertSysHealth(SysHealth sysHealth)
     {
-        sysHealth.setSthCheckTime(DateUtils.getNowDate());
+        sysHealth.setSthCheckedAt(DateUtils.getNowDate());
         return sysHealthMapper.insertSysHealth(sysHealth);
     }
 

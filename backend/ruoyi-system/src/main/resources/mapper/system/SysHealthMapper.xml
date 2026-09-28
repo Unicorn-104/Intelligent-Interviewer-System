@@ -9,11 +9,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="sthServiceName" column="sth_service_name"/>
         <result property="sthStatus" column="sth_status"/>
         <result property="sthResponseTimeMs" column="sth_response_time_ms"/>
-        <result property="sthCheckTime" column="sth_check_time"/>
+        <result property="sthCheckedAt" column="sth_checked_at"/>
+        <result property="sthCreatedAt" column="sth_created_at"/>
     </resultMap>
 
     <sql id="selectSysHealthVo">
-        select sth_id, sth_service_name, sth_status, sth_response_time_ms, sth_check_time
+        select sth_id, sth_service_name, sth_status, sth_response_time_ms, sth_checked_at, sth_created_at
         from t_sys_health
     </sql>
 
@@ -23,7 +24,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="sthServiceName != null and sthServiceName != ''"> and sth_service_name like concat('%', #{sthServiceName}, '%')</if>
             <if test="sthStatus != null"> and sth_status = #{sthStatus}</if>
         </where>
-        order by sth_check_time desc
+        order by sth_checked_at desc
     </select>
 
     <select id="selectSysHealthBySthId" parameterType="Long" resultMap="SysHealthResult">
@@ -37,13 +38,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="sthServiceName != null and sthServiceName != ''">sth_service_name,</if>
             <if test="sthStatus != null">sth_status,</if>
             <if test="sthResponseTimeMs != null">sth_response_time_ms,</if>
-            <if test="sthCheckTime != null">sth_check_time,</if>
+            <if test="sthCheckedAt != null">sth_checked_at,</if>
         </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
             <if test="sthServiceName != null and sthServiceName != ''">#{sthServiceName},</if>
             <if test="sthStatus != null">#{sthStatus},</if>
             <if test="sthResponseTimeMs != null">#{sthResponseTimeMs},</if>
-            <if test="sthCheckTime != null">#{sthCheckTime},</if>
+            <if test="sthCheckedAt != null">#{sthCheckedAt},</if>
         </trim>
     </insert>
 
@@ -53,7 +54,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="sthServiceName != null">sth_service_name = #{sthServiceName},</if>
             <if test="sthStatus != null">sth_status = #{sthStatus},</if>
             <if test="sthResponseTimeMs != null">sth_response_time_ms = #{sthResponseTimeMs},</if>
-            <if test="sthCheckTime != null">sth_check_time = #{sthCheckTime},</if>
+            <if test="sthCheckedAt != null">sth_checked_at = #{sthCheckedAt},</if>
         </trim>
         where sth_id = #{sthId}
     </update>

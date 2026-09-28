@@ -34,7 +34,7 @@ public class SysAlertServiceImpl implements ISysAlertService
     @Override
     public int insertSysAlert(SysAlert sysAlert)
     {
-        sysAlert.setSalAlertTime(DateUtils.getNowDate());
+        sysAlert.setSalCreatedAt(DateUtils.getNowDate());
         return sysAlertMapper.insertSysAlert(sysAlert);
     }
 }
