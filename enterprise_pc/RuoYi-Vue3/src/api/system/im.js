@@ -49,6 +49,31 @@ export function unreadCount() {
   })
 }
 
+// 快捷回复模板列表
+export function listQuickReplies() {
+  return request({
+    url: '/system/im/quick-replies',
+    method: 'get'
+  })
+}
+
+// 保存快捷回复模板（id 为空则新增）
+export function saveQuickReply(data) {
+  return request({
+    url: '/system/im/quick-replies',
+    method: 'post',
+    data: data
+  })
+}
+
+// 删除快捷回复模板
+export function deleteQuickReply(id) {
+  return request({
+    url: '/system/im/quick-replies/' + id,
+    method: 'delete'
+  })
+}
+
 // 通用文件上传（发送文件/图片消息前先上传）
 export function uploadFile(data) {
   return request({
