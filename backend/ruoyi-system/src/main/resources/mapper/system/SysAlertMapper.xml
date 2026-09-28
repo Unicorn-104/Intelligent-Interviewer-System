@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.SysAlertMapper">
+
+    <resultMap type="com.ruoyi.system.domain.SysAlert" id="SysAlertResult">
+        <result property="salId" column="sal_id"/>
+        <result property="salAlertType" column="sal_alert_type"/>
+        <result property="salLevel" column="sal_level"/>
+        <result property="salContent" column="sal_content"/>
+        <result property="salAlertTime" column="sal_alert_time"/>
+    </resultMap>
+
+    <sql id="selectSysAlertVo">
+        select sal_id, sal_alert_type, sal_level, sal_content, sal_alert_time
+        from t_sys_alert
+    </sql>
+
+    <select id="selectSysAlertList" parameterType="com.ruoyi.system.domain.SysAlert" resultMap="SysAlertResult">
+        <include refid="selectSysAlertVo"/>
+        <where>
+            <if test="salAlertType != null and salAlertType != ''"> and sal_alert_type = #{salAlertType}</if>
+            <if test="salLevel != null"> and sal_level = #{salLevel}</if>
+        </where>
+        order by sal_alert_time desc
+    </select>
+
+    <select id="selectSysAlertBySalId" parameterType="Long" resultMap="SysAlertResult">
+        <include refid="selectSysAlertVo"/>
+        where sal_id = #{salId}
+    </select>
+
+    <insert id="insertSysAlert" parameterType="com.ruoyi.system.domain.SysAlert" useGeneratedKeys="true" keyProperty="salId">
+        insert into t_sys_alert
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="salAlertType != null and salAlertType != ''">sal_alert_type,</if>
+            <if test="salLevel != null">sal_level,</if>
+            <if test="salContent != null and salContent != ''">sal_content,</if>
+            <if test="salAlertTime != null">sal_alert_time,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="salAlertType != null and salAlertType != ''">#{salAlertType},</if>
+            <if test="salLevel != null">#{salLevel},</if>
+            <if test="salContent != null and salContent != ''">#{salContent},</if>
+            <if test="salAlertTime != null">#{salAlertTime},</if>
+        </trim>
+    </insert>
+
+</mapper>
