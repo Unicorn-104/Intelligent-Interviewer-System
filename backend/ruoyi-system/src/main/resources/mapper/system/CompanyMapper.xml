@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.CompanyMapper">
+
+    <resultMap type="com.ruoyi.system.domain.Company" id="CompanyResult">
+        <result property="cmpId" column="cmp_id"/>
+        <result property="cmpName" column="cmp_name"/>
+        <result property="cmpCreditCode" column="cmp_credit_code"/>
+        <result property="cmpLogoUrl" column="cmp_logo_url"/>
+        <result property="cmpIndustry" column="cmp_industry"/>
+        <result property="cmpSize" column="cmp_size"/>
+        <result property="cmpCity" column="cmp_city"/>
+        <result property="cmpAddress" column="cmp_address"/>
+        <result property="cmpWebsite" column="cmp_website"/>
+        <result property="cmpIntro" column="cmp_intro"/>
+        <result property="cmpDetailJson" column="cmp_detail_json"/>
+        <result property="cmpVerifyStatus" column="cmp_verify_status"/>
+        <result property="cmpVerifyAt" column="cmp_verify_at"/>
+        <result property="cmpVerifyBy" column="cmp_verify_by"/>
+        <result property="cmpStatus" column="cmp_status"/>
+        <result property="cmpCreatedAt" column="cmp_created_at"/>
+        <result property="remark" column="remark"/>
+    </resultMap>
+
+    <sql id="selectCompanyVo">
+        select cmp_id, cmp_name, cmp_credit_code, cmp_logo_url, cmp_industry, cmp_size,
+               cmp_city, cmp_address, cmp_website, cmp_intro, cmp_detail_json,
+               cmp_verify_status, cmp_verify_at, cmp_verify_by, cmp_status, cmp_created_at, remark
+        from t_cmp
+    </sql>
+
+    <select id="selectCompanyList" parameterType="com.ruoyi.system.domain.Company" resultMap="CompanyResult">
+        <include refid="selectCompanyVo"/>
+        <where>
+            <if test="cmpName != null and cmpName != ''"> and cmp_name like concat('%', #{cmpName}, '%')</if>
+            <if test="cmpVerifyStatus != null"> and cmp_verify_status = #{cmpVerifyStatus}</if>
+            <if test="cmpStatus != null"> and cmp_status = #{cmpStatus}</if>
+            <if test="cmpCity != null and cmpCity != ''"> and cmp_city = #{cmpCity}</if>
+        </where>
+        order by cmp_created_at desc
+    </select>
+
+    <select id="selectCompanyByCmpId" parameterType="Long" resultMap="CompanyResult">
+        <include refid="selectCompanyVo"/>
+        where cmp_id = #{cmpId}
+    </select>
+
+    <insert id="insertCompany" parameterType="com.ruoyi.system.domain.Company" useGeneratedKeys="true" keyProperty="cmpId">
+        insert into t_cmp
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="cmpName != null and cmpName != ''">cmp_name,</if>
+            <if test="cmpCreditCode != null">cmp_credit_code,</if>
+            <if test="cmpIndustry != null">cmp_industry,</if>
+            <if test="cmpStatus != null">cmp_status,</if>
+            <if test="cmpCreatedAt != null">cmp_created_at,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="cmpName != null and cmpName != ''">#{cmpName},</if>
+            <if test="cmpCreditCode != null">#{cmpCreditCode},</if>
+            <if test="cmpIndustry != null">#{cmpIndustry},</if>
+            <if test="cmpStatus != null">#{cmpStatus},</if>
+            <if test="cmpCreatedAt != null">#{cmpCreatedAt},</if>
+        </trim>
+    </insert>
+
+    <update id="updateCompany" parameterType="com.ruoyi.system.domain.Company">
+        update t_cmp
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="cmpName != null">cmp_name = #{cmpName},</if>
+            <if test="cmpCreditCode != null">cmp_credit_code = #{cmpCreditCode},</if>
+            <if test="cmpLogoUrl != null">cmp_logo_url = #{cmpLogoUrl},</if>
+            <if test="cmpIndustry != null">cmp_industry = #{cmpIndustry},</if>
+            <if test="cmpSize != null">cmp_size = #{cmpSize},</if>
+            <if test="cmpCity != null">cmp_city = #{cmpCity},</if>
+            <if test="cmpAddress != null">cmp_address = #{cmpAddress},</if>
+            <if test="cmpWebsite != null">cmp_website = #{cmpWebsite},</if>
+            <if test="cmpIntro != null">cmp_intro = #{cmpIntro},</if>
+            <if test="cmpDetailJson != null">cmp_detail_json = #{cmpDetailJson},</if>
+            <if test="cmpStatus != null">cmp_status = #{cmpStatus},</if>
+        </trim>
+        where cmp_id = #{cmpId}
+    </update>
+
+    <update id="verifyCompany" parameterType="com.ruoyi.system.domain.Company">
+        update t_cmp
+        set cmp_verify_status = #{cmpVerifyStatus},
+            cmp_verify_at = #{cmpVerifyAt},
+            cmp_verify_by = #{cmpVerifyBy},
+            remark = #{remark}
+        where cmp_id = #{cmpId}
+    </update>
+
+    <delete id="deleteCompanyByCmpId" parameterType="Long">
+        delete from t_cmp where cmp_id = #{cmpId}
+    </delete>
+
+</mapper>
