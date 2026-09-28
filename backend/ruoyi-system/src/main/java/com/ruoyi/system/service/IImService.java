@@ -1,6 +1,7 @@
 package com.ruoyi.system.service;
 
 import java.util.List;
+import java.util.Map;
 import com.ruoyi.system.domain.ImMessage;
 import com.ruoyi.system.domain.ImSession;
 
@@ -42,4 +43,19 @@ public interface IImService
      * 统计当前用户未读总数
      */
     public int sumUnread(Long userId);
+
+    /**
+     * 快捷回复模板列表
+     */
+    public List<Map<String, Object>> selectQuickReplies();
+
+    /**
+     * 保存快捷回复模板（id 为空则新增）
+     */
+    public int saveQuickReply(Long id, String category, String content);
+
+    /**
+     * 删除快捷回复模板
+     */
+    public int deleteQuickReply(Long id);
 }

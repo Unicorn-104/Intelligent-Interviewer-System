@@ -1,7 +1,9 @@
 package com.ruoyi.web.controller.system;
 
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -88,5 +90,40 @@ public class ImController extends BaseController
         AjaxResult ajax = AjaxResult.success();
         ajax.put("count", imService.sumUnread(getUserId()));
         return ajax;
+    }
+
+    /**
+     * 快捷回复模板列表
+     */
+    @GetMapping("/quick-replies")
+    public AjaxResult quickReplies()
+    {
+        return success(imService.selectQuickReplies());
+    }
+
+    /**
+     * 保存快捷回复模板（id 为空则新增）
+     */
+    @PostMapping("/quick-replies")
+    public AjaxResult saveQuickReply(@RequestBody Map<String, Object> body)
+    {
+        Object id = body.get("id");
+        Long tplId = id == null ? null : Long.valueOf(id.toString());
+        return toAjax(imService.saveQuickReply(tplId, str(body, "category"), str(body, "content")));
+    }
+
+    /**
+     * 删除快捷回复模板
+     */
+    @DeleteMapping("/quick-replies/{id}")
+    public AjaxResult deleteQuickReply(@PathVariable Long id)
+    {
+        return toAjax(imService.deleteQuickReply(id));
+    }
+
+    private String str(Map<String, Object> body, String key)
+    {
+        Object v = body.get(key);
+        return v == null ? null : v.toString();
     }
 }
