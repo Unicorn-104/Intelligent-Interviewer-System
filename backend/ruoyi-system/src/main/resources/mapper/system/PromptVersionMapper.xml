@@ -9,12 +9,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="pmvName" column="pmv_name"/>
         <result property="pmvContent" column="pmv_content"/>
         <result property="pmvVariablesJson" column="pmv_variables_json"/>
-        <result property="createTime" column="create_time"/>
-        <result property="updateTime" column="update_time"/>
+        <result property="pmvVersion" column="pmv_version"/>
+        <result property="pmvStatus" column="pmv_status"/>
+        <result property="pmvCreatedAt" column="pmv_created_at"/>
+        <result property="pmvUpdatedAt" column="pmv_updated_at"/>
     </resultMap>
 
     <sql id="selectPromptVersionVo">
-        select pmv_id, pmv_name, pmv_content, pmv_variables_json, create_time, update_time
+        select pmv_id, pmv_name, pmv_content, pmv_variables_json, pmv_version,
+               pmv_status, pmv_created_at, pmv_updated_at
         from t_prompt_version
     </sql>
 
@@ -22,8 +25,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <include refid="selectPromptVersionVo"/>
         <where>
             <if test="pmvName != null and pmvName != ''"> and pmv_name like concat('%', #{pmvName}, '%')</if>
+            <if test="pmvStatus != null"> and pmv_status = #{pmvStatus}</if>
         </where>
-        order by pmv_id desc
+        order by pmv_created_at desc
     </select>
 
     <select id="selectPromptVersionByPmvId" parameterType="Long" resultMap="PromptVersionResult">
@@ -37,13 +41,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="pmvName != null and pmvName != ''">pmv_name,</if>
             <if test="pmvContent != null and pmvContent != ''">pmv_content,</if>
             <if test="pmvVariablesJson != null">pmv_variables_json,</if>
-            create_time,
+            <if test="pmvVersion != null and pmvVersion != ''">pmv_version,</if>
+            <if test="pmvStatus != null">pmv_status,</if>
         </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
             <if test="pmvName != null and pmvName != ''">#{pmvName},</if>
             <if test="pmvContent != null and pmvContent != ''">#{pmvContent},</if>
             <if test="pmvVariablesJson != null">#{pmvVariablesJson},</if>
-            sysdate(),
+            <if test="pmvVersion != null and pmvVersion != ''">#{pmvVersion},</if>
+            <if test="pmvStatus != null">#{pmvStatus},</if>
         </trim>
     </insert>
 
@@ -53,7 +59,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="pmvName != null">pmv_name = #{pmvName},</if>
             <if test="pmvContent != null">pmv_content = #{pmvContent},</if>
             <if test="pmvVariablesJson != null">pmv_variables_json = #{pmvVariablesJson},</if>
-            update_time = sysdate(),
+            <if test="pmvVersion != null">pmv_version = #{pmvVersion},</if>
+            <if test="pmvStatus != null">pmv_status = #{pmvStatus},</if>
         </trim>
         where pmv_id = #{pmvId}
     </update>

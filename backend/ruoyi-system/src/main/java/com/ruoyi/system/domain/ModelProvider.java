@@ -1,5 +1,7 @@
 package com.ruoyi.system.domain;
 
+import java.util.Date;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.ruoyi.common.core.domain.BaseEntity;
 
 /**
@@ -29,6 +31,17 @@ public class ModelProvider extends BaseEntity
     /** 参数JSON */
     private String mppParamsJson;
 
+    /** 状态：0-禁用，1-启用 */
+    private Integer mppStatus;
+
+    /** 创建时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date mppCreatedAt;
+
+    /** 更新时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date mppUpdatedAt;
+
     public Long getMppId() { return mppId; }
     public void setMppId(Long mppId) { this.mppId = mppId; }
     public String getMppName() { return mppName; }
@@ -41,4 +54,10 @@ public class ModelProvider extends BaseEntity
     public void setMppModelName(String mppModelName) { this.mppModelName = mppModelName; }
     public String getMppParamsJson() { return mppParamsJson; }
     public void setMppParamsJson(String mppParamsJson) { this.mppParamsJson = mppParamsJson; }
+    public Integer getMppStatus() { return mppStatus; }
+    public void setMppStatus(Integer mppStatus) { this.mppStatus = mppStatus; }
+    public Date getMppCreatedAt() { return mppCreatedAt; }
+    public void setMppCreatedAt(Date mppCreatedAt) { this.mppCreatedAt = mppCreatedAt; }
+    public Date getMppUpdatedAt() { return mppUpdatedAt; }
+    public void setMppUpdatedAt(Date mppUpdatedAt) { this.mppUpdatedAt = mppUpdatedAt; }
 }

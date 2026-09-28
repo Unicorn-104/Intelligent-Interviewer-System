@@ -22,6 +22,10 @@ function normalizeApiUrl(url) {
 }
 
 function normalizeResponse(payload) {
+  // RuoYi 原生格式：{ code, msg, data/token/user/rows... }，直接返回
+  if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'code')) {
+    return payload
+  }
   const body = payload && payload.data
   if (!body || typeof body !== 'object' || Array.isArray(body)) return body
   if (Object.prototype.hasOwnProperty.call(body, 'rows')) {

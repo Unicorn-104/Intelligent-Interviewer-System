@@ -11,12 +11,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="mppApiKey" column="mpp_api_key"/>
         <result property="mppModelName" column="mpp_model_name"/>
         <result property="mppParamsJson" column="mpp_params_json"/>
-        <result property="createTime" column="create_time"/>
-        <result property="updateTime" column="update_time"/>
+        <result property="mppStatus" column="mpp_status"/>
+        <result property="mppCreatedAt" column="mpp_created_at"/>
+        <result property="mppUpdatedAt" column="mpp_updated_at"/>
     </resultMap>
 
     <sql id="selectModelProviderVo">
-        select mpp_id, mpp_name, mpp_api_url, mpp_api_key, mpp_model_name, mpp_params_json, create_time, update_time
+        select mpp_id, mpp_name, mpp_api_url, mpp_api_key, mpp_model_name, mpp_params_json,
+               mpp_status, mpp_created_at, mpp_updated_at
         from t_model_provider
     </sql>
 
@@ -42,7 +44,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="mppApiKey != null and mppApiKey != ''">mpp_api_key,</if>
             <if test="mppModelName != null and mppModelName != ''">mpp_model_name,</if>
             <if test="mppParamsJson != null">mpp_params_json,</if>
-            create_time,
+            <if test="mppStatus != null">mpp_status,</if>
         </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
             <if test="mppName != null and mppName != ''">#{mppName},</if>
@@ -50,7 +52,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="mppApiKey != null and mppApiKey != ''">#{mppApiKey},</if>
             <if test="mppModelName != null and mppModelName != ''">#{mppModelName},</if>
             <if test="mppParamsJson != null">#{mppParamsJson},</if>
-            sysdate(),
+            <if test="mppStatus != null">#{mppStatus},</if>
         </trim>
     </insert>
 
@@ -62,7 +64,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="mppApiKey != null">mpp_api_key = #{mppApiKey},</if>
             <if test="mppModelName != null">mpp_model_name = #{mppModelName},</if>
             <if test="mppParamsJson != null">mpp_params_json = #{mppParamsJson},</if>
-            update_time = sysdate(),
+            <if test="mppStatus != null">mpp_status = #{mppStatus},</if>
         </trim>
         where mpp_id = #{mppId}
     </update>
