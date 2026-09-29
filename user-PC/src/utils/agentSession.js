@@ -11,7 +11,12 @@ export function getCandidateSession() {
 
   try {
     const session = JSON.parse(storage.getItem(CANDIDATE_SESSION_KEY) || 'null')
-    return session && typeof session === 'object' ? session : null
+    if (!session || typeof session !== 'object') return null
+    if (session.expiresAt && Date.now() > Number(session.expiresAt)) {
+      clearCandidateSession()
+      return null
+    }
+    return session
   } catch {
     return null
   }
@@ -29,10 +34,6 @@ export function clearCandidateSession() {
   storage.removeItem(CANDIDATE_SESSION_KEY)
 }
 
-/**
- * 生产环境只认可后端签发的 accessToken。
- * 演示环境由 VITE_FRONTEND_ONLY 路由分支直接放行，因此不会依赖本函数。
- */
 export function hasCandidateAccessToken() {
   return Boolean(getCandidateSession()?.accessToken)
 }

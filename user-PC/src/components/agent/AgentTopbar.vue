@@ -1,0 +1,72 @@
+<template>
+  <header class="agent-topbar">
+    <div class="agent-topbar-inner">
+      <a class="agent-brand" href="/agent/index" aria-label="智聘 AI 首页">
+        <span class="agent-brand-mark">智</span>
+        <span class="agent-brand-name">智聘 AI</span>
+        <span class="agent-brand-tag">求职者工作台</span>
+      </a>
+
+      <nav class="agent-main-nav" aria-label="主导航">
+        <a v-for="item in navItems" :key="item.path" class="agent-nav-link" :class="{ active: active === item.key }" :href="item.path">
+          {{ item.label }}<span v-if="item.badge" class="agent-nav-badge" data-unread-badge>{{ item.badge }}</span>
+        </a>
+      </nav>
+
+      <div class="agent-profile-menu">
+        <button class="agent-profile-button" type="button" aria-haspopup="true">
+          <span class="agent-avatar">林</span>
+          <span class="agent-profile-meta"><span class="agent-profile-name">林晓雨</span><span class="agent-profile-role">产品经理</span></span>
+        </button>
+        <div class="agent-profile-popover" role="menu" aria-label="账号功能">
+          <a href="/agent/profile-basic" role="menuitem">基础资料</a>
+          <a href="/agent/profile-resumes" role="menuitem">我的简历</a>
+          <a href="/agent/profile-security" role="menuitem">账号安全</a>
+        </div>
+      </div>
+    </div>
+  </header>
+</template>
+
+<script setup>
+defineProps({
+  active: {
+    type: String,
+    default: 'index'
+  }
+})
+
+const navItems = [
+  { key: 'index', label: '首页', path: '/agent/index' },
+  { key: 'jobs', label: '岗位浏览', path: '/agent/jobs' },
+  { key: 'applications', label: '投递跟踪', path: '/agent/applications' },
+  { key: 'messages', label: '消息通知', path: '/agent/messages', badge: '3' }
+]
+</script>
+
+<style scoped>
+.agent-topbar{position:sticky;top:0;z-index:40;height:72px;border-bottom:1px solid #E6EBF2;background:rgba(255,255,255,.97);backdrop-filter:blur(12px)}
+.agent-topbar-inner{width:min(1240px,calc(100% - 48px));height:100%;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:24px;margin:0 auto}
+.agent-brand{display:inline-flex;align-items:center;gap:10px;color:#1A3C6E;text-decoration:none;white-space:nowrap}
+.agent-brand-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;color:#fff;background:linear-gradient(145deg,#2B7FFF,#1A3C6E);box-shadow:0 5px 12px rgba(43,127,255,.22);font-size:17px;font-weight:800}
+.agent-brand-name{font-size:18px;font-weight:800}
+.agent-brand-tag{color:#6B7A90;font-size:11px}
+.agent-main-nav{justify-self:center;height:72px;display:flex;align-items:center;gap:6px}
+.agent-nav-link{position:relative;height:72px;display:inline-flex;align-items:center;padding:0 18px;color:#6B7A90;text-decoration:none;white-space:nowrap}
+.agent-nav-link:hover,.agent-nav-link.active{color:#1A3C6E}
+.agent-nav-link.active{font-weight:700}
+.agent-nav-link.active::after{content:"";position:absolute;right:18px;bottom:0;left:18px;height:3px;border-radius:3px 3px 0 0;background:#2B7FFF}
+.agent-nav-badge{min-width:17px;height:17px;margin-left:6px;padding:0 5px;display:inline-grid;place-items:center;border-radius:99px;color:#fff;background:#D94B55;font-size:10px;line-height:1}
+.agent-profile-menu{position:relative;justify-self:end}
+.agent-profile-button{height:48px;display:flex;align-items:center;gap:9px;padding:0;border:0;color:#172B4D;background:transparent}
+.agent-avatar{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#7894BE;font-size:13px;font-weight:800}
+.agent-profile-meta{display:block;text-align:left;line-height:1.25}
+.agent-profile-name{display:block;font-weight:700}
+.agent-profile-role{display:block;margin-top:2px;color:#6B7A90;font-size:11px}
+.agent-profile-popover{position:absolute;top:48px;right:0;z-index:45;min-width:150px;padding:7px;border:1px solid #E1E8F2;border-radius:8px;background:#fff;box-shadow:0 16px 38px rgba(23,43,77,.14);opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}
+.agent-profile-menu:hover .agent-profile-popover,.agent-profile-menu:focus-within .agent-profile-popover{opacity:1;visibility:visible;transform:translateY(0)}
+.agent-profile-popover a{height:36px;display:flex;align-items:center;padding:0 10px;border-radius:6px;color:#52647D;text-decoration:none;font-size:12px;font-weight:700}
+.agent-profile-popover a:hover,.agent-profile-popover a:focus-visible{color:#1A3C6E;background:#EAF2FF;outline:none}
+@media(max-width:900px){.agent-topbar-inner{width:calc(100% - 32px);gap:14px}.agent-brand-tag,.agent-profile-meta{display:none}.agent-nav-link{padding:0 10px}.agent-nav-link.active::after{right:10px;left:10px}}
+@media(max-width:640px){.agent-topbar{height:64px}.agent-topbar-inner{width:calc(100% - 28px);grid-template-columns:auto 1fr auto;gap:8px}.agent-brand-name{font-size:16px}.agent-main-nav{height:64px;gap:0}.agent-nav-link{height:64px;padding:0 5px;font-size:11px}.agent-nav-link.active::after{right:5px;left:5px}.agent-nav-badge{position:absolute;top:14px;right:0}.agent-profile-button{height:44px}.agent-profile-popover{top:44px}}
+</style>

@@ -1,17 +1,82 @@
 <template>
-<header class="topbar"><div class="topbar-inner"><a class="brand" href="/agent/index"><span class="mark">智</span>智聘 AI</a><span class="hint">候选人安全登录</span></div></header><main class="page"><section class="login-card"><h1>登录候选人工作台</h1><p class="sub">使用手机号接收验证码，无需设置密码</p><form id="loginForm"><div class="field"><label for="phone">手机号</label><input id="phone" inputmode="numeric" maxlength="11" placeholder="请输入 11 位手机号" required></div><div class="field"><label for="code">短信验证码</label><div class="code-row"><input id="code" inputmode="numeric" maxlength="6" placeholder="请输入 6 位验证码" required><button class="code-btn" id="sendCode" type="button">获取验证码</button></div></div><div class="error" id="error" role="alert"></div><label class="agree"><input id="agree" type="checkbox" required><span>我已阅读并同意《隐私政策》和《用户协议》，了解面试数据的使用范围。</span></label><button class="primary" type="submit">登录</button></form><div class="demo"><b>演示提示：</b>输入任意 11 位手机号，验证码可填写 <b>123456</b>。</div></section></main>
+<header class="topbar"><div class="topbar-inner"><a class="brand" href="/agent/index"><span class="mark">智</span>智聘 AI</a><span class="hint">候选人安全登录</span></div></header><main class="page"><section class="login-card"><h1>登录候选人工作台</h1><p class="sub">使用手机号接收验证码，无需设置密码</p><form id="loginForm" novalidate @submit.prevent="handleSubmit"><div class="field"><label for="phone">手机号</label><input id="phone" v-model.trim="form.phone" inputmode="numeric" maxlength="11" placeholder="请输入 11 位手机号" autocomplete="tel"></div><div class="field"><label for="code">短信验证码</label><div class="code-row"><input id="code" v-model.trim="form.code" inputmode="numeric" maxlength="6" placeholder="请输入 6 位验证码" autocomplete="one-time-code"><button class="code-btn" id="sendCode" type="button" :disabled="countdown > 0" @click="sendCode">{{ countdown > 0 ? `${countdown}s 后重发` : sendText }}</button></div></div><div class="error" id="error" role="alert">{{ error }}</div><label class="agree"><input id="agree" v-model="form.agree" type="checkbox"><span>我已阅读并同意《隐私政策》和《用户协议》，了解面试数据的使用范围。</span></label><button class="primary" type="submit">登录</button></form><div class="demo"><b>演示提示：</b>输入任意 11 位手机号，验证码可填写 <b>123456</b>。</div></section></main>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { setCandidateSession } from '@/utils/agentSession'
 import { isValidPhoneNumber, isValidSmsCode } from '@/utils/agentValidation'
 
-onMounted(() => {
-  // 演示短信验证码登录，登录态只保存在当前浏览器。
-  const phone=document.getElementById('phone'),code=document.getElementById('code'),send=document.getElementById('sendCode'),error=document.getElementById('error');let timer;
-  send.onclick=()=>{if(!isValidPhoneNumber(phone.value)){error.textContent='请先输入正确的 11 位手机号';phone.focus();return}let left=60;send.disabled=true;send.textContent=`${left}s 后重发`;timer=setInterval(()=>{left--;send.textContent=`${left}s 后重发`;if(left<=0){clearInterval(timer);send.disabled=false;send.textContent='重新获取'}},1000)};
-  document.getElementById('loginForm').onsubmit=e=>{e.preventDefault();error.textContent='';if(!isValidPhoneNumber(phone.value)){error.textContent='手机号格式不正确';return}if(!isValidSmsCode(code.value)||code.value!=='123456'){error.textContent='验证码不正确，请输入演示验证码 123456';return}setCandidateSession({phone:phone.value,loginAt:Date.now()});window.__agentNavigate(new URLSearchParams(location.search).get('redirect')||'/agent/index');}
+const DEMO_CODE = '123456'
+const SESSION_TTL = 24 * 60 * 60 * 1000
+
+const form = reactive({
+  phone: '',
+  code: '',
+  agree: false
+})
+const error = ref('')
+const countdown = ref(0)
+let timer = null
+
+const sendText = computed(() => (countdown.value === 0 ? '获取验证码' : '重新获取'))
+
+function startCountdown() {
+  countdown.value = 60
+  timer = window.setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0) {
+      window.clearInterval(timer)
+      timer = null
+      countdown.value = 0
+    }
+  }, 1000)
+}
+
+function sendCode() {
+  error.value = ''
+  if (!isValidPhoneNumber(form.phone)) {
+    error.value = '请先输入正确的 11 位手机号'
+    document.getElementById('phone')?.focus()
+    return
+  }
+  startCountdown()
+}
+
+function createDemoAccessToken(phone) {
+  return `candidate-demo-${phone}-${Date.now()}`
+}
+
+function handleSubmit() {
+  error.value = ''
+  if (!isValidPhoneNumber(form.phone)) {
+    error.value = '手机号格式不正确'
+    document.getElementById('phone')?.focus()
+    return
+  }
+  if (!isValidSmsCode(form.code) || form.code !== DEMO_CODE) {
+    error.value = '验证码不正确，请输入演示验证码 123456'
+    document.getElementById('code')?.focus()
+    return
+  }
+  if (!form.agree) {
+    error.value = '请先阅读并同意隐私政策和用户协议'
+    document.getElementById('agree')?.focus()
+    return
+  }
+
+  const now = Date.now()
+  setCandidateSession({
+    phone: form.phone,
+    loginAt: now,
+    expiresAt: now + SESSION_TTL,
+    accessToken: createDemoAccessToken(form.phone)
+  })
+  window.__agentNavigate(new URLSearchParams(location.search).get('redirect') || '/agent/index')
+}
+
+onBeforeUnmount(() => {
+  if (timer) window.clearInterval(timer)
 })
 </script>
 
