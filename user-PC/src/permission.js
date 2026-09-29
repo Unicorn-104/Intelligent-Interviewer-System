@@ -34,10 +34,14 @@ router.beforeEach(async (to, from) => {
   if (to.path.startsWith('/agent/')) {
     to.meta.title && useSettingsStore().setTitle(to.meta.title)
     if (agentPublicRoutes.includes(to.path)) {
+      // 登录/注册页必须始终可进入，避免浏览器残留的过期 token 触发 getInfo 弹窗。
       if (hasCandidateAccessToken()) {
-        NProgress.done()
-        return { path: '/agent/index', replace: true }
+        removeToken()
+        clearCandidateSession()
+        useUserStore().$reset()
+        isRelogin.show = false
       }
+      NProgress.done()
       return true
     }
     if (hasCandidateAccessToken()) {
