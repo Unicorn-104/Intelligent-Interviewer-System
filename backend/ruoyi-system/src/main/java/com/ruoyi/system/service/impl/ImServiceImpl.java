@@ -1,6 +1,7 @@
 package com.ruoyi.system.service.impl;
 
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -132,5 +133,31 @@ public class ImServiceImpl implements IImService
     public int sumUnread(Long userId)
     {
         return sessionMapper.sumUnreadByUser(userId);
+    }
+
+    @Override
+    public List<Map<String, Object>> selectQuickReplies()
+    {
+        return messageMapper.selectQuickReplies();
+    }
+
+    @Override
+    public int saveQuickReply(Long id, String category, String content)
+    {
+        if (StringUtils.isEmpty(category) || StringUtils.isEmpty(content))
+        {
+            throw new ServiceException("分类与内容不能为空");
+        }
+        if (StringUtils.isNull(id))
+        {
+            return messageMapper.insertQuickReply(category, content);
+        }
+        return messageMapper.updateQuickReply(id, category, content);
+    }
+
+    @Override
+    public int deleteQuickReply(Long id)
+    {
+        return messageMapper.deleteQuickReply(id);
     }
 }

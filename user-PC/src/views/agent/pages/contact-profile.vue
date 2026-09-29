@@ -1,6 +1,6 @@
 <template>
 <!-- 与求职者端其他页面一致的全局导航 -->
-  <header class="topbar"><div class="topbar-inner"><a class="brand" href="/agent/index"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span><span class="brand-tag">求职者工作台</span></a><nav class="main-nav"><a class="nav-link" href="/agent/index">首页</a><a class="nav-link" href="/agent/jobs">岗位浏览</a><a class="nav-link" href="/agent/applications">投递跟踪</a><a class="nav-link" href="/agent/messages">消息通知</a><a class="nav-link" href="/agent/profile">个人中心</a></nav><div class="profile"><span class="avatar">林</span><span>林晓雨</span></div></div></header>
+  <AgentTopbar active="messages" />
   <main class="page">
     <a class="back" id="backLink" href="/agent/messages">← 返回消息中心</a>
     <section class="hero"><div class="identity"><div class="large-avatar" id="personAvatar">王</div><div><h1 id="personName">王雨晴</h1><div class="title-line"><span id="personRole">资深招聘经理</span><span class="verified">企业已认证</span></div><div class="online">● 当前在线 · 通常 10 分钟内回复</div></div></div><div class="hero-actions"><a class="button" id="companyButton" href="/agent/company-profile?id=zkr">企业主页</a><a class="button primary" id="messageButton" href="/agent/messages?conversation=hr">发起沟通</a></div></section>
@@ -11,6 +11,7 @@
 
 <script setup>
 import { onMounted } from 'vue'
+import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 
 onMounted(() => {
   // 联系人与企业数据通过 URL 参数关联，确保三个示例会话都能落到对应主页。

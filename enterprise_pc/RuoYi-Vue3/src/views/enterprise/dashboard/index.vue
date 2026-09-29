@@ -1,47 +1,68 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { BriefcaseBusiness, FileText, Clock3, CircleCheckBig, ArrowUpRight, CalendarDays, UserRoundCheck, Timer, Sparkles, Plus } from '@/views/enterprise/components/icons'
 import StatCard from '@/views/enterprise/components/StatCard.vue'
 import PublishJobModal from '@/views/enterprise/components/PublishJobModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { api, reserveApi } from '@/views/enterprise/api/contract'
+import { getDashboardOverview } from '@/api/system/dashboard'
+import useUserStore from '@/store/modules/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 const publishOpen = ref(false)
 const toast = ref('')
-reserveApi(api.positions.list, { status: 1, keyword: '', page: 1, pageSize: 5 })
-reserveApi({ method: 'GET', path: '/api/v1/positions/{positionId}/application-statistics', params: ['positionId', 'from', 'to'] }, { positionId: 1, from: '2026-09-01', to: '2026-09-30' })
-const statItems = [
-  { title: '在招岗位数', value: 36, note: '↗ 环比 +12.5%', tone: 'blue', icon: BriefcaseBusiness },
-  { title: '简历总量', value: '1,286', note: '本月新增 +186', tone: 'blue', icon: FileText },
-  { title: '待处理面试', value: 8, note: '需尽快安排 2 场', tone: 'orange', icon: Clock3 },
-  { title: '本周已完成面试', value: 26, note: '完成率 93%', tone: 'green', icon: CircleCheckBig }
-]
-const bars = [
-  { label: '简历投递', value: 320, height: 100 },
-  { label: '初筛通过', value: 218, height: 68 },
-  { label: '面试中', value: 142, height: 45 },
-  { label: '已录用', value: 76, height: 25 }
-]
-const todos = [
-  { title: '待确认面试', meta: '产品经理 · 王芳 · 今天 14:00', icon: CalendarDays, tone: 'blue', go: '/enterprise/interviews' },
-  { title: '待终审候选人', meta: '高级前端工程师 · 李强', icon: UserRoundCheck, tone: 'cyan', go: '/enterprise/jobs/1' },
-  { title: '即将开始的面试', meta: 'UI 设计师 · 张敏 · 15:30', icon: Timer, tone: 'orange', go: '/enterprise/meeting/ai' }
-]
-const timeline = [
-  ['王芳的简历已入库 · 应聘产品经理', '10 分钟前'],
-  ['李强已通过初筛，进入面试环节', '1 小时前'],
-  ['张敏的面试已安排 · UI 设计师 · 今天 15:30', '3 小时前'],
-  ['陈晨已通过终审，进入录用审批', '昨天 18:24']
-]
+
+const overview = ref(null)
+onMounted(() => {
+  getDashboardOverview().then(res => { overview.value = res.data })
+})
+
+// 问候语：按当前小时动态生成 + 真实昵称
+const greeting = computed(() => {
+  const h = new Date().getHours()
+  const word = h < 6 ? '夜深了' : h < 12 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好'
+  return `${word}，${userStore.nickName || userStore.name || '经理'}`
+})
+const todayText = computed(() => {
+  const d = new Date()
+  const week = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()]
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${week} · 今天也要发现优秀的人才`
+})
+
+const statItems = computed(() => {
+  const s = overview.value?.stats || {}
+  return [
+    { title: '在招岗位数', value: s.activePositions ?? '-', note: '招聘进行中', tone: 'blue', icon: BriefcaseBusiness },
+    { title: '简历总量', value: s.resumeCount ?? '-', note: '候选人简历', tone: 'blue', icon: FileText },
+    { title: '待处理面试', value: s.pendingInterviews ?? '-', note: '待确认/已确认', tone: 'orange', icon: Clock3 },
+    { title: '本周已完成面试', value: s.weeklyCompleted ?? '-', note: '统计周期：本周一起', tone: 'green', icon: CircleCheckBig }
+  ]
+})
+
+const bars = computed(() => {
+  const f = overview.value?.funnel || {}
+  const max = f.applied || 1
+  const items = [
+    { label: '简历投递', value: f.applied ?? 0 },
+    { label: '初筛通过', value: f.screened ?? 0 },
+    { label: '面试中', value: f.interviewing ?? 0 },
+    { label: '已录用', value: f.hired ?? 0 }
+  ]
+  return items.map(b => ({ ...b, height: Math.max(Math.round(b.value * 100 / max), 6) }))
+})
+const conversion = computed(() => overview.value?.funnel?.conversion ?? 0)
+
+const TODO_ICONS = { '待确认面试': CalendarDays, '待终审候选人': UserRoundCheck, '即将开始的面试': Timer }
+const todos = computed(() => (overview.value?.todos || []).map(t => ({ ...t, icon: TODO_ICONS[t.title] || CalendarDays })))
+const timeline = computed(() => overview.value?.timeline || [])
 function published() { publishOpen.value = false; toast.value = '岗位已成功发布'; setTimeout(() => toast.value = '', 2200) }
 </script>
 
 <template>
   <div class="page dashboard">
     <div class="page-heading">
-      <div><h1>早上好，王经理</h1><p>2026年9月9日 星期三 · 今天也要发现优秀的人才</p></div>
+      <div><h1>{{ greeting }}</h1><p>{{ todayText }}</p></div>
       <button class="btn primary" @click="publishOpen = true"><Plus :size="17" />快速发布岗位</button>
     </div>
 
@@ -57,17 +78,18 @@ function published() { publishOpen.value = false; toast.value = '岗位已成功
             <label>{{ bar.label }}</label>
           </div>
         </div>
-        <div class="chart-foot"><span><i class="legend" />当前周期</span><span>转化率 <b>23.8%</b></span></div>
+        <div class="chart-foot"><span><i class="legend" />当前周期</span><span>转化率 <b>{{ conversion }}%</b></span></div>
       </section>
 
       <section class="card todo-card">
-        <div class="section-title"><span>待办事项</span><span class="pill">3 项待处理</span></div>
+        <div class="section-title"><span>待办事项</span><span class="pill">{{ todos.length }} 项待处理</span></div>
         <div class="todos">
           <article v-for="todo in todos" :key="todo.title">
             <span class="todo-icon" :class="todo.tone"><component :is="todo.icon" :size="18" /></span>
             <div><b>{{ todo.title }}</b><small>{{ todo.meta }}</small></div>
             <button class="btn sm" @click="router.push(todo.go)">去处理<ArrowUpRight :size="13" /></button>
           </article>
+          <p v-if="!todos.length" style="color:#8ca3c0;font-size:12px;padding:14px 4px">当前没有待办事项</p>
         </div>
         <button class="ai-note"><Sparkles :size="16"/><span><b>AI 今日建议</b>优先处理 14:00 的产品经理面试，候选人匹配度 94%</span></button>
       </section>
@@ -76,10 +98,11 @@ function published() { publishOpen.value = false; toast.value = '岗位已成功
     <section class="card activity-card">
       <div class="section-title"><span>最近动态</span><button>查看全部</button></div>
       <div class="timeline">
-        <div v-for="(item, index) in timeline" :key="item[0]" class="timeline-row">
+        <div v-for="(item, index) in timeline" :key="index" class="timeline-row">
           <span class="node" :class="{ last: index === timeline.length - 1 }" />
-          <b>{{ item[0] }}</b><time>{{ item[1] }}</time>
+          <b>{{ item.text }}</b><time>{{ item.time }}</time>
         </div>
+        <p v-if="!timeline.length" style="color:#8ca3c0;font-size:12px;padding:14px 4px">暂无动态</p>
       </div>
     </section>
     <PublishJobModal v-if="publishOpen" @close="publishOpen = false" @submit="published" />

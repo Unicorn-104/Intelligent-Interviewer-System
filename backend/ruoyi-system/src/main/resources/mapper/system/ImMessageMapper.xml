@@ -28,4 +28,20 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         values (#{sessionId}, #{senderId}, #{type}, #{content}, #{attachmentUrl}, sysdate())
     </insert>
 
+    <select id="selectQuickReplies" resultType="java.util.LinkedHashMap">
+        select id, category, content from t_im_quick_reply order by id
+    </select>
+
+    <insert id="insertQuickReply">
+        insert into t_im_quick_reply (category, content) values (#{category}, #{content})
+    </insert>
+
+    <update id="updateQuickReply">
+        update t_im_quick_reply set category = #{category}, content = #{content} where id = #{id}
+    </update>
+
+    <delete id="deleteQuickReply">
+        delete from t_im_quick_reply where id = #{id}
+    </delete>
+
 </mapper>

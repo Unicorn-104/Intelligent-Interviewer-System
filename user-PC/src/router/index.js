@@ -12,7 +12,9 @@ const agentPageDefinitions = [
   ['applications', 'AgentApplications', '投递跟踪'],
   ['application-detail', 'AgentApplicationDetail', '投递详情'],
   ['messages', 'AgentMessages', '消息通知'],
-  ['profile', 'AgentProfile', '个人中心'],
+  ['profile-basic', 'AgentProfileBasic', '基础资料'],
+  ['profile-resumes', 'AgentProfileResumes', '我的简历'],
+  ['profile-security', 'AgentProfileSecurity', '账号安全'],
   ['resume-editor', 'AgentResumeEditor', '简历编辑'],
   ['resume-select', 'AgentResumeSelect', '简历选择'],
   ['mock-interview', 'AgentMockInterview', '模拟面试'],
@@ -30,12 +32,18 @@ const agentRoutes = [{
   path: '/agent',
   component: () => import('@/views/agent/shell.vue'),
   redirect: '/agent/index',
-  children: agentPageDefinitions.map(([path, name, title]) => ({
-    path,
-    name,
-    component: agentPageModules[`../views/agent/pages/${path}.vue`],
-    meta: { title }
-  }))
+  children: [
+    {
+      path: 'profile',
+      redirect: '/agent/profile-basic'
+    },
+    ...agentPageDefinitions.map(([path, name, title]) => ({
+      path,
+      name,
+      component: agentPageModules[`../views/agent/pages/${path}.vue`],
+      meta: { title }
+    }))
+  ]
 }]
 
 const legacyAgentRoutes = agentPageDefinitions.map(([path]) => ({
