@@ -10,12 +10,12 @@ import useUserStore from '@/store/modules/user'
 import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
 import usePermissionStore from '@/store/modules/permission'
-import { hasCandidateAccessToken } from '@/utils/agentSession'
+import { clearCandidateSession, hasCandidateAccessToken } from '@/utils/agentSession'
 
 NProgress.configure({ showSpinner: false })
 
 const whiteList = ['/login', '/register']
-const agentPublicRoutes = ['/agent/login']
+const agentPublicRoutes = ['/agent/login', '/agent/register']
 
 const isWhiteList = (path) => {
   return whiteList.some(pattern => isPathMatch(pattern, path))
@@ -41,6 +41,19 @@ router.beforeEach(async (to, from) => {
       return true
     }
     if (hasCandidateAccessToken()) {
+      const userStore = useUserStore()
+      if (!userStore.name) {
+        try {
+          await userStore.getInfo()
+        } catch {
+          removeToken()
+          clearCandidateSession()
+          userStore.$reset()
+          ElMessage.error('登录状态已失效，请重新登录')
+          NProgress.done()
+          return { path: '/agent/login', query: { redirect: to.fullPath }, replace: true }
+        }
+      }
       return true
     }
     NProgress.done()
