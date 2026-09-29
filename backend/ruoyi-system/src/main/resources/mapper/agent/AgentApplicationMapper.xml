@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.agent.AgentApplicationMapper">
+
+    <resultMap id="ResumeOptionResult" type="com.ruoyi.system.domain.agent.AgentResumeOption">
+        <id property="id" column="resume_id"/>
+        <result property="name" column="resume_name"/>
+        <result property="jobDirection" column="job_direction"/>
+        <result property="isDefault" column="is_default"/>
+        <result property="completion" column="completion"/>
+        <result property="matchScore" column="match_score"/>
+        <result property="recommended" column="recommended"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="usedApplicationCount" column="used_application_count"/>
+    </resultMap>
+
+    <resultMap id="ApplicationResult" type="com.ruoyi.system.domain.agent.AgentApplication">
+        <id property="id" column="application_id"/>
+        <result property="candidateId" column="candidate_id"/>
+        <result property="jobId" column="job_id"/>
+        <result property="resumeId" column="resume_id"/>
+        <result property="jobTitle" column="job_title"/>
+        <result property="companyName" column="company_name"/>
+        <result property="companyLogoUrl" column="company_logo_url"/>
+        <result property="locationText" column="location_text"/>
+        <result property="salaryMin" column="salary_min"/>
+        <result property="salaryMax" column="salary_max"/>
+        <result property="resumeName" column="resume_name"/>
+        <result property="statusCode" column="status_code"/>
+        <result property="matchedScore" column="matched_score"/>
+        <result property="appliedAt" column="applied_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="selectResumeOptions" resultMap="ResumeOptionResult">
+        SELECT
+            rbs.rbs_id AS resume_id,
+            rbs.rbs_resume_name AS resume_name,
+            rbs.rbs_job_direction AS job_direction,
+            rbs.rbs_is_default AS is_default,
+            (
+                (CASE WHEN rbs.rbs_job_direction IS NOT NULL AND rbs.rbs_job_direction != '' THEN 15 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_education edu WHERE edu.edu_resume_id = rbs.rbs_id) THEN 20 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_work work WHERE work.wrk_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_project project WHERE project.prj_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_skill skill WHERE skill.skl_resume_id = rbs.rbs_id) THEN 15 ELSE 0 END)
+            ) AS completion,
+            LEAST(99, GREATEST(60,
+                70
+                + (CASE WHEN rbs.rbs_job_direction IS NOT NULL AND pos.pos_title LIKE CONCAT('%', rbs.rbs_job_direction, '%') THEN 20 ELSE 0 END)
+                + (CASE WHEN rbs.rbs_is_default = 1 THEN 5 ELSE 0 END)
+            )) AS match_score,
+            CASE WHEN rbs.rbs_is_default = 1 THEN 1 ELSE 0 END AS recommended,
+            rbs.rbs_updated_at AS updated_at,
+            (
+                SELECT COUNT(1)
+                FROM t_app_record app
+                INNER JOIN t_tal tal ON tal.tal_id = app.app_candidate_id
+                WHERE tal.tal_user_id = #{userId}
+                  AND app.app_resume_id = rbs.rbs_id
+            ) AS used_application_count
+        FROM t_res_base rbs
+        INNER JOIN t_pos pos ON pos.pos_id = #{jobId}
+        WHERE rbs.rbs_user_id = #{userId}
+          AND rbs.rbs_status = 1
+        ORDER BY recommended DESC, completion DESC, rbs.rbs_updated_at DESC
+    </select>
+
+    <select id="selectResumeById" resultMap="ResumeOptionResult">
+        SELECT
+            rbs.rbs_id AS resume_id,
+            rbs.rbs_resume_name AS resume_name,
+            rbs.rbs_job_direction AS job_direction,
+            rbs.rbs_is_default AS is_default,
+            (
+                (CASE WHEN rbs.rbs_job_direction IS NOT NULL AND rbs.rbs_job_direction != '' THEN 15 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_education edu WHERE edu.edu_resume_id = rbs.rbs_id) THEN 20 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_work work WHERE work.wrk_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_project project WHERE project.prj_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_skill skill WHERE skill.skl_resume_id = rbs.rbs_id) THEN 15 ELSE 0 END)
+            ) AS completion,
+            0 AS match_score,
+            CASE WHEN rbs.rbs_is_default = 1 THEN 1 ELSE 0 END AS recommended,
+            rbs.rbs_updated_at AS updated_at,
+            0 AS used_application_count
+        FROM t_res_base rbs
+        WHERE rbs.rbs_id = #{resumeId}
+          AND rbs.rbs_user_id = #{userId}
+          AND rbs.rbs_status = 1
+    </select>
+
+    <sql id="applicationSelect">
+        SELECT
+            app.app_id AS application_id,
+            app.app_candidate_id AS candidate_id,
+            app.app_position_id AS job_id,
+            app.app_resume_id AS resume_id,
+            pos.pos_title AS job_title,
+            cmp.cmp_name AS company_name,
+            cmp.cmp_logo_url AS company_logo_url,
+            pos.pos_work_city AS location_text,
+            pos.pos_salary_min AS salary_min,
+            pos.pos_salary_max AS salary_max,
+            rbs.rbs_resume_name AS resume_name,
+            tal.tal_status AS status_code,
+            app.app_matched_score AS matched_score,
+            app.app_created_at AS applied_at,
+            app.app_updated_at AS updated_at
+        FROM t_app_record app
+        INNER JOIN t_tal tal ON tal.tal_id = app.app_candidate_id
+        INNER JOIN t_pos pos ON pos.pos_id = app.app_position_id
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        LEFT JOIN t_res_base rbs ON rbs.rbs_id = app.app_resume_id
+    </sql>
+
+    <select id="selectApplicationList" resultMap="ApplicationResult">
+        <include refid="applicationSelect"/>
+        WHERE tal.tal_user_id = #{userId}
+        <choose>
+            <when test="status == 'active'">AND tal.tal_status IN (0, 1, 5, 6, 7, 9)</when>
+            <when test="status == 'interview'">AND tal.tal_status IN (2, 7)</when>
+            <when test="status == 'closed'">AND tal.tal_status IN (3, 4, 8)</when>
+        </choose>
+        ORDER BY app.app_updated_at DESC, app.app_id DESC
+    </select>
+
+    <select id="selectApplicationById" resultMap="ApplicationResult">
+        <include refid="applicationSelect"/>
+        WHERE tal.tal_user_id = #{userId}
+          AND app.app_id = #{applicationId}
+    </select>
+
+    <select id="selectExistingApplication" resultMap="ApplicationResult">
+        <include refid="applicationSelect"/>
+        WHERE tal.tal_user_id = #{userId}
+          AND app.app_position_id = #{jobId}
+        ORDER BY app.app_id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectCandidateId" resultType="long">
+        SELECT tal_id
+        FROM t_tal
+        WHERE tal_user_id = #{userId}
+          AND tal_company_id = #{companyId}
+        ORDER BY tal_id DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insertCandidate" parameterType="com.ruoyi.system.domain.agent.AgentCandidate">
+        INSERT INTO t_tal (tal_user_id, tal_company_id, tal_resume_id, tal_status, tal_current_round)
+        VALUES (#{userId}, #{companyId}, #{resumeId}, 5, 0)
+    </insert>
+
+    <update id="updateCandidateResume">
+        UPDATE t_tal
+        SET tal_resume_id = #{resumeId}, tal_updated_at = CURRENT_TIMESTAMP
+        WHERE tal_id = #{candidateId}
+          AND tal_user_id = #{userId}
+          AND tal_company_id = #{companyId}
+    </update>
+
+    <insert id="insertApplication" parameterType="com.ruoyi.system.domain.agent.AgentApplication">
+        INSERT INTO t_app_record (
+            app_candidate_id,
+            app_position_id,
+            app_resume_id,
+            app_matched_score,
+            app_status
+        )
+        VALUES (
+            #{candidateId},
+            #{jobId},
+            #{resumeId},
+            #{matchedScore},
+            0
+        )
+    </insert>
+
+    <insert id="insertStatusLog">
+        INSERT INTO t_tal_status_log (
+            tsl_candidate_id,
+            tsl_from_status,
+            tsl_to_status,
+            tsl_reason,
+            tsl_operator_id
+        )
+        VALUES (
+            #{candidateId},
+            0,
+            5,
+            #{reason},
+            #{operatorId}
+        )
+    </insert>
+
+    <select id="selectTimeline" resultType="com.ruoyi.system.domain.agent.AgentTimeline">
+        SELECT
+            CAST(tsl_to_status AS CHAR) AS stage,
+            CASE
+                WHEN tsl_to_status IN (3, 4, 8) THEN 'closed'
+                WHEN tsl_to_status IN (2, 7) THEN 'current'
+                WHEN tsl_to_status = 5 THEN 'processing'
+                ELSE 'done'
+            END AS state,
+            CASE tsl_to_status
+                WHEN 0 THEN '已投递'
+                WHEN 1 THEN '初筛通过'
+                WHEN 2 THEN '面试中'
+                WHEN 3 THEN '未通过'
+                WHEN 4 THEN '已录用'
+                WHEN 5 THEN '企业初筛'
+                WHEN 6 THEN '测评中'
+                WHEN 7 THEN '待面试'
+                WHEN 8 THEN '未通过'
+                WHEN 9 THEN '流程结束'
+                ELSE '投递进度'
+            END AS title,
+            tsl_reason AS description,
+            tsl_created_at AS occurredAt
+        FROM t_tal_status_log
+        WHERE tsl_candidate_id = #{candidateId}
+        ORDER BY tsl_created_at ASC, tsl_id ASC
+    </select>
+</mapper>

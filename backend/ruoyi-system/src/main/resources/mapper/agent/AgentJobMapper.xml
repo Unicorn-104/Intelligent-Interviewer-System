@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.agent.AgentJobMapper">
+
+    <resultMap id="AgentJobResult" type="com.ruoyi.system.domain.agent.AgentJob">
+        <id property="id" column="job_id"/>
+        <result property="title" column="job_title"/>
+        <result property="companyId" column="company_id"/>
+        <result property="companyName" column="company_name"/>
+        <result property="companyLogoUrl" column="company_logo_url"/>
+        <result property="companyIndustry" column="company_industry"/>
+        <result property="companySize" column="company_size"/>
+        <result property="companyCity" column="company_city"/>
+        <result property="companyAddress" column="company_address"/>
+        <result property="companyIntro" column="company_intro"/>
+        <result property="companyDetails" column="company_details"
+                typeHandler="com.ruoyi.system.typehandler.JsonMapTypeHandler"/>
+        <result property="workCity" column="work_city"/>
+        <result property="salaryMin" column="salary_min"/>
+        <result property="salaryMax" column="salary_max"/>
+        <result property="experienceRequired" column="experience_required"/>
+        <result property="educationRequired" column="education_required"/>
+        <result property="jobType" column="job_type"/>
+        <result property="jdJson" column="jd_json"/>
+        <result property="skills" column="skill_names"
+                typeHandler="com.ruoyi.system.typehandler.CsvListTypeHandler"/>
+        <result property="statusCode" column="status_code"/>
+        <result property="publishedAt" column="published_at"/>
+        <result property="appliedFlag" column="applied_flag"/>
+        <result property="applicationId" column="application_id"/>
+        <result property="matchScore" column="match_score"/>
+    </resultMap>
+
+    <sql id="jobSelect">
+        SELECT
+            pos.pos_id AS job_id,
+            pos.pos_title AS job_title,
+            pos.pos_company_id AS company_id,
+            cmp.cmp_name AS company_name,
+            cmp.cmp_logo_url AS company_logo_url,
+            cmp.cmp_industry AS company_industry,
+            cmp.cmp_size AS company_size,
+            cmp.cmp_city AS company_city,
+            cmp.cmp_address AS company_address,
+            cmp.cmp_intro AS company_intro,
+            cmp.cmp_detail_json AS company_details,
+            pos.pos_work_city AS work_city,
+            pos.pos_salary_min AS salary_min,
+            pos.pos_salary_max AS salary_max,
+            pos.pos_experience_required AS experience_required,
+            pos.pos_education_required AS education_required,
+            pos.pos_job_type AS job_type,
+            pos.pos_jd_json AS jd_json,
+            (
+                SELECT GROUP_CONCAT(psk.psk_name ORDER BY psk.psk_required DESC, psk.psk_id SEPARATOR ',')
+                FROM t_pos_skill psk
+                WHERE psk.psk_position_id = pos.pos_id
+            ) AS skill_names,
+            pos.pos_status AS status_code,
+            pos.pos_created_at AS published_at,
+            CASE WHEN EXISTS (
+                SELECT 1
+                FROM t_app_record app
+                INNER JOIN t_tal tal ON tal.tal_id = app.app_candidate_id
+                WHERE tal.tal_user_id = #{userId}
+                  AND app.app_position_id = pos.pos_id
+            ) THEN 1 ELSE 0 END AS applied_flag,
+            (
+                SELECT app.app_id
+                FROM t_app_record app
+                INNER JOIN t_tal tal ON tal.tal_id = app.app_candidate_id
+                WHERE tal.tal_user_id = #{userId}
+                  AND app.app_position_id = pos.pos_id
+                ORDER BY app.app_id DESC
+                LIMIT 1
+            ) AS application_id,
+            (
+                SELECT tal.tal_matched_score
+                FROM t_tal tal
+                WHERE tal.tal_user_id = #{userId}
+                  AND tal.tal_company_id = pos.pos_company_id
+                ORDER BY tal.tal_id DESC
+                LIMIT 1
+            ) AS match_score
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+    </sql>
+
+    <select id="selectJobList" resultMap="AgentJobResult">
+        <include refid="jobSelect"/>
+        WHERE pos.pos_status = 1
+          AND cmp.cmp_status = 1
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (
+                pos.pos_title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR cmp.cmp_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR pos.pos_work_city LIKE CONCAT('%', #{query.keyword}, '%')
+                OR EXISTS (
+                    SELECT 1 FROM t_pos_skill search_skill
+                    WHERE search_skill.psk_position_id = pos.pos_id
+                      AND search_skill.psk_name LIKE CONCAT('%', #{query.keyword}, '%')
+                )
+            )
+        </if>
+        <if test="query.city != null and query.city != ''">
+            AND pos.pos_work_city LIKE CONCAT('%', #{query.city}, '%')
+        </if>
+        <if test="query.district != null and query.district != ''">
+            AND pos.pos_work_city LIKE CONCAT('%', #{query.district}, '%')
+        </if>
+        <if test="query.employmentType != null and query.employmentType != ''">
+            AND (
+                (#{query.employmentType} = 'FULL_TIME' AND pos.pos_job_type = 1)
+                OR (#{query.employmentType} = 'PART_TIME' AND pos.pos_job_type = 2)
+                OR (#{query.employmentType} = 'INTERNSHIP' AND pos.pos_job_type = 3)
+            )
+        </if>
+        <if test="query.education != null">
+            AND pos.pos_education_required &gt;= #{query.education}
+        </if>
+        <choose>
+            <when test="query.sort == 'salary'">ORDER BY pos.pos_salary_max DESC, pos.pos_created_at DESC</when>
+            <when test="query.sort == 'match'">ORDER BY COALESCE(match_score, 0) DESC, pos.pos_created_at DESC</when>
+            <otherwise>ORDER BY pos.pos_created_at DESC, pos.pos_id DESC</otherwise>
+        </choose>
+    </select>
+
+    <select id="selectJobById" resultMap="AgentJobResult">
+        <include refid="jobSelect"/>
+        WHERE pos.pos_id = #{jobId}
+          AND pos.pos_status IN (1, 2)
+          AND cmp.cmp_status = 1
+    </select>
+</mapper>
