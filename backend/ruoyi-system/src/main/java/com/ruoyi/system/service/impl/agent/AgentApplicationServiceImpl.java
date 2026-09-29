@@ -67,12 +67,14 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
             throw new ServiceException("投递记录不存在或无权访问");
         }
         decorate(application);
-        List<AgentTimeline> timeline = applicationMapper.selectTimeline(application.getCandidateId());
-        if (timeline == null || timeline.isEmpty())
+        List<AgentTimeline> timeline = new ArrayList<>();
+        timeline.add(new AgentTimeline("submitted", "done", "已投递", "简历已提交，等待企业处理",
+                application.getAppliedAt() == null ? new Date() : application.getAppliedAt()));
+        List<AgentTimeline> statusTimeline = applicationMapper.selectTimeline(application.getCandidateId(),
+                application.getAppliedAt());
+        if (statusTimeline != null)
         {
-            timeline = new ArrayList<>();
-            timeline.add(new AgentTimeline("5", "processing", "已投递", "简历已提交，等待企业处理",
-                    application.getAppliedAt() == null ? new Date() : application.getAppliedAt()));
+            timeline.addAll(statusTimeline);
         }
         application.setTimeline(timeline);
         return application;
@@ -134,8 +136,6 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         {
             throw new ServiceException("投递失败，请稍后重试");
         }
-        applicationMapper.insertStatusLog(candidateId, "投递成功，等待企业处理", userId);
-
         AgentApplication created = applicationMapper.selectApplicationById(userId, application.getId());
         if (created == null)
         {
@@ -232,8 +232,8 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         }
         return switch (code)
         {
-            case 2, 7 -> "interview";
-            case 3, 4, 8 -> "closed";
+            case 3, 5, 6 -> "interview";
+            case 2, 7, 8 -> "closed";
             default -> "active";
         };
     }
@@ -248,14 +248,13 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         {
             case 0 -> "待处理";
             case 1 -> "初筛通过";
-            case 2 -> "面试中";
-            case 3 -> "未通过";
-            case 4 -> "已录用";
-            case 5 -> "企业初筛";
-            case 6 -> "测评中";
-            case 7 -> "待面试";
-            case 8 -> "未通过";
-            case 9 -> "流程结束";
+            case 2 -> "初筛淘汰";
+            case 3 -> "已约面";
+            case 4 -> "待笔试";
+            case 5 -> "笔试中";
+            case 6 -> "笔试通过";
+            case 7 -> "笔试未通过";
+            case 8 -> "笔试缺考";
             default -> "投递处理中";
         };
     }
