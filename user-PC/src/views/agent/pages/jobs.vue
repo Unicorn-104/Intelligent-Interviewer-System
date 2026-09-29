@@ -1,21 +1,6 @@
 <template>
 <div class="app-shell">
-    <header class="topbar">
-      <div class="topbar-inner">
-        <a class="brand" href="/agent/index" aria-label="返回智聘 AI 首页"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span><span class="brand-tag">求职者工作台</span></a>
-        <nav class="main-nav" aria-label="主导航">
-          <a class="nav-link" href="/agent/index">首页</a>
-          <a class="nav-link active" href="/agent/jobs" aria-current="page">岗位浏览</a>
-          <a class="nav-link" href="/agent/applications">投递跟踪</a>
-          <a class="nav-link" href="/agent/messages">消息通知 <span class="nav-badge" data-unread-badge>3</span></a>
-          <a class="nav-link" href="/agent/profile">个人中心</a>
-        </nav>
-        <div class="topbar-actions">
-          <NotificationBell />
-          <button class="profile-chip" aria-label="打开个人中心"><span class="avatar">林</span><span class="profile-meta"><span class="profile-name">林晓雨</span><span class="profile-role">产品经理</span></span><svg class="profile-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
-        </div>
-      </div>
-    </header>
+    <AgentTopbar active="jobs" />
 
     <main class="main-content">
       <section class="page-header" aria-labelledby="pageTitle">
@@ -94,7 +79,8 @@
 
 <script setup>
 import { onMounted } from 'vue'
-import NotificationBell from '@/components/agent/NotificationBell.vue'
+import AgentTopbar from '@/components/agent/AgentTopbar.vue'
+
 
 onMounted(() => {
   // 岗位数据和交互均为前端模拟，不依赖后端接口。
@@ -210,9 +196,7 @@ onMounted(() => {
       jobCards.forEach((card) => card.addEventListener('click', (event) => {
         if (event.target.closest('button, a')) return;
         card.querySelector('.job-card-link').click();
-      }));
-      document.querySelector('.profile-chip').addEventListener('click', () => { window.__agentNavigate('/agent/profile'); });
-  
+      }));  
       // 列表 / 网格仅提供轻量视觉切换，保持同一组岗位数据。
       const viewButtons = [...document.querySelectorAll('.view-toggle button')];
       viewButtons.forEach((button, index) => button.addEventListener('click', () => {

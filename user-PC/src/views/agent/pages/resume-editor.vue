@@ -1,7 +1,7 @@
 <template>
-<header class="topbar"><div class="topbar-inner"><a class="brand" href="/agent/index"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span></a><nav class="main-nav" aria-label="主导航"><a class="nav-link" href="/agent/index">首页</a><a class="nav-link" href="/agent/jobs">岗位浏览</a><a class="nav-link" href="/agent/applications">投递跟踪</a><a class="nav-link" href="/agent/messages">消息通知 <span class="nav-badge">3</span></a><a class="nav-link active" href="/agent/profile" aria-current="page">个人中心</a></nav><a class="user" href="/agent/profile"><span class="avatar">林</span><strong>林晓雨</strong></a></div></header>
+<AgentTopbar active="" />
   <main class="main">
-    <div class="breadcrumb"><a href="/agent/profile">个人中心</a> / <a href="/agent/profile#resumes">我的简历</a> / 编辑简历</div>
+    <div class="breadcrumb"><a href="/agent/profile-resumes">我的简历</a> / 编辑简历</div>
     <section class="resume-overview"><div><div class="resume-title-row"><input class="resume-title-input" id="resumeTitle" value="产品经理-林晓雨" aria-label="简历名称" /><span class="resume-badge">默认</span></div><div class="update-time">最近保存：今天 10:24</div></div><div><div class="progress-head"><span>简历完整度</span><strong>90%</strong></div><div class="progress-track"><div class="progress-value"></div></div><div class="progress-note">完善项目成果与作品链接，可进一步提升完整度</div></div><div class="usage"><strong>● 正在使用</strong><span>用于 5 个岗位投递</span><a href="/agent/applications">查看投递记录 ›</a></div></section>
     <form id="resumeForm">
       <section class="section"><div class="section-head"><h2>基本信息</h2><span>以下信息将同步至所有投递简历</span></div><div class="section-body"><div class="grid"><div class="field"><label for="name">姓名</label><input id="name" value="林晓雨" required /></div><div class="field"><label for="gender">性别</label><select id="gender"><option>女</option><option>男</option><option>不公开</option></select></div><div class="field"><label for="workStatus">当前状态</label><select id="workStatus"><option>离职-随时到岗</option><option>在职-考虑机会</option><option>在校-寻找实习</option></select></div><div class="field"><label for="city">所在城市</label><input id="city" value="上海" /></div><div class="field"><label for="phone">手机号</label><input id="phone" value="138****6688" /></div><div class="field"><label for="email">联系邮箱</label><input id="email" type="email" value="lin***@qq.com" /></div></div></div></section>
@@ -11,12 +11,13 @@
       <section class="section"><div class="section-head"><h2>技能标签</h2><span>点击标签可删除</span></div><div class="section-body"><div class="skill-wrap" id="skillList"><span class="skill-tag">需求分析<button class="skill-remove" type="button" aria-label="删除需求分析">×</button></span><span class="skill-tag">PRD 撰写<button class="skill-remove" type="button" aria-label="删除 PRD 撰写">×</button></span><span class="skill-tag">Axure / Figma<button class="skill-remove" type="button" aria-label="删除 Axure Figma">×</button></span><span class="skill-tag">SQL<button class="skill-remove" type="button" aria-label="删除 SQL">×</button></span><span class="skill-tag">数据分析<button class="skill-remove" type="button" aria-label="删除数据分析">×</button></span><span class="skill-tag">用户研究<button class="skill-remove" type="button" aria-label="删除用户研究">×</button></span><span class="skill-tag">AI 产品设计<button class="skill-remove" type="button" aria-label="删除 AI 产品设计">×</button></span><span class="skill-tag">项目管理<button class="skill-remove" type="button" aria-label="删除项目管理">×</button></span></div><div class="skill-add"><input id="skillInput" placeholder="输入技能名称" /><button class="secondary" id="addSkill" type="button">添加技能</button></div></div></section>
     </form>
   </main>
-  <div class="savebar"><div class="savebar-inner"><span class="save-note">修改将在点击保存后生效</span><div class="save-actions"><a class="secondary" href="/agent/profile#resumes" style="display:grid;place-items:center;text-decoration:none">取消</a><button class="primary" id="saveResume" type="button">保存修改</button></div></div></div>
+  <div class="savebar"><div class="savebar-inner"><span class="save-note">修改将在点击保存后生效</span><div class="save-actions"><a class="secondary" href="/agent/profile-resumes" style="display:grid;place-items:center;text-decoration:none">取消</a><button class="primary" id="saveResume" type="button">保存修改</button></div></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite">简历已保存</div>
 </template>
 
 <script setup>
 import { onMounted } from 'vue'
+import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { validateResumeDraft } from '@/utils/agentValidation'
 
 onMounted(() => {

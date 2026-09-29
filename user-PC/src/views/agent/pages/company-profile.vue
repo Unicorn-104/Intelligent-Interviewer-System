@@ -1,11 +1,12 @@
 <template>
 <!-- 企业主页保持求职者工作台的全局导航与信息密度 -->
-  <header class="topbar"><div class="topbar-inner"><a class="brand" href="/agent/index"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span><span class="brand-tag">求职者工作台</span></a><nav class="main-nav"><a class="nav-link" href="/agent/index">首页</a><a class="nav-link" href="/agent/jobs">岗位浏览</a><a class="nav-link" href="/agent/applications">投递跟踪</a><a class="nav-link" href="/agent/messages">消息通知</a><a class="nav-link" href="/agent/profile">个人中心</a></nav><div class="profile"><span class="avatar">林</span><span>林晓雨</span></div></div></header>
+  <AgentTopbar active="messages" />
   <main class="page"><a class="back" id="backLink" href="/agent/messages">← 返回消息中心</a><section class="company-hero"><div class="company-logo" id="logo">Z</div><div class="company-info"><h1 id="companyName"></h1><div class="company-meta" id="companyMeta"></div><div class="chips"><span class="chip verified">企业资质已认证</span><span class="chip" id="stage"></span><span class="chip" id="industry"></span></div></div><button class="follow" id="followButton" type="button">＋ 关注企业</button></section><div class="layout"><div><section class="section"><h2>公司介绍</h2><p id="description"></p><div class="facts"><div class="fact"><strong id="employeeCount"></strong><span>员工规模</span></div><div class="fact"><strong id="jobCount"></strong><span>在招岗位</span></div><div class="fact"><strong>98%</strong><span>简历处理率</span></div><div class="fact"><strong>2 小时</strong><span>平均反馈</span></div></div></section><section class="section"><h2>热招岗位</h2><div class="jobs" id="jobs"></div></section></div><aside><section class="side"><h2>企业信息</h2><div class="info-row"><b>办公地址</b><span id="address"></span></div><div class="info-row"><b>成立时间</b><span id="founded"></span></div><div class="info-row"><b>企业官网</b><span id="website"></span></div></section><section class="side"><h2>招聘联系人</h2><div class="contact"><div class="contact-avatar" id="contactAvatar"></div><div><strong id="contactName"></strong><span id="contactRole"></span></div></div><a class="contact-link" id="contactLink" href="#">查看个人主页</a></section></aside></div></main><div class="toast" id="toast" role="status"></div>
 </template>
 
 <script setup>
 import { onMounted } from 'vue'
+import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 
 onMounted(() => {
   // 企业资料和对应联系人使用同一组查询参数映射。
