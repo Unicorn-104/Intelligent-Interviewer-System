@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.EnterpriseSettingsMapper">
+
+    <!-- ============ 通知模板 ============ -->
+
+    <select id="selectTemplates" resultType="java.util.LinkedHashMap">
+        select tpl_id as id, tpl_code as code, tpl_title as title, tpl_content as content,
+               tpl_channel as channel, tpl_status as status,
+               case when tpl_company_id = 0 then 1 else 0 end as readonly
+        from t_msg_template
+        where tpl_company_id in (0, #{companyId})
+        order by tpl_id
+    </select>
+
+    <insert id="insertTemplate">
+        insert into t_msg_template (tpl_code, tpl_company_id, tpl_title, tpl_content, tpl_channel, tpl_status)
+        values (#{code}, #{companyId}, #{title}, #{content}, #{channel}, 1)
+    </insert>
+
+    <update id="updateTemplate">
+        update t_msg_template
+        set tpl_title = #{title}, tpl_content = #{content}, tpl_channel = #{channel}, tpl_status = #{status}
+        where tpl_id = #{id} and tpl_company_id = #{companyId}
+    </update>
+
+    <delete id="deleteTemplate">
+        delete from t_msg_template where tpl_id = #{id} and tpl_company_id = #{companyId}
+    </delete>
+
+    <!-- ============ 组织架构 ============ -->
+
+    <select id="selectDepts" resultType="java.util.LinkedHashMap">
+        select d.dept_id as id, d.parent_id as parentId, d.dept_name as name, d.leader as leader,
+               d.order_num as orderNum, d.status as status,
+               (select count(*) from t_cmp_binding b where b.bnd_company_id = d.company_id and b.bnd_department = d.dept_name and b.bnd_status = 1) as members,
+               (select count(*) from t_pos p where p.pos_company_id = d.company_id and p.pos_status = 1 and p.pos_department = d.dept_name) as jobs
+        from t_cmp_dept d
+        where d.company_id = #{companyId}
+        order by d.parent_id, d.order_num
+    </select>
+
+    <select id="countDepts" resultType="int">
+        select count(*) from t_cmp_dept where company_id = #{companyId}
+    </select>
+
+    <select id="countMembers" resultType="int">
+        select count(*) from t_cmp_binding where bnd_company_id = #{companyId} and bnd_status = 1
+    </select>
+
+    <select id="countActivePositions" resultType="int">
+        select count(*) from t_pos where pos_company_id = #{companyId} and pos_status = 1
+    </select>
+
+    <insert id="insertDept">
+        insert into t_cmp_dept (company_id, parent_id, dept_name, leader, order_num)
+        values (#{companyId}, #{parentId}, #{deptName}, #{leader}, #{orderNum})
+    </insert>
+
+    <update id="updateDept">
+        update t_cmp_dept
+        set dept_name = #{deptName}, leader = #{leader}, order_num = #{orderNum}, status = #{status}
+        where dept_id = #{id} and company_id = #{companyId}
+    </update>
+
+    <delete id="deleteDept">
+        delete from t_cmp_dept where dept_id = #{id} and company_id = #{companyId}
+    </delete>
+
+    <select id="countDeptChildren" resultType="int">
+        select count(*) from t_cmp_dept where parent_id = #{id}
+    </select>
+
+    <select id="countDeptMembers" resultType="int">
+        select count(*) from t_cmp_binding b
+        join t_cmp_dept d on d.dept_name = b.bnd_department and d.company_id = b.bnd_company_id
+        where d.dept_id = #{id} and b.bnd_company_id = #{companyId} and b.bnd_status = 1
+    </select>
+
+    <!-- ============ 面试集成 ============ -->
+
+    <select id="selectIntegrations" resultType="java.util.LinkedHashMap">
+        select provider_code as provider, status as status, config_json as configJson,
+               date_format(updated_at, '%Y-%m-%d %H:%i') as updatedAt
+        from t_cmp_integration
+        where company_id = #{companyId}
+    </select>
+
+    <update id="updateIntegration">
+        update t_cmp_integration
+        set status = #{status}, config_json = #{configJson}
+        where company_id = #{companyId} and provider_code = #{provider}
+    </update>
+
+    <!-- ============ 用户权限 ============ -->
+
+    <select id="selectMembers" resultType="java.util.LinkedHashMap">
+        select u.user_id as userId, u.nick_name as nickName, u.user_name as userName,
+               b.bnd_department as dept, b.bnd_job_title as jobTitle,
+               (select r.role_id from sys_user_role ur join sys_role r on r.role_id = ur.role_id
+                 where ur.user_id = u.user_id and r.role_id in (101,102,103) limit 1) as roleId,
+               case when u.status = '0' then 1 else 0 end as enabled
+        from t_cmp_binding b
+        join sys_user u on u.user_id = b.bnd_user_id
+        where b.bnd_company_id = #{companyId} and u.del_flag = '0'
+        order by u.user_id
+    </select>
+
+    <delete id="deleteUserBizRoles">
+        delete from sys_user_role where user_id = #{userId} and role_id in (101, 102, 103)
+    </delete>
+
+    <update id="updateUserStatus">
+        update sys_user u
+        set u.status = #{status}
+        where u.user_id = #{userId}
+          and exists (select 1 from t_cmp_binding b where b.bnd_user_id = #{userId} and b.bnd_company_id = #{companyId})
+    </update>
+
+    <insert id="insertUser">
+        insert into sys_user (user_name, nick_name, email, password, status, del_flag, create_by, create_time, user_type)
+        values (#{userName}, #{nickName}, #{email}, #{password}, '0', '0', 'enterprise', now(), '01')
+    </insert>
+
+    <select id="selectUserIdByName" resultType="Long">
+        select user_id from sys_user where user_name = #{userName} limit 1
+    </select>
+
+    <insert id="insertBinding">
+        insert into t_cmp_binding (bnd_user_id, bnd_company_id, bnd_job_title, bnd_department, bnd_status, bnd_created_at, bnd_updated_at)
+        values (#{userId}, #{companyId}, #{jobTitle}, #{jobTitle}, 1, now(), now())
+    </insert>
+
+    <insert id="insertUserRole">
+        insert into sys_user_role (user_id, role_id) values (#{userId}, #{roleId})
+    </insert>
+
+    <!-- ============ 数据管理（备份时间记录） ============ -->
+
+    <select id="selectConfigValue" resultType="String">
+        select config_value from sys_config where config_key = #{key} limit 1
+    </select>
+
+    <update id="updateConfigValue">
+        update sys_config set config_value = #{value} where config_key = #{key}
+    </update>
+
+    <insert id="insertConfig">
+        insert into sys_config (config_name, config_key, config_value, config_type, create_by, create_time)
+        values (#{name}, #{key}, #{value}, 'Y', 'enterprise', now())
+    </insert>
+
+    <!-- ============ 数据管理（导出/清理） ============ -->
+
+    <select id="selectCandidateExportRows" resultType="java.util.LinkedHashMap">
+        select u.nick_name as candidateName, p.pos_title as positionTitle,
+               t.tal_status as status, date_format(t.tal_created_at, '%Y-%m-%d %H:%i') as createdAt
+        from t_tal t
+        join sys_user u on u.user_id = t.tal_user_id
+        left join t_process_instance i on i.pin_id = t.tal_process_instance_id
+        left join t_pos p on p.pos_id = i.pin_position_id
+        where t.tal_company_id = #{companyId}
+        order by t.tal_created_at desc
+    </select>
+
+    <select id="selectCleanupRows" resultType="java.util.LinkedHashMap">
+        select t.tal_id as talId, u.nick_name as candidateName
+        from t_tal t
+        join sys_user u on u.user_id = t.tal_user_id
+        where t.tal_company_id = #{companyId}
+          and t.tal_status in (3, 4)
+          and t.tal_updated_at &lt; date_sub(now(), interval #{years} year)
+    </select>
+
+    <delete id="deleteStatusLogs">
+        delete from t_tal_status_log where tsl_candidate_id in
+        <foreach collection="talIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+    </delete>
+
+    <delete id="deleteCandidates">
+        delete from t_tal where tal_company_id = #{companyId} and tal_id in
+        <foreach collection="talIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+    </delete>
+
+</mapper>
