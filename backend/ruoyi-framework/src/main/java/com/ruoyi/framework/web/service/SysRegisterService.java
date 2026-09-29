@@ -36,20 +36,36 @@ public class SysRegisterService
     @Autowired
     private RedisCache redisCache;
 
+    @Autowired
+    private SmsCodeService smsCodeService;
+
     /**
      * 注册
      */
     public String register(RegisterBody registerBody)
     {
-        String msg = "", username = registerBody.getUsername(), password = registerBody.getPassword();
+        String msg = "", phone = registerBody.getPhone(), username = registerBody.getUsername(),
+                password = registerBody.getPassword();
         SysUser sysUser = new SysUser();
-        sysUser.setUserName(username);
 
-        // 验证码开关
-        boolean captchaEnabled = configService.selectCaptchaEnabled();
-        if (captchaEnabled)
+        boolean phoneRegister = StringUtils.isNotEmpty(phone);
+        if (phoneRegister)
         {
-            validateCaptcha(username, registerBody.getCode(), registerBody.getUuid());
+            phone = phone.trim();
+            smsCodeService.validateCode(phone, "register", registerBody.getSmsCode());
+            username = phone;
+            sysUser.setUserName(phone);
+            sysUser.setPhonenumber(phone);
+        }
+        else
+        {
+            sysUser.setUserName(username);
+            // 兼容后台旧注册流程：未传手机号时继续校验图形验证码。
+            boolean captchaEnabled = configService.selectCaptchaEnabled();
+            if (captchaEnabled)
+            {
+                validateCaptcha(username, registerBody.getCode(), registerBody.getUuid());
+            }
         }
 
         if (StringUtils.isEmpty(username))
@@ -69,6 +85,14 @@ public class SysRegisterService
                 || password.length() > UserConstants.PASSWORD_MAX_LENGTH)
         {
             msg = "密码长度必须在5到20个字符之间";
+        }
+        else if (phoneRegister && !smsCodeService.isValidPhone(phone))
+        {
+            msg = "请输入正确的手机号";
+        }
+        else if (phoneRegister && !userService.checkPhoneUnique(sysUser))
+        {
+            msg = "该手机号已注册";
         }
         else if (!userService.checkUserNameUnique(sysUser))
         {
