@@ -125,6 +125,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 	    <include refid="selectUserVo"/>
 		where u.user_name = #{userName} and u.del_flag = '0'
 	</select>
+
+	<select id="selectUserByPhone" parameterType="String" resultMap="SysUserResult">
+	    <include refid="selectUserVo"/>
+		where u.phonenumber = #{phonenumber} and u.del_flag = '0'
+	</select>
 	
 	<select id="selectUserById" parameterType="Long" resultMap="SysUserResult">
 		<include refid="selectUserVo"/>
@@ -224,4 +229,4 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         </foreach> 
  	</delete>
 	
-</mapper> 
+</mapper>

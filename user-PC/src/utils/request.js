@@ -22,7 +22,7 @@ const service = axios.create({
 
 function isPublicAuthRequest(config) {
   const url = config?.url || ''
-  return ['/login', '/register', '/captchaImage'].some(path => url === path || url.endsWith(path))
+  return ['/login', '/register', '/captchaImage', '/sms/code'].some(path => url === path || url.endsWith(path))
 }
 
 // request拦截器
