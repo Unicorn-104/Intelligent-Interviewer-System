@@ -1,5 +1,5 @@
 <template>
-<header class="topbar"><div class="topbar-inner"><a class="brand" href="/agent/index"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span><span class="brand-tag">求职者工作台</span></a><nav class="main-nav" aria-label="主导航"><a class="nav-link" href="/agent/index">首页</a><a class="nav-link" href="/agent/jobs">岗位浏览</a><a class="nav-link active" href="/agent/applications" aria-current="page">投递跟踪</a><a class="nav-link" href="/agent/messages">消息通知 <span class="nav-badge" data-unread-badge>3</span></a><a class="nav-link" href="/agent/profile">个人中心</a></nav><div class="topbar-actions"><NotificationBell /><button class="profile-chip" aria-label="打开个人中心"><span class="avatar">林</span><span class="profile-meta"><span class="profile-name">林晓雨</span><span class="profile-role">产品经理</span></span></button></div></div></header>
+<AgentTopbar active="applications" />
   <main class="main"><div class="page-heading"><h1>投递跟踪</h1><div class="page-meta">共 12 条投递记录 · 数据更新于今天 09:00</div></div>
     <section class="summary-grid" aria-label="投递数据总览">
       <article class="summary-card"><div class="summary-top"><span>总投递数</span><span class="summary-icon"><svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M8 11v5M12 10v7M16 12v4"/></svg></span></div><strong class="summary-value">12</strong><div class="summary-note">较上周新增 2 条</div></article>
@@ -20,15 +20,15 @@
 
 <script setup>
 import { onMounted } from 'vue'
-import NotificationBell from '@/components/agent/NotificationBell.vue'
+import AgentTopbar from '@/components/agent/AgentTopbar.vue'
+
 
 onMounted(() => {
   // 展开单条进度；同时支持键盘 Enter 和 Space。
       const items=[...document.querySelectorAll('.application-item')];
       function toggleItem(item){const open=item.classList.toggle('open');item.querySelector('.application-summary').setAttribute('aria-expanded',String(open));item.querySelector('.expand-button').setAttribute('aria-label',(open?'收起':'展开')+item.querySelector('.application-title').textContent+'进度')}
       items.forEach(item=>{const summary=item.querySelector('.application-summary');item.querySelector('.expand-button').addEventListener('click',event=>{event.stopPropagation();toggleItem(item)});summary.addEventListener('click',event=>{if(!event.target.closest('a,button'))toggleItem(item)});summary.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleItem(item)}});summary.addEventListener('dblclick',event=>{if(!event.target.closest('a,button'))window.__agentNavigate(`/agent/application-detail?id=${item.dataset.id}`)})});
-      const filter=document.getElementById('statusFilter'),empty=document.getElementById('emptyState');filter.addEventListener('change',()=>{let visible=0;items.forEach(item=>{const show=filter.value==='all'||item.dataset.filter.includes(filter.value);item.hidden=!show;if(show)visible++});empty.classList.toggle('visible',visible===0)});
-      document.querySelector('.profile-chip').addEventListener('click',()=>{window.__agentNavigate('/agent/profile')});
+      const filter=document.getElementById('statusFilter'),empty=document.getElementById('emptyState');filter.addEventListener('change',()=>{let visible=0;items.forEach(item=>{const show=filter.value==='all'||item.dataset.filter.includes(filter.value);item.hidden=!show;if(show)visible++});empty.classList.toggle('visible',visible===0)});
 })
 </script>
 

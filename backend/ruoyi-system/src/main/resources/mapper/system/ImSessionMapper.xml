@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.ImSessionMapper">
+
+    <resultMap type="ImSession" id="ImSessionResult">
+        <id     property="sessionId"      column="ims_id"               />
+        <result property="userAId"        column="ims_user_a_id"        />
+        <result property="userBId"        column="ims_user_b_id"        />
+        <result property="lastMessage"    column="ims_last_message"     />
+        <result property="lastMessageAt"  column="ims_last_message_at"  />
+        <result property="unreadA"        column="ims_unread_a"         />
+        <result property="unreadB"        column="ims_unread_b"         />
+        <result property="createTime"     column="ims_created_at"       />
+        <result property="updateTime"     column="ims_updated_at"       />
+        <result property="peerId"         column="peer_id"              />
+        <result property="peerName"       column="peer_name"            />
+        <result property="peerAvatar"     column="peer_avatar"          />
+        <result property="unread"         column="peer_unread"          />
+    </resultMap>
+
+    <sql id="sessionPeerColumns">
+        CASE WHEN s.ims_user_a_id = #{userId} THEN s.ims_user_b_id ELSE s.ims_user_a_id END AS peer_id,
+        CASE WHEN s.ims_user_a_id = #{userId} THEN ub.nick_name ELSE ua.nick_name END AS peer_name,
+        CASE WHEN s.ims_user_a_id = #{userId} THEN ub.avatar ELSE ua.avatar END AS peer_avatar,
+        CASE WHEN s.ims_user_a_id = #{userId} THEN s.ims_unread_a ELSE s.ims_unread_b END AS peer_unread
+    </sql>
+
+    <select id="selectSessionListByUser" parameterType="Long" resultMap="ImSessionResult">
+        select s.ims_id, s.ims_user_a_id, s.ims_user_b_id, s.ims_last_message, s.ims_last_message_at,
+               s.ims_unread_a, s.ims_unread_b, s.ims_created_at, s.ims_updated_at,
+               <include refid="sessionPeerColumns"/>
+        from t_im_session s
+        left join sys_user ua on ua.user_id = s.ims_user_a_id
+        left join sys_user ub on ub.user_id = s.ims_user_b_id
+        where s.ims_user_a_id = #{userId} or s.ims_user_b_id = #{userId}
+        order by s.ims_last_message_at desc, s.ims_id desc
+    </select>
+
+    <select id="selectSessionByIdAndUser" resultMap="ImSessionResult">
+        select s.ims_id, s.ims_user_a_id, s.ims_user_b_id, s.ims_last_message, s.ims_last_message_at,
+               s.ims_unread_a, s.ims_unread_b, s.ims_created_at, s.ims_updated_at,
+               <include refid="sessionPeerColumns"/>
+        from t_im_session s
+        left join sys_user ua on ua.user_id = s.ims_user_a_id
+        left join sys_user ub on ub.user_id = s.ims_user_b_id
+        where s.ims_id = #{sessionId} and (s.ims_user_a_id = #{userId} or s.ims_user_b_id = #{userId})
+    </select>
+
+    <select id="selectSessionByUsers" resultMap="ImSessionResult">
+        select ims_id, ims_user_a_id, ims_user_b_id, ims_last_message, ims_last_message_at,
+               ims_unread_a, ims_unread_b, ims_created_at, ims_updated_at
+        from t_im_session
+        where (ims_user_a_id = #{userAId} and ims_user_b_id = #{userBId})
+           or (ims_user_a_id = #{userBId} and ims_user_b_id = #{userAId})
+        limit 1
+    </select>
+
+    <insert id="insertSession" parameterType="ImSession" useGeneratedKeys="true" keyProperty="sessionId">
+        insert into t_im_session (ims_user_a_id, ims_user_b_id, ims_created_at, ims_updated_at)
+        values (#{userAId}, #{userBId}, sysdate(), sysdate())
+    </insert>
+
+    <update id="updateSessionOnSend">
+        update t_im_session
+        set ims_last_message = #{lastMessage},
+            ims_last_message_at = sysdate(),
+            ims_updated_at = sysdate(),
+            ims_unread_a = if(ims_user_a_id = #{receiverId}, ims_unread_a + 1, ims_unread_a),
+            ims_unread_b = if(ims_user_b_id = #{receiverId}, ims_unread_b + 1, ims_unread_b)
+        where ims_id = #{sessionId}
+    </update>
+
+    <update id="clearUnread">
+        update t_im_session
+        set ims_unread_a = if(ims_user_a_id = #{userId}, 0, ims_unread_a),
+            ims_unread_b = if(ims_user_b_id = #{userId}, 0, ims_unread_b),
+            ims_updated_at = sysdate()
+        where ims_id = #{sessionId} and (ims_user_a_id = #{userId} or ims_user_b_id = #{userId})
+    </update>
+
+    <update id="clearAllUnread">
+        update t_im_session
+        set ims_unread_a = if(ims_user_a_id = #{userId}, 0, ims_unread_a),
+            ims_unread_b = if(ims_user_b_id = #{userId}, 0, ims_unread_b),
+            ims_updated_at = sysdate()
+        where ims_user_a_id = #{userId} or ims_user_b_id = #{userId}
+    </update>
+
+    <select id="sumUnreadByUser" parameterType="Long" resultType="int">
+        select coalesce(sum(if(ims_user_a_id = #{userId}, ims_unread_a, ims_unread_b)), 0)
+        from t_im_session
+        where ims_user_a_id = #{userId} or ims_user_b_id = #{userId}
+    </select>
+
+</mapper>

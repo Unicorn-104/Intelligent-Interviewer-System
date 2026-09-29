@@ -1,0 +1,52 @@
+// ========================================
+// 企业级前端设计规范 - 全局 SCSS 变量
+// ========================================
+
+// ---------- 主题色 ----------
+$app-color-primary: #136bfd;
+$app-color-success: #22c55e;
+$app-color-warning: #f59e0b;
+$app-color-danger: #ef4444;
+$app-color-info: #909399;
+
+// ---------- 边框与背景 ----------
+$app-border-color-base: #dcdfe6;
+$app-border-color-light: #e4e7ed;
+$app-bg-color-page: #f0f2f5;
+$app-bg-color-white: #ffffff;
+
+// ---------- 间距系统 (8px grid) ----------
+$app-spacing-xxs: 4px;
+$app-spacing-xs: 8px;
+$app-spacing-sm: 12px;
+$app-spacing-md: 16px;
+$app-spacing-lg: 24px;
+$app-spacing-xl: 32px;
+
+// ---------- 圆角 ----------
+$app-border-radius-base: 4px;
+$app-border-radius-md: 6px;
+$app-border-radius-lg: 8px;
+$app-border-radius-round: 20px;
+
+// ---------- 阴影 ----------
+$app-shadow-card: 0 2px 8px rgba(0, 0, 0, 0.08);
+$app-shadow-dropdown: 0 2px 12px rgba(0, 0, 0, 0.1);
+$app-shadow-modal: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+// ---------- 字号 ----------
+$app-font-size-xs: 12px;
+$app-font-size-sm: 13px;
+$app-font-size-base: 14px;
+$app-font-size-md: 15px;
+$app-font-size-lg: 16px;
+$app-font-size-xl: 18px;
+
+// ---------- 断点 (响应式) ----------
+$app-breakpoint-xs: 480px;
+$app-breakpoint-sm: 768px;
+$app-breakpoint-md: 992px;
+$app-breakpoint-lg: 1200px;
+
+// ---------- 过渡动画 ----------
+$app-transition-duration: 0.3s;

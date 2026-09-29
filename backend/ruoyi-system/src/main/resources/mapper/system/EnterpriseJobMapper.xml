@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.EnterpriseJobMapper">
+
+    <select id="selectJobList" resultType="java.util.LinkedHashMap">
+        select pos_id as posId, pos_title as title, pos_department as dept, pos_work_city as city,
+               pos_salary_min as salaryMin, pos_salary_max as salaryMax,
+               pos_experience_required as experience, pos_education_required as education,
+               pos_status as status, date_format(pos_created_at, '%m-%d') as date,
+               pos_jd_json as jdJson,
+               (select count(*) from t_process_instance pi where pi.pin_position_id = p.pos_id) as applicantCount
+        from t_pos p
+        where p.pos_company_id = #{companyId}
+        <if test="keyword != null and keyword != ''">
+            and (p.pos_title like concat('%', #{keyword}, '%') or p.pos_department like concat('%', #{keyword}, '%'))
+        </if>
+        <if test="dept != null and dept != '' and dept != '全部部门'">
+            and p.pos_department = #{dept}
+        </if>
+        <if test="status != null">
+            and p.pos_status = #{status}
+        </if>
+        order by p.pos_created_at desc, p.pos_id desc
+    </select>
+
+    <select id="selectJobDepartments" resultType="java.lang.String">
+        select distinct pos_department from t_pos
+        where pos_company_id = #{companyId} and pos_department is not null and pos_department != ''
+        order by pos_department
+    </select>
+
+    <update id="updateJobStatus">
+        update t_pos set pos_status = #{status}
+        where pos_id = #{posId} and pos_company_id = #{companyId}
+    </update>
+
+    <insert id="insertJob">
+        insert into t_pos (pos_company_id, pos_publisher_id, pos_title, pos_department, pos_work_city,
+                           pos_salary_min, pos_salary_max, pos_experience_required, pos_education_required,
+                           pos_job_type, pos_jd_json, pos_status)
+        values (#{companyId}, #{publisherId}, #{title}, #{dept}, #{city},
+                #{salaryMin}, #{salaryMax}, #{experience}, #{education},
+                #{jobType}, #{jdJson}, #{status})
+    </insert>
+
+    <select id="selectJobById" resultType="java.util.LinkedHashMap">
+        select pos_id as posId, pos_title as title, pos_department as dept, pos_work_city as city,
+               pos_salary_min as salaryMin, pos_salary_max as salaryMax,
+               pos_experience_required as experience, pos_education_required as education,
+               pos_job_type as jobType, pos_status as status,
+               date_format(pos_created_at, '%Y-%m-%d') as date,
+               pos_jd_json as jdJson, pos_process_template_id as templateId,
+               (select ptl_name from t_process_template where ptl_id = p.pos_process_template_id) as templateName,
+               (select ptl_version from t_process_template where ptl_id = p.pos_process_template_id) as templateVersion
+        from t_pos p
+        where p.pos_id = #{posId} and p.pos_company_id = #{companyId}
+    </select>
+
+    <select id="selectJobFunnel" resultType="java.util.LinkedHashMap">
+        select count(*) as total,
+               sum(case when t.tal_status in (1,2,4,5,7) then 1 else 0 end) as passed,
+               sum(case when t.tal_status = 2 then 1 else 0 end) as interviewing,
+               sum(case when t.tal_status = 3 then 1 else 0 end) as rejected,
+               sum(case when t.tal_status = 4 then 1 else 0 end) as offered,
+               sum(case when t.tal_status = 5 then 1 else 0 end) as hired
+        from t_process_instance pi
+        join t_tal t on t.tal_id = pi.pin_candidate_id
+        where pi.pin_position_id = #{posId}
+    </select>
+
+    <select id="selectJobCandidates" resultType="java.util.LinkedHashMap">
+        select pi.pin_id as instanceId, t.tal_id as talId, u.user_id as userId,
+               ifnull(u.nick_name, u.user_name) as name,
+               ifnull(t.tal_matched_score, 0) as matchScore,
+               (select dict_label from sys_dict_data where dict_type = 'candidate_status' and dict_value = cast(t.tal_status as char) collate utf8mb4_unicode_ci limit 1) as statusLabel,
+               t.tal_status as statusCode,
+               (select psg.psg_name from t_process_stage psg where psg.psg_id = pi.pin_current_stage_id) as currentStage
+        from t_process_instance pi
+        join t_tal t on t.tal_id = pi.pin_candidate_id
+        join sys_user u on u.user_id = t.tal_user_id
+        where pi.pin_position_id = #{posId}
+        order by t.tal_matched_score desc
+    </select>
+
+    <select id="selectJobStages" resultType="java.util.LinkedHashMap">
+        select s.psg_name as name, s.psg_type as type, s.psg_sort_order as sortOrder
+        from t_pos p
+        join t_process_stage s on s.psg_template_id = p.pos_process_template_id
+        where p.pos_id = #{posId}
+        order by s.psg_sort_order
+    </select>
+
+    <select id="selectTemplateByPos" resultType="java.util.LinkedHashMap">
+        select t.ptl_id as templateId, t.ptl_name as name, t.ptl_version as version
+        from t_pos p
+        join t_process_template t on t.ptl_id = p.pos_process_template_id
+        where p.pos_id = #{posId} and p.pos_company_id = #{companyId}
+    </select>
+
+    <select id="selectStagesByTemplate" resultType="java.util.LinkedHashMap">
+        select psg_name as name, psg_type as type, psg_sort_order as sortOrder,
+               psg_is_required as required, psg_pass_threshold as threshold,
+               psg_interviewer_config_json as configJson
+        from t_process_stage
+        where psg_template_id = #{templateId}
+        order by psg_sort_order
+    </select>
+
+    <insert id="insertTemplate" useGeneratedKeys="true" keyProperty="templateId">
+        insert into t_process_template (ptl_company_id, ptl_name, ptl_position_id, ptl_version, ptl_status)
+        values (#{companyId}, #{name}, #{posId}, 'v1.0', 1)
+    </insert>
+
+    <select id="selectLatestTemplateIdByPos" resultType="java.lang.Long">
+        select max(ptl_id) from t_process_template where ptl_position_id = #{posId}
+    </select>
+
+    <update id="bindPosTemplate">
+        update t_pos set pos_process_template_id = #{templateId}
+        where pos_id = #{posId} and pos_company_id = #{companyId}
+    </update>
+
+    <update id="bumpTemplateVersion">
+        update t_process_template
+        set ptl_version = concat('v', cast(cast(substring(ptl_version, 2) as decimal(6,1)) + 0.1 as char))
+        where ptl_id = #{templateId}
+    </update>
+
+    <update id="renameTemplate">
+        update t_process_template set ptl_name = #{name} where ptl_id = #{templateId}
+    </update>
+
+    <delete id="deleteStagesByTemplate">
+        delete from t_process_stage where psg_template_id = #{templateId}
+    </delete>
+
+    <insert id="insertStage">
+        insert into t_process_stage (psg_template_id, psg_name, psg_type, psg_sort_order, psg_is_required, psg_pass_threshold, psg_interviewer_config_json)
+        values (#{templateId}, #{name}, #{type}, #{sortOrder}, #{required}, #{threshold}, #{configJson})
+    </insert>
+
+</mapper>

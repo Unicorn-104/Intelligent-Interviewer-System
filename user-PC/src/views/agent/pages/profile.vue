@@ -1,10 +1,10 @@
 <template>
-<header class="topbar"><div class="topbar-inner"><a class="brand" href="/agent/index"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span><span class="brand-tag">求职者工作台</span></a><nav class="main-nav" aria-label="主导航"><a class="nav-link" href="/agent/index">首页</a><a class="nav-link" href="/agent/jobs">岗位浏览</a><a class="nav-link" href="/agent/applications">投递跟踪</a><a class="nav-link" href="/agent/messages">消息通知 <span class="nav-badge" data-unread-badge>3</span></a><a class="nav-link active" href="/agent/profile" aria-current="page">个人中心</a></nav><div class="top-actions"><NotificationBell /><div class="profile-mini"><span class="mini-avatar" id="miniAvatar">林</span><strong id="miniName">林晓雨</strong></div></div></div></header>
+<AgentTopbar active="" />
   <main class="main">
-    <div class="breadcrumbs">首页 / 个人中心</div>
+    <div class="breadcrumbs">首页 / 账号功能</div>
     <section class="profile-hero" aria-labelledby="profileTitle"><div class="identity"><div class="avatar-wrap"><div class="profile-avatar" id="profileAvatar">林</div><label class="avatar-edit" for="avatarInput" title="更换头像"><svg viewBox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v12H4Z"/><circle cx="12" cy="13" r="3"/></svg></label><input id="avatarInput" type="file" accept="image/*" hidden /></div><div><h1 id="profileTitle">林晓雨</h1><div class="identity-meta"><span>产品经理</span><span>上海</span><span>求职状态：在看机会</span></div><p class="identity-bio">5 年互联网产品经验，关注 AI 应用、企业服务与智能招聘方向。</p></div></div><div class="completion"><div class="completion-head"><span>个人资料完整度</span><strong>88%</strong></div><div class="completion-track"><div class="completion-value"></div></div><p>补充作品集与项目成果，可提升岗位推荐准确度。</p></div></section>
     <div class="workspace">
-      <aside class="side-nav" aria-label="个人中心功能"><button class="side-button active" data-view="basic"><span class="side-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>基础资料</button><button class="side-button" data-view="resumes"><span class="side-icon"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6Z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></span>我的简历<span class="side-count">3</span></button><button class="side-button" data-view="security"><span class="side-icon"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>账号安全</button></aside>
+      <aside class="side-nav" aria-label="账号功能"><button class="side-button active" data-view="basic"><span class="side-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>基础资料</button><button class="side-button" data-view="resumes"><span class="side-icon"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6Z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></span>我的简历<span class="side-count">3</span></button><button class="side-button" data-view="security"><span class="side-icon"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>账号安全</button></aside>
       <section class="content-panel">
         <div class="view active" id="view-basic"><form class="section-card" id="profileForm"><div class="section-head"><div><h2>基础资料</h2><p>用于企业联系、职位推荐和面试安排</p></div></div><div class="form-body"><div class="form-grid"><div class="field"><label for="nickname">个人昵称</label><input id="nickname" value="晓雨" /></div><div class="field"><label for="realname">真实姓名</label><input id="realname" value="林晓雨" /></div><div class="field"><label for="gender">性别</label><select id="gender"><option>女</option><option>男</option><option>不公开</option></select></div><div class="field"><label for="status">当前状态</label><select id="status"><option>在职-考虑机会</option><option>离职-随时到岗</option><option>在校-寻找实习</option><option>暂不考虑</option></select></div><div class="field"><label for="city">所在城市</label><input id="city" value="上海" /></div><div class="field"><label for="phone">手机号码</label><input id="phone" value="138****6688" /></div><div class="field"><label for="email">联系邮箱</label><input id="email" type="email" value="lin***@qq.com" /></div><div class="field"><label for="role">期望岗位</label><input id="role" value="AI 产品经理" /></div><div class="field full"><label for="bio">个人简介</label><textarea id="bio">5 年互联网产品经验，关注 AI 应用、企业服务与智能招聘方向。</textarea><div class="field-note">建议突出行业经验、核心能力和期望方向。</div></div></div></div><div class="form-footer"><span>以上信息仅在获得你的授权后向企业展示</span><div class="button-row"><button class="secondary-button" type="reset">取消</button><button class="primary-button" type="submit">保存修改</button></div></div></form></div>
         <div class="view" id="view-resumes"><section class="section-card"><div class="section-head"><div><h2>我的简历库</h2><p>管理不同求职方向的简历，投递时可自由选择</p></div><div style="display:flex;align-items:center;gap:8px"><button class="secondary-button" id="uploadResume" type="button">上传 PDF 简历</button><button class="primary-button" id="createResume" type="button">新建简历</button><input id="resumeFileInput" type="file" accept="application/pdf,.pdf" hidden></div></div><div class="resume-list">
@@ -22,17 +22,26 @@
 
 <script setup>
 import { onMounted } from 'vue'
-import NotificationBell from '@/components/agent/NotificationBell.vue'
+import AgentTopbar from '@/components/agent/AgentTopbar.vue'
+
 import { validateAvatarFile, validateResumeFile } from '@/utils/agentValidation'
+
+const props = defineProps({
+  defaultView: {
+    type: String,
+    default: 'basic'
+  }
+})
 
 onMounted(() => {
   const views=[...document.querySelectorAll('.view')],tabs=[...document.querySelectorAll('.side-button')],toast=document.getElementById('toast');let toastTimer;
       function showToast(text){toast.textContent=text;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2400)}
-      function setView(name){tabs.forEach(tab=>tab.classList.toggle('active',tab.dataset.view===name));views.forEach(view=>view.classList.toggle('active',view.id===`view-${name}`));history.replaceState(null,'',`/agent/profile#${name}`)}
+      const viewPaths={basic:'/agent/profile-basic',resumes:'/agent/profile-resumes',security:'/agent/profile-security'}
+      function setView(name,updatePath=true){const target=viewPaths[name]?name:'basic';tabs.forEach(tab=>tab.classList.toggle('active',tab.dataset.view===target));views.forEach(view=>view.classList.toggle('active',view.id===`view-${target}`));if(updatePath)history.replaceState(null,'',viewPaths[target])}
       tabs.forEach(tab=>tab.addEventListener('click',()=>setView(tab.dataset.view)));
-      const requested=location.hash.slice(1);if(['basic','resumes','security'].includes(requested))setView(requested);
-      const savedName=localStorage.getItem('candidateName');if(savedName){document.getElementById('realname').value=savedName;document.getElementById('profileTitle').textContent=savedName;document.getElementById('miniName').textContent=savedName}
-      document.getElementById('profileForm').addEventListener('submit',event=>{event.preventDefault();const name=document.getElementById('realname').value.trim()||'林晓雨',bio=document.getElementById('bio').value.trim();document.getElementById('profileTitle').textContent=name;document.getElementById('miniName').textContent=name;document.querySelector('.identity-bio').textContent=bio;localStorage.setItem('candidateName',name);showToast('个人资料已保存')});
+      const requested=location.hash.slice(1),initialView=['basic','resumes','security'].includes(requested)?requested:props.defaultView;setView(initialView,false);
+      const savedName=localStorage.getItem('candidateName');if(savedName){document.getElementById('realname').value=savedName;document.getElementById('profileTitle').textContent=savedName}
+      document.getElementById('profileForm').addEventListener('submit',event=>{event.preventDefault();const name=document.getElementById('realname').value.trim()||'林晓雨',bio=document.getElementById('bio').value.trim();document.getElementById('profileTitle').textContent=name;document.querySelector('.identity-bio').textContent=bio;localStorage.setItem('candidateName',name);showToast('个人资料已保存')});
       const avatarEdit=document.querySelector('.avatar-edit'),avatarInput=document.getElementById('avatarInput');avatarEdit.tabIndex=0;avatarEdit.setAttribute('role','button');avatarEdit.setAttribute('aria-label','更换头像');avatarEdit.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();avatarInput.click()}});
       avatarInput.addEventListener('change', event => {
         const file = event.target.files[0]
@@ -45,8 +54,9 @@ onMounted(() => {
         }
         const reader = new FileReader()
         reader.onload = () => {
-          ;['profileAvatar', 'miniAvatar'].forEach(id => {
+          ;['profileAvatar'].forEach(id => {
             const holder = document.getElementById(id)
+            if (!holder) return
             holder.textContent = ''
             const image = document.createElement('img')
             image.src = reader.result

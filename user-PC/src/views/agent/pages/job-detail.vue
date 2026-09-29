@@ -1,5 +1,5 @@
 <template>
-<header class="topbar"><div class="topbar-inner"><a class="brand" href="/agent/index" aria-label="返回智聘 AI 首页"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span><span class="brand-tag">求职者工作台</span></a><nav class="main-nav" aria-label="主导航"><a class="nav-link" href="/agent/index">首页</a><a class="nav-link active" href="/agent/jobs" aria-current="page">岗位浏览</a><a class="nav-link" href="/agent/applications">投递跟踪</a><a class="nav-link" href="/agent/messages">消息通知 <span class="nav-badge">3</span></a><a class="nav-link" href="/agent/profile">个人中心</a></nav><div class="topbar-actions"><button class="icon-button" id="notificationButton" aria-label="打开消息通知"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg><span class="notification-dot"></span></button><button class="profile-chip" aria-label="打开个人中心"><span class="avatar">林</span><span class="profile-meta"><span class="profile-name">林晓雨</span><span class="profile-role">产品经理</span></span></button></div></div></header>
+<AgentTopbar active="jobs" />
 
   <main class="page-shell">
     <div class="main-column">
@@ -31,6 +31,7 @@
 
 <script setup>
 import { onMounted } from 'vue'
+import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 
 onMounted(() => {
   // URL 参数决定岗位基础信息，模拟独立详情页路由。
@@ -55,10 +56,8 @@ onMounted(() => {
       saveControls.forEach(button=>button.addEventListener('click',()=>setSaved(!button.classList.contains('active'))));
       document.querySelectorAll('.share-trigger').forEach(button=>button.addEventListener('click',()=>showToast('岗位链接已准备好，可分享给好友')));
       // 将岗位标识带入独立咨询页，返回时可准确回到当前岗位详情。
-      document.getElementById('chatButton').addEventListener('click',()=>{window.__agentNavigate(`/agent/job-assistant?job=${encodeURIComponent(jobId)}`)});
-      document.getElementById('notificationButton').addEventListener('click',()=>showToast('你有 3 条未读消息'));
-      document.getElementById('applyButton').addEventListener('click',()=>{window.__agentNavigate(`/agent/resume-select?job=${encodeURIComponent(jobId)}`)});
-      document.querySelector('.profile-chip').addEventListener('click',()=>{window.__agentNavigate('/agent/profile')});
+      document.getElementById('chatButton').addEventListener('click',()=>{window.__agentNavigate(`/agent/job-assistant?job=${encodeURIComponent(jobId)}`)});
+      document.getElementById('applyButton').addEventListener('click',()=>{window.__agentNavigate(`/agent/resume-select?job=${encodeURIComponent(jobId)}`)});
 })
 </script>
 

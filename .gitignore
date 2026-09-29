@@ -28,6 +28,7 @@ Desktop.ini
 ######################################################################
 target/
 build/
+!**/src/**/build/
 !.mvn/wrapper/maven-wrapper.jar
 !.gradle/wrapper/gradle-wrapper.jar
 *.class
@@ -50,6 +51,7 @@ node_modules/
 dist/
 dist-ssr/
 .npm/
+.npm-cache/
 .pnpm-store/
 .yarn/
 .pnp.*
@@ -63,6 +65,7 @@ coverage/
 ######################################################################
 logs/
 *.log
+*.log.err
 *.xml.versionsBackup
 
 ######################################################################
@@ -95,4 +98,5 @@ RuoYi-Vue/
 # 其它
 ######################################################################
 .claude/
+.trae/
 .factorypath
