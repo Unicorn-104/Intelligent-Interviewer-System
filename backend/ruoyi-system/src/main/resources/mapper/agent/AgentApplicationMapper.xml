@@ -104,7 +104,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             pos.pos_salary_min AS salary_min,
             pos.pos_salary_max AS salary_max,
             rbs.rbs_resume_name AS resume_name,
-            tal.tal_status AS status_code,
+            app.app_status AS status_code,
             app.app_matched_score AS matched_score,
             app.app_created_at AS applied_at,
             app.app_updated_at AS updated_at
@@ -119,9 +119,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <include refid="applicationSelect"/>
         WHERE tal.tal_user_id = #{userId}
         <choose>
-            <when test="status == 'active'">AND tal.tal_status IN (0, 1, 5, 6, 7, 9)</when>
-            <when test="status == 'interview'">AND tal.tal_status IN (2, 7)</when>
-            <when test="status == 'closed'">AND tal.tal_status IN (3, 4, 8)</when>
+            <when test="status == 'active'">AND app.app_status IN (0, 1, 4)</when>
+            <when test="status == 'interview'">AND app.app_status IN (3, 5, 6)</when>
+            <when test="status == 'closed'">AND app.app_status IN (2, 7, 8)</when>
         </choose>
         ORDER BY app.app_updated_at DESC, app.app_id DESC
     </select>
@@ -151,7 +151,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <insert id="insertCandidate" parameterType="com.ruoyi.system.domain.agent.AgentCandidate">
         INSERT INTO t_tal (tal_user_id, tal_company_id, tal_resume_id, tal_status, tal_current_round)
-        VALUES (#{userId}, #{companyId}, #{resumeId}, 5, 0)
+        VALUES (#{userId}, #{companyId}, #{resumeId}, 0, 0)
     </insert>
 
     <update id="updateCandidateResume">
@@ -179,30 +179,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         )
     </insert>
 
-    <insert id="insertStatusLog">
-        INSERT INTO t_tal_status_log (
-            tsl_candidate_id,
-            tsl_from_status,
-            tsl_to_status,
-            tsl_reason,
-            tsl_operator_id
-        )
-        VALUES (
-            #{candidateId},
-            0,
-            5,
-            #{reason},
-            #{operatorId}
-        )
-    </insert>
-
     <select id="selectTimeline" resultType="com.ruoyi.system.domain.agent.AgentTimeline">
         SELECT
             CAST(tsl_to_status AS CHAR) AS stage,
             CASE
-                WHEN tsl_to_status IN (3, 4, 8) THEN 'closed'
-                WHEN tsl_to_status IN (2, 7) THEN 'current'
-                WHEN tsl_to_status = 5 THEN 'processing'
+                WHEN tsl_to_status IN (3, 4, 8, 9) THEN 'closed'
+                WHEN tsl_to_status IN (2, 5, 6, 7) THEN 'current'
+                WHEN tsl_to_status = 0 THEN 'processing'
                 ELSE 'done'
             END AS state,
             CASE tsl_to_status
@@ -211,17 +194,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 WHEN 2 THEN '面试中'
                 WHEN 3 THEN '未通过'
                 WHEN 4 THEN '已录用'
-                WHEN 5 THEN '企业初筛'
-                WHEN 6 THEN '测评中'
-                WHEN 7 THEN '待面试'
-                WHEN 8 THEN '未通过'
-                WHEN 9 THEN '流程结束'
+                WHEN 5 THEN '待笔试'
+                WHEN 6 THEN '笔试中'
+                WHEN 7 THEN '笔试通过'
+                WHEN 8 THEN '笔试未通过'
+                WHEN 9 THEN '笔试缺考'
                 ELSE '投递进度'
             END AS title,
             tsl_reason AS description,
             tsl_created_at AS occurredAt
         FROM t_tal_status_log
         WHERE tsl_candidate_id = #{candidateId}
+          AND tsl_created_at >= #{occurredAfter}
         ORDER BY tsl_created_at ASC, tsl_id ASC
     </select>
 </mapper>

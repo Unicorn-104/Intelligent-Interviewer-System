@@ -1,5 +1,6 @@
 package com.ruoyi.system.mapper.agent;
 
+import java.util.Date;
 import java.util.List;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Options;
@@ -33,8 +34,6 @@ public interface AgentApplicationMapper
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insertApplication(AgentApplication application);
 
-    int insertStatusLog(@Param("candidateId") Long candidateId, @Param("reason") String reason,
-            @Param("operatorId") Long operatorId);
-
-    List<com.ruoyi.system.domain.agent.AgentTimeline> selectTimeline(@Param("candidateId") Long candidateId);
+    List<com.ruoyi.system.domain.agent.AgentTimeline> selectTimeline(@Param("candidateId") Long candidateId,
+            @Param("occurredAfter") Date occurredAfter);
 }
