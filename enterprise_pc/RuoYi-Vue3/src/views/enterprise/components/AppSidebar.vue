@@ -2,18 +2,19 @@
 import { reactive } from 'vue'
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound } from '@/views/enterprise/components/icons'
 import AppLogo from './AppLogo.vue'
 import { totalUnread, refreshUnread } from '@/views/enterprise/store/unread'
 
 const route = useRoute()
 onMounted(refreshUnread)
 const menus = reactive([
-  { label: '招聘总览', to: '/enterprise/dashboard', match: 'EnterpriseDashboard' },
-  { label: '岗位管理', to: '/enterprise/jobs', match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] },
-  { label: '候选人管理', to: '/enterprise/candidates', match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
-  { label: '面试安排中心', to: '/enterprise/interviews', match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation'] },
-  { label: '消息中心', to: '/enterprise/messages', match: 'EnterpriseMessages', badge: totalUnread },
-  { label: '系统设置', to: '/enterprise/settings', match: 'EnterpriseSettings' }
+  { label: '招聘总览', to: '/enterprise/dashboard', icon: LayoutDashboard, match: 'EnterpriseDashboard' },
+  { label: '岗位管理', to: '/enterprise/jobs', icon: BriefcaseBusiness, match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] },
+  { label: '候选人管理', to: '/enterprise/candidates', icon: UsersRound, match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
+  { label: '面试安排中心', to: '/enterprise/interviews', icon: CalendarDays, match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation'] },
+  { label: '消息中心', to: '/enterprise/messages', icon: MessageCircle, match: 'EnterpriseMessages', badge: totalUnread },
+  { label: '系统设置', to: '/enterprise/settings', icon: Settings, match: 'EnterpriseSettings' }
 ])
 const active = (item) => Array.isArray(item.match) ? item.match.includes(route.name) : route.name === item.match
 </script>
@@ -23,6 +24,7 @@ const active = (item) => Array.isArray(item.match) ? item.match.includes(route.n
     <AppLogo />
     <nav>
       <RouterLink v-for="item in menus" :key="item.label" :to="item.to" :class="{ active: active(item) }">
+        <component :is="item.icon" :size="19" :stroke-width="1.7" />
         <span>{{ item.label }}</span>
         <em v-if="item.badge">{{ item.badge }}</em>
       </RouterLink>
