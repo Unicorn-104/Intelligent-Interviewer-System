@@ -1,45 +1,32 @@
 <script setup>
-import { ref } from 'vue'
-import { Building2, UsersRound, Link2, FileText, Database, CircleCheck, Plus, ChevronDown, ChevronRight, CalendarDays, Video, Download, Archive, Trash2, ShieldCheck, MailPlus, Save } from '@/views/enterprise/components/icons'
-import SwitchToggle from '@/views/enterprise/components/SwitchToggle.vue'
+import { ref, provide } from 'vue'
+import { Building2, UsersRound, Link2, FileText, Database, CircleCheck } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { api, reserveApi } from '@/views/enterprise/api/contract'
-const active=ref('组织架构')
-const toast=ref('')
-const nav=[['组织架构',Building2],['用户权限',UsersRound],['面试集成',Link2],['通知模板',FileText],['数据管理',Database]]
-const departments=ref([
-  {name:'星辰科技（总部）',owner:'陈建平',members:186,jobs:12,depth:0,open:true},
-  {name:'人力资源部',owner:'周琳',members:12,jobs:2,depth:1},
-  {name:'产品研发部',owner:'陈志远',members:46,jobs:5,depth:1,open:true},
-  {name:'前端研发组',owner:'郑凯',members:18,jobs:2,depth:2},
-  {name:'后端研发组',owner:'顾承宇',members:21,jobs:2,depth:2},
-  {name:'设计中心',owner:'李薇',members:22,jobs:3,depth:1},
-  {name:'市场与销售部',owner:'赵峰',members:35,jobs:2,depth:1,off:true},
-  {name:'技术平台部',owner:'何东来',members:28,jobs:4,depth:1}
-])
-const users=ref([{name:'林晓雯',role:'管理员',dept:'人力资源部',on:true},{name:'周琳',role:'HR',dept:'人力资源部',on:true},{name:'李薇',role:'面试官',dept:'设计中心',on:true},{name:'赵峰',role:'面试官',dept:'市场与销售部',on:false}])
-function notify(m){toast.value=m;setTimeout(()=>toast.value='',2000)}
-function saveSettings(){reserveApi({method:'PATCH',path:'/api/v1/system/enterprise/settings',body:['departments','users','integrations','templates']},{active:active.value});notify('系统设置保存接口已预留')}
-function invite(){reserveApi({method:'POST',path:'/api/v1/admin/users/invitations',body:['email','role','department']},{email:'',role:'HR',department:'人力资源部'});notify('邀请用户接口已预留')}
-function templateAction(action, name='面试提醒'){reserveApi(api.messaging.templates,{action,name,type:'interview_reminder',channels:['site','email'],content:'${candidateName} 的 ${stageName} 已安排于 ${startTime}',variables:['candidateName','stageName','startTime'],status:1});notify('消息模板接口已预留')}
+import DeptTab from './DeptTab.vue'
+import MemberTab from './MemberTab.vue'
+import IntegrationTab from './IntegrationTab.vue'
+import TemplateTab from './TemplateTab.vue'
+import DataTab from './DataTab.vue'
+const active = ref('组织架构')
+const toast = ref('')
+const nav = [['组织架构', Building2], ['用户权限', UsersRound], ['面试集成', Link2], ['通知模板', FileText], ['数据管理', Database]]
+function notify(m) { toast.value = m; setTimeout(() => toast.value = '', 2500) }
+provide('settingsNotify', notify)
 </script>
 
 <template>
-  <div class="page settings-page"><div class="page-heading"><div><h1>系统设置</h1><p>统一管理组织架构、成员权限、面试集成与通知数据</p></div><div><button class="btn">重置更改</button><button class="btn primary" @click="saveSettings"><Save :size="15"/>保存更改</button></div></div>
-    <div class="settings-layout"><aside class="card settings-nav"><div class="health"><CircleCheck :size="16"/><div><b>系统运行正常</b><small>服务与集成状态良好</small></div></div><button v-for="item in nav" :key="item[0]" :class="{active:active===item[0]}" @click="active=item[0]"><component :is="item[1]" :size="17"/>{{item[0]}}</button><div class="help"><b>需要帮助？</b><p>配置需点击“保存更改”后生效</p><a>查看帮助文档</a></div></aside>
+  <div class="page settings-page"><div class="page-heading"><div><h1>系统设置</h1><p>统一管理组织架构、成员权限、面试集成与通知数据</p></div></div>
+    <div class="settings-layout"><aside class="card settings-nav"><div class="health"><CircleCheck :size="16"/><div><b>系统运行正常</b><small>服务与集成状态良好</small></div></div><button v-for="item in nav" :key="item[0]" :class="{active:active===item[0]}" @click="active=item[0]"><component :is="item[1]" :size="17"/>{{item[0]}}</button><div class="help"><b>需要帮助？</b><p>各 Tab 内操作即时保存生效</p><a>查看帮助文档</a></div></aside>
       <main class="card settings-content">
-        <template v-if="active==='组织架构'"><header><div><h2>组织架构</h2><p>管理公司部门结构与汇报关系，支持新增、编辑与删除部门</p></div><button class="btn primary" @click="departments.push({name:'新建部门',owner:'待指定',members:0,jobs:0,depth:1})"><Plus :size="15"/>新增部门</button></header><div class="summary"><article><strong>12</strong><span>部门总数</span><Building2 :size="18"/></article><article><strong>186</strong><span>在职成员</span><UsersRound :size="18"/></article><article><strong>36</strong><span>涉及在招岗位</span><FileText :size="18"/></article></div><div class="org-table"><div class="table-head"><span>部门名称</span><span>负责人</span><span>成员数</span><span>在招岗位</span><span>状态</span><span>操作</span></div><div v-for="row in departments" :key="row.name" class="table-row"><span :style="{paddingLeft:`${row.depth*20+10}px`}"><component :is="row.open?ChevronDown:ChevronRight" :size="13"/> <b>{{row.name}}</b></span><span>{{row.owner}}</span><span>{{row.members}}</span><span class="text-primary">{{row.jobs}} 个</span><span :class="row.off?'off':'enabled'">{{row.off?'停用':'启用'}}</span><span class="ops"><button>新增</button><button>编辑</button><button class="del">删除</button></span></div><p class="table-tip">提示：删除部门前请确认该部门下无关联岗位与成员</p></div></template>
-        <template v-else-if="active==='用户权限'"><header><div><h2>用户权限</h2><p>配置团队成员角色与功能访问范围</p></div><button class="btn primary" @click="invite"><MailPlus :size="15"/>邀请新用户</button></header><div class="user-table"><div class="user-head"><span>姓名</span><span>所属部门</span><span>角色</span><span>账号状态</span><span>操作</span></div><div v-for="user in users" :key="user.name"><b>{{user.name}}</b><span>{{user.dept}}</span><select class="select"><option>{{user.role}}</option><option>HR</option><option>面试官</option></select><SwitchToggle v-model="user.on"/><button>编辑权限</button></div></div></template>
-        <template v-else-if="active==='面试集成'"><header><div><h2>面试集成</h2><p>连接日历与视频会议服务，实现排期自动化</p></div></header><div class="integrations"><article><span class="integration-icon calendar"><CalendarDays :size="22"/></span><div><h3>Microsoft Outlook Calendar</h3><p>双向同步面试日程与个人空闲时间</p></div><span class="pill green">已连接</span><button class="btn sm">配置</button></article><article><span class="integration-icon"><Video :size="22"/></span><div><h3>腾讯会议</h3><p>自动创建视频会议并发送参会信息</p></div><span class="pill green">已连接</span><button class="btn sm">配置</button></article><article><span class="integration-icon zoom">Z</span><div><h3>Zoom</h3><p>为跨地区候选人创建视频会议</p></div><span class="pill gray">未连接</span><button class="btn sm primary">连接</button></article><article><span class="integration-icon live">L</span><div><h3>LiveKit</h3><p>私有化实时音视频与 AI 转写服务</p></div><span class="pill orange">需配置</span><button class="btn sm">配置</button></article></div></template>
-        <template v-else-if="active==='通知模板'"><header><div><h2>通知模板</h2><p>编辑招聘各节点的候选人通知内容</p></div><button class="btn primary" @click="templateAction('create','新建阶段通知')"><Plus :size="15"/>新增模板</button></header><div class="templates"><article v-for="t in ['面试邀请通知','面试时间变更','初筛通过通知','阶段评估结果通知','Offer 发放提醒']" :key="t"><FileText :size="18"/><div><h3>{{t}}</h3><p>您好，${candidateName}，您应聘的 ${positionTitle} 的 ${stageName} 已更新进度。</p></div><span class="pill green">已启用</span><button @click="templateAction('update',t)">编辑</button></article></div></template>
-        <template v-else><header><div><h2>数据管理</h2><p>导出、备份与清理招聘业务数据</p></div></header><div class="data-actions"><article><span><Download :size="22"/></span><div><h3>简历数据导出</h3><p>按岗位、阶段和时间范围导出候选人数据</p></div><button class="btn">开始导出</button></article><article><span><Archive :size="22"/></span><div><h3>系统数据备份</h3><p>最近备份：2026-09-09 03:00 · 自动每日备份</p></div><button class="btn">立即备份</button></article><article class="danger-zone"><span><Trash2 :size="22"/></span><div><h3>历史数据清理</h3><p>清理两年以上且已结束流程的数据，此操作不可撤销</p></div><button class="btn danger-ghost">进入清理</button></article></div></template>
+        <DeptTab v-if="active==='组织架构'"/>
+        <MemberTab v-else-if="active==='用户权限'"/>
+        <IntegrationTab v-else-if="active==='面试集成'"/>
+        <TemplateTab v-else-if="active==='通知模板'"/>
+        <DataTab v-else/>
       </main>
     </div><ToastMessage :message="toast"/></div>
 </template>
 
 <style scoped>
-.page-heading>div:last-child{display:flex;gap:10px}.settings-layout{display:grid;grid-template-columns:230px minmax(760px,1fr);gap:15px;min-height:680px}.settings-nav{padding:12px;display:flex;flex-direction:column}.health{height:61px;border:1px solid #e1e8f1;border-radius:10px;background:#f7f9fc;display:flex;align-items:center;gap:9px;padding:0 12px;color:#10b981;margin-bottom:8px}.health b,.health small{display:block}.health b{font-size:11px;color:#394b67}.health small{font-size:8px;color:#91a0b4;margin-top:3px}.settings-nav>button{height:43px;border:0;border-radius:9px;background:white;color:#465b79;display:flex;align-items:center;gap:10px;padding:0 13px;font-size:12px}.settings-nav>button.active{background:#eaf1ff;color:#2563eb;font-weight:600}.help{margin-top:auto;border-radius:10px;background:#edf4ff;padding:14px;color:#34578c}.help b{font-size:11px}.help p{font-size:9px;margin:5px 0}.help a{font-size:9px;color:#2563eb}.settings-content{padding:22px}.settings-content>header{display:flex;align-items:flex-start;justify-content:space-between}.settings-content header h2{font-size:19px}.settings-content header p{font-size:10px;color:#8d9baf;margin-top:5px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0 15px}.summary article{height:70px;border:1px solid #e3e9f2;border-radius:10px;background:#f8fafc;padding:11px 14px;position:relative}.summary strong,.summary span{display:block}.summary strong{font-size:23px}.summary span{font-size:9px;color:#7e8da2;margin-top:3px}.summary svg{position:absolute;right:13px;top:20px;color:#2563eb}.org-table{border:1px solid #dfe6ef;border-radius:10px;overflow:hidden}.table-head,.table-row{display:grid;grid-template-columns:2.2fr .75fr .65fr .72fr .55fr .9fr;align-items:center}.table-head{height:35px;background:#f5f7fa;color:#8391a5;font-size:9px}.table-head span{padding-left:10px}.table-row{min-height:42px;border-top:1px solid #e8edf4;font-size:9px}.table-row>span:first-child{display:flex;align-items:center;gap:5px}.table-row .enabled{color:#079267}.table-row .off{color:#8f9bad}.ops{display:flex;gap:7px}.ops button{border:0;background:none;color:#2563eb;font-size:9px;padding:0}.ops button.del{color:#ef4444}.table-tip{font-size:8px;color:#9aa7b9;padding:10px}.user-table{margin-top:20px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}.user-head,.user-table>div{height:55px;display:grid;grid-template-columns:1fr 1.3fr 1fr .8fr .8fr;align-items:center;padding:0 15px;border-bottom:1px solid #e8edf4;font-size:11px}.user-head{height:38px!important;background:#f5f7fa;color:#7f8da2}.user-table .select{width:110px;height:31px}.user-table button{border:0;background:none;color:#2563eb;font-size:10px}.integrations,.templates,.data-actions{margin-top:20px;display:flex;flex-direction:column;gap:10px}.integrations article,.templates article,.data-actions article{min-height:78px;border:1px solid #e1e8f1;border-radius:11px;padding:13px;display:flex;align-items:center;gap:12px}.integration-icon,.data-actions article>span{width:42px;height:42px;border-radius:11px;background:#eaf1ff;color:#2563eb;display:grid;place-items:center;font-weight:700}.integration-icon.calendar{color:#0673d7}.integration-icon.zoom{background:#edf3ff}.integration-icon.live{background:#e9f9f4;color:#07966c}.integrations article>div,.templates article>div,.data-actions article>div{flex:1}.integrations h3,.templates h3,.data-actions h3{font-size:12px}.integrations p,.templates p,.data-actions p{font-size:9px;color:#8796ab;margin-top:5px}.templates article>svg{color:#2563eb}.templates article>button{border:0;background:none;color:#2563eb}.data-actions article>span{background:#eef4ff}.data-actions article.danger-zone{border-color:#fed7d7;background:#fffafa}.data-actions .danger-zone>span{background:#feecec;color:#ef4444}
+.settings-layout{display:grid;grid-template-columns:230px minmax(760px,1fr);gap:15px;min-height:680px}.settings-nav{padding:12px;display:flex;flex-direction:column}.health{height:61px;border:1px solid #e1e8f1;border-radius:10px;background:#f7f9fc;display:flex;align-items:center;gap:9px;padding:0 12px;color:#10b981;margin-bottom:8px}.health b,.health small{display:block}.health b{font-size:11px;color:#394b67}.health small{font-size:8px;color:#91a0b4;margin-top:3px}.settings-nav>button{height:43px;border:0;border-radius:9px;background:white;color:#465b79;display:flex;align-items:center;gap:10px;padding:0 13px;font-size:12px}.settings-nav>button.active{background:#eaf1ff;color:#2563eb;font-weight:600}.help{margin-top:auto;border-radius:10px;background:#edf4ff;padding:14px;color:#34578c}.help b{font-size:11px}.help p{font-size:9px;margin:5px 0}.help a{font-size:9px;color:#2563eb}.settings-content{padding:22px}
 </style>
-
-
-

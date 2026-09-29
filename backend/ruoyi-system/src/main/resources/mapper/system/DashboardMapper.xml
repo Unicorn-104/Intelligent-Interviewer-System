@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.DashboardMapper">
+
+    <select id="selectCompanyIdByUser" parameterType="Long" resultType="Long">
+        select bnd_company_id from t_cmp_binding
+        where bnd_user_id = #{userId} and bnd_status = 1
+        limit 1
+    </select>
+
+    <select id="countActivePositions" parameterType="Long" resultType="int">
+        select count(*) from t_pos
+        where pos_company_id = #{companyId} and pos_status = 1
+    </select>
+
+    <select id="countResumes" parameterType="Long" resultType="int">
+        select count(*) from t_tal t
+        join t_res_base r on r.rbs_id = t.tal_resume_id
+        where t.tal_company_id = #{companyId}
+    </select>
+
+    <select id="countPendingInterviews" parameterType="Long" resultType="int">
+        select count(*) from t_sch_appointment a
+        join t_pos p on p.pos_id = a.apt_position_id
+        where p.pos_company_id = #{companyId} and a.apt_status in (0, 1)
+    </select>
+
+    <select id="countWeeklyCompletedInterviews" parameterType="Long" resultType="int">
+        select count(*) from t_int_session s
+        join t_pos p on p.pos_id = s.ses_position_id
+        where p.pos_company_id = #{companyId}
+          and s.ses_status = 2
+          and s.ses_end_at >= date_sub(curdate(), interval (weekday(curdate())) day)
+    </select>
+
+    <select id="selectFunnel" parameterType="Long" resultType="java.util.HashMap">
+        select
+            count(*) as applied,
+            sum(case when tal_status in (1,2,4,5,6,7) then 1 else 0 end) as screened,
+            sum(case when tal_status in (2,4,7) then 1 else 0 end) as interviewing,
+            sum(case when tal_status = 4 then 1 else 0 end) as hired
+        from t_tal
+        where tal_company_id = #{companyId}
+          and tal_created_at >= date_sub(now(), interval 30 day)
+    </select>
+
+    <select id="selectTodoPendingConfirm" parameterType="Long" resultType="java.util.HashMap">
+        select u.nick_name as candidateName, p.pos_title as positionTitle,
+               date_format(a.apt_start_time, '%m-%d %H:%i') as startTime
+        from t_sch_appointment a
+        join t_pos p on p.pos_id = a.apt_position_id
+        join t_tal t on t.tal_id = a.apt_candidate_id
+        join sys_user u on u.user_id = t.tal_user_id
+        where p.pos_company_id = #{companyId} and a.apt_status = 0
+        order by a.apt_start_time desc
+        limit 1
+    </select>
+
+    <select id="selectTodoFinalReview" parameterType="Long" resultType="java.util.HashMap">
+        select u.nick_name as candidateName, p.pos_title as positionTitle
+        from t_tal t
+        join sys_user u on u.user_id = t.tal_user_id
+        join t_process_instance i on i.pin_id = t.tal_process_instance_id
+        join t_pos p on p.pos_id = i.pin_position_id
+        where t.tal_company_id = #{companyId} and t.tal_status = 7
+        order by t.tal_updated_at desc
+        limit 1
+    </select>
+
+    <select id="selectTodoUpcomingInterview" parameterType="Long" resultType="java.util.HashMap">
+        select u.nick_name as candidateName, p.pos_title as positionTitle,
+               date_format(a.apt_start_time, '%m-%d %H:%i') as startTime
+        from t_sch_appointment a
+        join t_pos p on p.pos_id = a.apt_position_id
+        join t_tal t on t.tal_id = a.apt_candidate_id
+        join sys_user u on u.user_id = t.tal_user_id
+        where p.pos_company_id = #{companyId} and a.apt_status = 1
+          and a.apt_start_time >= now()
+        order by a.apt_start_time asc
+        limit 1
+    </select>
+
+    <select id="selectRecentActivities" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select u.nick_name as candidateName, l.tsl_to_status as toStatus,
+               date_format(l.tsl_created_at, '%Y-%m-%d %H:%i:%s') as createdAt
+        from t_tal_status_log l
+        join t_tal t on t.tal_id = l.tsl_candidate_id
+        join sys_user u on u.user_id = t.tal_user_id
+        where t.tal_company_id = #{companyId}
+        order by l.tsl_created_at desc
+        limit 4
+    </select>
+
+</mapper>
