@@ -35,35 +35,29 @@
     </el-row>
 
     <el-table v-loading="loading" :data="verifyList">
-      <el-table-column label="ID" align="center" prop="verifyId" width="70" />
-      <el-table-column label="申请人" align="center" prop="userName" :show-overflow-tooltip="true" />
-      <el-table-column label="手机号" align="center" prop="phone" width="120" />
-      <el-table-column label="申请企业" align="center" prop="companyName" :show-overflow-tooltip="true" />
+      <el-table-column label="ID" align="center" prop="verifyId" width="50" />
+      <el-table-column label="申请人" align="center" prop="userName" width="80" :show-overflow-tooltip="true" />
+      <el-table-column label="手机号" align="center" prop="phone" width="110" />
       <el-table-column
         label="统一社会信用代码"
         align="center"
         prop="creditCode"
-        width="180"
+        width="140"
         :show-overflow-tooltip="true"
       />
-      <el-table-column label="身份" align="center" prop="position" width="100" />
-      <el-table-column label="证明材料" align="center" width="160" :show-overflow-tooltip="true">
-        <template #default="scope">
-          <el-link type="primary" :underline="false">{{ scope.row.material }}</el-link>
-        </template>
-      </el-table-column>
-      <el-table-column label="申请时间" align="center" prop="applyTime" width="170" />
-      <el-table-column label="审核状态" align="center" width="100">
+      <el-table-column label="身份" align="center" prop="position" width="50" />
+      <el-table-column label="申请时间" align="center" prop="applyTime" width="130" />
+      <el-table-column label="审核状态" align="center" width="70">
         <template #default="scope">
           <el-tag :type="statusTag(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="审核时间" align="center" prop="auditTime" width="170" />
-      <el-table-column label="审核人" align="center" prop="auditor" width="100" />
-      <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
+      <el-table-column label="审核时间" align="center" prop="auditTime" width="130" />
+      <el-table-column label="审核人" align="center" prop="auditor" width="60" />
+      <el-table-column label="操作" align="center" width="90" fixed="right">
         <template #default="scope">
           <el-button
-            v-if="scope.row.status === '0'"
+            v-if="String(scope.row.status) === '0'"
             link
             type="primary"
             icon="Edit"
@@ -71,7 +65,7 @@
             v-hasPermi="['member:verify:audit']"
             >审核</el-button
           >
-          <el-button v-if="scope.row.status !== '0'" link type="primary" icon="View" @click="handleView(scope.row)"
+          <el-button v-if="String(scope.row.status) !== '0'" link type="primary" icon="View" @click="handleView(scope.row)"
             >查看结果</el-button
           >
         </template>
@@ -179,15 +173,17 @@ const rules = ref({
 })
 
 function statusLabel(val) {
+  var strVal = String(val)
   var item = statusOptions.find(function (o) {
-    return o.value === val
+    return o.value === strVal
   })
   return item ? item.label : val
 }
 
 function statusTag(val) {
+  var strVal = String(val)
   var item = statusOptions.find(function (o) {
-    return o.value === val
+    return o.value === strVal
   })
   return item && item.tag ? item.tag : undefined
 }
