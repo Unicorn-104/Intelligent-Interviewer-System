@@ -27,7 +27,7 @@ public class AgentApplicationController extends BaseController
     private IAgentApplicationService applicationService;
 
     @GetMapping("/jobs/{jobId}/resume-options")
-    public AjaxResult resumeOptions(@PathVariable Long jobId)
+    public AjaxResult resumeOptions(@PathVariable("jobId") Long jobId)
     {
         return success(applicationService.selectResumeOptions(getUserId(), jobId));
     }
@@ -45,7 +45,7 @@ public class AgentApplicationController extends BaseController
     }
 
     @GetMapping("/applications/{applicationId}")
-    public AjaxResult detail(@PathVariable Long applicationId)
+    public AjaxResult detail(@PathVariable("applicationId") Long applicationId)
     {
         return success(applicationService.selectApplication(getUserId(), applicationId));
     }
