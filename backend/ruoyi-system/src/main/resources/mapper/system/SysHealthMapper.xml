@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.SysHealthMapper">
+
+    <resultMap type="com.ruoyi.system.domain.SysHealth" id="SysHealthResult">
+        <result property="sthId" column="sth_id"/>
+        <result property="sthServiceName" column="sth_service_name"/>
+        <result property="sthStatus" column="sth_status"/>
+        <result property="sthResponseTimeMs" column="sth_response_time_ms"/>
+        <result property="sthCheckedAt" column="sth_checked_at"/>
+        <result property="sthCreatedAt" column="sth_created_at"/>
+    </resultMap>
+
+    <sql id="selectSysHealthVo">
+        select sth_id, sth_service_name, sth_status, sth_response_time_ms, sth_checked_at, sth_created_at
+        from t_sys_health
+    </sql>
+
+    <select id="selectSysHealthList" parameterType="com.ruoyi.system.domain.SysHealth" resultMap="SysHealthResult">
+        <include refid="selectSysHealthVo"/>
+        <where>
+            <if test="sthServiceName != null and sthServiceName != ''"> and sth_service_name like concat('%', #{sthServiceName}, '%')</if>
+            <if test="sthStatus != null"> and sth_status = #{sthStatus}</if>
+        </where>
+        order by sth_checked_at desc
+    </select>
+
+    <select id="selectSysHealthBySthId" parameterType="Long" resultMap="SysHealthResult">
+        <include refid="selectSysHealthVo"/>
+        where sth_id = #{sthId}
+    </select>
+
+    <insert id="insertSysHealth" parameterType="com.ruoyi.system.domain.SysHealth" useGeneratedKeys="true" keyProperty="sthId">
+        insert into t_sys_health
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="sthServiceName != null and sthServiceName != ''">sth_service_name,</if>
+            <if test="sthStatus != null">sth_status,</if>
+            <if test="sthResponseTimeMs != null">sth_response_time_ms,</if>
+            <if test="sthCheckedAt != null">sth_checked_at,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="sthServiceName != null and sthServiceName != ''">#{sthServiceName},</if>
+            <if test="sthStatus != null">#{sthStatus},</if>
+            <if test="sthResponseTimeMs != null">#{sthResponseTimeMs},</if>
+            <if test="sthCheckedAt != null">#{sthCheckedAt},</if>
+        </trim>
+    </insert>
+
+    <update id="updateSysHealth" parameterType="com.ruoyi.system.domain.SysHealth">
+        update t_sys_health
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="sthServiceName != null">sth_service_name = #{sthServiceName},</if>
+            <if test="sthStatus != null">sth_status = #{sthStatus},</if>
+            <if test="sthResponseTimeMs != null">sth_response_time_ms = #{sthResponseTimeMs},</if>
+            <if test="sthCheckedAt != null">sth_checked_at = #{sthCheckedAt},</if>
+        </trim>
+        where sth_id = #{sthId}
+    </update>
+
+    <delete id="deleteSysHealthBySthId" parameterType="Long">
+        delete from t_sys_health where sth_id = #{sthId}
+    </delete>
+
+</mapper>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.PromptVersionMapper">
+
+    <resultMap type="com.ruoyi.system.domain.PromptVersion" id="PromptVersionResult">
+        <result property="pmvId" column="pmv_id"/>
+        <result property="pmvName" column="pmv_name"/>
+        <result property="pmvContent" column="pmv_content"/>
+        <result property="pmvVariablesJson" column="pmv_variables_json"/>
+        <result property="pmvVersion" column="pmv_version"/>
+        <result property="pmvStatus" column="pmv_status"/>
+        <result property="pmvCreatedAt" column="pmv_created_at"/>
+        <result property="pmvUpdatedAt" column="pmv_updated_at"/>
+    </resultMap>
+
+    <sql id="selectPromptVersionVo">
+        select pmv_id, pmv_name, pmv_content, pmv_variables_json, pmv_version,
+               pmv_status, pmv_created_at, pmv_updated_at
+        from t_prompt_version
+    </sql>
+
+    <select id="selectPromptVersionList" parameterType="com.ruoyi.system.domain.PromptVersion" resultMap="PromptVersionResult">
+        <include refid="selectPromptVersionVo"/>
+        <where>
+            <if test="pmvName != null and pmvName != ''"> and pmv_name like concat('%', #{pmvName}, '%')</if>
+            <if test="pmvStatus != null"> and pmv_status = #{pmvStatus}</if>
+        </where>
+        order by pmv_created_at desc
+    </select>
+
+    <select id="selectPromptVersionByPmvId" parameterType="Long" resultMap="PromptVersionResult">
+        <include refid="selectPromptVersionVo"/>
+        where pmv_id = #{pmvId}
+    </select>
+
+    <insert id="insertPromptVersion" parameterType="com.ruoyi.system.domain.PromptVersion" useGeneratedKeys="true" keyProperty="pmvId">
+        insert into t_prompt_version
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="pmvName != null and pmvName != ''">pmv_name,</if>
+            <if test="pmvContent != null and pmvContent != ''">pmv_content,</if>
+            <if test="pmvVariablesJson != null">pmv_variables_json,</if>
+            <if test="pmvVersion != null and pmvVersion != ''">pmv_version,</if>
+            <if test="pmvStatus != null">pmv_status,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="pmvName != null and pmvName != ''">#{pmvName},</if>
+            <if test="pmvContent != null and pmvContent != ''">#{pmvContent},</if>
+            <if test="pmvVariablesJson != null">#{pmvVariablesJson},</if>
+            <if test="pmvVersion != null and pmvVersion != ''">#{pmvVersion},</if>
+            <if test="pmvStatus != null">#{pmvStatus},</if>
+        </trim>
+    </insert>
+
+    <update id="updatePromptVersion" parameterType="com.ruoyi.system.domain.PromptVersion">
+        update t_prompt_version
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="pmvName != null">pmv_name = #{pmvName},</if>
+            <if test="pmvContent != null">pmv_content = #{pmvContent},</if>
+            <if test="pmvVariablesJson != null">pmv_variables_json = #{pmvVariablesJson},</if>
+            <if test="pmvVersion != null">pmv_version = #{pmvVersion},</if>
+            <if test="pmvStatus != null">pmv_status = #{pmvStatus},</if>
+        </trim>
+        where pmv_id = #{pmvId}
+    </update>
+
+    <delete id="deletePromptVersionByPmvId" parameterType="Long">
+        delete from t_prompt_version where pmv_id = #{pmvId}
+    </delete>
+
+</mapper>

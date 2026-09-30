@@ -51,10 +51,9 @@ public interface SysNoticeReadMapper
      * 查询带已读状态的公告列表（SQL层限制条数，一次查询完成）
      *
      * @param userId 用户ID
-     * @param limit  最多返回条数
      * @return 带 isRead 标记的公告列表
      */
-    public List<SysNotice> selectNoticeListWithReadStatus(@Param("userId") Long userId, @Param("limit") int limit);
+    public List<SysNotice> selectNoticeListWithReadStatus(@Param("userId") Long userId);
 
     /**
      * 查询已阅读某公告的用户列表

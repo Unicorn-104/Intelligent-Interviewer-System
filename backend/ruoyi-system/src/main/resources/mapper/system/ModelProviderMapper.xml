@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.ModelProviderMapper">
+
+    <resultMap type="com.ruoyi.system.domain.ModelProvider" id="ModelProviderResult">
+        <result property="mppId" column="mpp_id"/>
+        <result property="mppName" column="mpp_name"/>
+        <result property="mppApiUrl" column="mpp_api_url"/>
+        <result property="mppApiKey" column="mpp_api_key"/>
+        <result property="mppModelName" column="mpp_model_name"/>
+        <result property="mppParamsJson" column="mpp_params_json"/>
+        <result property="mppStatus" column="mpp_status"/>
+        <result property="mppCreatedAt" column="mpp_created_at"/>
+        <result property="mppUpdatedAt" column="mpp_updated_at"/>
+    </resultMap>
+
+    <sql id="selectModelProviderVo">
+        select mpp_id, mpp_name, mpp_api_url, mpp_api_key, mpp_model_name, mpp_params_json,
+               mpp_status, mpp_created_at, mpp_updated_at
+        from t_model_provider
+    </sql>
+
+    <select id="selectModelProviderList" parameterType="com.ruoyi.system.domain.ModelProvider" resultMap="ModelProviderResult">
+        <include refid="selectModelProviderVo"/>
+        <where>
+            <if test="mppName != null and mppName != ''"> and mpp_name like concat('%', #{mppName}, '%')</if>
+            <if test="mppModelName != null and mppModelName != ''"> and mpp_model_name like concat('%', #{mppModelName}, '%')</if>
+        </where>
+        order by mpp_id desc
+    </select>
+
+    <select id="selectModelProviderByMppId" parameterType="Long" resultMap="ModelProviderResult">
+        <include refid="selectModelProviderVo"/>
+        where mpp_id = #{mppId}
+    </select>
+
+    <insert id="insertModelProvider" parameterType="com.ruoyi.system.domain.ModelProvider" useGeneratedKeys="true" keyProperty="mppId">
+        insert into t_model_provider
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="mppName != null and mppName != ''">mpp_name,</if>
+            <if test="mppApiUrl != null and mppApiUrl != ''">mpp_api_url,</if>
+            <if test="mppApiKey != null and mppApiKey != ''">mpp_api_key,</if>
+            <if test="mppModelName != null and mppModelName != ''">mpp_model_name,</if>
+            <if test="mppParamsJson != null">mpp_params_json,</if>
+            <if test="mppStatus != null">mpp_status,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="mppName != null and mppName != ''">#{mppName},</if>
+            <if test="mppApiUrl != null and mppApiUrl != ''">#{mppApiUrl},</if>
+            <if test="mppApiKey != null and mppApiKey != ''">#{mppApiKey},</if>
+            <if test="mppModelName != null and mppModelName != ''">#{mppModelName},</if>
+            <if test="mppParamsJson != null">#{mppParamsJson},</if>
+            <if test="mppStatus != null">#{mppStatus},</if>
+        </trim>
+    </insert>
+
+    <update id="updateModelProvider" parameterType="com.ruoyi.system.domain.ModelProvider">
+        update t_model_provider
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="mppName != null">mpp_name = #{mppName},</if>
+            <if test="mppApiUrl != null">mpp_api_url = #{mppApiUrl},</if>
+            <if test="mppApiKey != null">mpp_api_key = #{mppApiKey},</if>
+            <if test="mppModelName != null">mpp_model_name = #{mppModelName},</if>
+            <if test="mppParamsJson != null">mpp_params_json = #{mppParamsJson},</if>
+            <if test="mppStatus != null">mpp_status = #{mppStatus},</if>
+        </trim>
+        where mpp_id = #{mppId}
+    </update>
+
+    <delete id="deleteModelProviderByMppId" parameterType="Long">
+        delete from t_model_provider where mpp_id = #{mppId}
+    </delete>
+
+</mapper>
