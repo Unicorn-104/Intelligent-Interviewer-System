@@ -43,7 +43,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             on r.notice_id = n.notice_id and r.user_id = #{userId}
         where n.status = '0'
         order by n.notice_id desc
-        limit #{limit}
     </select>
 
     <!-- 批量标记已读 -->
