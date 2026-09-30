@@ -148,6 +148,12 @@
               ></el-switch>
             </template>
           </el-table-column>
+          <el-table-column label="实名认证" align="center" key="verified" v-if="columns.status.visible">
+            <template #default="scope">
+              <el-tag v-if="scope.row.verified === 1" type="success" size="small">已认证</el-tag>
+              <el-tag v-else type="info" size="small">未认证</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column
             label="创建时间"
             align="center"
@@ -346,6 +352,7 @@
 </template>
 
 <script setup name="SystemUser">
+import request from '@/utils/request'
 import TreePanel from '@/components/TreePanel'
 import ExcelImportDialog from '@/components/ExcelImportDialog'
 import UserViewDrawer from './view'
@@ -420,6 +427,20 @@ function getList() {
     .then((response) => {
       userList.value = response.rows
       total.value = response.total
+      
+      // 查询实名认证状态并合并
+      request({
+        url: '/member/verify/userStatus',
+        method: 'get'
+      }).then((verifyRes) => {
+        const verifiedSet = new Set(verifyRes.data || [])
+        userList.value = userList.value.map(u => ({
+          ...u,
+          verified: verifiedSet.has(u.userId) ? 1 : 0
+        }))
+      }).catch(() => {
+        userList.value = userList.value.map(u => ({ ...u, verified: 0 }))
+      })
     })
     .catch((err) => {
       console.error('用户列表查询失败:', err)

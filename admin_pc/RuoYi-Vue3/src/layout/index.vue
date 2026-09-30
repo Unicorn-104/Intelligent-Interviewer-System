@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div
     :class="classObj"
     class="app-wrapper"
@@ -43,7 +43,7 @@ const classObj = computed(() => ({
 }))
 
 const { width, height } = useWindowSize()
-const WIDTH = 992 // refer to Bootstrap's responsive design
+const WIDTH = 0 // refer to Bootstrap's responsive design
 
 watch(
   () => device.value,
