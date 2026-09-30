@@ -2,7 +2,7 @@
 import { reactive } from 'vue'
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound } from '@/views/enterprise/components/icons'
+import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound, Video } from '@/views/enterprise/components/icons'
 import AppLogo from './AppLogo.vue'
 import { totalUnread, refreshUnread } from '@/views/enterprise/store/unread'
 
@@ -13,6 +13,7 @@ const menus = reactive([
   { label: '岗位管理', to: '/enterprise/jobs', icon: BriefcaseBusiness, match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] },
   { label: '候选人管理', to: '/enterprise/candidates', icon: UsersRound, match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
   { label: '面试安排中心', to: '/enterprise/interviews', icon: CalendarDays, match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation'] },
+  { label: '录制回放', to: '/enterprise/conference/records', icon: Video, match: ['EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'] },
   { label: '消息中心', to: '/enterprise/messages', icon: MessageCircle, match: 'EnterpriseMessages', badge: totalUnread },
   { label: '系统设置', to: '/enterprise/settings', icon: Settings, match: 'EnterpriseSettings' }
 ])

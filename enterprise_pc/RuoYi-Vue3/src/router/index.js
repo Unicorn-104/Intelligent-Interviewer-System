@@ -2,7 +2,6 @@ import { createWebHistory, createRouter } from 'vue-router'
 /* Layout */
 import Layout from '@/layout'
 import EnterpriseLayout from '@/views/enterprise/EnterpriseLayout.vue'
-import EnterpriseMeetingLayout from '@/views/enterprise/EnterpriseMeetingLayout.vue'
 
 /**
  * Note: 路由配置项
@@ -155,24 +154,36 @@ export const constantRoutes = [
       }
     ]
   },
+  // 旧会议页 /enterprise/meeting/ai、/enterprise/meeting/collaborative 已并入会议模块，
+  // 旧地址统一引导到「协同面试进行中」，避免旧书签与外部链接 404。
   {
-    path: '/enterprise/meeting',
-    component: EnterpriseMeetingLayout,
+    path: '/enterprise/meeting/ai',
+    redirect: (to) => ({ path: '/enterprise/conference/ongoing', query: to.query })
+  },
+  {
+    path: '/enterprise/meeting/collaborative',
+    redirect: (to) => ({ path: '/enterprise/conference/ongoing', query: to.query })
+  },
+  {
+    path: '/enterprise/conference/ongoing',
+    component: () => import('@/views/enterprise/conference/ongoing.vue'),
+    name: 'EnterpriseConferenceOngoing',
     hidden: true,
-    children: [
-      {
-        path: 'ai',
-        component: () => import('@/views/enterprise/meeting/ai.vue'),
-        name: 'EnterpriseAiInterview',
-        meta: { title: 'AI 面试' }
-      },
-      {
-        path: 'collaborative',
-        component: () => import('@/views/enterprise/meeting/collaborative.vue'),
-        name: 'EnterpriseCollaborativeInterview',
-        meta: { title: '协同面试' }
-      }
-    ]
+    meta: { title: '协同面试进行中' }
+  },
+  {
+    path: '/enterprise/conference/records',
+    component: () => import('@/views/enterprise/conference/records.vue'),
+    name: 'EnterpriseConferenceRecords',
+    hidden: true,
+    meta: { title: '录制回放与存储管理' }
+  },
+  {
+    path: '/enterprise/conference/playback',
+    component: () => import('@/views/enterprise/conference/playback.vue'),
+    name: 'EnterpriseConferencePlayback',
+    hidden: true,
+    meta: { title: '在线回放' }
   },
   {
     path: "/:pathMatch(.*)*",
