@@ -149,7 +149,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         LIMIT 1
     </select>
 
-    <insert id="insertCandidate" parameterType="com.ruoyi.system.domain.agent.AgentCandidate">
+    <insert id="insertCandidate" parameterType="com.ruoyi.system.domain.agent.AgentCandidate"
+            useGeneratedKeys="true" keyProperty="candidateId" keyColumn="tal_id">
         INSERT INTO t_tal (tal_user_id, tal_company_id, tal_resume_id, tal_status, tal_current_round)
         VALUES (#{userId}, #{companyId}, #{resumeId}, 0, 0)
     </insert>
@@ -162,7 +163,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           AND tal_company_id = #{companyId}
     </update>
 
-    <insert id="insertApplication" parameterType="com.ruoyi.system.domain.agent.AgentApplication">
+    <insert id="insertApplication" parameterType="com.ruoyi.system.domain.agent.AgentApplication"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="app_id">
         INSERT INTO t_app_record (
             app_candidate_id,
             app_position_id,

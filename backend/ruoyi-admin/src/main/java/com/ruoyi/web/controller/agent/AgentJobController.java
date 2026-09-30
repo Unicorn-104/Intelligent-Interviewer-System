@@ -31,7 +31,7 @@ public class AgentJobController extends BaseController
     }
 
     @GetMapping("/jobs/{jobId}")
-    public AjaxResult detail(@PathVariable Long jobId)
+    public AjaxResult detail(@PathVariable("jobId") Long jobId)
     {
         AgentJob job = jobService.selectJob(jobId, getUserId());
         return success(job);
