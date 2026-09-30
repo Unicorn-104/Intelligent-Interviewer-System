@@ -49,7 +49,7 @@
           <ul class="activity-list">
             <li class="activity-item"><span class="activity-dot"></span><div class="activity-body"><div class="activity-company">极氪智能科技 <span>招聘团队</span></div><p class="activity-content">发布了 3 个产品岗位，正在寻找热爱智能出行的产品人。</p><div class="activity-time">2 小时前</div></div></li>
             <li class="activity-item"><span class="activity-dot"></span><div class="activity-body"><div class="activity-company">阿里巴巴集团 <span>企业动态</span></div><p class="activity-content">杭州团队开放日即将开始，欢迎关注电商与 AI 方向的新机会。</p><div class="activity-time">昨天 18:20</div></div></li>
-            <li class="activity-item"><span class="activity-dot"></span><div class="activity-body"><div class="activity-company">小红书 <span>招聘团队</span></div><p class="activity-content">为提升候选人体验，面试流程全面接入 AI 面试准备助手。</p><div class="activity-time">6月15日</div></div></li>
+            <li class="activity-item"><span class="activity-dot"></span><div class="activity-body"><div class="activity-company">小红书 <span>招聘团队</span></div><p class="activity-content">为提升求职者体验，面试流程全面接入 AI 面试准备助手。</p><div class="activity-time">6月15日</div></div></li>
           </ul>
         </article>
       </section>

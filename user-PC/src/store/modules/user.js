@@ -1,7 +1,7 @@
 import router from '@/router'
 import cache from '@/plugins/cache'
 import { ElMessageBox, } from 'element-plus'
-import { login, logout, getInfo } from '@/api/login'
+import { login, loginByPhonePassword, loginBySms, logout, getInfo } from '@/api/login'
 import { getToken, setToken, removeToken } from '@/utils/auth'
 import { isHttp, isEmpty } from "@/utils/validate"
 import useLockStore from '@/store/modules/lock'
@@ -22,12 +22,17 @@ const useUserStore = defineStore(
     actions: {
       // 登录
       login(userInfo) {
-        const username = userInfo.username.trim()
+        const phone = (userInfo.phone || '').trim()
         const password = userInfo.password
         const code = userInfo.code
         const uuid = userInfo.uuid
+        const loginRequest = userInfo.loginType === 'sms'
+          ? loginBySms(phone, userInfo.smsCode)
+          : userInfo.loginType === 'phone_password'
+            ? loginByPhonePassword(phone, password)
+            : login(userInfo.username.trim(), password, code, uuid)
         return new Promise((resolve, reject) => {
-          login(username, password, code, uuid).then(res => {
+          loginRequest.then(res => {
             setToken(res.token)
             this.token = res.token
             useLockStore().unlockScreen()

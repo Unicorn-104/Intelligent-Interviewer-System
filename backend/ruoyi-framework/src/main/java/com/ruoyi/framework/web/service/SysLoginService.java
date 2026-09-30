@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import com.ruoyi.common.constant.CacheConstants;
 import com.ruoyi.common.constant.Constants;
 import com.ruoyi.common.constant.UserConstants;
+import com.ruoyi.common.core.domain.entity.SysUser;
 import com.ruoyi.common.core.domain.model.LoginUser;
 import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
@@ -18,6 +19,7 @@ import com.ruoyi.common.exception.user.CaptchaException;
 import com.ruoyi.common.exception.user.CaptchaExpireException;
 import com.ruoyi.common.exception.user.UserNotExistsException;
 import com.ruoyi.common.exception.user.UserPasswordNotMatchException;
+import com.ruoyi.common.enums.UserStatus;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.MessageUtils;
 import com.ruoyi.common.utils.StringUtils;
@@ -51,6 +53,12 @@ public class SysLoginService
     @Autowired
     private ISysConfigService configService;
 
+    @Autowired
+    private SmsCodeService smsCodeService;
+
+    @Autowired
+    private com.ruoyi.framework.web.service.SysPermissionService permissionService;
+
     /**
      * 登录验证
      * 
@@ -64,6 +72,54 @@ public class SysLoginService
     {
         // 验证码校验
         validateCaptcha(username, code, uuid);
+        return authenticateWithPassword(username, password);
+    }
+
+    /**
+     * 手机号密码登录，不要求图形验证码。
+     */
+    public String loginByPhonePassword(String phone, String password)
+    {
+        smsCodeService.validatePhone(phone);
+        SysUser user = userService.selectUserByPhone(phone.trim());
+        if (user == null)
+        {
+            throw new UserNotExistsException();
+        }
+        return authenticateWithPassword(user.getUserName(), password);
+    }
+
+    /**
+     * 手机短信验证码登录。
+     */
+    public String loginBySms(String phone, String smsCode)
+    {
+        smsCodeService.validateCode(phone, "login", smsCode);
+        SysUser user = userService.selectUserByPhone(phone.trim());
+        if (user == null)
+        {
+            throw new UserNotExistsException();
+        }
+        if (UserStatus.DELETED.getCode().equals(user.getDelFlag()))
+        {
+            throw new ServiceException(MessageUtils.message("user.password.delete"));
+        }
+        if (UserStatus.DISABLE.getCode().equals(user.getStatus()))
+        {
+            throw new ServiceException(MessageUtils.message("user.blocked"));
+        }
+        checkLoginIp(phone);
+
+        LoginUser loginUser = new LoginUser(user.getUserId(), user.getDeptId(), user,
+                permissionService.getMenuPermission(user));
+        AsyncManager.me().execute(AsyncFactory.recordLogininfor(phone, Constants.LOGIN_SUCCESS,
+                MessageUtils.message("user.login.success")));
+        recordLoginInfo(loginUser.getUserId());
+        return tokenService.createToken(loginUser);
+    }
+
+    private String authenticateWithPassword(String username, String password)
+    {
         // 登录前置校验
         loginPreCheck(username, password);
         // 用户验证
@@ -155,7 +211,14 @@ public class SysLoginService
             AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, MessageUtils.message("user.password.not.match")));
             throw new UserPasswordNotMatchException();
         }
-        // IP黑名单校验
+        checkLoginIp(username);
+    }
+
+    /**
+     * IP黑名单校验。
+     */
+    private void checkLoginIp(String username)
+    {
         String blackStr = configService.selectConfigByKey("sys.login.blackIPList");
         if (IpUtils.isMatchedIp(blackStr, IpUtils.getIpAddr()))
         {

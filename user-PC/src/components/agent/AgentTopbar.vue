@@ -15,13 +15,16 @@
 
       <div class="agent-profile-menu">
         <button class="agent-profile-button" type="button" aria-haspopup="true">
-          <span class="agent-avatar">林</span>
-          <span class="agent-profile-meta"><span class="agent-profile-name">林晓雨</span><span class="agent-profile-role">产品经理</span></span>
+          <span class="agent-avatar">{{ avatarText }}</span>
+          <span class="agent-profile-meta"><span class="agent-profile-name">{{ displayName }}</span><span class="agent-profile-role">候选人</span></span>
         </button>
         <div class="agent-profile-popover" role="menu" aria-label="账号功能">
           <a href="/agent/profile-basic" role="menuitem">基础资料</a>
           <a href="/agent/profile-resumes" role="menuitem">我的简历</a>
           <a href="/agent/profile-security" role="menuitem">账号安全</a>
+          <div class="agent-profile-divider"></div>
+          <button class="agent-profile-action" type="button" @click="handleSwitchAccount">切换账号</button>
+          <button class="agent-profile-action danger" type="button" @click="handleLogout">退出登录</button>
         </div>
       </div>
     </div>
@@ -29,6 +32,11 @@
 </template>
 
 <script setup>
+import { ElMessageBox } from 'element-plus'
+import { clearCandidateSession } from '@/utils/agentSession'
+import { removeToken } from '@/utils/auth'
+import useUserStore from '@/store/modules/user'
+
 defineProps({
   active: {
     type: String,
@@ -36,12 +44,46 @@ defineProps({
   }
 })
 
+const router = useRouter()
+const userStore = useUserStore()
+const displayName = computed(() => userStore.nickName || userStore.name || '求职者')
+const avatarText = computed(() => displayName.value.slice(0, 1))
+
 const navItems = [
   { key: 'index', label: '首页', path: '/agent/index' },
   { key: 'jobs', label: '岗位浏览', path: '/agent/jobs' },
   { key: 'applications', label: '投递跟踪', path: '/agent/applications' },
   { key: 'messages', label: '消息通知', path: '/agent/messages', badge: '3' }
 ]
+
+async function clearAuthAndRedirect(target) {
+  try {
+    await userStore.logOut()
+  } catch {
+    userStore.$reset()
+    removeToken()
+  } finally {
+    clearCandidateSession()
+    await router.push(target)
+  }
+}
+
+async function handleSwitchAccount() {
+  await clearAuthAndRedirect({ path: '/agent/login', query: { switch: '1' } })
+}
+
+async function handleLogout() {
+  try {
+    await ElMessageBox.confirm('确定退出当前账号吗？', '提示', {
+      confirmButtonText: '退出登录',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await clearAuthAndRedirect('/agent/login')
+  } catch {
+    // 用户取消确认时保持当前页面与会话不变。
+  }
+}
 </script>
 
 <style scoped>
@@ -67,6 +109,10 @@ const navItems = [
 .agent-profile-menu:hover .agent-profile-popover,.agent-profile-menu:focus-within .agent-profile-popover{opacity:1;visibility:visible;transform:translateY(0)}
 .agent-profile-popover a{height:36px;display:flex;align-items:center;padding:0 10px;border-radius:6px;color:#52647D;text-decoration:none;font-size:12px;font-weight:700}
 .agent-profile-popover a:hover,.agent-profile-popover a:focus-visible{color:#1A3C6E;background:#EAF2FF;outline:none}
+.agent-profile-divider{height:1px;margin:6px 4px;background:#E7EDF5}
+.agent-profile-action{width:100%;height:36px;padding:0 10px;border:0;border-radius:6px;color:#52647D;background:transparent;text-align:left;font-size:12px;font-weight:700;cursor:pointer}
+.agent-profile-action:hover,.agent-profile-action:focus-visible{color:#1A3C6E;background:#EAF2FF;outline:none}
+.agent-profile-action.danger:hover,.agent-profile-action.danger:focus-visible{color:#C34B55;background:#FFF1F2}
 @media(max-width:900px){.agent-topbar-inner{width:calc(100% - 32px);gap:14px}.agent-brand-tag,.agent-profile-meta{display:none}.agent-nav-link{padding:0 10px}.agent-nav-link.active::after{right:10px;left:10px}}
 @media(max-width:640px){.agent-topbar{height:64px}.agent-topbar-inner{width:calc(100% - 28px);grid-template-columns:auto 1fr auto;gap:8px}.agent-brand-name{font-size:16px}.agent-main-nav{height:64px;gap:0}.agent-nav-link{height:64px;padding:0 5px;font-size:11px}.agent-nav-link.active::after{right:5px;left:5px}.agent-nav-badge{position:absolute;top:14px;right:0}.agent-profile-button{height:44px}.agent-profile-popover{top:44px}}
 </style>

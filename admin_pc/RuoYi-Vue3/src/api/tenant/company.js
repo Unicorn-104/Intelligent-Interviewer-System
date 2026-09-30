@@ -54,3 +54,12 @@ export function changeCompanyStatus(companyId, status) {
     }
   })
 }
+
+// 企业审核
+export function auditCompany(data) {
+  return request({
+    url: '/tenant/company/audit',
+    method: 'put',
+    data: data
+  })
+}

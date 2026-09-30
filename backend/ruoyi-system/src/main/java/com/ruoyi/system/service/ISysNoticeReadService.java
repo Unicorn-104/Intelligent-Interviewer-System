@@ -43,7 +43,6 @@ public interface ISysNoticeReadService
      * @param noticeIds 公告ID数组
      */
     public void markReadBatch(Long userId, Long[] noticeIds);
-
     /**
      * 查询已阅读某公告的用户列表
      *

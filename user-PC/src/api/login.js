@@ -19,6 +19,40 @@ export function login(username, password, code, uuid) {
   })
 }
 
+// 手机号密码登录
+export function loginByPhonePassword(phone, password) {
+  return request({
+    url: '/login',
+    headers: {
+      isToken: false,
+      repeatSubmit: false
+    },
+    method: 'post',
+    data: {
+      phone,
+      password,
+      loginType: 'phone_password'
+    }
+  })
+}
+
+// 手机短信验证码登录
+export function loginBySms(phone, smsCode) {
+  return request({
+    url: '/login',
+    headers: {
+      isToken: false,
+      repeatSubmit: false
+    },
+    method: 'post',
+    data: {
+      phone,
+      smsCode,
+      loginType: 'sms'
+    }
+  })
+}
+
 // 注册方法
 export function register(data) {
   return request({
@@ -28,6 +62,22 @@ export function register(data) {
     },
     method: 'post',
     data: data
+  })
+}
+
+// 发送手机短信验证码
+export function sendSmsCode(phone, scene) {
+  return request({
+    url: '/sms/code',
+    headers: {
+      isToken: false,
+      repeatSubmit: false
+    },
+    method: 'post',
+    data: {
+      phone,
+      scene
+    }
   })
 }
 

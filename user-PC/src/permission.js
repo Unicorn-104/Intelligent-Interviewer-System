@@ -10,12 +10,12 @@ import useUserStore from '@/store/modules/user'
 import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
 import usePermissionStore from '@/store/modules/permission'
-import { hasCandidateAccessToken } from '@/utils/agentSession'
+import { clearCandidateSession, hasCandidateAccessToken } from '@/utils/agentSession'
 
 NProgress.configure({ showSpinner: false })
 
 const whiteList = ['/login', '/register']
-const agentPublicRoutes = ['/agent/login']
+const agentPublicRoutes = ['/agent/login', '/agent/register']
 
 const isWhiteList = (path) => {
   return whiteList.some(pattern => isPathMatch(pattern, path))
@@ -34,13 +34,30 @@ router.beforeEach(async (to, from) => {
   if (to.path.startsWith('/agent/')) {
     to.meta.title && useSettingsStore().setTitle(to.meta.title)
     if (agentPublicRoutes.includes(to.path)) {
+      // 登录/注册页必须始终可进入，避免浏览器残留的过期 token 触发 getInfo 弹窗。
       if (hasCandidateAccessToken()) {
-        NProgress.done()
-        return { path: '/agent/index', replace: true }
+        removeToken()
+        clearCandidateSession()
+        useUserStore().$reset()
+        isRelogin.show = false
       }
+      NProgress.done()
       return true
     }
     if (hasCandidateAccessToken()) {
+      const userStore = useUserStore()
+      if (!userStore.name) {
+        try {
+          await userStore.getInfo()
+        } catch {
+          removeToken()
+          clearCandidateSession()
+          userStore.$reset()
+          ElMessage.error('登录状态已失效，请重新登录')
+          NProgress.done()
+          return { path: '/agent/login', query: { redirect: to.fullPath }, replace: true }
+        }
+      }
       return true
     }
     NProgress.done()

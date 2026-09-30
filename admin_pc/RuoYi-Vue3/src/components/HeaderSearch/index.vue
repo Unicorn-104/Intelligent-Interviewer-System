@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="header-search">
     <svg-icon class-name="search-icon" icon-class="search" @click.stop="click" />
     <el-dialog v-model="show" width="600" @close="close" @opened="onDialogOpened" :show-close="false" append-to-body>
@@ -146,7 +146,7 @@ function initFuse(list) {
 function generateRoutes(routes, basePath = '', prefixTitle = []) {
   let res = []
   for (const r of routes) {
-    if (r.hidden) {
+    if (r.hidden || !r.path) {
       continue
     }
     const p = r.path.length > 0 && r.path[0] === '/' ? r.path : '/' + r.path

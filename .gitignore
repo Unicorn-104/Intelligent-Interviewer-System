@@ -100,3 +100,8 @@ RuoYi-Vue/
 .claude/
 .trae/
 .factorypath
+
+# Redis runtime dump
+dump.rdb
+backend/dump.rdb
+*.log

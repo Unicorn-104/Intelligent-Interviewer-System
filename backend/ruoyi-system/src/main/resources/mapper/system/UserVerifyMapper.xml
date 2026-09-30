@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.UserVerifyMapper">
+
+    <resultMap type="com.ruoyi.system.domain.UserVerify" id="UserVerifyResult">
+        <result property="vefId" column="vef_id"/>
+        <result property="vefUserId" column="vef_user_id"/>
+        <result property="vefRealName" column="vef_real_name"/>
+        <result property="vefIdCard" column="vef_id_card"/>
+        <result property="vefFrontImg" column="vef_front_img"/>
+        <result property="vefBackImg" column="vef_back_img"/>
+        <result property="vefStatus" column="vef_status"/>
+        <result property="vefRejectReason" column="vef_reject_reason"/>
+        <result property="vefCreatedAt" column="vef_created_at"/>
+        <result property="vefVerifiedAt" column="vef_verified_at"/>
+    </resultMap>
+
+    <sql id="selectUserVerifyVo">
+        select vef_id, vef_user_id, vef_real_name, vef_id_card, vef_front_img, vef_back_img,
+               vef_status, vef_reject_reason, vef_created_at, vef_verified_at
+        from t_usr_verify
+    </sql>
+
+    <select id="selectUserVerifyList" parameterType="com.ruoyi.system.domain.UserVerify" resultMap="UserVerifyResult">
+        <include refid="selectUserVerifyVo"/>
+        <where>
+            <if test="vefRealName != null and vefRealName != ''"> and vef_real_name like concat('%', #{vefRealName}, '%')</if>
+            <if test="vefStatus != null"> and vef_status = #{vefStatus}</if>
+            <if test="vefUserId != null"> and vef_user_id = #{vefUserId}</if>
+        </where>
+        order by vef_created_at desc
+    </select>
+
+    <select id="selectUserVerifyByVefId" parameterType="Long" resultMap="UserVerifyResult">
+        <include refid="selectUserVerifyVo"/>
+        where vef_id = #{vefId}
+    </select>
+
+    <insert id="insertUserVerify" parameterType="com.ruoyi.system.domain.UserVerify" useGeneratedKeys="true" keyProperty="vefId">
+        insert into t_usr_verify
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="vefUserId != null">vef_user_id,</if>
+            <if test="vefRealName != null and vefRealName != ''">vef_real_name,</if>
+            <if test="vefIdCard != null and vefIdCard != ''">vef_id_card,</if>
+            <if test="vefFrontImg != null">vef_front_img,</if>
+            <if test="vefBackImg != null">vef_back_img,</if>
+            <if test="vefCreatedAt != null">vef_created_at,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="vefUserId != null">#{vefUserId},</if>
+            <if test="vefRealName != null and vefRealName != ''">#{vefRealName},</if>
+            <if test="vefIdCard != null and vefIdCard != ''">#{vefIdCard},</if>
+            <if test="vefFrontImg != null">#{vefFrontImg},</if>
+            <if test="vefBackImg != null">#{vefBackImg},</if>
+            <if test="vefCreatedAt != null">#{vefCreatedAt},</if>
+        </trim>
+    </insert>
+
+    <update id="updateUserVerify" parameterType="com.ruoyi.system.domain.UserVerify">
+        update t_usr_verify
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="vefStatus != null">vef_status = #{vefStatus},</if>
+            <if test="vefRejectReason != null">vef_reject_reason = #{vefRejectReason},</if>
+            <if test="vefVerifiedAt != null">vef_verified_at = #{vefVerifiedAt},</if>
+        </trim>
+        where vef_id = #{vefId}
+    </update>
+
+    <update id="verifyUser" parameterType="com.ruoyi.system.domain.UserVerify">
+        update t_usr_verify
+        set vef_status = #{vefStatus},
+            vef_verified_at = #{vefVerifiedAt},
+            vef_reject_reason = #{vefRejectReason}
+        where vef_id = #{vefId}
+    </update>
+
+</mapper>
