@@ -420,6 +420,23 @@ const shapes = {
     ['path', { d: 'M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z' }],
     ['path', { d: 'M22 10v6' }],
     ['path', { d: 'M6 12.5V16a6 3 0 0 0 12 0v-3.5' }]
+  ],
+  Play: [
+    ['polygon', { points: '6 3 20 12 6 21 6 3' }]
+  ],
+  Pause: [
+    ['rect', { width: 4, height: 16, x: 6, y: 4, rx: 1 }],
+    ['rect', { width: 4, height: 16, x: 14, y: 4, rx: 1 }]
+  ],
+  Eye: [
+    ['path', { d: 'M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0' }],
+    ['circle', { cx: 12, cy: 12, r: 3 }]
+  ],
+  Maximize: [
+    ['path', { d: 'M8 3H5a2 2 0 0 0-2 2v3' }],
+    ['path', { d: 'M21 8V5a2 2 0 0 0-2-2h-3' }],
+    ['path', { d: 'M3 16v3a2 2 0 0 0 2 2h3' }],
+    ['path', { d: 'M16 21h3a2 2 0 0 0 2-2v-3' }]
   ]
 }
 
@@ -462,5 +479,6 @@ export const {
   MonitorUp, Paperclip, PauseCircle, Pencil, PhoneOff, Plus, RotateCcw, RotateCw,
   Save, Search, Send, Settings, Settings2, ShieldCheck, SlidersHorizontal, Smile,
   Smartphone, Sparkles, Tags, Target, Timer, Trash2, Upload, UserRound, UserRoundCheck,
-  UserX, Users, UsersRound, Video, Volume2, WandSparkles, X, Zap, GraduationCap
+  UserX, Users, UsersRound, Video, Volume2, WandSparkles, X, Zap, GraduationCap,
+  Play, Pause, Eye, Maximize
 } = icons

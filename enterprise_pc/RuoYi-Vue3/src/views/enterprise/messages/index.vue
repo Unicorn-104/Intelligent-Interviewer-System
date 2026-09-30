@@ -68,9 +68,20 @@ const filtered = computed(() => {
   return conversations.value.filter(c => c.name?.includes(kw) || c.summary?.includes(kw))
 })
 
+// 种子数据里写入的失效外链（DNS 无法解析）会导致浏览器报 ERR_NAME_NOT_RESOLVED，
+// 这里直接返回空串，交给 MiniAvatar 降级为首字母头像
+const DEAD_AVATAR_HOSTS = ['cdn.recruitai.com']
+
 function resolveUrl(p) {
   if (!p) return ''
-  if (p.startsWith('http')) return p
+  if (p.startsWith('http')) {
+    try {
+      if (DEAD_AVATAR_HOSTS.includes(new URL(p).host)) return ''
+    } catch (e) {
+      return ''
+    }
+    return p
+  }
   return import.meta.env.VITE_APP_BASE_API + p
 }
 
@@ -246,7 +257,7 @@ onMounted(async () => {
         <header class="chat-head">
           <MiniAvatar :name="activeConv.name" :size="40" color="#356f65" :src="activeConv.avatar"/>
           <div class="chat-head-info"><h2>{{activeConv.name}}</h2><p>{{activeConv.summary}}</p></div>
-          <button class="btn primary" @click="router.push('/enterprise/meeting/ai')"><Video :size="16"/>进入会议</button>
+          <button class="btn primary" @click="router.push('/enterprise/conference/ongoing')"><Video :size="16"/>进入会议</button>
         </header>
         <div ref="scroller" class="message-stream">
           <div v-for="msg in messages" :key="msg.id" :class="['message-row', msg.type===5?'system':(msg.mine?'me':'other')]">

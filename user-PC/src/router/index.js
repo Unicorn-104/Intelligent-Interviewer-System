@@ -21,12 +21,15 @@ const agentPageDefinitions = [
   ['mock-interview', 'AgentMockInterview', '模拟面试'],
   ['interview-schedule', 'AgentInterviewSchedule', '面试安排'],
   ['interview-invitation', 'AgentInterviewInvitation', '面试邀请'],
-  ['interview-check', 'AgentInterviewCheck', '面试确认'],
-  ['interview-room', 'AgentInterviewRoom', '面试房间'],
   ['interview-result', 'AgentInterviewResult', '面试结果'],
   ['video-meeting', 'AgentVideoMeeting', '视频面试'],
   ['company-profile', 'AgentCompanyProfile', '企业主页'],
-  ['contact-profile', 'AgentContactProfile', '联系人主页']
+  ['contact-profile', 'AgentContactProfile', '联系人主页'],
+  ['conference-prep', 'AgentConferencePrep', '会议准备'],
+  ['conference-ai', 'AgentConferenceAi', 'AI 面试进行中'],
+  ['conference-ended', 'AgentConferenceEnded', '面试结束'],
+  ['conference-reconnect', 'AgentConferenceReconnect', '连接中断'],
+  ['conference-aborted', 'AgentConferenceAborted', '面试异常终止']
 ]
 
 const agentRoutes = [{
@@ -51,6 +54,15 @@ const legacyAgentRoutes = agentPageDefinitions.map(([path]) => ({
   path: `/${path}.html`,
   redirect: (to) => ({ path: `/agent/${path}`, query: to.query })
 }))
+
+// 已下线页面（面试确认 interview-check / 面试房间 interview-room）的旧地址兼容，
+// 统一引导到新的视频会议模块，避免旧书签与外部链接 404。
+const retiredAgentRoutes = [
+  { path: '/agent/interview-check', redirect: (to) => ({ path: '/agent/conference-prep', query: to.query }) },
+  { path: '/interview-check.html', redirect: (to) => ({ path: '/agent/conference-prep', query: to.query }) },
+  { path: '/agent/interview-room', redirect: (to) => ({ path: '/agent/conference-ai', query: to.query }) },
+  { path: '/interview-room.html', redirect: (to) => ({ path: '/agent/conference-ai', query: to.query }) }
+]
 
 /**
  * Note: 路由配置项
@@ -141,7 +153,8 @@ export const constantRoutes = [
     ]
   },
   ...agentRoutes,
-  ...legacyAgentRoutes
+  ...legacyAgentRoutes,
+  ...retiredAgentRoutes
 ]
 
 // 动态路由，基于用户权限动态去加载

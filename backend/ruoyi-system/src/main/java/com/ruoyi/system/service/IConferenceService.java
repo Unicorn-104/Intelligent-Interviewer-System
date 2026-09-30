@@ -1,0 +1,140 @@
+package com.ruoyi.system.service;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 视频会议（面试链路）服务层
+ *
+ * @author ruoyi
+ */
+public interface IConferenceService
+{
+    /**
+     * 当前用户进行中 / 待开始的面试场次上下文（无场次时返回空 Map）
+     */
+    public Map<String, Object> getCurrentSession(Long userId);
+
+    /**
+     * 指定场次的会议上下文（含角色：HR / CANDIDATE）
+     */
+    public Map<String, Object> getSessionContext(Long userId, Long sessionId);
+
+    /**
+     * 上报会前环境检测结果
+     */
+    public Map<String, Object> reportEnvironmentCheck(Long userId, Long sessionId, Map<String, Object> body);
+
+    /**
+     * 提交录制知情同意
+     *
+     * @param consent 1-同意，2-拒绝
+     */
+    public Map<String, Object> submitConsent(Long userId, Long sessionId, Integer consent);
+
+    /**
+     * 候选人准备就绪，进入面试
+     */
+    public Map<String, Object> startSession(Long userId, Long sessionId);
+
+    /**
+     * 面试进度与当前题目
+     */
+    public Map<String, Object> getProgress(Long userId, Long sessionId);
+
+    /**
+     * 提交作答
+     */
+    public Map<String, Object> submitAnswer(Long userId, Long sessionId, Map<String, Object> body);
+
+    /**
+     * 更新音视频设备状态
+     */
+    public Map<String, Object> updateMedia(Long userId, Long sessionId, Map<String, Object> body);
+
+    /**
+     * 心跳（用于弱网 / 断网判定）
+     */
+    public Map<String, Object> heartbeat(Long userId, Long sessionId);
+
+    /**
+     * 增量拉取字幕
+     */
+    public List<Map<String, Object>> getCaptions(Long userId, Long sessionId, Integer afterSequence, Integer limit);
+
+    /**
+     * 增量拉取提词器建议
+     */
+    public List<Map<String, Object>> getCopilot(Long userId, Long sessionId, Integer afterSequence, Integer limit);
+
+    /**
+     * 处理提词器建议
+     *
+     * @param action adopt-采纳，edit-编辑后采纳，ignore-忽略
+     */
+    public Map<String, Object> handleCopilot(Long userId, Long sessionId, Long id, String action, String content);
+
+    /**
+     * HR 接管 / 交还
+     *
+     * @param action start-接管，end-交还
+     */
+    public Map<String, Object> takeover(Long userId, Long sessionId, String action, String reason);
+
+    /**
+     * 正常结束面试
+     */
+    public Map<String, Object> finishSession(Long userId, Long sessionId, String endReason);
+
+    /**
+     * 异常终止面试
+     *
+     * @param reason silence-长时间无有效语音，offline-断网超时
+     */
+    public Map<String, Object> abortSession(Long userId, Long sessionId, String reason);
+
+    /**
+     * 面试结果（时长、完成题目数、报告状态）
+     */
+    public Map<String, Object> getSessionResult(Long userId, Long sessionId);
+
+    /**
+     * 录制文件列表（企业范围内）
+     */
+    public List<Map<String, Object>> listRecordings(Long userId, Map<String, Object> query);
+
+    /**
+     * 存储空间占用
+     */
+    public Map<String, Object> getStorageUsage(Long userId);
+
+    /**
+     * 回放详情（含时间轴）
+     */
+    public Map<String, Object> getRecordingDetail(Long userId, Long sessionId);
+
+    /**
+     * 更新录制访问授权
+     */
+    public Map<String, Object> updateRecordingAccess(Long userId, Long sessionId, Integer validDays, Integer level);
+
+    /**
+     * 发送下载验证码
+     */
+    public Map<String, Object> sendDownloadCode(Long userId, Long sessionId);
+
+    /**
+     * 校验下载验证码并返回录制地址
+     */
+    public Map<String, Object> verifyDownloadCode(Long userId, Long sessionId, String code);
+
+    /**
+     * 查询录制存储策略
+     */
+    public Map<String, Object> getStoragePolicy(Long userId);
+
+    /**
+     * 保存录制存储策略
+     */
+    public Map<String, Object> saveStoragePolicy(Long userId, Integer keepDays, Integer maxStorageGb);
+}

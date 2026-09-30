@@ -25,7 +25,6 @@
 
 * { box-sizing: border-box; }
 .enterprise-layout { min-width: 1180px; min-height: 100vh; background: var(--canvas); font-family: 'DM Sans', 'Noto Sans SC', 'Microsoft YaHei', sans-serif; color: var(--text); }
-.meeting-page { font-family: 'DM Sans', 'Noto Sans SC', 'Microsoft YaHei', sans-serif; color: var(--text); }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 a { color: inherit; text-decoration: none; }
