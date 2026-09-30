@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.ConferenceMapper">
+
+    <sql id="sessionContextColumns">
+        s.ses_id                          as sessionId,
+        s.ses_appointment_id              as appointmentId,
+        s.ses_candidate_id                as candidateId,
+        s.ses_position_id                 as positionId,
+        s.ses_interviewer_id              as interviewerId,
+        s.ses_cascade_round               as roundNo,
+        s.ses_mode                        as mode,
+        s.ses_status                      as status,
+        s.ses_start_at                    as startAt,
+        s.ses_end_at                      as endAt,
+        s.ses_room_id                     as roomId,
+        s.ses_room_token                  as roomToken,
+        s.ses_auto_recording              as autoRecording,
+        s.ses_candidate_consent           as consent,
+        s.ses_consent_at                  as consentAt,
+        s.ses_rec_url                     as recUrl,
+        s.ses_rec_duration_sec            as recDurationSec,
+        s.ses_rec_access_level            as recAccessLevel,
+        p.pos_title                       as positionTitle,
+        p.pos_company_id                  as companyId,
+        t.tal_user_id                     as candidateUserId,
+        ifnull(u.nick_name, u.user_name)   as candidateName,
+        ifnull(iu.nick_name, iu.user_name) as interviewerName,
+        date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as appointmentStartAt,
+        date_format(a.apt_end_time, '%Y-%m-%d %H:%i')   as appointmentEndAt,
+        timestampdiff(minute, a.apt_start_time, a.apt_end_time) as durationMinutes,
+        ifnull(tpl.itl_total_rounds, 1)   as totalRounds,
+        ifnull(m.mst_current_question, 0) as answeredCount,
+        ifnull(m.mst_total_question, 0)   as totalQuestionNo
+    </sql>
+
+    <sql id="sessionContextJoins">
+        from t_int_session s
+        left join t_sch_appointment a on a.apt_id = s.ses_appointment_id
+        left join t_pos p on p.pos_id = s.ses_position_id
+        left join t_tal t on t.tal_id = s.ses_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join sys_user iu on iu.user_id = s.ses_interviewer_id
+        left join t_int_template tpl on tpl.itl_id = s.ses_template_id
+        left join t_int_meeting_state m on m.mst_session_id = s.ses_id
+    </sql>
+
+    <select id="selectCompanyIdByUser" parameterType="Long" resultType="Long">
+        select bnd_company_id from t_cmp_binding
+        where bnd_user_id = #{userId} and bnd_status = 1
+        limit 1
+    </select>
+
+    <select id="selectCurrentSession" resultType="java.util.LinkedHashMap">
+        select <include refid="sessionContextColumns"/>
+        <include refid="sessionContextJoins"/>
+        where s.ses_status in (0, 1)
+          and (t.tal_user_id = #{userId} or s.ses_interviewer_id = #{userId})
+        order by (s.ses_status = 1) desc, a.apt_start_time asc
+        limit 1
+    </select>
+
+    <select id="selectSessionContext" resultType="java.util.LinkedHashMap">
+        select <include refid="sessionContextColumns"/>
+        <include refid="sessionContextJoins"/>
+        where s.ses_id = #{sessionId}
+    </select>
+
+    <insert id="ensureMeetingState">
+        insert into t_int_meeting_state
+            (mst_session_id, mst_total_question, mst_current_question,
+             mst_duration_seconds, mst_remaining_seconds, mst_created_at, mst_updated_at)
+        select s.ses_id,
+               (select count(*) from t_int_outline o where o.oln_session_id = s.ses_id),
+               0,
+               timestampdiff(second, a.apt_start_time, a.apt_end_time),
+               timestampdiff(second, a.apt_start_time, a.apt_end_time),
+               sysdate(), sysdate()
+        from t_int_session s
+        left join t_sch_appointment a on a.apt_id = s.ses_appointment_id
+        where s.ses_id = #{sessionId}
+        on duplicate key update mst_session_id = mst_session_id
+    </insert>
+
+    <select id="selectMeetingState" resultType="java.util.LinkedHashMap">
+        select m.mst_total_question      as totalQuestionNo,
+               m.mst_current_question    as answeredCount,
+               m.mst_duration_seconds    as durationSeconds,
+               m.mst_remaining_seconds   as remainingSeconds,
+               m.mst_mic_enabled         as micEnabled,
+               m.mst_cam_enabled         as camEnabled,
+               m.mst_speaker_volume      as speakerVolume,
+               m.mst_cam_status          as camStatus,
+               m.mst_mic_status          as micStatus,
+               m.mst_speaker_status      as speakerStatus,
+               m.mst_net_status          as netStatus,
+               m.mst_net_rtt_ms          as rttMs,
+               m.mst_net_bandwidth_kbps  as bandwidthKbps,
+               m.mst_risk_flag           as riskFlag,
+               m.mst_takeover            as takeover,
+               m.mst_takeover_reason     as takeoverReason,
+               date_format(m.mst_heartbeat_at, '%Y-%m-%d %H:%i:%s') as heartbeatAt,
+               if(s.ses_status = 1 and s.ses_start_at is not null,
+                  timestampdiff(second, s.ses_start_at, sysdate()), 0) as elapsedSeconds,
+               s.ses_status              as sessionStatus
+        from t_int_meeting_state m
+        join t_int_session s on s.ses_id = m.mst_session_id
+        where m.mst_session_id = #{sessionId}
+    </select>
+
+    <update id="updateEnvironmentCheck">
+        update t_int_meeting_state
+        set mst_cam_status = #{camStatus},
+            mst_mic_status = #{micStatus},
+            mst_speaker_status = #{speakerStatus},
+            mst_net_status = #{netStatus},
+            mst_net_rtt_ms = #{rttMs,jdbcType=INTEGER},
+            mst_net_bandwidth_kbps = #{bandwidthKbps,jdbcType=INTEGER},
+            mst_risk_flag = #{riskFlag},
+            <if test="deviceJson != null">mst_device_json = #{deviceJson,jdbcType=VARCHAR},</if>
+            mst_updated_at = sysdate()
+        where mst_session_id = #{sessionId}
+    </update>
+
+    <update id="updateMediaState">
+        update t_int_meeting_state
+        set mst_updated_at = sysdate()
+        <if test="micEnabled != null">, mst_mic_enabled = #{micEnabled,jdbcType=TINYINT}</if>
+        <if test="camEnabled != null">, mst_cam_enabled = #{camEnabled,jdbcType=TINYINT}</if>
+        <if test="speakerVolume != null">, mst_speaker_volume = #{speakerVolume,jdbcType=TINYINT}</if>
+        <if test="deviceJson != null">, mst_device_json = #{deviceJson,jdbcType=VARCHAR}</if>
+        where mst_session_id = #{sessionId}
+    </update>
+
+    <update id="touchHeartbeat">
+        update t_int_meeting_state
+        set mst_heartbeat_at = sysdate(), mst_updated_at = sysdate()
+        where mst_session_id = #{sessionId}
+    </update>
+
+    <update id="updateTakeover">
+        update t_int_meeting_state
+        set mst_takeover = #{takeover},
+            mst_takeover_reason = #{reason,jdbcType=VARCHAR},
+            mst_updated_at = sysdate()
+        where mst_session_id = #{sessionId}
+    </update>
+
+    <update id="incrementAnswered">
+        update t_int_meeting_state
+        set mst_current_question = mst_current_question + 1, mst_updated_at = sysdate()
+        where mst_session_id = #{sessionId}
+    </update>
+
+    <select id="selectNextDialogueOrder" parameterType="Long" resultType="int">
+        select ifnull(max(dlg_order), 0) + 1 from t_int_dialogue where dlg_session_id = #{sessionId}
+    </select>
+
+    <insert id="insertDialogue">
+        insert into t_int_dialogue (dlg_session_id, dlg_order, dlg_role, dlg_type, dlg_content, dlg_intent, dlg_created_at)
+        values (#{sessionId}, #{order}, #{role}, #{type}, #{content}, #{intent,jdbcType=VARCHAR}, sysdate())
+    </insert>
+
+    <select id="selectCaptions" resultType="java.util.LinkedHashMap">
+        select dlg_id            as id,
+               dlg_order         as sequence,
+               dlg_role          as role,
+               dlg_content       as content,
+               date_format(dlg_created_at, '%H:%i:%s') as at
+        from t_int_dialogue
+        where dlg_session_id = #{sessionId} and dlg_order &gt; #{afterSequence}
+        order by dlg_order asc
+        limit #{limit}
+    </select>
+
+    <select id="selectOutlineAt" resultType="java.util.LinkedHashMap">
+        select oln_id        as questionId,
+               oln_topic     as topic,
+               oln_description as description,
+               oln_dimension as dimension
+        from t_int_outline
+        where oln_session_id = #{sessionId}
+        order by oln_order asc, oln_id asc
+        limit #{offset}, 1
+    </select>
+
+    <select id="selectCopilot" resultType="java.util.LinkedHashMap">
+        select cpt_id               as id,
+               cpt_seq              as seq,
+               cpt_mode             as mode,
+               cpt_content          as content,
+               cpt_reference        as reference,
+               cpt_points           as points,
+               cpt_status           as status,
+               cpt_adopted_content  as adoptedContent,
+               date_format(cpt_created_at, '%H:%i:%s') as at
+        from t_int_copilot
+        where cpt_session_id = #{sessionId} and cpt_seq &gt; #{afterSequence}
+        order by cpt_seq asc
+        limit #{limit}
+    </select>
+
+    <select id="selectCopilotById" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select cpt_id as id, cpt_session_id as sessionId, cpt_status as status
+        from t_int_copilot
+        where cpt_id = #{id}
+    </select>
+
+    <update id="handleCopilot">
+        update t_int_copilot
+        set cpt_status = #{status},
+            cpt_adopted_content = #{adoptedContent,jdbcType=VARCHAR},
+            cpt_updated_at = sysdate()
+        where cpt_id = #{id}
+    </update>
+
+    <update id="updateConsent">
+        update t_int_session
+        set ses_candidate_consent = #{consent},
+            ses_consent_at = sysdate(),
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId}
+    </update>
+
+    <update id="startSession">
+        update t_int_session
+        set ses_status = 1, ses_start_at = sysdate(), ses_updated_at = sysdate()
+        where ses_id = #{sessionId} and ses_status = 0
+    </update>
+
+    <update id="finishSession">
+        update t_int_session
+        set ses_status = #{status},
+            ses_end_at = sysdate(),
+            ses_rec_duration_sec = if(ses_start_at is null, ses_rec_duration_sec,
+                                      timestampdiff(second, ses_start_at, sysdate())),
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId}
+    </update>
+
+    <update id="abortSession">
+        update t_int_session
+        set ses_status = 3,
+            ses_end_at = sysdate(),
+            ses_rec_duration_sec = if(ses_start_at is null, ses_rec_duration_sec,
+                                      timestampdiff(second, ses_start_at, sysdate())),
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId}
+    </update>
+
+    <select id="selectSessionResult" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select s.ses_id       as sessionId,
+               s.ses_status   as status,
+               s.ses_mode     as mode,
+               date_format(s.ses_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
+               date_format(s.ses_end_at, '%Y-%m-%d %H:%i:%s')   as endAt,
+               ifnull(s.ses_rec_duration_sec,
+                      if(s.ses_start_at is null, 0,
+                         timestampdiff(second, s.ses_start_at, ifnull(s.ses_end_at, sysdate())))) as durationSeconds,
+               ifnull(m.mst_current_question, 0) as answeredCount,
+               ifnull(m.mst_total_question, 0)   as totalQuestionNo,
+               (select count(*) from t_int_evaluation e where e.evl_session_id = s.ses_id) as reportGenerated
+        from t_int_session s
+        left join t_int_meeting_state m on m.mst_session_id = s.ses_id
+        where s.ses_id = #{sessionId}
+    </select>
+
+    <select id="selectRecordingList" resultType="java.util.LinkedHashMap">
+        select s.ses_id    as sessionId,
+               ifnull(u.nick_name, u.user_name) as candidateName,
+               p.pos_title as positionTitle,
+               date_format(s.ses_end_at, '%Y-%m-%d') as interviewDate,
+               ifnull(s.ses_rec_duration_sec, 0) as durationSec,
+               s.ses_status as status,
+               s.ses_mode as mode,
+               s.ses_rec_url as recUrl,
+               s.ses_rec_access_level as recAccessLevel,
+               date_format(s.ses_rec_expires_at, '%Y-%m-%d') as recExpiresAt
+        from t_int_session s
+        join t_pos p on p.pos_id = s.ses_position_id
+        join t_tal t on t.tal_id = s.ses_candidate_id
+        join sys_user u on u.user_id = t.tal_user_id
+        where p.pos_company_id = #{companyId} and s.ses_rec_url is not null
+        <if test="sessionId != null">
+            and s.ses_id = #{sessionId}
+        </if>
+        <if test="candidate != null and candidate != ''">
+            and (u.nick_name like concat('%', #{candidate}, '%') or u.user_name like concat('%', #{candidate}, '%'))
+        </if>
+        <if test="from != null and from != ''">
+            and s.ses_end_at &gt;= #{from}
+        </if>
+        <if test="to != null and to != ''">
+            and s.ses_end_at &lt;= concat(#{to}, ' 23:59:59')
+        </if>
+        order by s.ses_end_at desc, s.ses_id desc
+    </select>
+
+    <select id="selectRecordingSecondsTotal" parameterType="Long" resultType="java.lang.Long">
+        select ifnull(sum(s.ses_rec_duration_sec), 0)
+        from t_int_session s
+        join t_pos p on p.pos_id = s.ses_position_id
+        where p.pos_company_id = #{companyId}
+    </select>
+
+    <select id="selectRecordingDetail" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select s.ses_id as sessionId,
+               s.ses_rec_url as recUrl,
+               ifnull(s.ses_rec_duration_sec, 0) as durationSec,
+               ifnull(u.nick_name, u.user_name) as candidateName,
+               p.pos_title as positionTitle,
+               date_format(s.ses_end_at, '%Y-%m-%d') as interviewDate,
+               s.ses_rec_access_level as recAccessLevel,
+               date_format(s.ses_rec_expires_at, '%Y-%m-%d') as recExpiresAt
+        from t_int_session s
+        join t_pos p on p.pos_id = s.ses_position_id
+        join t_tal t on t.tal_id = s.ses_candidate_id
+        join sys_user u on u.user_id = t.tal_user_id
+        where s.ses_id = #{sessionId}
+    </select>
+
+    <select id="selectRecordingTimeline" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select d.dlg_order   as sequence,
+               d.dlg_role    as role,
+               d.dlg_content as content,
+               greatest(ifnull(timestampdiff(second, s.ses_start_at, d.dlg_created_at), 0), 0) as second
+        from t_int_dialogue d
+        left join t_int_session s on s.ses_id = d.dlg_session_id
+        where d.dlg_session_id = #{sessionId}
+        order by d.dlg_order asc
+    </select>
+
+    <update id="updateRecordingAccess">
+        update t_int_session
+        set ses_rec_access_level = #{level},
+            ses_rec_expires_at = date_add(sysdate(), interval #{validDays} day),
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId}
+    </update>
+
+    <select id="selectStoragePolicy" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select rcp_id        as policyId,
+               rcp_company_id as companyId,
+               rcp_keep_days  as keepDays,
+               rcp_max_storage_gb as maxStorageGb,
+               rcp_default_access_level as defaultAccessLevel
+        from t_int_recording_policy
+        where rcp_company_id = #{companyId} or rcp_company_id is null
+        order by (rcp_company_id is null) asc
+        limit 1
+    </select>
+
+    <insert id="upsertStoragePolicy">
+        insert into t_int_recording_policy
+            (rcp_company_id, rcp_keep_days, rcp_max_storage_gb, rcp_created_at, rcp_updated_at)
+        values (#{companyId}, #{keepDays}, #{maxStorageGb}, sysdate(), sysdate())
+        on duplicate key update rcp_keep_days = #{keepDays},
+                                rcp_max_storage_gb = #{maxStorageGb},
+                                rcp_updated_at = sysdate()
+    </insert>
+
+</mapper>
