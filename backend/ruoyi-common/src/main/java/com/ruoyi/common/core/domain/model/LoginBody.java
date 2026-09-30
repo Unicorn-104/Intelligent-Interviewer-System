@@ -27,6 +27,21 @@ public class LoginBody
      */
     private String uuid;
 
+    /**
+     * 手机号码
+     */
+    private String phone;
+
+    /**
+     * 短信验证码
+     */
+    private String smsCode;
+
+    /**
+     * 登录方式：password、sms
+     */
+    private String loginType;
+
     public String getUsername()
     {
         return username;
@@ -65,5 +80,35 @@ public class LoginBody
     public void setUuid(String uuid)
     {
         this.uuid = uuid;
+    }
+
+    public String getPhone()
+    {
+        return phone;
+    }
+
+    public void setPhone(String phone)
+    {
+        this.phone = phone;
+    }
+
+    public String getSmsCode()
+    {
+        return smsCode;
+    }
+
+    public void setSmsCode(String smsCode)
+    {
+        this.smsCode = smsCode;
+    }
+
+    public String getLoginType()
+    {
+        return loginType;
+    }
+
+    public void setLoginType(String loginType)
+    {
+        this.loginType = loginType;
     }
 }

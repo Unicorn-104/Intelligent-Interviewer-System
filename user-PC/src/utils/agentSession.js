@@ -1,3 +1,5 @@
+import { getToken } from '@/utils/auth'
+
 const CANDIDATE_SESSION_KEY = 'candidateSession'
 
 function getStorage() {
@@ -35,5 +37,5 @@ export function clearCandidateSession() {
 }
 
 export function hasCandidateAccessToken() {
-  return Boolean(getCandidateSession()?.accessToken)
+  return Boolean(getToken())
 }

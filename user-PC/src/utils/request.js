@@ -20,6 +20,11 @@ const service = axios.create({
   timeout: 10000
 })
 
+function isPublicAuthRequest(config) {
+  const url = config?.url || ''
+  return ['/login', '/register', '/captchaImage', '/sms/code'].some(path => url === path || url.endsWith(path))
+}
+
 // request拦截器
 service.interceptors.request.use(config => {
   // 是否需要设置 token
@@ -83,18 +88,18 @@ service.interceptors.response.use(res => {
       return res.data
     }
     if (code === 401) {
-      if (!isRelogin.show) {
+      if (!isPublicAuthRequest(res.config) && !isRelogin.show) {
         isRelogin.show = true
         ElMessageBox.confirm('登录状态已过期，您可以继续留在该页面，或者重新登录', '系统提示', { confirmButtonText: '重新登录', cancelButtonText: '取消', type: 'warning' }).then(() => {
           isRelogin.show = false
-          useUserStore().logOut().then(() => {
+          useUserStore().logOut().catch(() => {}).finally(() => {
             location.href = '/index'
           })
       }).catch(() => {
         isRelogin.show = false
       })
     }
-      return Promise.reject('无效的会话，或者会话已过期，请重新登录。')
+      return Promise.reject(new Error(res.data.msg || '无效的会话，或者会话已过期，请重新登录。'))
     } else if (code === 500) {
       ElMessage({ message: msg, type: 'error' })
       return Promise.reject(new Error(msg))

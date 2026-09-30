@@ -1,12 +1,12 @@
 # Project Memory
 
-本项目所有人工开发者与 AI Agent 在开始开发、提交或发起 PR 前，必须先阅读并遵守：
+本文件是仓库级长期记忆入口。所有人工开发者与 AI Agent 在修改代码、执行 Git 操作或创建 PR 前，必须先阅读并遵守：
 
 - `docs/spec/development.md`
 - `docs/spec/git.md`
 - `docs/spec/coding-style.md`
 
-关键约束：
+## Git 工作流记忆
 
 - 分支模型固定为 `feature/* -> dev -> main`。
 - 功能分支命名固定为 `feature/<模块名>-<功能名>-<姓名缩写>`。

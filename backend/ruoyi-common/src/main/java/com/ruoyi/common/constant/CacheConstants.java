@@ -18,6 +18,16 @@ public class CacheConstants
     public static final String CAPTCHA_CODE_KEY = "captcha_codes:";
 
     /**
+     * 手机短信验证码 redis key
+     */
+    public static final String SMS_CODE_KEY = "sms_codes:";
+
+    /**
+     * 手机短信验证码发送冷却 redis key
+     */
+    public static final String SMS_CODE_COOLDOWN_KEY = "sms_code_cooldown:";
+
+    /**
      * 参数管理 cache key
      */
     public static final String SYS_CONFIG_KEY = "sys_config:";

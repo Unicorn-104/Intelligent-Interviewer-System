@@ -4,8 +4,9 @@ import Layout from '@/layout'
 
 const agentPageModules = import.meta.glob('../views/agent/pages/*.vue')
 const agentPageDefinitions = [
-  ['index', 'AgentIndex', '候选人工作台'],
-  ['login', 'AgentLogin', '候选人登录'],
+  ['index', 'AgentIndex', '求职者端工作台'],
+  ['login', 'AgentLogin', '求职者端登录'],
+  ['register', 'AgentRegister', '求职者端注册'],
   ['jobs', 'AgentJobs', '岗位浏览'],
   ['job-detail', 'AgentJobDetail', '岗位详情'],
   ['job-assistant', 'AgentJobAssistant', '求职助手'],
