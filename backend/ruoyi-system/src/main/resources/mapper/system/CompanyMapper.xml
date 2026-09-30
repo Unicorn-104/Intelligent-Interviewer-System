@@ -20,13 +20,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="cmpVerifyAt" column="cmp_verify_at"/>
         <result property="cmpVerifyBy" column="cmp_verify_by"/>
         <result property="cmpStatus" column="cmp_status"/>
+        <result property="apiQuota" column="api_quota"/>
+        <result property="apiUsed" column="api_used"/>
         <result property="cmpCreatedAt" column="cmp_created_at"/>
     </resultMap>
 
     <sql id="selectCompanyVo">
         select cmp_id, cmp_name, cmp_credit_code, cmp_logo_url, cmp_industry, cmp_size,
                cmp_city, cmp_address, cmp_website, cmp_intro, cmp_detail_json,
-               cmp_verify_status, cmp_verify_at, cmp_verify_by, cmp_status, cmp_created_at
+               cmp_verify_status, cmp_verify_at, cmp_verify_by, cmp_status, api_quota, api_used, cmp_created_at
         from t_cmp
     </sql>
 
@@ -93,5 +95,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <delete id="deleteCompanyByCmpId" parameterType="Long">
         delete from t_cmp where cmp_id = #{cmpId}
     </delete>
+
+    <select id="selectCompanyCount" resultType="int">
+        select count(*) from t_cmp
+    </select>
+
+    <select id="selectActiveCompanyCount" resultType="int">
+        select count(*) from t_cmp where cmp_status = 1
+    </select>
 
 </mapper>

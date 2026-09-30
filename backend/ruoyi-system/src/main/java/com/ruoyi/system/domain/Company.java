@@ -59,6 +59,12 @@ public class Company extends BaseEntity
     /** 状态：0-已下架，1-正常 */
     private Integer cmpStatus;
 
+    /** API配额(次/月) */
+    private Integer apiQuota;
+
+    /** API已使用量 */
+    private Integer apiUsed;
+
     /** 创建时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date cmpCreatedAt;
@@ -93,6 +99,12 @@ public class Company extends BaseEntity
     public void setCmpVerifyBy(Long cmpVerifyBy) { this.cmpVerifyBy = cmpVerifyBy; }
     public Integer getCmpStatus() { return cmpStatus; }
     public void setCmpStatus(Integer cmpStatus) { this.cmpStatus = cmpStatus; }
+
+    public Integer getApiQuota() { return apiQuota; }
+    public void setApiQuota(Integer apiQuota) { this.apiQuota = apiQuota; }
+
+    public Integer getApiUsed() { return apiUsed; }
+    public void setApiUsed(Integer apiUsed) { this.apiUsed = apiUsed; }
     public Date getCmpCreatedAt() { return cmpCreatedAt; }
     public void setCmpCreatedAt(Date cmpCreatedAt) { this.cmpCreatedAt = cmpCreatedAt; }
 }

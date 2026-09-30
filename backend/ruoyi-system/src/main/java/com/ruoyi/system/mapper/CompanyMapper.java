@@ -24,4 +24,14 @@ public interface CompanyMapper
      * 审核企业（更新认证状态）
      */
     public int verifyCompany(Company company);
+
+    /**
+     * 查询企业总数
+     */
+    public int selectCompanyCount();
+
+    /**
+     * 查询活跃企业数（status=1）
+     */
+    public int selectActiveCompanyCount();
 }
