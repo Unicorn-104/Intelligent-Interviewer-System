@@ -27,6 +27,7 @@
         <oshi.version>7.4.4</oshi.version>
         <commons.io.version>2.22.0</commons.io.version>
         <poi.version>5.5.1</poi.version>
+        <tess4j.version>5.20.0</tess4j.version>
         <velocity.version>2.3</velocity.version>
         <jwt.version>0.9.1</jwt.version>
         <jaxb-api.version>2.3.1</jaxb-api.version>
@@ -105,6 +106,13 @@
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
                 <version>${poi.version}</version>
+            </dependency>
+
+            <!-- 本地 OCR：扫描版 PDF 仅在内存中渲染和识别，不保存原文件 -->
+            <dependency>
+                <groupId>net.sourceforge.tess4j</groupId>
+                <artifactId>tess4j</artifactId>
+                <version>${tess4j.version}</version>
             </dependency>
 
             <!-- velocity代码生成使用模板 -->
