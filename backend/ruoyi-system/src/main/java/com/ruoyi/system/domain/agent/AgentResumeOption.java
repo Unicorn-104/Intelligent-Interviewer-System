@@ -18,6 +18,9 @@ public class AgentResumeOption
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private Date updatedAt;
     private Integer usedApplicationCount;
+    private String fileName;
+    private Long fileSize;
+    private String fileUrl;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -37,4 +40,10 @@ public class AgentResumeOption
     public void setUpdatedAt(Date updatedAt) { this.updatedAt = updatedAt; }
     public Integer getUsedApplicationCount() { return usedApplicationCount; }
     public void setUsedApplicationCount(Integer usedApplicationCount) { this.usedApplicationCount = usedApplicationCount; }
+    public String getFileName() { return fileName; }
+    public void setFileName(String fileName) { this.fileName = fileName; }
+    public Long getFileSize() { return fileSize; }
+    public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
+    public String getFileUrl() { return fileUrl; }
+    public void setFileUrl(String fileUrl) { this.fileUrl = fileUrl; }
 }
