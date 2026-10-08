@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.app.AppSupportMapper">
+    <resultMap id="AppHelpArticleResult" type="com.ruoyi.system.domain.app.AppHelpArticle">
+        <id property="articleId" column="article_id" />
+        <result property="category" column="category" />
+        <result property="title" column="title" />
+        <result property="content" column="content" />
+        <result property="keywords" column="keywords" />
+        <result property="updatedAt" column="updated_at" />
+    </resultMap>
+
+    <resultMap id="AppFeedbackResult" type="com.ruoyi.system.domain.app.AppFeedback">
+        <id property="feedbackId" column="feedback_id" />
+        <result property="type" column="type" />
+        <result property="subject" column="subject" />
+        <result property="description" column="description" />
+        <result property="status" column="status" />
+        <result property="reply" column="reply" />
+        <result property="createdAt" column="created_at" />
+        <result property="updatedAt" column="updated_at" />
+    </resultMap>
+
+    <select id="selectHelpArticles" resultMap="AppHelpArticleResult">
+        select hlp_id as article_id,
+               hlp_category as category,
+               hlp_title as title,
+               hlp_content as content,
+               hlp_keywords as keywords,
+               hlp_updated_at as updated_at
+        from t_hlp_article
+        where hlp_status = 1
+        <if test="category != null and category != ''">
+            and hlp_category = #{category}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            and (hlp_title like concat('%', #{keyword}, '%')
+                 or hlp_category like concat('%', #{keyword}, '%')
+                 or hlp_keywords like concat('%', #{keyword}, '%')
+                 or hlp_content like concat('%', #{keyword}, '%'))
+        </if>
+        order by hlp_category asc, hlp_updated_at desc, hlp_id desc
+        limit #{limit}
+    </select>
+
+    <select id="selectFeedbacks" resultMap="AppFeedbackResult">
+        select fbk_id as feedback_id,
+               fbk_type as type,
+               fbk_subject as subject,
+               fbk_description as description,
+               fbk_status as status,
+               fbk_reply as reply,
+               fbk_created_at as created_at,
+               fbk_updated_at as updated_at
+        from t_fbk
+        where fbk_user_id = #{userId}
+        order by fbk_created_at desc, fbk_id desc
+        limit #{limit}
+    </select>
+
+    <select id="countRecentDuplicateFeedback" resultType="int">
+        select count(1)
+        from t_fbk
+        where fbk_user_id = #{userId}
+          and fbk_type = #{type}
+          and fbk_subject = #{subject}
+          and coalesce(fbk_description, '') = #{description}
+          and fbk_created_at >= date_sub(now(), interval 1 minute)
+    </select>
+
+    <insert id="insertFeedback">
+        insert into t_fbk
+            (fbk_user_id, fbk_type, fbk_subject, fbk_description,
+             fbk_status, fbk_created_at, fbk_updated_at)
+        values
+            (#{userId}, #{type}, #{subject}, #{description}, 0, now(), now())
+    </insert>
+</mapper>
