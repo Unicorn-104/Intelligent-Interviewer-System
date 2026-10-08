@@ -13,6 +13,7 @@ import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.system.domain.agent.AgentApplicationCreateRequest;
 import com.ruoyi.system.domain.agent.AgentApplicationQuery;
+import com.ruoyi.system.domain.agent.AgentResumeCreateRequest;
 import com.ruoyi.system.service.agent.IAgentApplicationService;
 
 /**
@@ -30,6 +31,12 @@ public class AgentApplicationController extends BaseController
     public AjaxResult resumeOptions(@PathVariable("jobId") Long jobId)
     {
         return success(applicationService.selectResumeOptions(getUserId(), jobId));
+    }
+
+    @PostMapping("/resumes")
+    public AjaxResult createResume(@Valid @RequestBody AgentResumeCreateRequest request)
+    {
+        return success(applicationService.createResume(getUserId(), request));
     }
 
     @PostMapping("/applications")

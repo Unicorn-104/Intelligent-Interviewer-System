@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Options;
 import com.ruoyi.system.domain.agent.AgentApplication;
 import com.ruoyi.system.domain.agent.AgentCandidate;
+import com.ruoyi.system.domain.agent.AgentResumeRecord;
 import com.ruoyi.system.domain.agent.AgentResumeOption;
 
 /**
@@ -16,6 +17,11 @@ public interface AgentApplicationMapper
     List<AgentResumeOption> selectResumeOptions(@Param("userId") Long userId, @Param("jobId") Long jobId);
 
     AgentResumeOption selectResumeById(@Param("userId") Long userId, @Param("resumeId") Long resumeId);
+
+    int countActiveResumes(@Param("userId") Long userId);
+
+    @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "rbs_id")
+    int insertResume(AgentResumeRecord resume);
 
     List<AgentApplication> selectApplicationList(@Param("userId") Long userId, @Param("status") String status);
 

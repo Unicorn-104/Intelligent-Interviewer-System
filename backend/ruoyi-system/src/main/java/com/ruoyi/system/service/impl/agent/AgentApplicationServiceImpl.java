@@ -17,6 +17,8 @@ import com.ruoyi.system.domain.agent.AgentApplicationQuery;
 import com.ruoyi.system.domain.agent.AgentCandidate;
 import com.ruoyi.system.domain.agent.AgentJob;
 import com.ruoyi.system.domain.agent.AgentPage;
+import com.ruoyi.system.domain.agent.AgentResumeCreateRequest;
+import com.ruoyi.system.domain.agent.AgentResumeRecord;
 import com.ruoyi.system.domain.agent.AgentResumeOption;
 import com.ruoyi.system.domain.agent.AgentTimeline;
 import com.ruoyi.system.mapper.agent.AgentApplicationMapper;
@@ -40,6 +42,41 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
     {
         requireActiveJob(jobId, userId);
         return applicationMapper.selectResumeOptions(userId, jobId);
+    }
+
+    @Override
+    @Transactional
+    public AgentResumeOption createResume(Long userId, AgentResumeCreateRequest request)
+    {
+        if (request == null || StringUtils.isEmpty(request.getResumeName()))
+        {
+            throw new ServiceException("简历名称不能为空");
+        }
+
+        String resumeName = request.getResumeName().trim();
+        String jobDirection = StringUtils.isEmpty(request.getJobDirection())
+                ? null : request.getJobDirection().trim();
+        int activeResumeCount = applicationMapper.countActiveResumes(userId);
+        if (activeResumeCount >= 10)
+        {
+            throw new ServiceException("最多只能创建10份有效简历");
+        }
+        AgentResumeRecord resume = new AgentResumeRecord();
+        resume.setUserId(userId);
+        resume.setResumeName(resumeName);
+        resume.setJobDirection(jobDirection);
+        resume.setIsDefault(activeResumeCount == 0 ? 1 : 0);
+        if (applicationMapper.insertResume(resume) <= 0)
+        {
+            throw new ServiceException("创建简历失败，请稍后重试");
+        }
+
+        AgentResumeOption created = applicationMapper.selectResumeById(userId, resume.getId());
+        if (created == null)
+        {
+            throw new ServiceException("简历已创建，但读取简历信息失败");
+        }
+        return created;
     }
 
     @Override

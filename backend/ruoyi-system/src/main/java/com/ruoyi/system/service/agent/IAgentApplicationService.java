@@ -5,6 +5,7 @@ import com.ruoyi.system.domain.agent.AgentApplication;
 import com.ruoyi.system.domain.agent.AgentApplicationCreateRequest;
 import com.ruoyi.system.domain.agent.AgentApplicationQuery;
 import com.ruoyi.system.domain.agent.AgentPage;
+import com.ruoyi.system.domain.agent.AgentResumeCreateRequest;
 import com.ruoyi.system.domain.agent.AgentResumeOption;
 
 /**
@@ -13,6 +14,8 @@ import com.ruoyi.system.domain.agent.AgentResumeOption;
 public interface IAgentApplicationService
 {
     List<AgentResumeOption> selectResumeOptions(Long userId, Long jobId);
+
+    AgentResumeOption createResume(Long userId, AgentResumeCreateRequest request);
 
     AgentPage<AgentApplication> selectApplications(AgentApplicationQuery query, Long userId);
 
