@@ -32,10 +32,12 @@
 </template>
 
 <script setup>
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { clearCandidateSession } from '@/utils/agentSession'
 import { removeToken } from '@/utils/auth'
 import useUserStore from '@/store/modules/user'
+import { getNoticeUnreadCount } from '@/api/system/notice'
 
 defineProps({
   active: {
@@ -46,15 +48,33 @@ defineProps({
 
 const router = useRouter()
 const userStore = useUserStore()
+const unreadCount = ref(0)
 const displayName = computed(() => userStore.nickName || userStore.name || '求职者')
 const avatarText = computed(() => displayName.value.slice(0, 1))
 
-const navItems = [
+const baseNavItems = [
   { key: 'index', label: '首页', path: '/agent/index' },
   { key: 'jobs', label: '岗位浏览', path: '/agent/jobs' },
   { key: 'applications', label: '投递跟踪', path: '/agent/applications' },
-  { key: 'messages', label: '消息通知', path: '/agent/messages', badge: '3' }
+  { key: 'messages', label: '消息通知', path: '/agent/messages' }
 ]
+const navItems = computed(() => baseNavItems.map(item => ({
+  ...item,
+  badge: item.key === 'messages' && unreadCount.value ? String(unreadCount.value) : ''
+})))
+
+async function loadUnreadCount() {
+  try {
+    const response = await getNoticeUnreadCount()
+    unreadCount.value = Number(response.data || 0)
+  } catch {
+    unreadCount.value = 0
+  }
+}
+
+function handleNotificationUpdate() {
+  loadUnreadCount()
+}
 
 async function clearAuthAndRedirect(target) {
   try {
@@ -84,6 +104,15 @@ async function handleLogout() {
     // 用户取消确认时保持当前页面与会话不变。
   }
 }
+
+onMounted(() => {
+  loadUnreadCount()
+  window.addEventListener('agent-notifications-updated', handleNotificationUpdate)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('agent-notifications-updated', handleNotificationUpdate)
+})
 </script>
 
 <style scoped>
