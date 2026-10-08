@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.app.AppUserProfileMapper">
+
+    <resultMap id="AppUserProfileResult" type="com.ruoyi.system.domain.app.AppUserProfile">
+        <id property="userId" column="user_id" />
+        <result property="userName" column="user_name" />
+        <result property="nickName" column="nick_name" />
+        <result property="realName" column="real_name" />
+        <result property="avatar" column="avatar" />
+        <result property="email" column="email" />
+        <result property="phonenumber" column="phonenumber" />
+        <result property="sex" column="sex" />
+        <result property="remark" column="remark" />
+        <result property="currentCity" column="current_city" />
+        <result property="currentStatus" column="current_status" />
+        <result property="targetDirection" column="target_direction" />
+        <result property="targetCity" column="target_city" />
+        <result property="verifyStatus" column="verify_status" />
+        <result property="applicationCount" column="application_count" />
+        <result property="interviewCount" column="interview_count" />
+        <result property="favoriteCount" column="favorite_count" />
+        <result property="workYears" column="work_years" />
+    </resultMap>
+
+    <select id="selectProfileByUserId" parameterType="Long" resultMap="AppUserProfileResult">
+        select u.user_id,
+               u.user_name,
+               u.nick_name,
+               u.real_name,
+               u.avatar,
+               u.email,
+               u.phonenumber,
+               u.sex,
+               u.remark,
+               u.current_city,
+               u.current_status,
+               u.target_direction,
+               u.target_city,
+               coalesce((select v.vef_status
+                         from t_usr_verify v
+                         where v.vef_user_id = u.user_id
+                         order by v.vef_id desc limit 1), 0) as verify_status,
+               (select count(*)
+                from t_app_record a
+                inner join t_tal t on t.tal_id = a.app_candidate_id
+                where t.tal_user_id = u.user_id) as application_count,
+               (select count(*)
+                from t_sch_appointment a
+                inner join t_tal t on t.tal_id = a.apt_candidate_id
+                where t.tal_user_id = u.user_id and a.apt_status in (0, 1)) as interview_count,
+               (select count(*)
+                from t_usr_interest i
+                where i.int_user_id = u.user_id and i.int_status = 1) as favorite_count,
+               coalesce((select timestampdiff(year, min(w.wrk_start_date), curdate())
+                         from t_res_work w
+                         inner join t_res_base r on r.rbs_id = w.wrk_resume_id
+                         where r.rbs_user_id = u.user_id
+                           and r.rbs_status = 1
+                           and w.wrk_start_date is not null), 0) as work_years
+        from sys_user u
+        where u.user_id = #{userId} and u.del_flag = '0'
+    </select>
+
+    <update id="updateProfile" parameterType="com.ruoyi.system.domain.app.AppUserProfile">
+        update sys_user
+        set nick_name = #{nickName},
+            real_name = #{realName},
+            email = #{email},
+            phonenumber = #{phonenumber},
+            sex = #{sex},
+            remark = #{remark},
+            current_city = #{currentCity},
+            current_status = #{currentStatus},
+            target_direction = #{targetDirection},
+            target_city = #{targetCity},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where user_id = #{userId} and del_flag = '0'
+    </update>
+</mapper>

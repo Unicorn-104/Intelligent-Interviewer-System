@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.app.AppJobMapper">
+    <resultMap id="AppJobResult" type="com.ruoyi.system.domain.app.AppJob">
+        <id property="positionId" column="position_id" />
+        <result property="title" column="title" />
+        <result property="companyId" column="company_id" />
+        <result property="company" column="company" />
+        <result property="companyLogo" column="company_logo" />
+        <result property="companyVerified" column="company_verified" />
+        <result property="city" column="city" />
+        <result property="salaryMin" column="salary_min" />
+        <result property="salaryMax" column="salary_max" />
+        <result property="experience" column="experience" />
+        <result property="education" column="education" />
+        <result property="jobType" column="job_type" />
+        <result property="matchScore" column="match_score" />
+        <result property="description" column="description" />
+        <result property="tagsCsv" column="tags_csv" />
+        <result property="applied" column="applied" />
+    </resultMap>
+
+    <select id="selectJobs" resultMap="AppJobResult">
+        select p.pos_id as position_id,
+               p.pos_title as title,
+               c.cmp_id as company_id,
+               c.cmp_name as company,
+               c.cmp_logo_url as company_logo,
+               c.cmp_verify_status as company_verified,
+               p.pos_work_city as city,
+               p.pos_salary_min as salary_min,
+               p.pos_salary_max as salary_max,
+               p.pos_experience_required as experience,
+               p.pos_education_required as education,
+               p.pos_job_type as job_type,
+               json_unquote(json_extract(p.pos_jd_json, '$.description')) as description,
+               group_concat(distinct ps.psk_name order by ps.psk_required desc separator ',') as tags_csv,
+               least(98, 60
+                    + if(u.target_direction is not null and
+                         (p.pos_title like concat('%', u.target_direction, '%')
+                          or u.target_direction like concat('%', p.pos_title, '%')), 15, 0)
+                    + if(coalesce(u.target_city, u.current_city) = p.pos_work_city, 10, 0)
+                    + least(15, count(distinct rs.skl_name) * 5)
+                    + if(p.pos_created_at >= date_sub(now(), interval 7 day), 5, 0)) as match_score,
+               exists(select 1
+                      from t_app_record ar
+                      join t_tal t on t.tal_id = ar.app_candidate_id
+                      where t.tal_user_id = #{userId}
+                        and ar.app_position_id = p.pos_id) as applied
+        from t_pos p
+        join t_cmp c on c.cmp_id = p.pos_company_id and c.cmp_status = 1
+        join sys_user u on u.user_id = #{userId}
+        left join t_pos_skill ps on ps.psk_position_id = p.pos_id
+        left join t_res_base rb on rb.rbs_user_id = #{userId} and rb.rbs_status = 1
+        left join t_res_skill rs on rs.skl_resume_id = rb.rbs_id and rs.skl_name = ps.psk_name
+        where p.pos_status = 1
+        <if test="keyword != null and keyword != ''">
+            and (p.pos_title like concat('%', #{keyword}, '%')
+                 or c.cmp_name like concat('%', #{keyword}, '%')
+                 or exists(select 1 from t_pos_skill search_skill
+                           where search_skill.psk_position_id = p.pos_id
+                             and search_skill.psk_name like concat('%', #{keyword}, '%')))
+        </if>
+        <if test="filter == 'latest'">
+            and p.pos_created_at >= date_sub(now(), interval 30 day)
+        </if>
+        <if test="filter == 'urgent'">
+            and p.pos_salary_max >= 30000
+        </if>
+        <if test="filter == 'nlp'">
+            and (p.pos_title like '%NLP%' or exists(select 1 from t_pos_skill nlp_skill
+                 where nlp_skill.psk_position_id = p.pos_id and nlp_skill.psk_name like '%NLP%'))
+        </if>
+        <if test="filter == 'large'">
+            and (c.cmp_size like '%500%' or c.cmp_size like '%1000%' or c.cmp_size like '%以上%')
+        </if>
+        group by p.pos_id, p.pos_title, c.cmp_id, c.cmp_name, c.cmp_logo_url,
+                 c.cmp_verify_status, p.pos_work_city, p.pos_salary_min, p.pos_salary_max,
+                 p.pos_experience_required, p.pos_education_required, p.pos_job_type,
+                 p.pos_jd_json, p.pos_created_at, u.target_direction, u.target_city, u.current_city
+        <choose>
+            <when test="filter == 'latest'">order by p.pos_created_at desc</when>
+            <when test="filter == 'urgent'">order by p.pos_salary_max desc, match_score desc</when>
+            <otherwise>order by match_score desc, p.pos_created_at desc</otherwise>
+        </choose>
+        limit #{limit}
+    </select>
+
+    <select id="countNewOpportunities" resultType="int">
+        select count(*) from t_pos where pos_status = 1 and pos_created_at >= date_sub(now(), interval 7 day)
+    </select>
+
+    <select id="selectRecentApplications" resultType="com.ruoyi.system.domain.app.AppApplicationSummary">
+        select ar.app_id as applicationId,
+               p.pos_title as title,
+               c.cmp_name as company,
+               ar.app_status as status,
+               case ar.app_status
+                   when 0 then '待筛选' when 1 then '已通过初筛' when 2 then '初筛未通过'
+                   when 3 then '已约面' when 4 then '待笔试' when 5 then '笔试中'
+                   when 6 then '笔试通过' when 7 then '笔试未通过' when 8 then '笔试缺考'
+                   else '处理中' end as statusLabel,
+               case ar.app_status
+                   when 0 then 20 when 1 then 40 when 3 then 70 when 4 then 50
+                   when 5 then 60 when 6 then 80 when 2 then 100 when 7 then 100 when 8 then 100
+                   else 30 end as progress
+        from t_app_record ar
+        join t_tal t on t.tal_id = ar.app_candidate_id
+        join t_pos p on p.pos_id = ar.app_position_id
+        join t_cmp c on c.cmp_id = p.pos_company_id
+        where t.tal_user_id = #{userId}
+        order by ar.app_updated_at desc, ar.app_id desc
+        limit #{limit}
+    </select>
+
+    <select id="selectDefaultResumeId" resultType="long">
+        select rbs_id from t_res_base
+        where rbs_user_id = #{userId} and rbs_status = 1
+        order by rbs_is_default desc, rbs_updated_at desc, rbs_id desc limit 1
+    </select>
+
+    <select id="selectCompanyIdByPositionId" resultType="long">
+        select pos_company_id from t_pos where pos_id = #{positionId} and pos_status = 1
+    </select>
+
+    <select id="selectCandidateId" resultType="long">
+        select tal_id from t_tal where tal_user_id = #{userId} and tal_company_id = #{companyId} limit 1
+    </select>
+
+    <insert id="insertCandidate">
+        insert into t_tal (tal_user_id, tal_company_id, tal_resume_id, tal_status, tal_created_at, tal_updated_at)
+        values (#{userId}, #{companyId}, #{resumeId}, 0, now(), now())
+    </insert>
+
+    <select id="countApplication" resultType="int">
+        select count(*) from t_app_record
+        where app_candidate_id = #{candidateId} and app_position_id = #{positionId}
+    </select>
+
+    <insert id="insertApplication">
+        insert into t_app_record
+            (app_candidate_id, app_position_id, app_resume_id, app_matched_score,
+             app_status, app_created_at, app_updated_at)
+        select #{candidateId}, p.pos_id, #{resumeId}, 60, 0, now(), now()
+        from t_pos p where p.pos_id = #{positionId} and p.pos_status = 1
+    </insert>
+</mapper>

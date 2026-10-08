@@ -1,0 +1,101 @@
+enum AppMessageCategory { hr, system, company }
+
+class ChatMessage {
+  const ChatMessage({
+    required this.messageId,
+    required this.senderId,
+    required this.content,
+    required this.mine,
+    required this.createdAt,
+  });
+
+  final int messageId;
+  final int senderId;
+  final String content;
+  final bool mine;
+  final DateTime createdAt;
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      messageId: AppMessage._asInt(json['messageId']),
+      senderId: AppMessage._asInt(json['senderId']),
+      content: json['content']?.toString() ?? '',
+      mine: json['mine'] == true || json['mine']?.toString() == '1',
+      createdAt:
+          DateTime.tryParse(
+            (json['createdAt']?.toString() ?? '').replaceFirst(' ', 'T'),
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
+class AppMessage {
+  const AppMessage({
+    required this.sourceId,
+    required this.category,
+    required this.title,
+    required this.content,
+    required this.occurredAt,
+    required this.unreadCount,
+    this.avatarUrl,
+    this.targetUrl,
+    this.badge,
+  });
+
+  final int sourceId;
+  final AppMessageCategory category;
+  final String title;
+  final String content;
+  final DateTime occurredAt;
+  final int unreadCount;
+  final String? avatarUrl;
+  final String? targetUrl;
+  final String? badge;
+
+  factory AppMessage.fromJson(Map<String, dynamic> json) {
+    return AppMessage(
+      sourceId: _asInt(json['sourceId']),
+      category: switch (json['category']?.toString().toUpperCase()) {
+        'HR' => AppMessageCategory.hr,
+        'COMPANY' => AppMessageCategory.company,
+        _ => AppMessageCategory.system,
+      },
+      title: json['title']?.toString() ?? '消息',
+      content: json['content']?.toString() ?? '',
+      occurredAt:
+          DateTime.tryParse(
+            (json['occurredAt']?.toString() ?? '').replaceFirst(' ', 'T'),
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      unreadCount: _asInt(json['unreadCount']),
+      avatarUrl: _asNullableString(json['avatarUrl']),
+      targetUrl: _asNullableString(json['targetUrl']),
+      badge: _asNullableString(json['badge']),
+    );
+  }
+
+  AppMessage copyWith({int? unreadCount}) {
+    return AppMessage(
+      sourceId: sourceId,
+      category: category,
+      title: title,
+      content: content,
+      occurredAt: occurredAt,
+      unreadCount: unreadCount ?? this.unreadCount,
+      avatarUrl: avatarUrl,
+      targetUrl: targetUrl,
+      badge: badge,
+    );
+  }
+
+  static int _asInt(Object? value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static String? _asNullableString(Object? value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
+  }
+}

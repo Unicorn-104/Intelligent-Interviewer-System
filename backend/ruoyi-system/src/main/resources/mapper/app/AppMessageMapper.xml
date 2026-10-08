@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.app.AppMessageMapper">
+    <resultMap id="AppMessageResult" type="com.ruoyi.system.domain.app.AppMessageSummary">
+        <id property="sourceId" column="source_id" />
+        <id property="category" column="category" />
+        <result property="title" column="title" />
+        <result property="content" column="content" />
+        <result property="occurredAt" column="occurred_at" />
+        <result property="unreadCount" column="unread_count" />
+        <result property="avatarUrl" column="avatar_url" />
+        <result property="targetUrl" column="target_url" />
+        <result property="badge" column="badge" />
+    </resultMap>
+
+    <resultMap id="AppChatMessageResult" type="com.ruoyi.system.domain.app.AppChatMessage">
+        <id property="messageId" column="message_id" />
+        <result property="senderId" column="sender_id" />
+        <result property="type" column="type" />
+        <result property="content" column="content" />
+        <result property="mine" column="mine" />
+        <result property="createdAt" column="created_at" />
+    </resultMap>
+
+    <select id="selectMessages" resultMap="AppMessageResult">
+        select source_id,
+               category,
+               title,
+               content,
+               occurred_at,
+               unread_count,
+               avatar_url,
+               target_url,
+               badge
+        from (
+            select s.ims_id as source_id,
+                   'HR' as category,
+                   concat(coalesce(c.cmp_name, '企业'), ' HR · ',
+                          coalesce(nullif(hr.nick_name, ''), hr.user_name)) as title,
+                   coalesce(nullif(s.ims_last_message, ''), '暂无消息内容') as content,
+                   coalesce(s.ims_last_message_at, s.ims_updated_at, s.ims_created_at) as occurred_at,
+                   coalesce(s.ims_unread_b, 0) as unread_count,
+                   hr.avatar as avatar_url,
+                   null as target_url,
+                   null as badge
+            from t_im_session s
+            inner join sys_user hr on hr.user_id = s.ims_user_a_id and hr.del_flag = '0'
+            left join t_cmp_binding b on b.bnd_user_id = hr.user_id and b.bnd_status = 1
+            left join t_cmp c on c.cmp_id = b.bnd_company_id and c.cmp_status = 1
+            where s.ims_user_b_id = #{userId}
+
+            union all
+
+            select m.msg_id as source_id,
+                   'SYSTEM' as category,
+                   m.msg_title as title,
+                   m.msg_content as content,
+                   m.msg_created_at as occurred_at,
+                   if(m.msg_is_read = 0, 1, 0) as unread_count,
+                   null as avatar_url,
+                   m.msg_target_url as target_url,
+                   case m.msg_type
+                       when 2 then '面试'
+                       when 3 then 'Offer'
+                       when 5 then '笔试'
+                       when 6 then '成绩'
+                       when 8 then '提醒'
+                       else null
+                   end as badge
+            from t_msg m
+            where m.msg_receiver_id = #{userId}
+
+            union all
+
+            select i.int_id as source_id,
+                   'COMPANY' as category,
+                   concat(c.cmp_name, ' · 企业动态') as title,
+                   coalesce(
+                       (select concat('发布了新的「', p.pos_title, '」职位。')
+                        from t_pos p
+                        where p.pos_company_id = c.cmp_id and p.pos_status = 1
+                        order by p.pos_created_at desc, p.pos_id desc
+                        limit 1),
+                       '你关注的企业资料有新动态。'
+                   ) as content,
+                   greatest(
+                       i.int_updated_at,
+                       c.cmp_updated_at,
+                       coalesce(
+                           (select max(p2.pos_created_at)
+                            from t_pos p2
+                            where p2.pos_company_id = c.cmp_id and p2.pos_status = 1),
+                           i.int_updated_at
+                       )
+                   ) as occurred_at,
+                   0 as unread_count,
+                   c.cmp_logo_url as avatar_url,
+                   concat('/companies/', c.cmp_id) as target_url,
+                   '关注' as badge
+            from t_usr_interest i
+            inner join t_cmp c on c.cmp_id = i.int_target_id and c.cmp_status = 1
+            where i.int_user_id = #{userId}
+              and i.int_target_type = 2
+              and i.int_status = 1
+        ) messages
+        order by occurred_at desc, source_id desc
+        limit #{limit}
+    </select>
+
+    <update id="markSystemMessageRead">
+        update t_msg
+        set msg_is_read = 1,
+            msg_read_at = coalesce(msg_read_at, now())
+        where msg_id = #{messageId}
+          and msg_receiver_id = #{userId}
+          and msg_is_read = 0
+    </update>
+
+    <update id="markHrSessionRead">
+        update t_im_session
+        set ims_unread_b = 0
+        where ims_id = #{sessionId}
+          and ims_user_b_id = #{userId}
+          and ims_unread_b > 0
+    </update>
+
+    <update id="markAllSystemMessagesRead">
+        update t_msg
+        set msg_is_read = 1,
+            msg_read_at = coalesce(msg_read_at, now())
+        where msg_receiver_id = #{userId}
+          and msg_is_read = 0
+    </update>
+
+    <update id="markAllHrSessionsRead">
+        update t_im_session
+        set ims_unread_b = 0
+        where ims_user_b_id = #{userId}
+          and ims_unread_b > 0
+    </update>
+
+    <select id="selectHrChatMessages" resultMap="AppChatMessageResult">
+        select m.imsg_id as message_id,
+               m.imsg_sender_id as sender_id,
+               m.imsg_type as type,
+               m.imsg_content as content,
+               case when m.imsg_sender_id = #{userId} then true else false end as mine,
+               m.imsg_created_at as created_at
+        from t_im_message m
+        inner join t_im_session s on s.ims_id = m.imsg_session_id
+        where s.ims_id = #{sessionId}
+          and s.ims_user_b_id = #{userId}
+          and m.imsg_is_recalled = 0
+        order by m.imsg_created_at desc, m.imsg_id desc
+        limit #{limit}
+    </select>
+
+    <insert id="insertHrChatMessage">
+        insert into t_im_message
+            (imsg_session_id, imsg_sender_id, imsg_type, imsg_content, imsg_created_at)
+        select s.ims_id, #{userId}, 1, #{content}, now()
+        from t_im_session s
+        where s.ims_id = #{sessionId}
+          and s.ims_user_b_id = #{userId}
+    </insert>
+
+    <update id="updateHrSessionAfterCandidateMessage">
+        update t_im_session
+        set ims_last_message = left(#{content}, 200),
+            ims_last_message_at = now(),
+            ims_unread_a = ims_unread_a + 1,
+            ims_unread_b = 0
+        where ims_id = #{sessionId}
+          and ims_user_b_id = #{userId}
+    </update>
+</mapper>
