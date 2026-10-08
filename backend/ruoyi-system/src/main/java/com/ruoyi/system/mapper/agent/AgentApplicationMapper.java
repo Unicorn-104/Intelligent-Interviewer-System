@@ -8,6 +8,11 @@ import com.ruoyi.system.domain.agent.AgentApplication;
 import com.ruoyi.system.domain.agent.AgentCandidate;
 import com.ruoyi.system.domain.agent.AgentResumeRecord;
 import com.ruoyi.system.domain.agent.AgentResumeOption;
+import com.ruoyi.system.domain.agent.AgentResumeDetail;
+import com.ruoyi.system.domain.agent.AgentResumeEducation;
+import com.ruoyi.system.domain.agent.AgentResumeProject;
+import com.ruoyi.system.domain.agent.AgentResumeSkill;
+import com.ruoyi.system.domain.agent.AgentResumeWork;
 
 /**
  * 求职者端简历和投递数据访问层。
@@ -18,10 +23,40 @@ public interface AgentApplicationMapper
 
     AgentResumeOption selectResumeById(@Param("userId") Long userId, @Param("resumeId") Long resumeId);
 
+    List<AgentResumeOption> selectResumeList(@Param("userId") Long userId);
+
+    AgentResumeDetail selectResumeDetail(@Param("userId") Long userId, @Param("resumeId") Long resumeId);
+
     int countActiveResumes(@Param("userId") Long userId);
 
     @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "rbs_id")
     int insertResume(AgentResumeRecord resume);
+
+    int updateResumeBase(AgentResumeDetail resume);
+
+    int deleteResumeEducation(@Param("resumeId") Long resumeId);
+
+    int deleteResumeWork(@Param("resumeId") Long resumeId);
+
+    int deleteResumeProject(@Param("resumeId") Long resumeId);
+
+    int deleteResumeSkill(@Param("resumeId") Long resumeId);
+
+    int insertResumeEducation(AgentResumeEducation education);
+
+    int insertResumeWork(AgentResumeWork work);
+
+    int insertResumeProject(AgentResumeProject project);
+
+    int insertResumeSkill(AgentResumeSkill skill);
+
+    int updateResumeFile(@Param("userId") Long userId, @Param("resumeId") Long resumeId,
+            @Param("filePath") String filePath, @Param("fileName") String fileName,
+            @Param("fileSize") Long fileSize);
+
+    int softDeleteResume(@Param("userId") Long userId, @Param("resumeId") Long resumeId);
+
+    int promoteFirstActiveResume(@Param("userId") Long userId);
 
     List<AgentApplication> selectApplicationList(@Param("userId") Long userId, @Param("status") String status);
 

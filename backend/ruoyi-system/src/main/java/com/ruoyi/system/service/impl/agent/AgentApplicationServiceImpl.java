@@ -3,14 +3,19 @@ package com.ruoyi.system.service.impl.agent;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Collections;
 import java.util.List;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import com.ruoyi.common.config.RuoYiConfig;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.common.utils.file.FileUtils;
+import com.ruoyi.common.utils.file.FileUploadUtils;
 import com.ruoyi.system.domain.agent.AgentApplication;
 import com.ruoyi.system.domain.agent.AgentApplicationCreateRequest;
 import com.ruoyi.system.domain.agent.AgentApplicationQuery;
@@ -18,9 +23,15 @@ import com.ruoyi.system.domain.agent.AgentCandidate;
 import com.ruoyi.system.domain.agent.AgentJob;
 import com.ruoyi.system.domain.agent.AgentPage;
 import com.ruoyi.system.domain.agent.AgentResumeCreateRequest;
+import com.ruoyi.system.domain.agent.AgentResumeDetail;
+import com.ruoyi.system.domain.agent.AgentResumeEducation;
 import com.ruoyi.system.domain.agent.AgentResumeRecord;
 import com.ruoyi.system.domain.agent.AgentResumeOption;
+import com.ruoyi.system.domain.agent.AgentResumeProject;
+import com.ruoyi.system.domain.agent.AgentResumeSkill;
 import com.ruoyi.system.domain.agent.AgentTimeline;
+import com.ruoyi.system.domain.agent.AgentResumeUpdateRequest;
+import com.ruoyi.system.domain.agent.AgentResumeWork;
 import com.ruoyi.system.mapper.agent.AgentApplicationMapper;
 import com.ruoyi.system.mapper.agent.AgentJobMapper;
 import com.ruoyi.system.service.agent.IAgentApplicationService;
@@ -77,6 +88,123 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
             throw new ServiceException("简历已创建，但读取简历信息失败");
         }
         return created;
+    }
+
+    @Override
+    public List<AgentResumeOption> selectResumes(Long userId)
+    {
+        return applicationMapper.selectResumeList(userId);
+    }
+
+    @Override
+    public AgentResumeDetail selectResume(Long userId, Long resumeId)
+    {
+        AgentResumeDetail resume = requireResume(userId, resumeId);
+        decorateResume(resume);
+        return resume;
+    }
+
+    @Override
+    @Transactional
+    public AgentResumeDetail updateResume(Long userId, Long resumeId, AgentResumeUpdateRequest request)
+    {
+        if (request == null || StringUtils.isEmpty(request.getResumeName()))
+        {
+            throw new ServiceException("简历名称不能为空");
+        }
+
+        AgentResumeDetail existing = requireResume(userId, resumeId);
+        AgentResumeDetail resume = new AgentResumeDetail();
+        resume.setId(existing.getId());
+        resume.setUserId(userId);
+        resume.setResumeName(request.getResumeName().trim());
+        resume.setJobDirection(trimToNull(request.getJobDirection()));
+        resume.setRealName(trimToNull(request.getRealName()));
+        resume.setGender(trimToNull(request.getGender()));
+        resume.setWorkStatus(trimToNull(request.getWorkStatus()));
+        resume.setCurrentCity(trimToNull(request.getCurrentCity()));
+        resume.setPhone(trimToNull(request.getPhone()));
+        resume.setEmail(trimToNull(request.getEmail()));
+        resume.setTargetRole(trimToNull(request.getTargetRole()));
+        resume.setSalaryExpectation(trimToNull(request.getSalaryExpectation()));
+        resume.setTargetCity(trimToNull(request.getTargetCity()));
+        resume.setArrivalTime(trimToNull(request.getArrivalTime()));
+
+        validateResumeEntries(request);
+        if (applicationMapper.updateResumeBase(resume) <= 0)
+        {
+            throw new ServiceException("保存简历失败，请稍后重试");
+        }
+
+        replaceResumeEntries(resumeId, request);
+        return selectResume(userId, resumeId);
+    }
+
+    @Override
+    @Transactional
+    public AgentResumeDetail uploadResumeFile(Long userId, Long resumeId, MultipartFile file) throws Exception
+    {
+        if (file == null || file.isEmpty())
+        {
+            throw new ServiceException("请选择 PDF 简历文件");
+        }
+        if (file.getSize() > 10 * 1024 * 1024L)
+        {
+            throw new ServiceException("简历文件不能超过10MB");
+        }
+        String originalFilename = file.getOriginalFilename();
+        if (StringUtils.isEmpty(originalFilename) || !originalFilename.toLowerCase().endsWith(".pdf"))
+        {
+            throw new ServiceException("仅支持 PDF 格式的简历文件");
+        }
+        String contentType = file.getContentType();
+        if (StringUtils.isNotEmpty(contentType)
+                && !"application/pdf".equalsIgnoreCase(contentType)
+                && !"application/octet-stream".equalsIgnoreCase(contentType))
+        {
+            throw new ServiceException("上传文件类型不是 PDF");
+        }
+
+        AgentResumeDetail existing = requireResume(userId, resumeId);
+        String baseDir = RuoYiConfig.getUploadPath() + "/resume/" + userId;
+        String filePath = FileUploadUtils.upload(baseDir, file, new String[] { "pdf" }, true);
+        try
+        {
+            if (applicationMapper.updateResumeFile(userId, resumeId, filePath, originalFilename, file.getSize()) <= 0)
+            {
+                throw new ServiceException("保存简历文件信息失败");
+            }
+        }
+        catch (Exception exception)
+        {
+            FileUtils.deleteFile(RuoYiConfig.getProfile() + FileUtils.stripPrefix(filePath));
+            throw exception;
+        }
+
+        if (StringUtils.isNotEmpty(existing.getFilePath()) && !existing.getFilePath().equals(filePath))
+        {
+            FileUtils.deleteFile(RuoYiConfig.getProfile() + FileUtils.stripPrefix(existing.getFilePath()));
+        }
+        return selectResume(userId, resumeId);
+    }
+
+    @Override
+    @Transactional
+    public void deleteResume(Long userId, Long resumeId)
+    {
+        AgentResumeDetail existing = requireResume(userId, resumeId);
+        if (applicationMapper.softDeleteResume(userId, resumeId) <= 0)
+        {
+            throw new ServiceException("删除简历失败，请稍后重试");
+        }
+        if (Boolean.TRUE.equals(existing.getIsDefault()))
+        {
+            applicationMapper.promoteFirstActiveResume(userId);
+        }
+        if (StringUtils.isNotEmpty(existing.getFilePath()))
+        {
+            FileUtils.deleteFile(RuoYiConfig.getProfile() + FileUtils.stripPrefix(existing.getFilePath()));
+        }
     }
 
     @Override
@@ -195,6 +323,118 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
             throw new ServiceException("岗位当前暂停招聘，暂不能投递");
         }
         return job;
+    }
+
+    private AgentResumeDetail requireResume(Long userId, Long resumeId)
+    {
+        if (resumeId == null)
+        {
+            throw new ServiceException("简历不能为空");
+        }
+        AgentResumeDetail resume = applicationMapper.selectResumeDetail(userId, resumeId);
+        if (resume == null)
+        {
+            throw new ServiceException("简历不存在、已停用或不属于当前用户");
+        }
+        return resume;
+    }
+
+    private void decorateResume(AgentResumeDetail resume)
+    {
+        if (StringUtils.isNotEmpty(resume.getFilePath()))
+        {
+            resume.setFileUrl("/common/download/resource?resource=" + resume.getFilePath());
+        }
+    }
+
+    private void validateResumeEntries(AgentResumeUpdateRequest request)
+    {
+        if (sizeOf(request.getEducations()) > 20 || sizeOf(request.getWorks()) > 20
+                || sizeOf(request.getProjects()) > 20 || sizeOf(request.getSkills()) > 30)
+        {
+            throw new ServiceException("简历经历或技能数量超出限制");
+        }
+        for (AgentResumeEducation education : safeList(request.getEducations()))
+        {
+            if (StringUtils.isEmpty(education.getSchool()))
+            {
+                throw new ServiceException("教育经历的学校不能为空");
+            }
+        }
+        for (AgentResumeWork work : safeList(request.getWorks()))
+        {
+            if (StringUtils.isEmpty(work.getCompany()) || StringUtils.isEmpty(work.getPosition()))
+            {
+                throw new ServiceException("工作经历的公司和职位不能为空");
+            }
+        }
+        for (AgentResumeProject project : safeList(request.getProjects()))
+        {
+            if (StringUtils.isEmpty(project.getName()))
+            {
+                throw new ServiceException("项目经历名称不能为空");
+            }
+        }
+        for (AgentResumeSkill skill : safeList(request.getSkills()))
+        {
+            if (StringUtils.isEmpty(skill.getName()))
+            {
+                throw new ServiceException("技能名称不能为空");
+            }
+        }
+    }
+
+    private void replaceResumeEntries(Long resumeId, AgentResumeUpdateRequest request)
+    {
+        applicationMapper.deleteResumeEducation(resumeId);
+        applicationMapper.deleteResumeWork(resumeId);
+        applicationMapper.deleteResumeProject(resumeId);
+        applicationMapper.deleteResumeSkill(resumeId);
+
+        for (AgentResumeEducation education : safeList(request.getEducations()))
+        {
+            education.setResumeId(resumeId);
+            applicationMapper.insertResumeEducation(education);
+        }
+        for (AgentResumeWork work : safeList(request.getWorks()))
+        {
+            work.setResumeId(resumeId);
+            applicationMapper.insertResumeWork(work);
+        }
+        for (AgentResumeProject project : safeList(request.getProjects()))
+        {
+            project.setResumeId(resumeId);
+            applicationMapper.insertResumeProject(project);
+        }
+        for (AgentResumeSkill skill : safeList(request.getSkills()))
+        {
+            skill.setResumeId(resumeId);
+            if (skill.getLevel() == null)
+            {
+                skill.setLevel(2);
+            }
+            applicationMapper.insertResumeSkill(skill);
+        }
+    }
+
+    private <T> List<T> safeList(List<T> value)
+    {
+        return value == null ? Collections.emptyList() : value;
+    }
+
+    private int sizeOf(List<?> value)
+    {
+        return value == null ? 0 : value.size();
+    }
+
+    private String trimToNull(String value)
+    {
+        if (StringUtils.isEmpty(value))
+        {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private AgentResumeOption findResume(Long userId, Long jobId, Long resumeId)
