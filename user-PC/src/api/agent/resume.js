@@ -40,6 +40,15 @@ export function uploadResumeFile(resumeId, file) {
   })
 }
 
+export function downloadResumeFile(resource) {
+  return request({
+    url: '/common/download/resource',
+    method: 'get',
+    params: { resource },
+    responseType: 'blob'
+  })
+}
+
 export function deleteResume(resumeId) {
   return request({
     url: `/agent/v1/resumes/${resumeId}`,
