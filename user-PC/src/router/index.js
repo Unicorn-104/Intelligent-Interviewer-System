@@ -25,7 +25,9 @@ const agentPageDefinitions = [
   ['video-meeting', 'AgentVideoMeeting', '视频面试'],
   ['company-profile', 'AgentCompanyProfile', '企业主页'],
   ['contact-profile', 'AgentContactProfile', '联系人主页'],
+  ['conference-entry', 'AgentConferenceEntry', '面试链接校验'],
   ['conference-prep', 'AgentConferencePrep', '会议准备'],
+  ['conference-waiting', 'AgentConferenceWaiting', '等候室'],
   ['conference-ai', 'AgentConferenceAi', 'AI 面试进行中'],
   ['conference-ended', 'AgentConferenceEnded', '面试结束'],
   ['conference-reconnect', 'AgentConferenceReconnect', '连接中断'],
@@ -151,6 +153,12 @@ export const constantRoutes = [
         meta: { title: '个人中心', icon: 'user' }
       }
     ]
+  },
+  {
+    path: '/conference-join',
+    component: () => import('@/views/conference-join.vue'),
+    hidden: true,
+    meta: { title: '面试邀请' }
   },
   ...agentRoutes,
   ...legacyAgentRoutes,
