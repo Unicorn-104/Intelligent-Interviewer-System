@@ -91,6 +91,31 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           AND rbs.rbs_status = 1
     </select>
 
+    <select id="countActiveResumes" resultType="int">
+        SELECT COUNT(1)
+        FROM t_res_base
+        WHERE rbs_user_id = #{userId}
+          AND rbs_status = 1
+    </select>
+
+    <insert id="insertResume" parameterType="com.ruoyi.system.domain.agent.AgentResumeRecord"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="rbs_id">
+        INSERT INTO t_res_base (
+            rbs_user_id,
+            rbs_resume_name,
+            rbs_job_direction,
+            rbs_is_default,
+            rbs_status
+        )
+        VALUES (
+            #{userId},
+            #{resumeName},
+            #{jobDirection},
+            #{isDefault},
+            1
+        )
+    </insert>
+
     <sql id="applicationSelect">
         SELECT
             app.app_id AS application_id,
