@@ -22,6 +22,7 @@
 <script setup>
 import { onMounted } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
+import { resolveApplicationDetailPath } from '@/utils/agentApplication'
 
 onMounted(() => {
   const shell=document.getElementById('messageShell'),items=[...document.querySelectorAll('.conversation-item')],search=document.getElementById('conversationSearch'),input=document.getElementById('messageInput'),send=document.getElementById('sendButton'),messages=document.getElementById('messages'),toast=document.getElementById('toast'),hrMessages=messages.innerHTML;
@@ -38,9 +39,9 @@ onMounted(() => {
       const settingsKey='zhipin-ai-conversation-settings';let currentConversationId='hr',settings={hr:{pinned:true,muted:false},system:{pinned:true,muted:false}},toastTimer,callTimer;
       const noticeDetails={
         'notice-interview-invite':{title:'面试邀请',body:'极氪智能科技已通过你的简历初筛，邀请你参加 06-18 14:30 的产品经理视频一面。',href:'/agent/interview-invitation?job=ai-product'},
-        'notice-resume-viewed':{title:'简历查看提醒',body:'杭州云杉网络技术有限公司已查看你投递的前端开发工程师（React）简历。',href:'/agent/application-detail?id=frontend-react'},
-        'notice-interview-time':{title:'面试时间确认提醒',body:'你与北京智谱未来的 NLP 算法一面将于明天 09:30 开始，请提前 10 分钟进入视频会议。',href:'/agent/application-detail?id=nlp-algorithm'},
-        'notice-talent-pool':{title:'人才库状态更新',body:'本次 UI/UX 设计师投递未通过初筛，简历已进入深圳蓝湖创新科技有限公司人才库。',href:'/agent/application-detail?id=saas-ux'},
+        'notice-resume-viewed':{title:'简历查看提醒',body:'杭州云杉网络技术有限公司已查看你投递的前端开发工程师（React）简历。',applicationKey:'frontend-react'},
+        'notice-interview-time':{title:'面试时间确认提醒',body:'你与北京智谱未来的 NLP 算法一面将于明天 09:30 开始，请提前 10 分钟进入视频会议。',applicationKey:'nlp-algorithm'},
+        'notice-talent-pool':{title:'人才库状态更新',body:'本次 UI/UX 设计师投递未通过初筛，简历已进入深圳蓝湖创新科技有限公司人才库。',applicationKey:'saas-ux'},
         'notice-job-match':{title:'岗位推荐',body:'AI 根据你的经历和求职偏好，为你整理了 6 个高匹配岗位，可前往岗位浏览继续查看。'},
         'notice-company-update':{title:'企业动态',body:'你关注的小红书发布了新的产品岗位，可能与你关注的求职方向匹配。'},
         'notice-platform-upgrade':{title:'平台升级公告',body:'智能招聘面试官 Agent 将于本周六 02:00-04:00 进行系统升级，期间投递与面试功能暂不可用。'},
@@ -74,7 +75,7 @@ onMounted(() => {
       videoCallButton.addEventListener('click',openCallModal);callCancel.addEventListener('click',closeCallModal);callModal.addEventListener('click',event=>{if(event.target===callModal)closeCallModal()});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!callModal.hidden)closeCallModal()});
       callConfirm.addEventListener('click',()=>{callConfirm.disabled=true;callConfirm.classList.add('calling');callConfirm.textContent='正在呼叫';document.getElementById('callStatus').textContent='正在等待对方接听…';clearTimeout(callTimer);callTimer=setTimeout(()=>{document.getElementById('callStatus').textContent='对方已接听，正在进入会议';callConfirm.classList.remove('calling');callConfirm.textContent='连接成功';setTimeout(()=>{window.__agentNavigate(`/agent/video-meeting?conversation=${encodeURIComponent(currentConversationId)}`)},650)},1100)});
       function focusNotice(id){const card=document.querySelector(`[data-notification-id="${id}"]`);if(!card)return;card.scrollIntoView({behavior:'smooth',block:'center'});card.classList.add('is-highlighted');setTimeout(()=>card.classList.remove('is-highlighted'),2600)}
-      function showNoticeDetail(id){const detail=noticeDetails[id];if(!detail)return;if(detail.href){window.__agentNavigate(detail.href);return}document.getElementById('noticeDetailTitle').textContent=detail.title;document.getElementById('noticeDetailBody').textContent=detail.body;noticeDetailModal.hidden=false;document.getElementById('noticeDetailClose').focus()}
+      async function showNoticeDetail(id){const detail=noticeDetails[id];if(!detail)return;if(detail.applicationKey){window.__agentNavigate(await resolveApplicationDetailPath(detail.applicationKey));return}if(detail.href){window.__agentNavigate(detail.href);return}document.getElementById('noticeDetailTitle').textContent=detail.title;document.getElementById('noticeDetailBody').textContent=detail.body;noticeDetailModal.hidden=false;document.getElementById('noticeDetailClose').focus()}
       function activateNotice(card){const id=card.dataset.notificationId;markSharedNoticeRead(id);document.querySelectorAll('.unread-notice').forEach(item=>item.classList.remove('unread-notice'));showNoticeDetail(id)}
       document.querySelectorAll('[data-notification-id]').forEach(card=>{card.addEventListener('click',()=>activateNotice(card));card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activateNotice(card)}})})
       document.getElementById('noticeDetailClose').addEventListener('click',()=>{noticeDetailModal.hidden=true});noticeDetailModal.addEventListener('click',event=>{if(event.target===noticeDetailModal)noticeDetailModal.hidden=true});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!noticeDetailModal.hidden)noticeDetailModal.hidden=true});
