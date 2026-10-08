@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import com.ruoyi.common.annotation.Anonymous;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.system.service.IConferenceService;
@@ -46,6 +47,62 @@ public class ConferenceController extends BaseController
     }
 
     /**
+     * 会议链接匿名校验（仅返回脱敏的邀请信息，用于统一入口页）
+     */
+    @Anonymous
+    @GetMapping("/link/verify")
+    public AjaxResult verifyLink(@RequestParam(required = false) String token)
+    {
+        return success(conferenceService.verifyRoomToken(token));
+    }
+
+    /**
+     * 登录后按会议链接令牌进入场次
+     */
+    @PostMapping("/link/join")
+    public AjaxResult joinLink(@RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.joinByRoomToken(getUserId(), str(body, "token")));
+    }
+
+    /**
+     * HR 生成 / 复用会议链接
+     */
+    @PostMapping("/link")
+    public AjaxResult createLink(@RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.createRoomLink(getUserId(), longOf(body, "peerUserId"),
+                longOf(body, "positionId"), intOf(body, "durationMinutes"), intOf(body, "mode")));
+    }
+
+    /**
+     * 候选人在本企业投递过的岗位（HR 发起面试时选择岗位）
+     */
+    @GetMapping("/link/positions")
+    public AjaxResult linkPositions(@RequestParam Long peerUserId)
+    {
+        return success(conferenceService.listCandidatePositions(getUserId(), peerUserId));
+    }
+
+    /**
+     * 等候室状态（双方各自的会前检测与就绪情况）
+     */
+    @GetMapping("/session/{sessionId}/waiting-room")
+    public AjaxResult waitingRoom(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.getWaitingRoom(getUserId(), sessionId));
+    }
+
+    /**
+     * 上报本人会前检测与就绪状态
+     */
+    @PutMapping("/session/{sessionId}/participant-state")
+    public AjaxResult participantState(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.reportParticipantState(getUserId(), sessionId, body));
+    }
+
+    /**
      * 会前环境检测结果上报（摄像头/麦克风/网络/扬声器 + 弱网风险标记）
      */
     @PostMapping("/session/{sessionId}/environment-check")
@@ -64,7 +121,7 @@ public class ConferenceController extends BaseController
     }
 
     /**
-     * 候选人准备就绪，进入面试
+     * 开始面试（候选人完成预检并同意录制后，由 HR 触发）
      */
     @PostMapping("/session/{sessionId}/start")
     public AjaxResult start(@PathVariable Long sessionId)
@@ -274,5 +331,15 @@ public class ConferenceController extends BaseController
     {
         Object value = body.get(key);
         return value == null ? null : value.toString();
+    }
+
+    private static Long longOf(Map<String, Object> body, String key)
+    {
+        Object value = body.get(key);
+        if (value == null)
+        {
+            return null;
+        }
+        return value instanceof Number ? ((Number) value).longValue() : Long.valueOf(value.toString());
     }
 }

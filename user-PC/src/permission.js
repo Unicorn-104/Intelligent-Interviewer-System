@@ -23,6 +23,10 @@ const isWhiteList = (path) => {
 
 router.beforeEach(async (to, from) => {
   NProgress.start()
+  if (to.path === '/conference-join') {
+    NProgress.done()
+    return true
+  }
   if (import.meta.env.VITE_FRONTEND_ONLY === 'true') {
     if (to.path === '/' || to.path === '/index' || to.path === '/login') {
       NProgress.done()

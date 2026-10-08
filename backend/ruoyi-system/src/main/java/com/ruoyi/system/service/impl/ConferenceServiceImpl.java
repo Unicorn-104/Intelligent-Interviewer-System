@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,16 @@ public class ConferenceServiceImpl implements IConferenceService
     private static final int ROLE_AI = 1;
     /** 对话角色：候选人 */
     private static final int ROLE_CANDIDATE = 3;
+
+    /** 参与者角色（t_int_participant_state.pst_role）：面试官/HR */
+    private static final int ROLE_INTERVIEWER = 1;
+    /** 参与者角色：候选人 */
+    private static final int ROLE_CANDIDATE_PARTICIPANT = 2;
+
+    /** 未指定时长时的默认面试时长（分钟） */
+    private static final int DEFAULT_INTERVIEW_MINUTES = 45;
+    /** 默认面试模式：AI + HR 协同 */
+    private static final int DEFAULT_INTERVIEW_MODE = 2;
 
     /** 下载验证码缓存前缀 */
     private static final String DOWNLOAD_CODE_KEY = "conference:download:code:";
@@ -66,9 +77,204 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     @Override
+    public Map<String, Object> verifyRoomToken(String token)
+    {
+        Map<String, Object> result = new LinkedHashMap<>();
+        Map<String, Object> ctx = StringUtils.isEmpty(token) ? null : conferenceMapper.selectSessionByRoomToken(token);
+        if (ctx == null || ctx.isEmpty())
+        {
+            result.put("valid", false);
+            result.put("reason", "invalid");
+            return result;
+        }
+        int status = toInt(ctx.get("status"));
+        boolean valid = status <= 1;
+        result.put("valid", valid);
+        result.put("status", status);
+        result.put("reason", valid ? null : "finished");
+        result.put("companyName", ctx.get("companyName"));
+        result.put("positionTitle", ctx.get("positionTitle"));
+        result.put("candidateName", ctx.get("candidateName"));
+        result.put("interviewerName", ctx.get("interviewerName"));
+        result.put("appointmentStartAt", ctx.get("appointmentStartAt"));
+        result.put("appointmentEndAt", ctx.get("appointmentEndAt"));
+        result.put("expiresTip", valid ? "面试结束前均可通过本链接进入" : "本场面试已结束");
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> joinByRoomToken(Long userId, String token)
+    {
+        Map<String, Object> ctx = StringUtils.isEmpty(token) ? null : conferenceMapper.selectSessionByRoomToken(token);
+        if (ctx == null || ctx.isEmpty())
+        {
+            throw new ServiceException("会议链接无效或已失效");
+        }
+        if (toInt(ctx.get("status")) >= 2)
+        {
+            throw new ServiceException("本场面试已结束");
+        }
+        return requireParticipant(userId, toLong(ctx.get("sessionId")), false);
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes, Integer mode)
+    {
+        if (peerUserId == null)
+        {
+            throw new ServiceException("请选择要面试的候选人");
+        }
+        if (peerUserId.equals(userId))
+        {
+            throw new ServiceException("不能给本人发起面试");
+        }
+        Map<String, Object> talent = conferenceMapper.selectTalentByUserId(peerUserId);
+        if (talent == null || talent.isEmpty())
+        {
+            throw new ServiceException("该联系人不是候选人，无法发起视频面试");
+        }
+        Long candidateId = toLong(talent.get("candidateId"));
+
+        Map<String, Object> query = new HashMap<>();
+        query.put("candidateId", candidateId);
+        query.put("interviewerId", userId);
+        Map<String, Object> active = conferenceMapper.selectActiveSessionByCandidate(query);
+
+        Long sessionId;
+        String roomId;
+        String roomToken;
+        if (active != null && !active.isEmpty())
+        {
+            // 已有未结束场次：复用，仅在缺少令牌时补写
+            sessionId = toLong(active.get("sessionId"));
+            roomId = str(active.get("roomId"));
+            roomToken = str(active.get("roomToken"));
+            if (StringUtils.isEmpty(roomToken))
+            {
+                roomId = StringUtils.isEmpty(roomId) ? "INTERVIEW-" + sessionId : roomId;
+                roomToken = randomToken();
+                saveRoomToken(sessionId, roomId, roomToken);
+            }
+        }
+        else
+        {
+            if (positionId == null)
+            {
+                throw new ServiceException("请选择面试岗位");
+            }
+            int duration = durationMinutes == null || durationMinutes <= 0 ? DEFAULT_INTERVIEW_MINUTES : durationMinutes;
+            // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
+            Map<String, Object> appointment = new HashMap<>();
+            appointment.put("candidateId", candidateId);
+            appointment.put("positionId", positionId);
+            appointment.put("interviewerId", userId);
+            appointment.put("durationMinutes", duration);
+            conferenceMapper.insertAppointment(appointment);
+
+            Map<String, Object> session = new HashMap<>();
+            session.put("appointmentId", toLong(appointment.get("appointmentId")));
+            session.put("candidateId", candidateId);
+            session.put("positionId", positionId);
+            session.put("interviewerId", userId);
+            session.put("mode", mode == null || mode < 1 || mode > 2 ? DEFAULT_INTERVIEW_MODE : mode);
+            conferenceMapper.insertSession(session);
+
+            sessionId = toLong(session.get("sessionId"));
+            roomId = "INTERVIEW-" + sessionId;
+            roomToken = randomToken();
+            saveRoomToken(sessionId, roomId, roomToken);
+        }
+
+        Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("roomId", roomId);
+        result.put("roomToken", roomToken);
+        result.put("token", roomToken);
+        result.put("companyName", ctx.get("companyName"));
+        result.put("positionTitle", ctx.get("positionTitle"));
+        result.put("candidateName", ctx.get("candidateName"));
+        result.put("appointmentStartAt", ctx.get("appointmentStartAt"));
+        result.put("appointmentEndAt", ctx.get("appointmentEndAt"));
+        result.put("durationMinutes", ctx.get("durationMinutes"));
+        result.put("status", ctx.get("status"));
+        return result;
+    }
+
+    @Override
+    public List<Map<String, Object>> listCandidatePositions(Long userId, Long peerUserId)
+    {
+        if (peerUserId == null)
+        {
+            return new ArrayList<>();
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("peerUserId", peerUserId);
+        params.put("companyId", resolveCompanyId(userId));
+        return conferenceMapper.selectCandidatePositionsByPeer(params);
+    }
+
+    @Override
+    public Map<String, Object> getWaitingRoom(Long userId, Long sessionId)
+    {
+        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        List<Map<String, Object>> participants = conferenceMapper.selectParticipantStates(sessionId);
+        Map<String, Object> self = null;
+        Map<String, Object> peer = null;
+        for (Map<String, Object> item : participants)
+        {
+            if (userId.equals(toLong(item.get("userId"))))
+            {
+                self = item;
+            }
+            else
+            {
+                peer = item;
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("sessionStatus", ctx.get("status"));
+        result.put("role", ctx.get("role"));
+        result.put("self", self == null ? new LinkedHashMap<>() : self);
+        result.put("peer", peer == null ? new LinkedHashMap<>() : peer);
+        result.put("peerReady", peer != null && toInt(peer.get("ready")) == 1);
+        result.put("peerName", peer == null ? null : peer.get("userName"));
+        result.put("selfReady", self != null && toInt(self.get("ready")) == 1);
+        result.put("participants", participants);
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> reportParticipantState(Long userId, Long sessionId, Map<String, Object> body)
+    {
+        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        Map<String, Object> params = new HashMap<>();
+        params.put("sessionId", sessionId);
+        params.put("userId", userId);
+        params.put("role", "CANDIDATE".equals(ctx.get("role")) ? ROLE_CANDIDATE_PARTICIPANT : ROLE_INTERVIEWER);
+        params.put("camStatus", toInt(body.get("camStatus")));
+        params.put("micStatus", toInt(body.get("micStatus")));
+        params.put("speakerStatus", toInt(body.get("speakerStatus")));
+        params.put("netStatus", toInt(body.get("netStatus")));
+        params.put("rttMs", body.get("rttMs") == null ? null : toInt(body.get("rttMs")));
+        params.put("bandwidthKbps", body.get("bandwidthKbps") == null ? null : toInt(body.get("bandwidthKbps")));
+        params.put("riskFlag", toInt(body.get("riskFlag")));
+        params.put("ready", toInt(body.get("ready")));
+        Object devices = body.get("deviceIds");
+        if (devices != null)
+        {
+            params.put("deviceJson", JSON.toJSONString(devices));
+        }
+        conferenceMapper.upsertParticipantState(params);
+        return getWaitingRoom(userId, sessionId);
+    }
+
+    @Override
     public Map<String, Object> reportEnvironmentCheck(Long userId, Long sessionId, Map<String, Object> body)
     {
-        requireParticipant(userId, sessionId, true);
+        requireParticipant(userId, sessionId, false);
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
         params.put("camStatus", toInt(body.get("camStatus")));
@@ -105,10 +311,10 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public Map<String, Object> startSession(Long userId, Long sessionId)
     {
-        Map<String, Object> ctx = requireParticipant(userId, sessionId, true);
+        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
         if (toInt(ctx.get("consent")) != 1)
         {
-            throw new ServiceException("请先阅读并同意面试录制告知");
+            throw new ServiceException("候选人尚未同意面试录制告知");
         }
         if (toInt(ctx.get("status")) == 0)
         {
@@ -587,6 +793,26 @@ public class ConferenceServiceImpl implements IConferenceService
     private String downloadCodeKey(Long userId, Long sessionId)
     {
         return DOWNLOAD_CODE_KEY + sessionId + ":" + userId;
+    }
+
+    /**
+     * 为场次写入房间号与会议链接令牌
+     */
+    private void saveRoomToken(Long sessionId, String roomId, String roomToken)
+    {
+        Map<String, Object> params = new HashMap<>();
+        params.put("sessionId", sessionId);
+        params.put("roomId", roomId);
+        params.put("roomToken", roomToken);
+        conferenceMapper.updateSessionRoomToken(params);
+    }
+
+    /**
+     * 32 位随机会议链接令牌
+     */
+    private static String randomToken()
+    {
+        return UUID.randomUUID().toString().replace("-", "");
     }
 
     private int normalizeLimit(Integer limit, int defaultValue)

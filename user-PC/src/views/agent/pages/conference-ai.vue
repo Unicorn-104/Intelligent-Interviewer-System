@@ -20,22 +20,33 @@
 
     <section class="ca-stage">
       <div ref="stageRef" class="ca-video">
-        <div class="ca-ai">
-          <div class="ca-orb">
-            <span class="ca-ring" />
-            <span class="ca-ring delay" />
-            <span class="ca-orb-core">AI</span>
-          </div>
-          <h2>AI 面试官 · 智聘</h2>
-          <p>正在聆听你的回答…</p>
-        </div>
+        <div ref="splitRef" class="ca-split" :style="{ '--left': leftRatio + '%' }">
+          <div class="ca-left">
+            <div class="ca-ai">
+              <div class="ca-orb">
+                <span class="ca-ring" />
+                <span class="ca-ring delay" />
+                <span class="ca-orb-core">AI</span>
+              </div>
+              <h2>AI 面试官 · 智聘</h2>
+              <p>正在聆听你的回答…</p>
+            </div>
 
-        <div class="ca-question">
-          <div class="ca-q-head">
-            <span class="ca-q-index">第 {{ progress.current }} 题 / 共 {{ progress.total }} 题</span>
-            <div class="ca-q-bar"><u :style="{ width: (progress.current / progress.total) * 100 + '%' }" /></div>
+            <div class="ca-question">
+              <div class="ca-q-head">
+                <span class="ca-q-index">第 {{ progress.current }} 题 / 共 {{ progress.total }} 题</span>
+                <div class="ca-q-bar"><u :style="{ width: (progress.current / progress.total) * 100 + '%' }" /></div>
+              </div>
+              <p class="ca-q-text">{{ questionText }}</p>
+            </div>
           </div>
-          <p class="ca-q-text">{{ questionText }}</p>
+
+          <div class="ca-resizer" title="拖动调节画面大小" @mousedown.prevent="startResize"><i /></div>
+
+          <div class="ca-right">
+            <video v-show="peerStream" ref="peerVideo" class="ca-peer-video" autoplay playsinline />
+            <div v-if="!peerStream" class="ca-peer-waiting"><Icon name="video" :size="26" /><span>等待面试官画面…</span></div>
+          </div>
         </div>
 
         <div class="ca-self" :style="selfStyle" @mousedown.prevent="startDrag">
@@ -45,6 +56,8 @@
           <button class="ca-self-hide" title="隐藏我的画面" @mousedown.stop @click.stop="selfVisible = false">×</button>
         </div>
         <button v-if="!selfVisible" class="ca-self-restore" @click="selfVisible = true">显示我的画面</button>
+
+        <div v-if="sharing" class="ca-share-tip"><Icon name="share" :size="14" />正在向面试官共享屏幕</div>
 
         <div class="ca-captions" :class="{ live: captionOn }">
           <div class="ca-cap-tag">实时字幕</div>
@@ -67,7 +80,10 @@
       <button class="ca-ctl" :class="{ on: captionOn }" @click="captionOn = !captionOn">
         <Icon name="caption" :size="20" /><span>字幕</span>
       </button>
-      <button class="ca-ctl" @click="notify('打开会议设置：可切换摄像头、麦克风与字幕语言')">
+      <button class="ca-ctl" :class="{ on: sharing }" @click="toggleShare">
+        <Icon name="share" :size="20" /><span>{{ sharing ? '停止共享' : '共享屏幕' }}</span>
+      </button>
+      <button class="ca-ctl" @click="openSettings">
         <Icon name="settings" :size="20" /><span>设置</span>
       </button>
       <button class="ca-ctl hang" @click="showConfirm = true">
@@ -86,6 +102,30 @@
       </section>
     </div>
 
+    <div v-if="showSettings" class="ca-mask" @click.self="showSettings = false">
+      <section class="ca-modal">
+        <h3>会议设置</h3>
+        <p style="margin-top: 6px">切换采集设备后画面与声音立即生效（如使用外接摄像头，请在列表中选择对应设备）。</p>
+        <div class="ca-set-field">
+          <label>摄像头</label>
+          <select v-model="setCamId" @change="applyDevice('video')">
+            <option value="">系统默认</option>
+            <option v-for="item in cameraDevices" :key="item.deviceId" :value="item.deviceId">{{ item.label }}</option>
+          </select>
+        </div>
+        <div class="ca-set-field">
+          <label>麦克风</label>
+          <select v-model="setMicId" @change="applyDevice('audio')">
+            <option value="">系统默认</option>
+            <option v-for="item in microphoneDevices" :key="item.deviceId" :value="item.deviceId">{{ item.label }}</option>
+          </select>
+        </div>
+        <div class="ca-modal-actions">
+          <button class="ca-cancel" @click="showSettings = false">完成</button>
+        </div>
+      </section>
+    </div>
+
     <div class="ca-toast" :class="{ show: toast }">{{ toast }}</div>
   </div>
 </template>
@@ -93,7 +133,8 @@
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, nextTick, ref } from 'vue'
 import { getCurrentSession, getProgress, listCaptions, heartbeat, finishSession, updateMedia } from '@/api/system/conference'
-import { describeMediaNotice, requestMedia } from '@/utils/media'
+import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, requestMedia, requestMediaWithFallback, savePreferredDevice } from '@/utils/media'
+import { createConferenceRtc } from '@/utils/webrtc'
 
 const PATHS = {
   mic: ['M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z', 'M19 10v2a7 7 0 0 1-14 0v-2', 'M12 19v3', 'M8 22h8'],
@@ -101,6 +142,7 @@ const PATHS = {
   video: ['m22 8-6 4 6 4V8Z', 'M2 6h14v12H2z'],
   caption: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', 'M16 8H8', 'M13 12H8'],
   settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.18V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 11 3V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 16.9 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 21.4 9v.09a1.65 1.65 0 0 0 1.51 1z'],
+  share: ['M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'M8 21h8', 'M12 17v4', 'M12 13V8', 'm9 11 3-3 3 3'],
   phoneOff: ['m2 2 20 20', 'M16 14v-1c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1.5c0 1.38-1.12 2.5-2.5 2.5C10.61 18 6 13.39 6 6.5 6 5.12 7.12 4 8.5 4H10c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1H9']
 }
 
@@ -116,14 +158,22 @@ const Icon = defineComponent({
 })
 
 const stageRef = ref(null)
+const splitRef = ref(null)
 const selfVideo = ref(null)
+const peerVideo = ref(null)
 const capListRef = ref(null)
 const selfPos = ref({ x: null, y: null })
 const selfVisible = ref(true)
+// AI 面板占左侧的宽度比例：拖动中间分隔条调节，限制在 25%~75%
+const leftRatio = ref(50)
+// 面试官远端音视频流（WebRTC 到达后渲染到右半屏）
+const peerStream = ref(null)
 
 const micOn = ref(true)
 const camOn = ref(true)
 const captionOn = ref(true)
+// 是否正在向面试官共享屏幕
+const sharing = ref(false)
 const netLevel = ref('ok')
 const showConfirm = ref(false)
 const toast = ref('')
@@ -133,7 +183,7 @@ const progress = ref({ current: 3, total: 10 })
 const questionText = ref('请结合你在订单中心的经历，说明分布式事务的选型过程，以及最终落地时遇到的补偿与幂等问题是如何解决的？')
 const header = ref({ positionTitle: '高级前端工程师', roundNo: 1 })
 
-const seconds = ref(501) // 08:21
+const seconds = ref(0) // 从进入会议起计时
 const clock = computed(() => {
   const m = String(Math.floor(seconds.value / 60)).padStart(2, '0')
   const s = String(seconds.value % 60).padStart(2, '0')
@@ -157,11 +207,13 @@ const selfStyle = computed(() =>
 
 let videoTrack = null
 let audioTrack = null
+let screenTrack = null
 let timerId = null
 let captionId = null
 let heartbeatId = null
 let captionIndex = 0
 let toastTimer = null
+let rtc = null
 
 function notify(message) {
   toast.value = message
@@ -191,6 +243,22 @@ function startDrag(event) {
   document.addEventListener('mouseup', up)
 }
 
+// 拖动中间分隔条，调节 AI 面板与面试官画面的宽度占比
+function startResize() {
+  const rect = splitRef.value?.getBoundingClientRect()
+  if (!rect || !rect.width) return
+  const move = (ev) => {
+    const ratio = ((ev.clientX - rect.left) / rect.width) * 100
+    leftRatio.value = Math.min(75, Math.max(25, ratio))
+  }
+  const up = () => {
+    document.removeEventListener('mousemove', move)
+    document.removeEventListener('mouseup', up)
+  }
+  document.addEventListener('mousemove', move)
+  document.addEventListener('mouseup', up)
+}
+
 async function openCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     camOn.value = false
@@ -198,14 +266,21 @@ async function openCamera() {
     return
   }
   // 摄像头与麦克风分开申请：只屏蔽其中一项时另一项仍可正常采集
+  // 已有轨道时不重复申请（关闭摄像头只置 enabled，WebRTC sender 依赖轨道持续存在）
+  // 优先使用准备页/设置中选定的设备（如外接摄像头），不可用时回退系统默认
+  const prefVideo = getPreferredDevice('video')
+  const prefAudio = getPreferredDevice('audio')
   const [camResult, micResult] = await Promise.all([
-    requestMedia({ video: true }).then((stream) => ({ stream })).catch((error) => ({ error })),
-    audioTrack
-      ? Promise.resolve(null)
-      : requestMedia({ audio: true }).then((stream) => ({ stream })).catch((error) => ({ error }))
+    videoTrack ? Promise.resolve(null) : requestMediaWithFallback('video', prefVideo),
+    audioTrack ? Promise.resolve(null) : requestMediaWithFallback('audio', prefAudio)
   ])
 
-  if (camResult.error) {
+  if (videoTrack) {
+    videoTrack.enabled = true
+    if (selfVideo.value) selfVideo.value.srcObject = new MediaStream([videoTrack])
+    camOn.value = true
+    if (sessionId.value) updateMedia(sessionId.value, { cameraEnabled: true }).catch(() => {})
+  } else if (camResult.error) {
     camOn.value = false
   } else {
     videoTrack = camResult.stream.getVideoTracks()[0] || null
@@ -217,16 +292,42 @@ async function openCamera() {
     audioTrack = micResult.stream.getAudioTracks()[0] || null
     if (audioTrack) audioTrack.enabled = micOn.value
   }
+  const fellBack =
+    (prefVideo && camResult && !camResult.error && camResult.fallback) ||
+    (prefAudio && micResult && !micResult.error && micResult.fallback)
+  if (fellBack) notify('偏好的设备不可用，已切换到系统默认设备')
 
   // 汇总提示：两者都失败时只弹一条，避免前一条被覆盖
   const failures = []
-  if (camResult.error) failures.push({ error: camResult.error, kind: 'camera' })
+  if (camResult?.error) failures.push({ error: camResult.error, kind: 'camera' })
   if (micResult?.error) failures.push({ error: micResult.error, kind: 'microphone' })
   if (failures.length === 1) {
     notify(await describeMediaNotice(failures[0].error, failures[0].kind))
   } else if (failures.length === 2) {
     notify('未获得摄像头与麦克风权限，请在浏览器地址栏允许访问后重新进入面试')
   }
+  rtc?.attachLocalTracks(videoTrack, audioTrack)
+}
+
+// WebRTC 信令连接：拿到场次后建立，面试官远端流到达后渲染到右半屏
+function startRtc() {
+  if (rtc || !sessionId.value) return
+  rtc = createConferenceRtc({
+    sessionId: sessionId.value,
+    onPeerStream: (s) => {
+      peerStream.value = s
+      nextTick(() => {
+        if (peerVideo.value) peerVideo.value.srcObject = s
+      })
+    },
+    onPeerLeft: () => {
+      peerStream.value = null
+      if (peerVideo.value) peerVideo.value.srcObject = null
+    }
+  })
+  rtc.start()
+  // 媒体采集先于信令就绪时补挂本地轨道
+  if (videoTrack || audioTrack) rtc.attachLocalTracks(videoTrack, audioTrack)
 }
 
 function closeCamera() {
@@ -258,8 +359,51 @@ async function toggleCam() {
   if (camOn.value) notify('摄像头已开启')
 }
 
+// 屏幕共享：把发往面试官的视频轨临时替换为屏幕轨（音频轨保持不变），
+// 停止共享或用户在系统弹窗点「停止共享」时再换回摄像头画面
+async function toggleShare() {
+  if (sharing.value) {
+    stopShare()
+    return
+  }
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    notify('当前浏览器不支持屏幕共享')
+    return
+  }
+  let result = null
+  try {
+    result = await navigator.mediaDevices.getDisplayMedia({ video: true })
+  } catch (error) {
+    // 用户取消选择共享内容不算错误，不弹提示
+    if (error && error.name !== 'NotAllowedError') notify('屏幕共享未开启')
+    return
+  }
+  screenTrack = result.getVideoTracks()[0] || null
+  if (!screenTrack) return
+  sharing.value = true
+  rtc?.attachLocalTracks(screenTrack, audioTrack)
+  // 用户通过浏览器自带的「停止共享」按钮结束时要同步收尾
+  screenTrack.onended = stopShare
+  notify('已开始共享屏幕')
+}
+
+function stopShare() {
+  if (!sharing.value && !screenTrack) return
+  sharing.value = false
+  if (screenTrack) {
+    screenTrack.onended = null
+    screenTrack.stop()
+    screenTrack = null
+  }
+  // 恢复发送摄像头画面；摄像头已关闭时移除视频轨，避免对端停留在最后一帧
+  if (videoTrack) rtc?.attachLocalTracks(videoTrack, audioTrack)
+  else rtc?.attachLocalTracks(null, audioTrack)
+  notify('已停止共享屏幕')
+}
+
 async function endMeeting() {
   showConfirm.value = false
+  stopShare()
   closeCamera()
   if (sessionId.value) {
     try {
@@ -268,6 +412,8 @@ async function endMeeting() {
       // 结束接口失败不阻塞跳转
     }
   }
+  rtc?.destroy()
+  rtc = null
   window.__agentNavigate('/agent/conference-ended')
 }
 
@@ -276,6 +422,62 @@ function scrollCaptions() {
     const node = capListRef.value
     if (node) node.scrollTop = node.scrollHeight
   })
+}
+
+// 会议设置：真实切换摄像头/麦克风（外接设备即在此选择）
+const showSettings = ref(false)
+const cameraDevices = ref([])
+const microphoneDevices = ref([])
+const setCamId = ref('')
+const setMicId = ref('')
+
+async function openSettings() {
+  cameraDevices.value = await listMediaDevices('video')
+  microphoneDevices.value = await listMediaDevices('audio')
+  setCamId.value = (videoTrack && videoTrack.getSettings().deviceId) || getPreferredDevice('video')
+  setMicId.value = (audioTrack && audioTrack.getSettings().deviceId) || getPreferredDevice('audio')
+  showSettings.value = true
+}
+
+// 切换设备：先采集新设备、成功后再停旧轨道。
+// 下拉切换的一定是另一台物理设备，两者可短暂共存；而「先停旧轨道再开新设备」
+// 在 Windows 上常因硬件尚未完全释放而失败，且失败后连原画面都会一起丢掉。
+async function applyDevice(kind) {
+  const isVideo = kind === 'video'
+  const deviceId = isVideo ? setCamId.value : setMicId.value
+  const oldTrack = isVideo ? videoTrack : audioTrack
+  if (!oldTrack) {
+    // 摄像头已关闭时只记录偏好，下次开启时生效
+    if (deviceId) savePreferredDevice(kind, deviceId)
+    else clearPreferredDevice(kind)
+    notify('已保存设备偏好，下次开启时生效')
+    return
+  }
+  const res = await requestMedia({ [kind]: deviceId ? { deviceId: { exact: deviceId } } : true })
+    .then((stream) => ({ stream }))
+    .catch((error) => ({ error }))
+  const newTrack = res.stream ? (isVideo ? res.stream.getVideoTracks()[0] : res.stream.getAudioTracks()[0]) : null
+  if (!newTrack) {
+    // 采集失败：保留原设备与画面，只提示原因
+    notify(await describeMediaNotice(res.error, isVideo ? 'camera' : 'microphone'))
+    return
+  }
+  // 新设备就绪后再写偏好并释放旧轨道
+  if (deviceId) savePreferredDevice(kind, deviceId)
+  else clearPreferredDevice(kind)
+  oldTrack.stop()
+  if (isVideo) {
+    videoTrack = newTrack
+    videoTrack.enabled = camOn.value
+    if (selfVideo.value) selfVideo.value.srcObject = new MediaStream([videoTrack])
+    setCamId.value = videoTrack.getSettings().deviceId || deviceId
+  } else {
+    audioTrack = newTrack
+    audioTrack.enabled = micOn.value
+    setMicId.value = audioTrack.getSettings().deviceId || deviceId
+  }
+  rtc?.attachLocalTracks(videoTrack, audioTrack)
+  notify('已切换设备')
 }
 
 onMounted(() => {
@@ -299,6 +501,7 @@ async function initSession() {
       sessionId.value = res.data.sessionId
       if (res.data.positionTitle) header.value.positionTitle = res.data.positionTitle
       if (res.data.roundNo) header.value.roundNo = res.data.roundNo
+      startRtc()
     }
   } catch (error) {
     // 无后端时保留本地演示
@@ -335,6 +538,13 @@ onBeforeUnmount(() => {
   clearInterval(captionId)
   clearInterval(heartbeatId)
   clearTimeout(toastTimer)
+  if (screenTrack) {
+    screenTrack.onended = null
+    screenTrack.stop()
+    screenTrack = null
+  }
+  rtc?.destroy()
+  rtc = null
   closeCamera()
   audioTrack?.stop()
   audioTrack = null
@@ -381,6 +591,16 @@ onBeforeUnmount(() => {
 .ca-stage { flex: 1; min-height: 0; padding: 12px; display: flex; }
 .ca-video { position: relative; flex: 1; min-width: 0; border-radius: 14px; overflow: hidden; background: radial-gradient(120% 90% at 50% 20%, #1E2A44 0%, #10141C 62%, #0A0D14 100%); box-shadow: 0 24px 60px rgba(0, 0, 0, .5); }
 
+.ca-split { position: absolute; inset: 0; display: flex; }
+.ca-left { position: relative; flex: 0 0 var(--left, 50%); min-width: 0; }
+.ca-resizer { position: relative; flex: 0 0 10px; cursor: col-resize; }
+.ca-resizer i { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 2px; height: 40px; border-radius: 999px; background: rgba(255, 255, 255, .28); transition: .16s; }
+.ca-resizer:hover i { height: 64px; background: var(--b); }
+.ca-right { position: relative; flex: 1 1 0; min-width: 0; border-left: 1px solid var(--line); background: #05070c; }
+.ca-peer-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ca-peer-waiting { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; }
+.ca-peer-waiting svg { color: #4A5768; }
+
 .ca-ai { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%); text-align: center; }
 .ca-orb { position: relative; width: 136px; height: 136px; margin: 0 auto; display: grid; place-items: center; }
 .ca-orb-core { width: 96px; height: 96px; display: grid; place-items: center; border-radius: 50%; color: #fff; font-size: 24px; font-weight: 800; letter-spacing: 1px; background: linear-gradient(150deg, #2B7FFF, #1A3C6E); box-shadow: 0 0 40px rgba(43, 127, 255, .55); }
@@ -406,6 +626,7 @@ onBeforeUnmount(() => {
 .ca-self-name { position: absolute; left: 7px; bottom: 5px; font-size: 10px; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); pointer-events: none; }
 .ca-self-hide { position: absolute; right: 5px; top: 4px; width: 20px; height: 20px; border: 0; border-radius: 6px; background: rgba(8, 12, 20, .65); color: #fff; font-size: 15px; line-height: 1; display: grid; place-items: center; }
 .ca-self-restore { position: absolute; right: 16px; bottom: 16px; height: 32px; padding: 0 13px; border: 1px solid var(--line); border-radius: 8px; background: rgba(10, 14, 22, .75); color: #CFE0FF; font-size: 12px; }
+.ca-share-tip { position: absolute; right: 14px; top: 12px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; background: rgba(43, 127, 255, .92); color: #fff; font-size: 12px; }
 
 .ca-captions { position: absolute; left: 0; right: 0; bottom: 0; max-height: 148px; padding: 12px 18px 14px; background: linear-gradient(180deg, rgba(6, 9, 14, 0), rgba(6, 9, 14, .86) 42%); display: flex; flex-direction: column; transition: .2s; }
 .ca-captions:not(.live) { opacity: .3; }
@@ -439,9 +660,22 @@ onBeforeUnmount(() => {
 .ca-toast { position: fixed; left: 50%; bottom: 98px; transform: translate(-50%, 8px); z-index: 80; padding: 11px 16px; border-radius: 9px; background: #0B1220; border: 1px solid var(--line); color: #fff; font-size: 13px; opacity: 0; pointer-events: none; transition: .2s; }
 .ca-toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+.ca-set-field { margin-top: 14px; display: grid; gap: 6px; }
+.ca-set-field label { font-size: 12px; color: #97A5BB; }
+.ca-set-field select {
+  height: 36px; padding: 0 10px; border-radius: 9px;
+  border: 1px solid var(--line); background: #12151C; color: #EDF1F7;
+  font-size: 13px; font-family: inherit; outline: none;
+}
+.ca-set-field select:focus { border-color: var(--b); }
+
 @media (max-width: 900px) {
   .ca-question { left: 14px; right: 14px; top: 14px; }
   .ca-q-text { font-size: 13px; }
   .ca-self { width: 120px; height: 68px; }
+  .ca-split { flex-direction: column; }
+  .ca-left { flex: 0 0 55%; }
+  .ca-resizer { display: none; }
+  .ca-right { flex: 1 1 0; border-left: 0; border-top: 1px solid var(--line); }
 }
 </style>

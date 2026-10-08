@@ -11,6 +11,7 @@
 
 <script setup>
 import { onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 
 onMounted(() => {
@@ -29,7 +30,7 @@ onMounted(() => {
       const interviewPanel=document.getElementById('interviewPanel');if(current.interview){document.getElementById('interviewStage').textContent=current.interview.stage;document.getElementById('interviewCountdown').textContent=current.interview.countdown;document.getElementById('interviewTime').textContent=current.interview.time;const meta=document.getElementById('interviewMeta');meta.replaceChildren(...current.interview.meta.map(text=>{const span=document.createElement('span');span.textContent=text;return span}))}else{interviewPanel.hidden=true}
       // 将当前投递 ID 传给独立的模拟面试页，以便显示对应岗位信息。
       document.getElementById('mockStartLink').href=`/agent/mock-interview?job=${encodeURIComponent(recordId)}`;
-      document.getElementById('interviewButton').addEventListener('click',()=>{window.__agentNavigate(`/agent/conference-prep?job=${encodeURIComponent(recordId)}`)});
+      document.getElementById('interviewButton').addEventListener('click',()=>{ElMessage('面试链接已发送至消息中心，请从链接进入')});
 })
 </script>
 

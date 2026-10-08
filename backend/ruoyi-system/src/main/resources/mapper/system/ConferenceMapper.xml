@@ -25,6 +25,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         s.ses_rec_access_level            as recAccessLevel,
         p.pos_title                       as positionTitle,
         p.pos_company_id                  as companyId,
+        c.cmp_name                        as companyName,
         t.tal_user_id                     as candidateUserId,
         ifnull(u.nick_name, u.user_name)   as candidateName,
         ifnull(iu.nick_name, iu.user_name) as interviewerName,
@@ -40,6 +41,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from t_int_session s
         left join t_sch_appointment a on a.apt_id = s.ses_appointment_id
         left join t_pos p on p.pos_id = s.ses_position_id
+        left join t_cmp c on c.cmp_id = p.pos_company_id
         left join t_tal t on t.tal_id = s.ses_candidate_id
         left join sys_user u on u.user_id = t.tal_user_id
         left join sys_user iu on iu.user_id = s.ses_interviewer_id
@@ -66,6 +68,128 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select <include refid="sessionContextColumns"/>
         <include refid="sessionContextJoins"/>
         where s.ses_id = #{sessionId}
+    </select>
+
+    <select id="selectSessionByRoomToken" resultType="java.util.LinkedHashMap">
+        select <include refid="sessionContextColumns"/>
+        <include refid="sessionContextJoins"/>
+        where s.ses_room_token = #{roomToken}
+        limit 1
+    </select>
+
+    <select id="selectTalentByUserId" resultType="java.util.LinkedHashMap">
+        select t.tal_id                          as candidateId,
+               t.tal_user_id                     as userId,
+               t.tal_company_id                  as companyId,
+               ifnull(u.nick_name, u.user_name)  as candidateName
+        from t_tal t
+        left join sys_user u on u.user_id = t.tal_user_id
+        where t.tal_user_id = #{userId}
+        limit 1
+    </select>
+
+    <select id="selectActiveSessionByCandidate" resultType="java.util.LinkedHashMap">
+        select s.ses_id         as sessionId,
+               s.ses_room_id    as roomId,
+               s.ses_room_token as roomToken,
+               s.ses_status     as status
+        from t_int_session s
+        where s.ses_candidate_id = #{candidateId}
+          and s.ses_interviewer_id = #{interviewerId}
+          and s.ses_status in (0, 1)
+        order by s.ses_id desc
+        limit 1
+    </select>
+
+    <insert id="insertAppointment" parameterType="java.util.Map" useGeneratedKeys="true" keyProperty="appointmentId">
+        insert into t_sch_appointment
+            (apt_candidate_id, apt_position_id, apt_interviewer_id, apt_start_time, apt_end_time,
+             apt_status, apt_created_at, apt_updated_at)
+        values
+            (#{candidateId}, #{positionId}, #{interviewerId}, sysdate(),
+             date_add(sysdate(), interval #{durationMinutes} minute), 1, sysdate(), sysdate())
+    </insert>
+
+    <insert id="insertSession" parameterType="java.util.Map" useGeneratedKeys="true" keyProperty="sessionId">
+        insert into t_int_session
+            (ses_appointment_id, ses_candidate_id, ses_position_id, ses_interviewer_id, ses_cascade_round,
+             ses_mode, ses_status, ses_created_at, ses_updated_at)
+        values
+            (#{appointmentId}, #{candidateId}, #{positionId}, #{interviewerId}, 1,
+             #{mode}, 0, sysdate(), sysdate())
+    </insert>
+
+    <update id="updateSessionRoomToken">
+        update t_int_session
+        set ses_room_id = #{roomId},
+            ses_room_token = #{roomToken},
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId}
+    </update>
+
+    <select id="selectCandidatePositionsByPeer" resultType="java.util.LinkedHashMap">
+        select a.app_id      as applicationId,
+               p.pos_id      as positionId,
+               p.pos_title   as positionTitle,
+               a.app_status  as appStatus
+        from t_app_record a
+        join t_pos p on p.pos_id = a.app_position_id
+        join t_tal t on t.tal_id = a.app_candidate_id
+        where t.tal_user_id = #{peerUserId}
+          and p.pos_company_id = #{companyId}
+        order by a.app_updated_at desc
+    </select>
+
+    <insert id="upsertParticipantState">
+        insert into t_int_participant_state
+            (pst_session_id, pst_user_id, pst_role, pst_cam_status, pst_mic_status, pst_speaker_status,
+             pst_net_status, pst_net_rtt_ms, pst_net_bandwidth_kbps, pst_risk_flag, pst_device_json,
+             pst_ready, pst_waiting_at, pst_created_at, pst_updated_at)
+        values
+            (#{sessionId}, #{userId}, #{role}, #{camStatus}, #{micStatus}, #{speakerStatus},
+             #{netStatus}, #{rttMs,jdbcType=INTEGER}, #{bandwidthKbps,jdbcType=INTEGER}, #{riskFlag},
+             #{deviceJson,jdbcType=VARCHAR}, #{ready},
+             <choose>
+                 <when test="ready != null and ready == 1">sysdate()</when>
+                 <otherwise>null</otherwise>
+             </choose>,
+             sysdate(), sysdate())
+        on duplicate key update
+            pst_role = #{role},
+            pst_cam_status = #{camStatus},
+            pst_mic_status = #{micStatus},
+            pst_speaker_status = #{speakerStatus},
+            pst_net_status = #{netStatus},
+            pst_net_rtt_ms = #{rttMs,jdbcType=INTEGER},
+            pst_net_bandwidth_kbps = #{bandwidthKbps,jdbcType=INTEGER},
+            pst_risk_flag = #{riskFlag},
+            <if test="deviceJson != null">pst_device_json = #{deviceJson,jdbcType=VARCHAR},</if>
+            <!-- 就绪标记只置位、不撤销：避免离开等候室后再上报检测把状态打回未就绪 -->
+            <if test="ready != null and ready == 1">
+                pst_ready = 1,
+                pst_waiting_at = ifnull(pst_waiting_at, sysdate()),
+            </if>
+            pst_updated_at = sysdate()
+    </insert>
+
+    <select id="selectParticipantStates" resultType="java.util.LinkedHashMap">
+        select p.pst_user_id             as userId,
+               p.pst_role                as role,
+               p.pst_cam_status          as camStatus,
+               p.pst_mic_status          as micStatus,
+               p.pst_speaker_status      as speakerStatus,
+               p.pst_net_status          as netStatus,
+               p.pst_net_rtt_ms          as rttMs,
+               p.pst_net_bandwidth_kbps  as bandwidthKbps,
+               p.pst_risk_flag           as riskFlag,
+               p.pst_ready               as ready,
+               p.pst_in_meeting          as inMeeting,
+               date_format(p.pst_waiting_at, '%H:%i:%s') as waitingAt,
+               ifnull(u.nick_name, u.user_name)          as userName
+        from t_int_participant_state p
+        left join sys_user u on u.user_id = p.pst_user_id
+        where p.pst_session_id = #{sessionId}
+        order by p.pst_role asc
     </select>
 
     <insert id="ensureMeetingState">

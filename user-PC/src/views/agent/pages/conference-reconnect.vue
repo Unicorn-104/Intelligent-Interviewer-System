@@ -88,7 +88,7 @@ function reconnect(manual) {
           // 心跳失败不阻塞返回面试
         }
       }
-      go('/agent/conference-ai?job=ai-product')
+      go('/agent/conference-waiting?sessionId=' + (sessionId.value || ''))
     }, 1200)
   }, 2200)
 }

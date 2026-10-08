@@ -57,3 +57,73 @@ export async function describeMediaNotice(error, kind) {
   const state = await queryMediaPermission(kind)
   return state === 'denied' ? `${message}；浏览器已屏蔽该权限，请到网站设置中改为「允许」` : message
 }
+
+// 用户选定的音视频设备 ID 持久化：准备页选择外接摄像头后，进入会议页仍沿用该设备；
+// deviceId 按「来源+页面」隔离，跨页不保证有效，采集失败时调用方需回退默认设备。
+const DEVICE_PREF_KEY = 'conferenceDevicePrefs'
+
+export function savePreferredDevice(kind, deviceId) {
+  if (!deviceId) return
+  try {
+    const prefs = JSON.parse(localStorage.getItem(DEVICE_PREF_KEY) || '{}')
+    prefs[kind] = deviceId
+    localStorage.setItem(DEVICE_PREF_KEY, JSON.stringify(prefs))
+  } catch (error) {
+    // 隐私模式下仅保留当前页面状态
+  }
+}
+
+export function getPreferredDevice(kind) {
+  try {
+    return JSON.parse(localStorage.getItem(DEVICE_PREF_KEY) || '{}')[kind] || ''
+  } catch (error) {
+    return ''
+  }
+}
+
+// 清除偏好，交回浏览器自动选择设备（对应设置里的「系统默认」）
+export function clearPreferredDevice(kind) {
+  try {
+    const prefs = JSON.parse(localStorage.getItem(DEVICE_PREF_KEY) || '{}')
+    delete prefs[kind]
+    localStorage.setItem(DEVICE_PREF_KEY, JSON.stringify(prefs))
+  } catch (error) {
+    // 隐私模式下无需清理
+  }
+}
+
+// 按偏好设备采集：先 exact 指定设备，失败（设备拔出/被占用/ID 过期）回退系统默认；
+// 回退成功时把实际设备 ID 写回偏好，供后续页面沿用。kind 取 'video' / 'audio'。
+export async function requestMediaWithFallback(kind, deviceId) {
+  if (deviceId) {
+    try {
+      const stream = await requestMedia({ [kind]: { deviceId: { exact: deviceId } } })
+      return { stream, fallback: false }
+    } catch (error) {
+      // 指定设备不可用，继续尝试默认设备
+    }
+  }
+  try {
+    const stream = await requestMedia({ [kind]: true })
+    const track = kind === 'video' ? stream.getVideoTracks()[0] : stream.getAudioTracks()[0]
+    const actual = track?.getSettings?.().deviceId
+    if (actual) savePreferredDevice(kind, actual)
+    return { stream, fallback: true }
+  } catch (error) {
+    return { error }
+  }
+}
+
+// 授权后枚举真实设备（未授权时 label 为空，用占位名）；kind 取 'video' / 'audio'。
+export async function listMediaDevices(kind) {
+  const kindMap = { video: 'videoinput', audio: 'audioinput' }
+  const nameMap = { video: '摄像头', audio: '麦克风' }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    return devices
+      .filter((item) => item.kind === kindMap[kind])
+      .map((item, index) => ({ deviceId: item.deviceId, label: item.label || `${nameMap[kind]} ${index + 1}` }))
+  } catch (error) {
+    return []
+  }
+}

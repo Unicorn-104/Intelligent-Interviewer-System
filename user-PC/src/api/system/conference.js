@@ -50,6 +50,68 @@ export function startSession(sessionId) {
   })
 }
 
+// ============================ 会议链接与等候室 ============================
+
+// 会议链接匿名校验（统一入口页，仅返回脱敏的邀请信息，不含 sessionId）
+export function verifyRoomToken(token) {
+  return call({
+    url: '/system/conference/link/verify',
+    method: 'get',
+    params: { token: token }
+  })
+}
+
+// 登录后按会议链接令牌进入场次
+export function joinByRoomToken(token) {
+  return call({
+    url: '/system/conference/link/join',
+    method: 'post',
+    data: { token: token }
+  })
+}
+
+// 等候室状态（双方各自的会前检测与就绪情况）
+export function getWaitingRoom(sessionId) {
+  return call({
+    url: '/system/conference/session/' + sessionId + '/waiting-room',
+    method: 'get'
+  })
+}
+
+// 上报本人会前检测与就绪状态（ready=1 表示本人已进入等候室）
+export function reportParticipantState(sessionId, data) {
+  return call({
+    url: '/system/conference/session/' + sessionId + '/participant-state',
+    method: 'put',
+    data: data
+  })
+}
+
+// ============================ WebRTC 信令 ============================
+
+// 签发一次性信令票据（登录后换取）
+export function signalTicket(sessionId) {
+  return call({
+    url: '/system/conference/session/' + sessionId + '/signal/ticket',
+    method: 'post'
+  })
+}
+
+// 向同场次对端转发信令（offer / answer / ice / ready / bye）
+export function signalSend(ticket, data) {
+  return call({
+    url: '/system/conference/signal/send',
+    method: 'post',
+    params: { ticket: ticket },
+    data: data
+  })
+}
+
+// SSE 信令通道地址（EventSource 直连，匿名 + 票据自校验）
+export function signalStreamUrl(ticket) {
+  return import.meta.env.VITE_APP_BASE_API + '/system/conference/signal/stream?ticket=' + encodeURIComponent(ticket)
+}
+
 // ============================ 进行中 ============================
 
 // 面试进度与当前题目

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, FileText, Sparkles, Timer, Mic, MicOff,
@@ -8,7 +8,8 @@ import {
 } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { getCurrentSession, getProgress, listCaptions, heartbeat, handleCopilot, finishSession } from '@/api/system/conference'
-import { describeMediaNotice, requestMedia } from '@/utils/media'
+import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, requestMedia, requestMediaWithFallback, savePreferredDevice } from '@/utils/media'
+import { createConferenceRtc } from '@/utils/webrtc'
 
 const router = useRouter()
 
@@ -17,9 +18,12 @@ const rightOpen = ref(true)
 const selfVisible = ref(true)
 const selfRef = ref(null)
 const selfVideo = ref(null)
+const peerVideo = ref(null)
 const frameRef = ref(null)
 const selfPos = ref({ x: null, y: null })
 const toast = ref('')
+// 候选人远端音视频流（WebRTC 到达后渲染到主画面）
+const peerStream = ref(null)
 // 设备申请失败的原因；非空时小窗展示「重新检测」入口
 const mediaError = ref('')
 // 结束会议二次确认
@@ -84,6 +88,7 @@ let stream = null
 let videoTrack = null
 let audioTrack = null
 let localVideoStream = null
+let rtc = null
 
 // 当前进行中的面试场次（无后端数据时为 null，页面继续用 mock 演示）
 const sessionId = ref(null)
@@ -140,9 +145,10 @@ async function openMedia() {
   // 重试前先释放上一轮残留，避免同一设备仍被自己占用导致再次失败
   releaseMedia()
 
+  // 优先使用上次选定的设备（如外接摄像头），不可用时回退系统默认
   const [camResult, micResult] = await Promise.all([
-    requestMedia({ video: true }).then((stream) => ({ stream })).catch((error) => ({ error })),
-    requestMedia({ audio: true }).then((stream) => ({ stream })).catch((error) => ({ error }))
+    requestMediaWithFallback('video', getPreferredDevice('video')),
+    requestMediaWithFallback('audio', getPreferredDevice('audio'))
   ])
 
   videoTrack = camResult.error ? null : (camResult.stream.getVideoTracks()[0] || null)
@@ -169,6 +175,94 @@ async function openMedia() {
     mediaError.value = ''
   }
   if (mediaError.value) notify(mediaError.value)
+  rtc?.attachLocalTracks(videoTrack, audioTrack)
+}
+
+// 会议设置：真实切换摄像头/麦克风（外接设备即在此选择）
+const showSettings = ref(false)
+const cameraDevices = ref([])
+const microphoneDevices = ref([])
+const setCamId = ref('')
+const setMicId = ref('')
+
+async function openSettings() {
+  cameraDevices.value = await listMediaDevices('video')
+  microphoneDevices.value = await listMediaDevices('audio')
+  setCamId.value = (videoTrack && videoTrack.getSettings().deviceId) || getPreferredDevice('video')
+  setMicId.value = (audioTrack && audioTrack.getSettings().deviceId) || getPreferredDevice('audio')
+  showSettings.value = true
+}
+
+// 切换设备：先采集新设备、成功后再停旧轨道。
+// 下拉切换的一定是另一台物理设备，两者可短暂共存；而「先停旧轨道再开新设备」
+// 在 Windows 上常因硬件尚未完全释放而失败，且失败后连原画面都会一起丢掉。
+async function applyDevice(kind) {
+  const isVideo = kind === 'video'
+  const deviceId = isVideo ? setCamId.value : setMicId.value
+  const oldTrack = isVideo ? videoTrack : audioTrack
+  if (!oldTrack) {
+    // 采集未开启时只记录偏好，下次开启时生效
+    if (deviceId) savePreferredDevice(kind, deviceId)
+    else clearPreferredDevice(kind)
+    notify('已保存设备偏好，下次开启时生效')
+    return
+  }
+  const res = await requestMedia({ [kind]: deviceId ? { deviceId: { exact: deviceId } } : true })
+    .then((stream) => ({ stream }))
+    .catch((error) => ({ error }))
+  const newTrack = res.stream ? (isVideo ? res.stream.getVideoTracks()[0] : res.stream.getAudioTracks()[0]) : null
+  if (!newTrack) {
+    // 采集失败：保留原设备与画面，只提示原因
+    notify(await describeMediaNotice(res.error, isVideo ? 'camera' : 'microphone'))
+    return
+  }
+  // 新设备就绪后再写偏好并释放旧轨道
+  if (deviceId) savePreferredDevice(kind, deviceId)
+  else clearPreferredDevice(kind)
+  oldTrack.stop()
+  if (isVideo) {
+    videoTrack = newTrack
+    videoTrack.enabled = CAM_ON.value
+    localVideoStream = new MediaStream([videoTrack])
+    if (selfVideo.value) selfVideo.value.srcObject = localVideoStream
+    setCamId.value = videoTrack.getSettings().deviceId || deviceId
+  } else {
+    audioTrack = newTrack
+    audioTrack.enabled = MIC_ON.value
+    setMicId.value = audioTrack.getSettings().deviceId || deviceId
+  }
+  // 同步重建合并流，确保 releaseMedia 能停止新轨道（旧轨道已 stop，重复 stop 无副作用）
+  stream = rebuildLocalStream()
+
+  rtc?.attachLocalTracks(videoTrack, audioTrack)
+  notify('已切换设备')
+}
+
+// 合并当前启用的轨道为一条本地流，供 releaseMedia 统一释放
+function rebuildLocalStream() {
+  const tracks = [...(videoTrack ? [videoTrack] : []), ...(audioTrack ? [audioTrack] : [])]
+  return tracks.length ? new MediaStream(tracks) : null
+}
+
+// WebRTC 信令连接：拿到场次后建立，候选人远端流到达后渲染到主画面
+function startRtc() {
+  if (rtc || !sessionId.value) return
+  rtc = createConferenceRtc({
+    sessionId: sessionId.value,
+    onPeerStream: (s) => {
+      peerStream.value = s
+      nextTick(() => {
+        if (peerVideo.value) peerVideo.value.srcObject = s
+      })
+    },
+    onPeerLeft: () => {
+      peerStream.value = null
+      if (peerVideo.value) peerVideo.value.srcObject = null
+    }
+  })
+  rtc.start()
+  // 媒体采集先于信令就绪时补挂本地轨道
+  if (videoTrack || audioTrack) rtc.attachLocalTracks(videoTrack, audioTrack)
 }
 
 function toggleMic() {
@@ -194,6 +288,7 @@ async function toggleCam() {
 }
 
 function releaseMedia() {
+  rtc?.detachLocalTracks()
   stream?.getTracks().forEach((track) => track.stop())
   stream = null
   videoTrack = null
@@ -228,6 +323,8 @@ function endSessionAndLeave() {
   if (sessionId.value) {
     finishSession(sessionId.value, 'normal').catch(() => {})
   }
+  rtc?.destroy()
+  rtc = null
   releaseMedia()
   router.push('/enterprise/messages')
 }
@@ -283,6 +380,7 @@ async function initSession() {
     const s = await getCurrentSession()
     if (!s.data || !s.data.sessionId) return
     sessionId.value = s.data.sessionId
+    startRtc()
     // 回填候选人 / 面试官信息，替换页面上的演示值
     if (s.data.candidateName) candidate.value.name = s.data.candidateName
     if (s.data.positionTitle) candidate.value.position = s.data.positionTitle
@@ -334,6 +432,8 @@ onBeforeUnmount(() => {
   clearInterval(captionId)
   clearInterval(heartbeatId)
   clearInterval(rttId)
+  rtc?.destroy()
+  rtc = null
   releaseMedia()
 })
 </script>
@@ -354,6 +454,10 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="tb-right">
+        <button class="tb-icon" :title="rightOpen ? '收起协同面板' : '展开协同面板'" @click="rightOpen = !rightOpen">
+          <ChevronRight v-if="rightOpen" :size="17" />
+          <ChevronLeft v-else :size="17" />
+        </button>
         <span class="timer"><Timer :size="14" />{{ clock }}</span>
         <span class="net" :class="netLevel"><i />{{ rtt == null ? '延迟 --' : `延迟 ${rtt}ms` }}</span>
         <span v-if="RECORDING" class="rec"><i />录制中</span>
@@ -393,7 +497,8 @@ onBeforeUnmount(() => {
 
       <section class="stage">
         <div ref="frameRef" class="main-video">
-          <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=1400&q=85" alt="候选人视频画面" />
+          <video v-show="peerStream" ref="peerVideo" class="peer-video" autoplay playsinline />
+          <div v-if="!peerStream" class="peer-waiting"><Video :size="26" /><span>等待候选人画面…</span></div>
 
           <span class="tag-main"><i />候选人 · {{ candidate.name }}</span>
           <div class="tag-right">
@@ -439,9 +544,6 @@ onBeforeUnmount(() => {
       <aside v-show="rightOpen" class="right">
         <div class="right-head">
           <h2>AI 实时协同</h2>
-          <button class="tb-icon" :title="rightOpen ? '收起协同面板' : '展开协同面板'" @click="rightOpen = !rightOpen">
-            <ChevronRight :size="17" />
-          </button>
         </div>
 
         <div class="progress-card">
@@ -516,7 +618,7 @@ onBeforeUnmount(() => {
       <button class="ctl" :class="{ on: CAPTION_ON }" @click="CAPTION_ON = !CAPTION_ON">
         <MessageSquareText :size="20" /><span>字幕</span>
       </button>
-      <button class="ctl" @click="notify('打开会议设置面板')">
+      <button class="ctl" @click="openSettings">
         <Settings :size="20" /><span>设置</span>
       </button>
       <button class="ctl hang" @click="showExitConfirm = true">
@@ -531,6 +633,30 @@ onBeforeUnmount(() => {
         <div class="conf-modal-actions">
           <button class="conf-cancel" @click="showExitConfirm = false">取消</button>
           <button class="conf-confirm" @click="confirmLeave">确认结束</button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="showSettings" class="conf-mask" @click.self="showSettings = false">
+      <section class="conf-modal">
+        <h3>会议设置</h3>
+        <p>切换采集设备后画面与声音立即生效（如使用外接摄像头，请在列表中选择对应设备）。</p>
+        <div class="set-field">
+          <label>摄像头</label>
+          <select v-model="setCamId" @change="applyDevice('video')">
+            <option value="">系统默认</option>
+            <option v-for="item in cameraDevices" :key="item.deviceId" :value="item.deviceId">{{ item.label }}</option>
+          </select>
+        </div>
+        <div class="set-field">
+          <label>麦克风</label>
+          <select v-model="setMicId" @change="applyDevice('audio')">
+            <option value="">系统默认</option>
+            <option v-for="item in microphoneDevices" :key="item.deviceId" :value="item.deviceId">{{ item.label }}</option>
+          </select>
+        </div>
+        <div class="conf-modal-actions">
+          <button class="conf-cancel" @click="showSettings = false">完成</button>
         </div>
       </section>
     </div>
@@ -709,7 +835,13 @@ onBeforeUnmount(() => {
   background: #05070c;
   box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
 }
-.main-video > img { width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(.92); }
+.peer-video { width: 100%; height: 100%; object-fit: cover; display: block; background: #05070c; }
+.peer-waiting {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  color: #8b98ad; font-size: 14px;
+  background: radial-gradient(ellipse at center, #0c1424 0%, #05070c 70%);
+}
 .tag-main, .tag-quality, .tag-rec {
   height: 26px; padding: 0 11px;
   display: inline-flex; align-items: center; gap: 6px;
@@ -901,6 +1033,21 @@ onBeforeUnmount(() => {
 .conf-cancel:hover { color: var(--text); border-color: var(--line-strong); }
 .conf-confirm { border: 0; color: #fff; background: var(--rec); }
 .conf-confirm:hover { background: #ff6b6d; }
+
+/* 会议设置弹窗 */
+.set-field { margin-top: 14px; display: grid; gap: 6px; }
+.set-field label { font-size: 12px; color: var(--muted); }
+.set-field select {
+  height: 36px; padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+.set-field select:focus { border-color: var(--primary); }
 
 @media (max-width: 1280px) { .right { width: 288px; } }
 @media (max-width: 1120px) {

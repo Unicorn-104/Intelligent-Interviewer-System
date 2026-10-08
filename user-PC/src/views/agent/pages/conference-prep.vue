@@ -3,7 +3,7 @@
     <header class="cp-topbar">
       <div class="cp-bar">
         <a class="cp-brand" href="/agent/index"><span class="cp-mark">智</span>智聘 AI</a>
-        <span class="cp-user">候选人 · 王芳</span>
+        <span class="cp-user">求职者 · 王芳</span>
         <button class="cp-quit" @click="quit">退出</button>
       </div>
     </header>
@@ -165,7 +165,7 @@
       </div>
       <div class="cp-footer-actions">
         <button v-if="netRisk" class="cp-risk" :disabled="!canIgnore" @click="ignoreRisk">忽略风险，继续进入</button>
-        <button class="cp-start" :disabled="!canStart" @click="enter">准备就绪，进入面试</button>
+        <button class="cp-start" :disabled="!canStart" @click="enter">进入等候室</button>
       </div>
     </footer>
 
@@ -208,8 +208,9 @@
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
-import { getCurrentSession, reportEnvironmentCheck, startSession, submitConsent } from '@/api/system/conference'
-import { describeMediaNotice, queryMediaPermission, requestMedia } from '@/utils/media'
+import { useRoute, useRouter } from 'vue-router'
+import { getCurrentSession, getSessionContext, reportParticipantState, submitConsent } from '@/api/system/conference'
+import { describeMediaNotice, queryMediaPermission, requestMedia, savePreferredDevice } from '@/utils/media'
 
 const PATHS = {
   camera: ['M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z', 'M12 13m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0'],
@@ -248,6 +249,8 @@ const showConsent = ref(false)
 const showNotice = ref(false)
 const toast = ref('')
 const sessionId = ref(null)
+const route = useRoute()
+const router = useRouter()
 // 本机设备：预览视频与设备选择
 const previewVideo = ref(null)
 const cameraDevices = ref([])
@@ -273,9 +276,12 @@ const interview = ref({
 })
 let toastTimer = null
 let stream = null
+// 当前正在使用的摄像头/麦克风轨道：只有成功拿到新轨道后才释放被替换的旧轨道
+let currentVideo = null
+let currentAudio = null
 
 const netRisk = computed(() => net.value === 'risk')
-const allGreen = computed(() => cam.value === 'ok' && mic.value === 'ok' && speaker.value === 'ok' && net.value === 'ok')
+const allGreen = computed(() => cam.value === 'ok' && mic.value === 'ok' && speaker.value === 'ok' && (net.value === 'ok' || risk.value))
 const canIgnore = computed(() => agreed.value && cam.value === 'ok' && mic.value === 'ok' && speaker.value === 'ok')
 const canStart = computed(() => allGreen.value && agreed.value)
 
@@ -319,17 +325,37 @@ function notify(message) {
 }
 
 // 打开本机摄像头与麦克风（分开申请，任一失败不影响另一项），并把画面接入预览
+// 目标设备与当前正在使用的设备相同时直接复用轨道：同一摄像头不允许被自己重复打开，
+// 「先 stop 再申请」会因硬件尚未释放抛 NotReadableError，这正是重新检测/切回在用设备时报「被占用」的原因
 async function openLocalMedia() {
+  const camSame = currentVideo && currentVideo.readyState === 'live' &&
+    (!camDeviceId.value || currentVideo.getSettings?.().deviceId === camDeviceId.value)
+  const micSame = currentAudio && currentAudio.readyState === 'live' &&
+    (!micDeviceId.value || currentAudio.getSettings?.().deviceId === micDeviceId.value)
+
   const [camResult, micResult] = await Promise.all([
-    requestMedia({ video: camDeviceId.value ? { deviceId: { exact: camDeviceId.value } } : true })
-      .then((stream) => ({ stream })).catch((error) => ({ error })),
-    requestMedia({ audio: micDeviceId.value ? { deviceId: { exact: micDeviceId.value } } : true })
-      .then((stream) => ({ stream })).catch((error) => ({ error }))
+    camSame
+      ? Promise.resolve({ stream: new MediaStream([currentVideo]) })
+      : requestMedia({ video: camDeviceId.value ? { deviceId: { exact: camDeviceId.value } } : true })
+        .then((stream) => ({ stream })).catch((error) => ({ error })),
+    micSame
+      ? Promise.resolve({ stream: new MediaStream([currentAudio]) })
+      : requestMedia({ audio: micDeviceId.value ? { deviceId: { exact: micDeviceId.value } } : true })
+        .then((stream) => ({ stream })).catch((error) => ({ error }))
   ])
 
   const video = camResult.stream?.getVideoTracks()[0] || null
   const audio = micResult.stream?.getAudioTracks()[0] || null
-  const tracks = [...(camResult.stream?.getVideoTracks() || []), ...(micResult.stream?.getAudioTracks() || [])]
+  // 新轨道就绪后再释放被替换的旧轨道，采集失败时保留原轨道与画面
+  if (video && video !== currentVideo) {
+    currentVideo?.stop()
+    currentVideo = video
+  }
+  if (audio && audio !== currentAudio) {
+    currentAudio?.stop()
+    currentAudio = audio
+  }
+  const tracks = [currentVideo, currentAudio].filter(Boolean)
 
   stream = tracks.length ? new MediaStream(tracks) : null
   cam.value = video ? 'ok' : 'bad'
@@ -340,13 +366,16 @@ async function openLocalMedia() {
   camInfo.value = settings.width ? `${settings.width}×${settings.height}` : ''
   micInfo.value = audio?.label ? audio.label.slice(0, 18) : ''
   // 回显当前实际使用的设备，供下拉框选中；同时记录可用设备用于失败回退
+  // 写入偏好存储，使进入会议页后仍沿用此处选定的设备（如外接摄像头）
   if (video && settings.deviceId) {
     camDeviceId.value = settings.deviceId
     lastCamDeviceId.value = settings.deviceId
+    savePreferredDevice('video', settings.deviceId)
   }
   if (audio && audioSettings.deviceId) {
     micDeviceId.value = audioSettings.deviceId
     lastMicDeviceId.value = audioSettings.deviceId
+    savePreferredDevice('audio', audioSettings.deviceId)
   }
   if (previewVideo.value) previewVideo.value.srcObject = stream
 
@@ -397,19 +426,17 @@ async function detectSpeaker() {
 }
 
 // 切换设备后按新选择的 deviceId 重建本地流；失败则回退到上一个可用设备
+// 旧轨道的释放统一由 openLocalMedia 负责（拿到新轨道后才停旧轨道）
 async function switchDevice() {
   if (!navigator.mediaDevices?.getUserMedia) return
   const prevCam = lastCamDeviceId.value
   const prevMic = lastMicDeviceId.value
-  stream?.getTracks().forEach((track) => track.stop())
-  stream = null
-  if (previewVideo.value) previewVideo.value.srcObject = null
   cam.value = 'idle'
   mic.value = 'idle'
   const { camError, micError } = await openLocalMedia()
   await listDevices()
   if (camError || micError) {
-    // 切到了不可用设备：回退到上一次可用设备，避免停留在无画面的状态
+    // 切到了不可用设备：回退到上一次可用设备（其轨道仍在，openLocalMedia 直接复用）
     camDeviceId.value = prevCam
     micDeviceId.value = prevMic
     await openLocalMedia()
@@ -448,17 +475,18 @@ async function detectNetwork() {
 // 环境检测状态映射：idle→0(未检测) ok→1(正常) risk→2(警告) bad→3(异常)
 const ENV_STATUS = { idle: 0, ok: 1, risk: 2, bad: 3 }
 
-async function reportEnv() {
+async function reportEnv(ready = 0) {
   if (!sessionId.value) return
   try {
-    await reportEnvironmentCheck(sessionId.value, {
+    await reportParticipantState(sessionId.value, {
       camStatus: ENV_STATUS[cam.value],
       micStatus: ENV_STATUS[mic.value],
       speakerStatus: ENV_STATUS[speaker.value],
       netStatus: ENV_STATUS[net.value],
       rttMs: netInfo.value.rtt,
       bandwidthKbps: netInfo.value.bandwidth,
-      riskFlag: risk.value ? 1 : 0
+      riskFlag: risk.value ? 1 : 0,
+      ready: ready
     })
   } catch (error) {
     // 上报失败静默保留本地检测态
@@ -472,9 +500,8 @@ async function runCheck() {
   mic.value = 'idle'
   net.value = 'idle'
   speaker.value = 'idle'
-  stream?.getTracks().forEach((track) => track.stop())
-  stream = null
-  if (previewVideo.value) previewVideo.value.srcObject = null
+  // 不再预先 stop 已有轨道：openLocalMedia 会在新轨道就绪后才替换，
+  // 避免同一摄像头被自己 stop 后立即重开而抛 NotReadableError
   const { camError, micError } = await detectDevices()
   await Promise.all([detectSpeaker(), detectNetwork()])
   checking.value = false
@@ -517,18 +544,13 @@ function ignoreRisk() {
   setTimeout(enter, 600)
 }
 
-async function enter() {
+function enter() {
   if (!canStart.value) return
   localStorage.setItem('interviewReady', '1')
   stream?.getTracks().forEach((track) => track.stop())
-  if (sessionId.value && agreed.value) {
-    try {
-      await startSession(sessionId.value)
-    } catch (error) {
-      // 开考接口失败不阻塞进入面试
-    }
-  }
-  window.__agentNavigate('/agent/conference-ai?job=ai-product')
+  // 进入等候室即标记本人已就绪（开始面试改由 HR 触发）
+  reportEnv(1)
+  router.replace('/agent/conference-waiting?sessionId=' + (sessionId.value || ''))
 }
 
 function guideTip() {
@@ -565,8 +587,9 @@ function fillInterview(data) {
 onMounted(async () => {
   // 设备检测不依赖后端：先立即开始，避免接口异常或 401 弹窗导致检测一直停在「待检测」
   const detected = runCheck()
+  const querySessionId = route.query.sessionId
   try {
-    const res = await getCurrentSession()
+    const res = querySessionId ? await getSessionContext(querySessionId) : await getCurrentSession()
     if (res.data && res.data.sessionId) {
       sessionId.value = res.data.sessionId
       fillInterview(res.data)
