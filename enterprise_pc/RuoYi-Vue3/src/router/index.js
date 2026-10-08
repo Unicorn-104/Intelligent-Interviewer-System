@@ -165,6 +165,27 @@ export const constantRoutes = [
     redirect: (to) => ({ path: '/enterprise/conference/ongoing', query: to.query })
   },
   {
+    path: '/enterprise/conference/join',
+    component: () => import('@/views/enterprise/conference/join.vue'),
+    name: 'EnterpriseConferenceJoin',
+    hidden: true,
+    meta: { title: '面试链接校验' }
+  },
+  {
+    path: '/enterprise/conference/prep',
+    component: () => import('@/views/enterprise/conference/prep.vue'),
+    name: 'EnterpriseConferencePrep',
+    hidden: true,
+    meta: { title: '面试准备' }
+  },
+  {
+    path: '/enterprise/conference/waiting',
+    component: () => import('@/views/enterprise/conference/waiting.vue'),
+    name: 'EnterpriseConferenceWaiting',
+    hidden: true,
+    meta: { title: '等候室' }
+  },
+  {
     path: '/enterprise/conference/ongoing',
     component: () => import('@/views/enterprise/conference/ongoing.vue'),
     name: 'EnterpriseConferenceOngoing',
