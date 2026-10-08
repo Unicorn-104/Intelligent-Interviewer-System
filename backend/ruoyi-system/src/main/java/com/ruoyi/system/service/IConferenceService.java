@@ -21,6 +21,36 @@ public interface IConferenceService
     public Map<String, Object> getSessionContext(Long userId, Long sessionId);
 
     /**
+     * 匿名校验会议链接令牌（仅返回脱敏的邀请信息，不含场次ID）
+     */
+    public Map<String, Object> verifyRoomToken(String token);
+
+    /**
+     * 登录后按会议链接令牌进入场次（返回场次上下文，含角色）
+     */
+    public Map<String, Object> joinByRoomToken(Long userId, String token);
+
+    /**
+     * HR 生成 / 复用会议链接（内部按需创建预约与场次）
+     */
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes, Integer mode);
+
+    /**
+     * 候选人在本企业投递过的岗位（HR 发起面试时选择岗位）
+     */
+    public List<Map<String, Object>> listCandidatePositions(Long userId, Long peerUserId);
+
+    /**
+     * 等候室状态（双方各自的会前检测与就绪情况）
+     */
+    public Map<String, Object> getWaitingRoom(Long userId, Long sessionId);
+
+    /**
+     * 上报本人会前检测与就绪状态
+     */
+    public Map<String, Object> reportParticipantState(Long userId, Long sessionId, Map<String, Object> body);
+
+    /**
      * 上报会前环境检测结果
      */
     public Map<String, Object> reportEnvironmentCheck(Long userId, Long sessionId, Map<String, Object> body);
@@ -33,7 +63,7 @@ public interface IConferenceService
     public Map<String, Object> submitConsent(Long userId, Long sessionId, Integer consent);
 
     /**
-     * 候选人准备就绪，进入面试
+     * 开始面试（HR 触发，需候选人已同意录制告知）
      */
     public Map<String, Object> startSession(Long userId, Long sessionId);
 

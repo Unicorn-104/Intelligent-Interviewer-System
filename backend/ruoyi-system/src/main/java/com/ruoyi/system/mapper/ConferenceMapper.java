@@ -27,6 +27,16 @@ public interface ConferenceMapper
     public Map<String, Object> selectSessionContext(@Param("sessionId") Long sessionId);
 
     /**
+     * 按会议链接令牌（ses_room_token）查询面试场次上下文
+     */
+    public Map<String, Object> selectSessionByRoomToken(@Param("roomToken") String roomToken);
+
+    /**
+     * 按用户ID查询候选人档案（用于把聊天对象解析为候选人）
+     */
+    public Map<String, Object> selectTalentByUserId(@Param("userId") Long userId);
+
+    /**
      * 确保会议运行时状态记录存在（不存在则按预约时段与大纲题目数初始化）
      */
     public int ensureMeetingState(@Param("sessionId") Long sessionId);
@@ -102,6 +112,26 @@ public interface ConferenceMapper
     public int updateConsent(Map<String, Object> params);
 
     /**
+     * 新增面试预约记录（HR 发起视频面试时即时创建），回填 apt_id
+     */
+    public int insertAppointment(Map<String, Object> params);
+
+    /**
+     * 新增面试场次（关联预约记录），回填 ses_id
+     */
+    public int insertSession(Map<String, Object> params);
+
+    /**
+     * 为已有场次补写房间号与房间令牌
+     */
+    public int updateSessionRoomToken(Map<String, Object> params);
+
+    /**
+     * 查询候选人 + 面试官尚未结束的场次（用于复用而非重复建场次）
+     */
+    public Map<String, Object> selectActiveSessionByCandidate(Map<String, Object> params);
+
+    /**
      * 候选人准备就绪，进入面试
      */
     public int startSession(@Param("sessionId") Long sessionId);
@@ -155,4 +185,19 @@ public interface ConferenceMapper
      * 保存企业存储策略
      */
     public int upsertStoragePolicy(Map<String, Object> params);
+
+    /**
+     * 查询候选人在本企业投递过的岗位（用于 HR 发起面试时选择岗位）
+     */
+    public List<Map<String, Object>> selectCandidatePositionsByPeer(Map<String, Object> params);
+
+    /**
+     * 写入 / 更新某个参与者的会前检测与就绪状态（按场次 + 用户唯一）
+     */
+    public int upsertParticipantState(Map<String, Object> params);
+
+    /**
+     * 查询场次下全部参与者的会前状态（用于等候室展示双方）
+     */
+    public List<Map<String, Object>> selectParticipantStates(@Param("sessionId") Long sessionId);
 }
