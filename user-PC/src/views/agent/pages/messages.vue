@@ -1,122 +1,410 @@
 <template>
-<AgentTopbar active="messages" />
-  <main class="message-shell" id="messageShell">
-    <aside class="conversation-sidebar"><div class="sidebar-head"><div class="sidebar-title">消息 <span>共 7 个会话</span></div><label class="search-box"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg><input id="conversationSearch" type="search" placeholder="搜索会话" aria-label="搜索会话" /></label></div><div class="conversation-list" id="conversationList">
-      <button class="conversation-item active" data-view="chat" data-search="王雨晴 极氪 HR"><span class="conversation-avatar">王</span><span class="conversation-copy"><span class="conversation-name">王雨晴 · 极氪智能</span><span class="conversation-preview">好的，明天见，祝面试顺利！</span></span><span class="conversation-time">09:12</span></button>
-      <button class="conversation-item" data-view="ai" data-search="智能面试官 产品经理"><span class="conversation-avatar ai"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="3"/></svg></span><span class="conversation-copy"><span class="conversation-name">智能面试官 · 产品经理岗</span><span class="conversation-preview">模拟面试已完成，成绩报告已生成</span></span><span><span class="conversation-time">09:05</span><span class="unread">2</span></span></button>
-      <button class="conversation-item" data-view="chat" data-search="陈晨 北京智谱"><span class="conversation-avatar">陈</span><span class="conversation-copy"><span class="conversation-name">陈晨 · 北京智谱未来</span><span class="conversation-preview">关于笔试安排的确认，请查看最新通知</span></span><span class="conversation-time">08:41</span></button>
-      <button class="conversation-item" data-view="ai" data-search="简历优化助手"><span class="conversation-avatar ai"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="3"/></svg></span><span class="conversation-copy"><span class="conversation-name">简历优化助手</span><span class="conversation-preview">你的简历完整度已达 90%</span></span><span class="conversation-time">昨天</span></button>
-      <button class="conversation-item is-pinned" data-view="system" data-search="系统通知 面试邀请 状态更新 公告"><span class="conversation-avatar system"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span><span class="conversation-copy"><span class="conversation-name">系统通知</span><span class="conversation-preview">正在读取系统通知...</span></span><span><span class="conversation-time">--</span></span></button>
-      <button class="conversation-item" data-view="chat" data-search="李静 蓝湖创新科技"><span class="conversation-avatar">李</span><span class="conversation-copy"><span class="conversation-name">李静 · 蓝湖创新科技</span><span class="conversation-preview">UI 设计师岗位简历已进入人才库</span></span><span class="conversation-time">06-11</span></button>
-    </div></aside>
+  <AgentTopbar active="messages" />
+  <main class="message-shell" :class="{ 'system-mode': activeView === 'system' }">
+    <aside class="conversation-sidebar">
+      <div class="sidebar-head">
+        <div class="sidebar-title">消息 <span>共 {{ sessions.length }} 个会话</span></div>
+        <label class="search-box">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg>
+          <input v-model="searchQuery" type="search" placeholder="搜索会话" aria-label="搜索会话" />
+        </label>
+      </div>
+
+      <div class="conversation-list">
+        <div v-if="sessionsLoading" class="conversation-state">正在读取会话...</div>
+        <div v-else-if="sessionsError" class="conversation-state error">
+          <span>会话暂时无法读取</span>
+          <button type="button" @click="loadSessions">重新加载</button>
+        </div>
+        <template v-else>
+          <button
+            v-if="showSystemConversation"
+            class="conversation-item is-pinned"
+            :class="{ active: activeView === 'system' }"
+            type="button"
+            @click="selectSystem"
+          >
+            <span class="conversation-avatar system">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+            </span>
+            <span class="conversation-copy">
+              <span class="conversation-name">系统通知</span>
+              <span class="conversation-preview">{{ systemPreview }}</span>
+            </span>
+            <span class="conversation-meta">
+              <span class="conversation-time">{{ formatShortTime(noticeItems[0]?.createTime) }}</span>
+              <span v-if="systemUnreadCount" class="unread">{{ systemUnreadCount }}</span>
+            </span>
+          </button>
+
+          <button
+            v-for="session in filteredSessions"
+            :key="session.sessionId"
+            class="conversation-item"
+            :class="{ active: activeView === 'chat' && selectedSessionId === session.sessionId }"
+            type="button"
+            @click="selectSession(session)"
+          >
+            <span class="conversation-avatar">{{ avatarText(session.peerName) }}</span>
+            <span class="conversation-copy">
+              <span class="conversation-name">{{ session.peerName || '联系人' }}</span>
+              <span class="conversation-preview">{{ session.lastMessage || '暂无消息内容' }}</span>
+            </span>
+            <span class="conversation-meta">
+              <span class="conversation-time">{{ formatShortTime(session.lastMessageAt) }}</span>
+              <span v-if="session.unread" class="unread">{{ session.unread }}</span>
+            </span>
+          </button>
+
+          <div v-if="!filteredSessions.length && !showSystemConversation" class="conversation-state">
+            暂无消息会话
+          </div>
+        </template>
+      </div>
+    </aside>
 
     <section class="content-area">
-      <div class="chat-view" id="chatView"><header class="chat-head"><div class="chat-person"><span class="mini-avatar">王</span><div><div class="chat-name">王雨晴 <span class="hr-tag">招聘 HR</span></div><div class="online-text">● 在线 · 极氪智能科技有限公司</div></div></div><div class="chat-tools"><button id="videoCallButton" type="button" aria-label="向当前联系人发起视频通话" title="发起视频通话"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg></button><button aria-label="更多操作"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div></header><div class="messages" id="messages"><div class="time-divider">今天 08:40</div><div class="message-row"><span class="bubble-avatar">王</span><div class="bubble-wrap"><div class="bubble">林晓雨你好，我是极氪智能科技招聘 HR 王雨晴。你的简历已通过初筛，想邀请你参加 AI 产品经理岗位的视频一面，方便吗？</div><div class="bubble-time">08:40</div></div></div><div class="message-row me"><div class="bubble-wrap"><div class="bubble">您好王老师，方便的，请问面试大概需要多长时间？</div><div class="bubble-time">08:44</div></div></div><div class="message-row"><span class="bubble-avatar">王</span><div class="bubble-wrap"><div class="bubble">预计 40 分钟左右，主要围绕岗位业务与项目经历展开，由 AI 面试官与业务同事共同参与。</div><div class="bubble-time">08:45</div></div></div><div class="message-row me"><div class="bubble-wrap"><div class="bubble">好的，我会提前准备好设备并准时进入会议。</div><div class="bubble-time">08:46</div></div></div><div class="message-row"><span class="bubble-avatar">王</span><div class="bubble-wrap"><div class="bubble">好的，那我们就定明天 14:30，稍后系统会发送面试邀请与会议链接，请注意查收。</div><div class="bubble-time">08:47</div></div></div><div class="message-row me"><div class="bubble-wrap"><div class="bubble">收到，明天见！</div><div class="bubble-time">09:05</div></div></div><div class="message-row"><span class="bubble-avatar">王</span><div class="bubble-wrap"><div class="bubble">好的，明天见，祝面试顺利！</div><div class="bubble-time">09:12</div></div></div></div><form class="composer" id="composer"><div class="composer-box"><button class="composer-tool" type="button" aria-label="添加表情"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg></button><button class="composer-tool" type="button" aria-label="添加附件"><svg viewBox="0 0 24 24"><path d="m20 11-8 8a5 5 0 0 1-7-7l9-9a3.5 3.5 0 1 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg></button><input id="messageInput" type="text" placeholder="输入消息，Enter 发送" aria-label="消息内容" autocomplete="off" /></div><button class="send-button" id="sendButton" type="submit" disabled><svg viewBox="0 0 24 24"><path d="m21 3-8.2 18-2.4-7.4L3 11.2Z"/><path d="M10.4 13.6 21 3"/></svg>发送</button></form></div>
-      <div class="system-view" id="systemView"><header class="system-head"><h1>系统通知</h1><button id="markAllRead">全部标为已读</button></header><div class="notification-list"><div class="notification-state">正在读取系统通知...</div></div></div>
+      <div v-if="activeView === 'chat'" class="chat-view">
+        <template v-if="selectedSession">
+          <header class="chat-head">
+            <div class="chat-person">
+              <span class="mini-avatar">{{ avatarText(selectedSession.peerName) }}</span>
+              <div>
+                <div class="chat-name">{{ selectedSession.peerName || '联系人' }} <span class="hr-tag">站内联系人</span></div>
+                <div class="online-text">消息会话</div>
+              </div>
+            </div>
+          </header>
+
+          <div ref="messagesContainer" class="messages">
+            <div v-if="messagesLoading" class="notification-state">正在读取聊天记录...</div>
+            <div v-else-if="messagesError" class="notification-state error">
+              <span>聊天记录暂时无法读取</span>
+              <button class="notification-retry" type="button" @click="loadMessages(selectedSessionId)">重新加载</button>
+            </div>
+            <template v-else-if="messages.length">
+              <div class="time-divider">聊天记录</div>
+              <div v-for="message in messages" :key="message.messageId" class="message-row" :class="{ me: message.isMine }">
+                <span v-if="!message.isMine" class="bubble-avatar">{{ avatarText(selectedSession.peerName) }}</span>
+                <div class="bubble-wrap">
+                  <div class="bubble">{{ message.content || '[非文本消息]' }}</div>
+                  <div class="bubble-time">{{ formatMessageTime(message.sendTime) }}</div>
+                </div>
+              </div>
+            </template>
+            <div v-else class="notification-state">暂无聊天记录</div>
+          </div>
+
+          <form class="composer" @submit.prevent="sendMessage">
+            <div class="composer-box">
+              <input
+                v-model="draftMessage"
+                type="text"
+                maxlength="1000"
+                placeholder="输入消息，Enter 发送"
+                aria-label="消息内容"
+                autocomplete="off"
+              />
+            </div>
+            <button class="send-button" type="submit" :disabled="sending || !draftMessage.trim()">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-8.2 18-2.4-7.4L3 11.2Z" /><path d="M10.4 13.6 21 3" /></svg>
+              {{ sending ? '发送中' : '发送' }}
+            </button>
+          </form>
+        </template>
+        <div v-else class="empty-chat">
+          <strong>暂无可用会话</strong>
+          <span>当数据库中产生消息会话后，会显示在这里</span>
+        </div>
+      </div>
+
+      <div v-else class="system-view">
+        <header class="system-head">
+          <h1>系统通知</h1>
+          <button type="button" :disabled="!systemUnreadCount" @click="markAllNoticesRead">全部标为已读</button>
+        </header>
+        <div class="notification-list">
+          <div v-if="noticesLoading" class="notification-state">正在读取系统通知...</div>
+          <div v-else-if="noticesError" class="notification-state error">
+            <span>系统通知暂时无法读取</span>
+            <button class="notification-retry" type="button" @click="loadNotices">重新加载</button>
+          </div>
+          <template v-else-if="noticeItems.length">
+            <article
+              v-for="item in noticeItems"
+              :id="`notice-${item.noticeId}`"
+              :key="item.noticeId"
+              class="notification-card"
+              :class="{ 'unread-notice': !item.isRead }"
+              role="button"
+              tabindex="0"
+              @click="openNotice(item)"
+              @keydown.enter="openNotice(item)"
+              @keydown.space.prevent="openNotice(item)"
+            >
+              <span class="notice-dot"></span>
+              <div>
+                <div class="notice-title">{{ item.noticeTitle || '系统通知' }}</div>
+                <div class="notice-desc">{{ plainText(item.noticeContent) || item.noticeTitle || '暂无通知内容' }}</div>
+              </div>
+              <span class="notice-tag" :class="{ gray: item.noticeType !== '1' }">{{ item.noticeType === '1' ? '通知' : '公告' }}</span>
+              <span class="notice-time">{{ formatShortTime(item.createTime) }}　›</span>
+            </article>
+          </template>
+          <div v-else class="notification-state">暂无系统通知</div>
+        </div>
+      </div>
     </section>
 
-    <aside class="detail-sidebar"><div class="detail-head">会话详情</div><div class="setting-list"><div class="setting-label">会话设置</div><div class="setting-row"><svg viewBox="0 0 24 24"><path d="m14 4 6 6-4 1-5 5-3-3 5-5Z"/></svg>置顶会话<button class="switch on" id="pinSwitch" aria-label="切换置顶会话" aria-pressed="true"></button></div><div class="setting-row"><svg viewBox="0 0 24 24"><path d="M5 9v6l-2 2h18l-2-2V9a7 7 0 0 0-14 0M4 4l16 16"/></svg>消息免打扰<button class="switch" id="muteSwitch" aria-label="切换消息免打扰" aria-pressed="false"></button></div></div><div class="setting-label" style="padding-top:12px">对方信息</div><div class="person-panel"><div class="person-card"><span class="mini-avatar">王</span><div><strong>王雨晴</strong><span>面试安排主要联系人</span></div></div><div class="person-info"><div>公司：极氪智能科技有限公司</div><div>联系岗位：AI 产品经理（校招）</div><div>工作电话：0571-8812 8899</div></div></div><div class="detail-actions"><button class="detail-action primary" id="personProfileButton" type="button">查看个人主页</button><button class="detail-action" id="companyProfileButton" type="button">查看企业主页</button><a class="detail-action" id="jobDetailLink" href="/agent/job-detail?id=ai-product" style="display:grid;place-items:center;text-decoration:none">查看岗位详情</a></div></aside>
-  </main><div class="call-modal" id="callModal" hidden><div class="call-dialog" role="dialog" aria-modal="true" aria-labelledby="callTitle"><div class="call-avatar" id="callAvatar">王</div><h2 id="callTitle">向王雨晴发起视频通话</h2><p id="callCompany">极氪智能科技有限公司</p><div class="call-status" id="callStatus">对方在线，可以立即呼叫</div><div class="call-actions"><button class="call-cancel" id="callCancel" type="button">取消</button><button class="call-confirm" id="callConfirm" type="button">发起通话</button></div></div></div><div class="call-modal" id="noticeDetailModal" hidden><div class="call-dialog" role="dialog" aria-modal="true" aria-labelledby="noticeDetailTitle"><div class="call-avatar">!</div><h2 id="noticeDetailTitle">系统通知</h2><p id="noticeDetailBody"></p><div class="call-actions"><button class="call-cancel" id="noticeDetailClose" type="button">关闭</button></div></div></div><div class="toast" id="toast" role="status" aria-live="polite">操作成功</div>
+    <aside v-if="activeView === 'chat' && selectedSession" class="detail-sidebar">
+      <div class="detail-head">会话详情</div>
+      <div class="person-panel">
+        <div class="person-card">
+          <span class="mini-avatar">{{ avatarText(selectedSession.peerName) }}</span>
+          <div>
+            <strong>{{ selectedSession.peerName || '联系人' }}</strong>
+            <span>消息会话联系人</span>
+          </div>
+        </div>
+        <div class="person-info">
+          <div>会话编号：{{ selectedSession.sessionId }}</div>
+          <div>最近消息：{{ selectedSession.lastMessage || '暂无消息内容' }}</div>
+          <div>更新时间：{{ formatMessageTime(selectedSession.lastMessageAt) }}</div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div v-if="activeNotice" class="call-modal" role="presentation" @click.self="activeNotice = null">
+    <div class="call-dialog" role="dialog" aria-modal="true" aria-labelledby="noticeDetailTitle">
+      <div class="call-avatar">!</div>
+      <h2 id="noticeDetailTitle">{{ activeNotice.noticeTitle || '系统通知' }}</h2>
+      <p>{{ plainText(activeNotice.noticeContent) || '暂无通知内容' }}</p>
+      <div class="call-actions">
+        <button class="call-cancel" type="button" @click="activeNotice = null">关闭</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" :class="{ show: toastVisible }" role="status" aria-live="polite">{{ toastText }}</div>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
-import { getNotice, getNoticeUnreadCount, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
+import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
+import { listImMessages, listImSessions, markImSessionRead, sendImMessage } from '@/api/system/im'
+
+const sessions = ref([])
+const selectedSessionId = ref(null)
+const activeView = ref('system')
+const searchQuery = ref('')
+const sessionsLoading = ref(true)
+const sessionsError = ref(false)
+const messages = ref([])
+const messagesLoading = ref(false)
+const messagesError = ref(false)
+const draftMessage = ref('')
+const sending = ref(false)
+const noticeItems = ref([])
+const noticesLoading = ref(true)
+const noticesError = ref(false)
+const activeNotice = ref(null)
+const messagesContainer = ref(null)
+const toastText = ref('')
+const toastVisible = ref(false)
+let toastTimer
+
+const selectedSession = computed(() => sessions.value.find(item => item.sessionId === selectedSessionId.value) || null)
+const filteredSessions = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return sessions.value
+  return sessions.value.filter(item => `${item.peerName || ''} ${item.lastMessage || ''}`.toLowerCase().includes(query))
+})
+const systemUnreadCount = computed(() => noticeItems.value.filter(item => !item.isRead).length)
+const systemPreview = computed(() => systemUnreadCount.value ? `你有 ${systemUnreadCount.value} 条新的系统通知` : '暂无未读系统通知')
+const showSystemConversation = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  return !query || '系统通知'.includes(query) || systemPreview.value.includes(query)
+})
+
+function avatarText(value) {
+  const text = String(value || '联系人').trim()
+  return text.slice(0, 1).toUpperCase()
+}
+
+function parseDate(value) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatShortTime(value) {
+  const date = parseDate(value)
+  if (!date) return '--'
+  const now = new Date()
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function formatMessageTime(value) {
+  const date = parseDate(value)
+  return date ? date.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '--'
+}
+
+function plainText(value) {
+  if (!value) return ''
+  const holder = document.createElement('div')
+  holder.innerHTML = value
+  return (holder.textContent || holder.innerText || '').replace(/\s+/g, ' ').trim()
+}
+
+function showToast(text) {
+  toastText.value = text
+  toastVisible.value = true
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toastVisible.value = false }, 2200)
+}
+
+async function loadSessions() {
+  sessionsLoading.value = true
+  sessionsError.value = false
+  try {
+    const response = await listImSessions()
+    sessions.value = Array.isArray(response.data) ? response.data : []
+    const params = new URLSearchParams(location.search)
+    const requestedId = Number(params.get('conversation'))
+    const requestedSession = sessions.value.find(item => item.sessionId === requestedId)
+    if (requestedSession) {
+      await selectSession(requestedSession, false)
+    } else if (params.get('view') === 'system' || !sessions.value.length) {
+      selectSystem(false)
+    } else {
+      await selectSession(sessions.value[0], false)
+    }
+  } catch (error) {
+    sessionsError.value = true
+    showToast(error?.message || '会话加载失败')
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+async function loadMessages(sessionId) {
+  if (!sessionId) return
+  messagesLoading.value = true
+  messagesError.value = false
+  try {
+    const response = await listImMessages(sessionId)
+    messages.value = Array.isArray(response.data) ? response.data : []
+    await nextTick()
+    if (messagesContainer.value) messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+  } catch (error) {
+    messagesError.value = true
+    showToast(error?.message || '聊天记录加载失败')
+  } finally {
+    messagesLoading.value = false
+  }
+}
+
+async function selectSession(session, updateUrl = true) {
+  activeView.value = 'chat'
+  selectedSessionId.value = session.sessionId
+  messages.value = []
+  if (updateUrl) history.replaceState(null, '', `/agent/messages?conversation=${encodeURIComponent(session.sessionId)}`)
+  await Promise.all([
+    loadMessages(session.sessionId),
+    markImSessionRead(session.sessionId).catch(() => {})
+  ])
+  session.unread = 0
+}
+
+function selectSystem(updateUrl = true) {
+  activeView.value = 'system'
+  selectedSessionId.value = null
+  if (updateUrl) history.replaceState(null, '', '/agent/messages?view=system')
+}
+
+async function sendMessage() {
+  const content = draftMessage.value.trim()
+  if (!content || !selectedSession.value || sending.value) return
+  sending.value = true
+  try {
+    await sendImMessage({
+      sessionId: selectedSession.value.sessionId,
+      type: 1,
+      content
+    })
+    draftMessage.value = ''
+    await loadMessages(selectedSession.value.sessionId)
+    await loadSessions()
+    showToast('消息已发送')
+  } catch (error) {
+    showToast(error?.message || '消息发送失败')
+  } finally {
+    sending.value = false
+  }
+}
+
+async function loadNotices() {
+  noticesLoading.value = true
+  noticesError.value = false
+  try {
+    const response = await listNoticeTop({ limit: 50 })
+    noticeItems.value = Array.isArray(response.data) ? response.data : []
+  } catch (error) {
+    noticesError.value = true
+    showToast(error?.message || '系统通知加载失败')
+  } finally {
+    noticesLoading.value = false
+  }
+}
+
+async function openNotice(item) {
+  if (!item.isRead) {
+    try {
+      await markNoticeRead(item.noticeId)
+      item.isRead = true
+      window.dispatchEvent(new CustomEvent('agent-notifications-updated'))
+    } catch (error) {
+      showToast(error?.message || '通知已读状态更新失败')
+      return
+    }
+  }
+  try {
+    const response = await getNotice(item.noticeId)
+    activeNotice.value = { ...item, ...(response.data || {}) }
+  } catch {
+    activeNotice.value = item
+  }
+}
+
+async function markAllNoticesRead() {
+  const ids = noticeItems.value.filter(item => !item.isRead).map(item => item.noticeId)
+  if (!ids.length) return
+  try {
+    await markNoticeReadAll(ids.join(','))
+    noticeItems.value.forEach(item => { item.isRead = true })
+    window.dispatchEvent(new CustomEvent('agent-notifications-updated'))
+    showToast('已将全部系统通知标记为已读')
+  } catch (error) {
+    showToast(error?.message || '全部已读操作失败')
+  }
+}
 
 onMounted(() => {
-  const shell=document.getElementById('messageShell'),items=[...document.querySelectorAll('.conversation-item')],search=document.getElementById('conversationSearch'),input=document.getElementById('messageInput'),send=document.getElementById('sendButton'),messages=document.getElementById('messages'),toast=document.getElementById('toast'),hrMessages=messages.innerHTML;
-      const pinSwitch=document.getElementById('pinSwitch'),muteSwitch=document.getElementById('muteSwitch'),videoCallButton=document.getElementById('videoCallButton'),callModal=document.getElementById('callModal'),callConfirm=document.getElementById('callConfirm'),callCancel=document.getElementById('callCancel');
-      // 为每个会话准备独立内容，以及主页、企业和岗位的关联参数。
-      const conversationIds=['hr','interview-ai','chen','resume-ai','system','li'];items.forEach((item,index)=>item.dataset.id=conversationIds[index]);
-      const conversations={
-        hr:{name:'王雨晴',role:'招聘 HR',avatar:'王',status:'● 在线 · 极氪智能科技有限公司',detailRole:'面试安排主要联系人',company:'公司：极氪智能科技有限公司',companyName:'极氪智能科技有限公司',job:'联系岗位：AI 产品经理（校招）',phone:'工作电话：0571-8812 8899',personId:'wang-yuqing',companyId:'zkr',jobId:'ai-product'},
-        'interview-ai':{name:'智能面试官',role:'AI 助手',avatar:'AI',status:'产品经理岗位 · 模拟面试报告',detailRole:'岗位面试训练助手',messages:[['模拟面试已完成，你在结构化表达和业务分析维度表现较好。','09:05'],['本次综合评分 86 分，建议补充一个量化结果更完整的项目案例。','09:05']]},
-        chen:{name:'陈晨',role:'招聘 HR',avatar:'陈',status:'● 在线 · 北京智谱未来',detailRole:'算法岗位招聘联系人',company:'公司：北京智谱未来科技有限公司',companyName:'北京智谱未来科技有限公司',job:'联系岗位：NLP 算法工程师',phone:'工作电话：010-8821 6705',personId:'chen-chen',companyId:'zhipu',jobId:'nlp-algorithm',messages:[['林晓雨你好，笔试链接已经发送，请在今晚 20:00 前完成环境检查。','08:38'],['关于笔试安排的确认，请查看最新通知。','08:41']]},
-        'resume-ai':{name:'简历优化助手',role:'AI 助手',avatar:'AI',status:'简历分析 · 最近更新于昨天',detailRole:'个人简历优化助手',messages:[['你的简历完整度已达 90%，项目经历部分还有两处可以增强。','昨天'],['建议为“智能招聘平台”项目补充转化率和交付周期数据。','昨天']]},
-        li:{name:'李静',role:'招聘 HR',avatar:'李',status:'● 在线 · 蓝湖创新科技有限公司',detailRole:'设计岗位招聘联系人',company:'公司：蓝湖创新科技有限公司',companyName:'蓝湖创新科技有限公司',job:'联系岗位：UI/UX 设计师',phone:'工作电话：0755-6612 3308',personId:'li-jing',companyId:'lanhu',jobId:'saas-ux',messages:[['感谢你的投递。本次暂未进入下一轮，简历已加入企业人才库。','06-11'],['后续有匹配的企业级产品设计岗位，我们会优先与你联系。','06-11']]}
-      };
-      const settingsKey='zhipin-ai-conversation-settings';let currentConversationId='hr',settings={hr:{pinned:true,muted:false},system:{pinned:true,muted:false}},toastTimer,callTimer;
-      const noticeDetailModal=document.getElementById('noticeDetailModal'),notificationList=document.querySelector('.notification-list');let noticeItems=[];
-      async function syncUnreadBadge(){try{const response=await getNoticeUnreadCount();const count=Number(response.data||0);document.querySelectorAll('[data-unread-badge]').forEach(badge=>{badge.textContent=count;badge.style.display=count?'':'none'})}catch(error){}}
-      function noticeTypeLabel(item){return item.noticeType==='1'?'通知':'公告'}
-      function noticeTypeClass(item){return item.noticeType==='1'?'':' gray'}
-      function stripMarkup(value){if(!value)return '';const holder=document.createElement('div');holder.innerHTML=value;return (holder.textContent||holder.innerText||'').replace(/\s+/g,' ').trim()}
-      function formatNoticeTime(value){if(!value)return '';const date=new Date(value);if(Number.isNaN(date.getTime()))return String(value);const diff=Math.max(0,Date.now()-date.getTime());if(diff<60000)return '刚刚';if(diff<3600000)return `${Math.floor(diff/60000)} 分钟前`;if(diff<86400000)return `${Math.floor(diff/3600000)} 小时前`;const month=String(date.getMonth()+1).padStart(2,'0');const day=String(date.getDate()).padStart(2,'0');return `${month}-${day}`}
-      function syncSystemSummary(){const unread=noticeItems.filter(item=>!item.isRead).length;const systemItem=document.querySelector('[data-view="system"]');if(!systemItem)return;const preview=systemItem.querySelector('.conversation-preview');if(preview)preview.textContent=unread?`你有 ${unread} 条新的系统通知`:'暂无未读系统通知';const badge=systemItem.querySelector('.unread');if(unread){if(badge){badge.textContent=unread}else{const wrapper=systemItem.querySelector('.conversation-time')?.parentElement;if(wrapper){const nextBadge=document.createElement('span');nextBadge.className='unread';nextBadge.textContent=unread;wrapper.appendChild(nextBadge)}}}else badge?.remove()}
-      function createNoticeCard(item){const card=document.createElement('article');card.id=`notice-${item.noticeId}`;card.className=`notification-card${item.isRead?'':' unread-notice'}`;card.setAttribute('role','button');card.tabIndex=0;card.dataset.notificationId=String(item.noticeId);const dot=document.createElement('span');dot.className='notice-dot';const body=document.createElement('div');const title=document.createElement('div');title.className='notice-title';title.textContent=item.noticeTitle||'系统通知';const desc=document.createElement('div');desc.className='notice-desc';desc.textContent=stripMarkup(item.noticeContent)||item.noticeTitle||'暂无通知内容';body.append(title,desc);const tag=document.createElement('span');tag.className=`notice-tag${noticeTypeClass(item)}`;tag.textContent=noticeTypeLabel(item);const time=document.createElement('span');time.className='notice-time';time.textContent=`${formatNoticeTime(item.createTime)}　›`;card.append(dot,body,tag,time);card.addEventListener('click',()=>activateNotice(card));card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activateNotice(card)}});return card}
-      function renderNoticeList(){notificationList.replaceChildren();if(!noticeItems.length){const empty=document.createElement('div');empty.className='notification-state';empty.textContent='暂无系统通知';notificationList.appendChild(empty);syncSystemSummary();return}noticeItems.forEach(item=>notificationList.appendChild(createNoticeCard(item)));syncSystemSummary()}
-      async function loadSystemNotifications(){notificationList.innerHTML='<div class="notification-state">正在读取系统通知...</div>';try{const response=await listNoticeTop({limit:50});noticeItems=Array.isArray(response.data)?response.data:[];renderNoticeList();await syncUnreadBadge()}catch(error){notificationList.replaceChildren();const state=document.createElement('div');state.className='notification-state error';state.textContent='系统通知暂时无法读取，请稍后重试';const retry=document.createElement('button');retry.className='notification-retry';retry.type='button';retry.textContent='重新加载';retry.addEventListener('click',loadSystemNotifications);state.appendChild(retry);notificationList.appendChild(state);showToast(error?.message||'系统通知加载失败');}}
-      async function markNoticeAsRead(item,card){if(item.isRead)return true;try{await markNoticeRead(item.noticeId);item.isRead=true;card?.classList.remove('unread-notice');syncSystemSummary();window.dispatchEvent(new CustomEvent('agent-notifications-updated'));await syncUnreadBadge();return true}catch(error){showToast(error?.message||'通知已读状态更新失败');return false}}
-      try{settings={...settings,...JSON.parse(localStorage.getItem(settingsKey)||'{}'),system:{pinned:true,muted:false}}}catch(error){settings={hr:{pinned:true,muted:false},system:{pinned:true,muted:false}}}
-      function showToast(text){toast.textContent=text;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2200)}
-      function getSetting(id){return id==='system'?{pinned:true,muted:false}:settings[id]||{pinned:false,muted:false}}
-      function saveSettings(){try{localStorage.setItem(settingsKey,JSON.stringify(settings))}catch(error){/* 隐私模式下仅保存当前页面状态 */}}
-      function syncConversationSettings(){items.forEach(item=>{const state=getSetting(item.dataset.id);item.classList.toggle('is-pinned',state.pinned);item.classList.toggle('is-muted',state.muted)});const current=getSetting(currentConversationId);pinSwitch.classList.toggle('on',current.pinned);pinSwitch.setAttribute('aria-pressed',String(current.pinned));muteSwitch.classList.toggle('on',current.muted);muteSwitch.setAttribute('aria-pressed',String(current.muted))}
-      function updateSetting(key){const current={...getSetting(currentConversationId),[key]:!getSetting(currentConversationId)[key]};settings[currentConversationId]=current;saveSettings();syncConversationSettings();showToast(key==='pinned'?(current.pinned?'会话已置顶':'已取消置顶'):(current.muted?'已开启消息免打扰':'已关闭消息免打扰'))}
-      function renderConversation(id){
-        const data=conversations[id]||conversations.hr,chatName=document.querySelector('.chat-name'),detailLines=document.querySelectorAll('.person-info div');
-        document.querySelector('.chat-person .mini-avatar').textContent=data.avatar;chatName.childNodes[0].nodeValue=data.name+' ';chatName.querySelector('.hr-tag').textContent=data.role;document.querySelector('.online-text').textContent=data.status;document.querySelector('.person-card .mini-avatar').textContent=data.avatar;document.querySelector('.person-card strong').textContent=data.name;document.querySelector('.person-card div span').textContent=data.detailRole;detailLines[0].textContent=data.company||'';detailLines[1].textContent=data.job||'';detailLines[2].textContent=data.phone||'';
-        if(data.personId){document.getElementById('personProfileButton').dataset.href=`/agent/contact-profile?id=${encodeURIComponent(data.personId)}&from=${encodeURIComponent(id)}`;document.getElementById('companyProfileButton').dataset.href=`/agent/company-profile?id=${encodeURIComponent(data.companyId)}&from=${encodeURIComponent(id)}`;document.getElementById('jobDetailLink').href=`/agent/job-detail?id=${encodeURIComponent(data.jobId)}`}
-        if(id==='hr'){messages.innerHTML=hrMessages;return}messages.innerHTML='<div class="time-divider">最近消息</div>';data.messages.forEach(message=>{const row=document.createElement('div');row.className='message-row';row.innerHTML='<span class="bubble-avatar"></span><div class="bubble-wrap"><div class="bubble"></div><div class="bubble-time"></div></div>';row.querySelector('.bubble-avatar').textContent=data.avatar;row.querySelector('.bubble').textContent=message[0];row.querySelector('.bubble-time').textContent=message[1];messages.appendChild(row)})
-      }
-      function setView(item){const systemMode=item.dataset.view==='system',id=item.dataset.id||'hr';currentConversationId=id;items.forEach(x=>x.classList.toggle('active',x===item));shell.classList.toggle('system-mode',systemMode);shell.classList.toggle('assistant-mode',item.dataset.view==='ai');if(systemMode)item.querySelector('.unread')?.remove();else renderConversation(id);syncConversationSettings();history.replaceState(null,'',systemMode?`/agent/messages?view=system${location.hash}`:`/agent/messages?conversation=${id}`)}
-      items.forEach(item=>item.addEventListener('click',()=>setView(item)));
-      search.addEventListener('input',()=>{const q=search.value.trim().toLowerCase();items.forEach(item=>item.hidden=!item.dataset.search.toLowerCase().includes(q))});
-      input.addEventListener('input',()=>send.disabled=!input.value.trim());
-      document.getElementById('composer').addEventListener('submit',event=>{event.preventDefault();const text=input.value.trim();if(!text)return;const row=document.createElement('div');row.className='message-row me';row.innerHTML=`<div class="bubble-wrap"><div class="bubble"></div><div class="bubble-time">刚刚</div></div>`;row.querySelector('.bubble').textContent=text;messages.appendChild(row);input.value='';send.disabled=true;messages.scrollTop=messages.scrollHeight});
-      pinSwitch.addEventListener('click',()=>updateSetting('pinned'));muteSwitch.addEventListener('click',()=>updateSetting('muted'));
-      document.getElementById('personProfileButton').addEventListener('click',event=>{window.__agentNavigate(event.currentTarget.dataset.href)});document.getElementById('companyProfileButton').addEventListener('click',event=>{window.__agentNavigate(event.currentTarget.dataset.href)});
-      function openCallModal(){const data=conversations[currentConversationId];if(!data?.personId)return showToast('当前助手会话暂不支持视频通话');document.getElementById('callAvatar').textContent=data.avatar;document.getElementById('callTitle').textContent=`向${data.name}发起视频通话`;document.getElementById('callCompany').textContent=data.companyName;document.getElementById('callStatus').textContent='对方在线，可以立即呼叫';callConfirm.textContent='发起通话';callConfirm.disabled=false;callConfirm.classList.remove('calling');callModal.hidden=false;callConfirm.focus()}
-      function closeCallModal(){if(callConfirm.disabled)return;callModal.hidden=true;videoCallButton.focus()}
-      videoCallButton.addEventListener('click',openCallModal);callCancel.addEventListener('click',closeCallModal);callModal.addEventListener('click',event=>{if(event.target===callModal)closeCallModal()});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!callModal.hidden)closeCallModal()});
-      callConfirm.addEventListener('click',()=>{callConfirm.disabled=true;callConfirm.classList.add('calling');callConfirm.textContent='正在呼叫';document.getElementById('callStatus').textContent='正在等待对方接听…';clearTimeout(callTimer);callTimer=setTimeout(()=>{document.getElementById('callStatus').textContent='对方已接听';callConfirm.classList.remove('calling');callConfirm.textContent='连接成功';setTimeout(()=>{callModal.hidden=true;showToast('面试链接已发送至消息中心，请从链接进入')},650)},1100)});
-      function focusNotice(id){const card=document.querySelector(`[data-notification-id="${id}"]`);if(!card)return;card.scrollIntoView({behavior:'smooth',block:'center'});card.classList.add('is-highlighted');setTimeout(()=>card.classList.remove('is-highlighted'),2600)}
-      async function showNoticeDetail(item){let detail=item;try{const response=await getNotice(item.noticeId);detail={...item,...(response.data||{})}}catch(error){}document.getElementById('noticeDetailTitle').textContent=detail.noticeTitle||'系统通知';document.getElementById('noticeDetailBody').textContent=stripMarkup(detail.noticeContent)||detail.noticeTitle||'暂无通知内容';noticeDetailModal.hidden=false;document.getElementById('noticeDetailClose').focus()}
-      async function activateNotice(card){const item=noticeItems.find(notice=>String(notice.noticeId)===card.dataset.notificationId);if(!item)return;const marked=await markNoticeAsRead(item,card);if(marked)showNoticeDetail(item)}
-      document.querySelectorAll('[data-notification-id]').forEach(card=>{card.addEventListener('click',()=>activateNotice(card));card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activateNotice(card)}})})
-      document.getElementById('noticeDetailClose').addEventListener('click',()=>{noticeDetailModal.hidden=true});noticeDetailModal.addEventListener('click',event=>{if(event.target===noticeDetailModal)noticeDetailModal.hidden=true});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!noticeDetailModal.hidden)noticeDetailModal.hidden=true});
-      document.getElementById('markAllRead').addEventListener('click',async()=>{const ids=noticeItems.filter(item=>!item.isRead).map(item=>item.noticeId);if(!ids.length){showToast('当前没有未读系统通知');return}try{await markNoticeReadAll(ids.join(','));noticeItems.forEach(item=>{item.isRead=true});renderNoticeList();window.dispatchEvent(new CustomEvent('agent-notifications-updated'));await syncUnreadBadge();showToast('已将全部系统通知标记为已读')}catch(error){showToast(error?.message||'全部已读操作失败')}});
-      const params=new URLSearchParams(location.search),requested=params.get('conversation');syncConversationSettings();if(params.get('view')==='system')setView(document.querySelector('[data-view="system"]'));else setView(requested?items.find(item=>item.dataset.id===requested)||items[0]:items[0]);loadSystemNotifications().then(()=>{if(params.get('view')==='system'&&location.hash)requestAnimationFrame(()=>focusNotice(location.hash.slice(1)))});if(params.get('call')==='ended')setTimeout(()=>showToast('视频通话已结束'),250);
+  loadNotices()
+  loadSessions()
 })
 </script>
 
 <style>
-:root{--primary:#1A3C6E;--blue:#2B7FFF;--blue-dark:#1C66D6;--blue-soft:#EAF2FF;--bg:#F5F7FA;--card:#FFF;--text:#172B4D;--muted:#6B7A90;--light:#96A3B5;--line:#E6EBF2;--green:#20A36F;--green-soft:#E9F7F1;--orange:#D88725;--orange-soft:#FFF4E6;--red:#D94B55;--shadow:0 5px 18px rgba(26,60,110,.045)}*{box-sizing:border-box}html{height:100%}body{height:100%;margin:0;color:var(--text);background:var(--bg);font-family:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.5}button,input,a{font:inherit}button{cursor:pointer}a{color:inherit}svg{display:block}
-    /* 顶部导航 */
-    .topbar{height:72px;display:flex;align-items:center;border-bottom:1px solid var(--line);background:#fff}.topbar-inner{width:min(1380px,calc(100% - 48px));margin:0 auto;display:flex;align-items:center;gap:32px}.brand{display:flex;align-items:center;gap:10px;color:var(--primary);text-decoration:none;white-space:nowrap}.brand-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;color:#fff;background:linear-gradient(145deg,#2B7FFF,#1A3C6E);font-size:17px;font-weight:800}.brand-name{font-size:18px;font-weight:800}.brand-tag{color:var(--muted);font-size:11px}.main-nav{display:flex;align-items:center;height:72px;gap:5px}.nav-link{position:relative;height:72px;display:flex;align-items:center;padding:0 15px;color:var(--muted);text-decoration:none}.nav-link:hover,.nav-link.active{color:var(--primary)}.nav-link.active{font-weight:700}.nav-link.active::after{content:"";position:absolute;right:15px;bottom:0;left:15px;height:3px;background:var(--blue)}.profile{margin-left:auto;display:flex;align-items:center;gap:9px}.avatar{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#7894BE;font-weight:700}.profile-name{font-weight:700}
-    .message-shell{width:min(1380px,calc(100% - 48px));height:calc(100vh - 108px);min-height:650px;margin:18px auto;display:grid;grid-template-columns:290px minmax(0,1fr) 300px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:var(--shadow);overflow:hidden}.conversation-sidebar{display:flex;min-width:0;flex-direction:column;border-right:1px solid var(--line);background:#fff}.sidebar-head{padding:17px 15px 12px}.sidebar-title{display:flex;align-items:center;gap:7px;color:var(--primary);font-size:17px;font-weight:800}.sidebar-title span{color:var(--light);font-size:10px;font-weight:500}.search-box{position:relative;margin-top:11px}.search-box svg{position:absolute;top:10px;left:11px;width:15px;height:15px;color:#8F9EAF;stroke:currentColor;fill:none;stroke-width:1.8}.search-box input{width:100%;height:36px;padding:0 12px 0 34px;border:1px solid transparent;border-radius:7px;outline:none;color:var(--text);background:#F2F5F9;font-size:11px}.search-box input:focus{border-color:#B9D1F2;background:#fff;box-shadow:0 0 0 3px rgba(43,127,255,.1)}.conversation-list{overflow-y:auto;padding:0 8px 12px;display:flex;flex-direction:column}.conversation-item{position:relative;width:100%;min-height:62px;display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px;border:0;border-radius:8px;color:inherit;background:transparent;text-align:left}.conversation-item:hover,.conversation-item.active{background:#EEF4FD}.conversation-item.is-pinned{order:-1}.conversation-item[data-view="system"].is-pinned{order:-2}.conversation-item.is-pinned .conversation-name::before,.conversation-item.is-muted .conversation-name::after{display:inline-block;margin-right:4px;padding:1px 4px;border-radius:3px;font-size:8px;font-weight:700;vertical-align:1px}.conversation-item.is-pinned .conversation-name::before{content:"置顶";color:var(--blue);background:var(--blue-soft)}.conversation-item.is-muted .conversation-name::after{content:"免打扰";margin-right:0;margin-left:4px;color:#73839A;background:#EEF2F7}.conversation-item.is-muted .unread{display:none}.conversation-avatar{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:11px;font-weight:800}.conversation-avatar.ai{color:#fff;background:linear-gradient(145deg,#4F83F5,#1A3C6E)}.conversation-avatar.system{color:var(--blue);background:#EDF4FF}.conversation-avatar svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7}.conversation-copy{min-width:0}.conversation-name{overflow:hidden;color:var(--primary);font-size:12px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.conversation-preview{overflow:hidden;margin-top:3px;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.conversation-time{align-self:start;margin-top:3px;color:var(--light);font-size:9px}.unread{min-width:17px;height:17px;display:grid;place-items:center;margin-top:4px;border-radius:50%;color:#fff;background:var(--red);font-size:9px}
-    /* 中央聊天区 */
-    .content-area{min-width:0;display:flex;flex-direction:column;background:#F7F9FC}.chat-view{height:100%;display:flex;flex-direction:column}.chat-head{height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);background:#fff}.chat-person{display:flex;align-items:center;gap:10px}.mini-avatar{width:36px;height:36px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-weight:800}.chat-name{color:var(--primary);font-size:14px;font-weight:800}.hr-tag{margin-left:5px;padding:2px 6px;border-radius:4px;color:var(--blue);background:var(--blue-soft);font-size:9px}.online-text{margin-top:2px;color:var(--green);font-size:9px}.chat-tools{display:flex;gap:5px}.chat-tools button{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:6px;color:var(--muted);background:transparent}.chat-tools button:hover{color:var(--blue);background:var(--blue-soft)}.chat-tools svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7}.messages{flex:1;overflow-y:auto;padding:18px}.time-divider{margin:0 0 16px;color:var(--light);font-size:9px;text-align:center}.message-row{display:flex;align-items:flex-end;gap:9px;margin:0 0 14px}.message-row.me{justify-content:flex-end}.bubble-avatar{width:32px;height:32px;display:grid;place-items:center;flex:0 0 auto;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:10px;font-weight:700}.bubble-wrap{max-width:68%}.bubble{padding:10px 13px;border:1px solid #DEE5EE;border-radius:4px 10px 10px 10px;color:#344A67;background:#fff;font-size:12px;line-height:1.65}.message-row.me .bubble{border-color:var(--blue);border-radius:10px 4px 10px 10px;color:#fff;background:var(--blue)}.bubble-time{margin-top:4px;color:var(--light);font-size:9px}.message-row.me .bubble-time{text-align:right}.composer{display:flex;align-items:center;gap:10px;padding:14px 16px;border-top:1px solid var(--line);background:#fff}.composer-box{flex:1;display:flex;align-items:center;gap:10px;height:42px;padding:0 12px;border-radius:8px;background:#F2F5F9}.composer-tool{width:24px;height:24px;display:grid;place-items:center;border:0;color:#71839A;background:transparent}.composer-tool svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7}.composer input{min-width:0;flex:1;border:0;outline:none;color:var(--text);background:transparent;font-size:11px}.send-button{height:38px;display:flex;align-items:center;gap:6px;padding:0 15px;border:0;border-radius:7px;color:#fff;background:var(--blue);font-size:11px;font-weight:700}.send-button:disabled{cursor:not-allowed;opacity:.45}.send-button svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}
-    /* 右侧会话详情 */
-    .detail-sidebar{border-left:1px solid var(--line);background:#fff}.detail-head{height:64px;display:flex;align-items:center;padding:0 17px;border-bottom:1px solid var(--line);color:var(--primary);font-size:14px;font-weight:800}.setting-list{padding:8px 0;border-bottom:1px solid var(--line)}.setting-label{padding:4px 17px;color:var(--light);font-size:10px}.setting-row{min-height:43px;display:flex;align-items:center;gap:10px;padding:0 17px;color:#52647D;font-size:11px}.setting-row svg{width:17px;height:17px;color:#7F90A5;stroke:currentColor;fill:none;stroke-width:1.7}.setting-row .switch{margin-left:auto;width:34px;height:20px;padding:2px;border:0;border-radius:99px;background:#DCE4EF;transition:background .18s}.switch::after{content:"";display:block;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transition:transform .18s}.switch.on{background:var(--blue)}.switch.on::after{transform:translateX(14px)}.person-panel{margin:12px;padding:14px;border-radius:8px;background:#F7F9FC}.person-card{display:flex;align-items:center;gap:10px}.person-card .mini-avatar{width:46px;height:46px}.person-card strong{display:block;color:var(--primary);font-size:13px}.person-card span{display:block;color:var(--muted);font-size:10px}.person-info{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}.person-info div{margin:7px 0;color:#64758D;font-size:10px}.detail-actions{display:grid;gap:8px;padding:0 12px}.detail-action{height:38px;border:1px solid #C9D9EE;border-radius:7px;color:var(--primary);background:#fff;font-size:11px;font-weight:700}.detail-action.primary{border-color:var(--blue);color:#fff;background:var(--blue)}.assistant-mode .person-info,.assistant-mode .detail-actions,.assistant-mode #videoCallButton{display:none}
-    /* 系统通知视图 */
-    .system-view{display:none;height:100%;flex-direction:column;background:var(--bg)}.system-head{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--line);background:#fff}.system-head h1{margin:0;color:var(--primary);font-size:16px}.system-head button{border:0;color:var(--blue);background:transparent;font-size:10px}.notification-list{overflow-y:auto;padding:14px}.notification-card{display:grid;grid-template-columns:9px minmax(0,1fr) auto auto;align-items:center;gap:14px;min-height:86px;margin-bottom:10px;padding:14px 18px;border:1px solid var(--line);border-radius:9px;background:#fff}.notice-dot{width:7px;height:7px;border-radius:50%;background:#DDE5EF}.notification-card.unread-notice .notice-dot{background:var(--blue)}.notice-title{color:var(--primary);font-size:12px;font-weight:800}.notice-desc{margin-top:4px;color:#64758D;font-size:10px}.notice-tag{min-width:74px;padding:4px 8px;border-radius:5px;color:var(--blue);background:var(--blue-soft);font-size:9px;text-align:center}.notice-tag.orange{color:var(--orange);background:var(--orange-soft)}.notice-tag.gray{color:#62758E;background:#EEF2F7}.notice-time{min-width:68px;color:var(--light);font-size:10px;text-align:right}.notice-arrow{color:#9EABBA;font-size:16px}.system-mode .chat-view,.system-mode .detail-sidebar{display:none}.system-mode .system-view{display:flex}.system-mode.message-shell{grid-template-columns:290px minmax(0,1fr)}
-    .toast{position:fixed;z-index:50;right:24px;bottom:24px;padding:10px 14px;border:1px solid #CDE7DD;border-radius:8px;color:#176B50;background:#F2FBF7;opacity:0;transform:translateY(10px);transition:.18s}.toast.show{opacity:1;transform:translateY(0)}
-    .call-modal[hidden]{display:none}.call-modal{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:rgba(13,30,52,.48);backdrop-filter:blur(3px)}.call-dialog{width:min(390px,100%);padding:26px;border:1px solid #D9E3EF;border-radius:10px;background:#fff;box-shadow:0 22px 60px rgba(14,35,64,.24);text-align:center}.call-avatar{width:62px;height:62px;margin:0 auto 13px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:20px;font-weight:800}.call-dialog h2{margin:0;color:var(--primary);font-size:18px}.call-dialog p{margin:7px 0 0;color:var(--muted);font-size:12px}.call-status{min-height:24px;margin-top:15px;color:var(--green);font-size:11px}.call-actions{display:flex;gap:10px;margin-top:17px}.call-actions button{height:42px;flex:1;border-radius:7px;font-weight:700}.call-cancel{border:1px solid #CFDAE8;color:var(--primary);background:#fff}.call-confirm{border:1px solid var(--blue);color:#fff;background:var(--blue)}.call-confirm:disabled{cursor:wait;opacity:.7}.call-confirm.calling::before{content:"";width:11px;height:11px;margin-right:7px;display:inline-block;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}@keyframes spin{to{transform:rotate(360deg)}}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid rgba(43,127,255,.22);outline-offset:2px}
-    @media(max-width:1050px){.message-shell,.topbar-inner{width:calc(100% - 28px)}.message-shell{grid-template-columns:250px minmax(0,1fr)}.detail-sidebar{display:none}.system-mode.message-shell{grid-template-columns:250px minmax(0,1fr)}.brand-tag,.profile-name{display:none}.main-nav{margin-left:auto}.nav-link{padding:0 8px}}
-    @media(max-width:700px){.topbar{height:64px}.brand-name{font-size:15px}.main-nav{display:none}.message-shell{height:calc(100vh - 84px);min-height:580px;margin:10px auto;grid-template-columns:74px minmax(0,1fr)}.conversation-sidebar{overflow:hidden}.sidebar-head{padding:10px 8px}.sidebar-title span,.sidebar-title{font-size:0}.sidebar-title::after{content:"消息";font-size:13px}.search-box{display:none}.conversation-list{padding:0 6px}.conversation-item{grid-template-columns:38px;justify-content:center;padding:8px 5px}.conversation-copy,.conversation-time{display:none}.unread{position:absolute;margin-left:28px}.system-mode.message-shell{grid-template-columns:74px minmax(0,1fr)}.notification-card{grid-template-columns:7px minmax(0,1fr);gap:9px}.notice-tag,.notice-time,.notice-arrow{display:none}.bubble-wrap{max-width:84%}}
-    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
-    /* 让聊天列在 Grid 中允许收缩，消息列表独立承担滚动 */
-    .message-shell{min-height:0}.conversation-sidebar,.content-area,.chat-view,.system-view{min-height:0}.messages{min-height:0;overscroll-behavior:contain;scrollbar-gutter:stable}.messages:focus{outline:0}.conversation-list,.notification-list{min-height:0}
-    @media(min-width:701px){.message-shell{min-height:min(650px,calc(100vh - 108px))}}
-    /* 中文通知内容允许自然换行，避免正文挤压标签和时间。 */
-    .notification-card > div{min-width:0}
-    .notification-state{display:grid;min-height:180px;place-items:center;padding:30px;color:var(--muted);font-size:12px;text-align:center}.notification-state.error{color:var(--red)}
-    .notification-retry{margin-top:10px;padding:6px 12px;border:1px solid #CBD9EA;border-radius:6px;color:var(--primary);background:#fff;font-size:11px}
-    .notice-title,.notice-desc{overflow-wrap:anywhere}
-    .notice-title{line-height:1.45}
-    .notice-desc{line-height:1.6}
-    .notice-tag,.notice-time{line-height:1.4;white-space:nowrap}
-    .bubble{overflow-wrap:anywhere}
-    .bubble-time{line-height:1.4}
-    .notification-card{grid-template-columns:8px minmax(0,1fr) minmax(74px,auto);align-items:start}
-    .notification-card > div{grid-column:2;min-width:0}
-    .notification-card .notice-tag{grid-column:3;grid-row:1;align-self:start}
-    .notification-card .notice-time{grid-column:3;grid-row:2;min-width:0;margin-top:6px}
-    @media(max-width:700px){.notification-card{grid-template-columns:7px minmax(0,1fr)}}
-    .notification-card[role="button"]{cursor:pointer;transition:border-color .18s,box-shadow .18s,background .18s}
-    .notification-card[role="button"]:hover,.notification-card[role="button"]:focus-visible{border-color:#B8D1F1;background:#FBFDFF;outline:none}
-    .notification-card.is-highlighted{border-color:var(--blue);box-shadow:0 0 0 3px rgba(43,127,255,.14);animation:notice-highlight 2.6s ease-out}
-    @keyframes notice-highlight{0%,100%{background:#fff}20%,55%{background:#EEF6FF}}
+:root{--primary:#1A3C6E;--blue:#2B7FFF;--blue-soft:#EAF2FF;--bg:#F5F7FA;--text:#172B4D;--muted:#6B7A90;--light:#96A3B5;--line:#E6EBF2;--red:#D94B55;--shadow:0 5px 18px rgba(26,60,110,.045)}
+*{box-sizing:border-box}button,input{font:inherit}button{cursor:pointer}svg{display:block}
+.message-shell{width:min(1380px,calc(100% - 48px));height:calc(100vh - 108px);min-height:650px;margin:18px auto;display:grid;grid-template-columns:290px minmax(0,1fr) 300px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
+.conversation-sidebar{display:flex;min-width:0;flex-direction:column;border-right:1px solid var(--line);background:#fff}.sidebar-head{padding:17px 15px 12px}.sidebar-title{display:flex;align-items:center;gap:7px;color:var(--primary);font-size:17px;font-weight:800}.sidebar-title span{color:var(--light);font-size:10px;font-weight:500}.search-box{position:relative;margin-top:11px}.search-box svg{position:absolute;top:10px;left:11px;width:15px;height:15px;color:#8F9EAF;stroke:currentColor;fill:none;stroke-width:1.8}.search-box input{width:100%;height:36px;padding:0 12px 0 34px;border:1px solid transparent;border-radius:7px;outline:none;color:var(--text);background:#F2F5F9;font-size:11px}.search-box input:focus{border-color:#B9D1F2;background:#fff;box-shadow:0 0 0 3px rgba(43,127,255,.1)}.conversation-list{overflow-y:auto;padding:0 8px 12px;display:flex;min-height:0;flex-direction:column}.conversation-item{position:relative;width:100%;min-height:62px;display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px;border:0;border-radius:8px;color:inherit;background:transparent;text-align:left}.conversation-item:hover,.conversation-item.active{background:#EEF4FD}.conversation-item.is-pinned{order:-1}.conversation-avatar{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:11px;font-weight:800}.conversation-avatar.system{color:var(--blue);background:#EDF4FF}.conversation-avatar svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7}.conversation-copy{min-width:0}.conversation-name{overflow:hidden;color:var(--primary);font-size:12px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.conversation-preview{overflow:hidden;margin-top:3px;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.conversation-meta{align-self:start;display:flex;align-items:flex-end;flex-direction:column;gap:3px}.conversation-time{color:var(--light);font-size:9px}.unread{min-width:17px;height:17px;display:grid;place-items:center;border-radius:50%;color:#fff;background:var(--red);font-size:9px}.conversation-state{display:grid;min-height:120px;place-items:center;padding:20px;color:var(--muted);font-size:11px;text-align:center}.conversation-state.error{color:var(--red)}.conversation-state button,.notification-retry{margin-top:8px;padding:6px 12px;border:1px solid #CBD9EA;border-radius:6px;color:var(--primary);background:#fff;font-size:11px}
+.content-area{min-width:0;display:flex;flex-direction:column;background:#F7F9FC}.chat-view,.system-view{height:100%;display:flex;min-height:0;flex-direction:column}.chat-head{height:64px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--line);background:#fff}.chat-person{display:flex;align-items:center;gap:10px}.mini-avatar,.bubble-avatar{display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-weight:800}.mini-avatar{width:36px;height:36px}.chat-name{color:var(--primary);font-size:14px;font-weight:800}.hr-tag{margin-left:5px;padding:2px 6px;border-radius:4px;color:var(--blue);background:var(--blue-soft);font-size:9px}.online-text{margin-top:2px;color:var(--muted);font-size:9px}.messages{flex:1;overflow-y:auto;min-height:0;padding:18px}.time-divider{margin:0 0 16px;color:var(--light);font-size:9px;text-align:center}.message-row{display:flex;align-items:flex-end;gap:9px;margin:0 0 14px}.message-row.me{justify-content:flex-end}.bubble-avatar{width:32px;height:32px;flex:0 0 auto;font-size:10px}.bubble-wrap{max-width:68%;min-width:0}.bubble{padding:10px 13px;border:1px solid #DEE5EE;border-radius:4px 10px 10px 10px;color:#344A67;background:#fff;font-size:12px;line-height:1.65;overflow-wrap:anywhere}.message-row.me .bubble{border-color:var(--blue);border-radius:10px 4px 10px 10px;color:#fff;background:var(--blue)}.bubble-time{margin-top:4px;color:var(--light);font-size:9px}.message-row.me .bubble-time{text-align:right}.composer{display:flex;align-items:center;gap:10px;padding:14px 16px;border-top:1px solid var(--line);background:#fff}.composer-box{flex:1;display:flex;align-items:center;height:42px;padding:0 12px;border-radius:8px;background:#F2F5F9}.composer input{width:100%;min-width:0;border:0;outline:none;color:var(--text);background:transparent;font-size:11px}.send-button{height:38px;display:flex;align-items:center;gap:6px;padding:0 15px;border:0;border-radius:7px;color:#fff;background:var(--blue);font-size:11px;font-weight:700}.send-button:disabled{cursor:not-allowed;opacity:.45}.send-button svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}.empty-chat{height:100%;display:grid;place-items:center;align-content:center;gap:8px;color:var(--muted);font-size:12px}.empty-chat strong{color:var(--primary);font-size:16px}.detail-sidebar{border-left:1px solid var(--line);background:#fff}.detail-head{height:64px;display:flex;align-items:center;padding:0 17px;border-bottom:1px solid var(--line);color:var(--primary);font-size:14px;font-weight:800}.person-panel{margin:12px;padding:14px;border-radius:8px;background:#F7F9FC}.person-card{display:flex;align-items:center;gap:10px}.person-card .mini-avatar{width:46px;height:46px}.person-card strong{display:block;color:var(--primary);font-size:13px}.person-card span{display:block;color:var(--muted);font-size:10px}.person-info{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}.person-info div{margin:7px 0;color:#64758D;font-size:10px;overflow-wrap:anywhere}
+.system-view{background:var(--bg)}.system-head{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--line);background:#fff}.system-head h1{margin:0;color:var(--primary);font-size:16px}.system-head button{border:0;color:var(--blue);background:transparent;font-size:10px}.system-head button:disabled{cursor:not-allowed;color:var(--light)}.notification-list{overflow-y:auto;min-height:0;padding:14px}.notification-card{display:grid;grid-template-columns:8px minmax(0,1fr) minmax(74px,auto);align-items:start;gap:14px;min-height:86px;margin-bottom:10px;padding:14px 18px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer}.notification-card:hover,.notification-card:focus-visible{border-color:#B8D1F1;background:#FBFDFF;outline:none}.notice-dot{width:7px;height:7px;margin-top:5px;border-radius:50%;background:#DDE5EF}.notification-card.unread-notice .notice-dot{background:var(--blue)}.notice-title{color:var(--primary);font-size:12px;font-weight:800;line-height:1.45;overflow-wrap:anywhere}.notice-desc{margin-top:4px;color:#64758D;font-size:10px;line-height:1.6;overflow-wrap:anywhere}.notice-tag{grid-column:3;grid-row:1;padding:4px 8px;border-radius:5px;color:var(--blue);background:var(--blue-soft);font-size:9px;text-align:center;white-space:nowrap}.notice-tag.gray{color:#62758E;background:#EEF2F7}.notice-time{grid-column:3;grid-row:2;margin-top:6px;color:var(--light);font-size:10px;text-align:right;white-space:nowrap}.notification-state{display:grid;min-height:180px;place-items:center;align-content:center;gap:10px;padding:30px;color:var(--muted);font-size:12px;text-align:center}.notification-state.error{color:var(--red)}.call-modal{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:rgba(13,30,52,.48);backdrop-filter:blur(3px)}.call-dialog{width:min(390px,100%);padding:26px;border:1px solid #D9E3EF;border-radius:10px;background:#fff;box-shadow:0 22px 60px rgba(14,35,64,.24);text-align:center}.call-avatar{width:62px;height:62px;margin:0 auto 13px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:20px;font-weight:800}.call-dialog h2{margin:0;color:var(--primary);font-size:18px}.call-dialog p{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.7}.call-actions{display:flex;gap:10px;margin-top:17px}.call-actions button{height:42px;flex:1;border-radius:7px;font-weight:700}.call-cancel{border:1px solid #CFDAE8;color:var(--primary);background:#fff}.toast{position:fixed;z-index:70;right:24px;bottom:24px;padding:10px 14px;border:1px solid #CDE7DD;border-radius:8px;color:#176B50;background:#F2FBF7;opacity:0;transform:translateY(10px);transition:.18s}.toast.show{opacity:1;transform:translateY(0)}
+@media(max-width:1050px){.message-shell{width:calc(100% - 28px);grid-template-columns:250px minmax(0,1fr)}.detail-sidebar{display:none}}@media(max-width:700px){.message-shell{height:calc(100vh - 84px);min-height:580px;margin:10px auto;grid-template-columns:74px minmax(0,1fr)}.sidebar-head{padding:10px 8px}.sidebar-title span,.sidebar-title{font-size:0}.sidebar-title::after{content:"消息";font-size:13px}.search-box{display:none}.conversation-list{padding:0 6px}.conversation-item{grid-template-columns:38px;justify-content:center;padding:8px 5px}.conversation-copy,.conversation-meta{display:none}.unread{position:absolute;margin-left:28px}.system-mode{grid-template-columns:74px minmax(0,1fr)}.notification-card{grid-template-columns:7px minmax(0,1fr);gap:9px}.notice-tag,.notice-time{display:none}.bubble-wrap{max-width:84%}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
 </style>
