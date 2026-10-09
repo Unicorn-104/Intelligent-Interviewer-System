@@ -14,7 +14,10 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
+import com.ruoyi.system.domain.agent.AgentJobQuery;
 import com.ruoyi.system.service.IEnterpriseJobService;
+import com.ruoyi.system.service.agent.IAgentJobService;
+import jakarta.validation.Valid;
 
 /**
  * 企业端岗位管理（列表页：分页/搜索/状态过滤）
@@ -27,6 +30,18 @@ public class EnterpriseJobController extends BaseController
 {
     @Autowired
     private IEnterpriseJobService jobService;
+
+    @Autowired
+    private IAgentJobService agentJobService;
+
+    /**
+     * 查询企业已发布岗位，供求职者端岗位浏览使用。
+     */
+    @GetMapping
+    public AjaxResult publicJobs(@Valid AgentJobQuery query)
+    {
+        return success(agentJobService.selectJobs(query, getUserId()));
+    }
 
     /**
      * 分页查询当前公司岗位，支持 keyword/dept/status 过滤
