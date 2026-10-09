@@ -133,7 +133,7 @@ export const constantRoutes = [
   {
     path: '',
     component: Layout,
-    redirect: '/index',
+    redirect: redirectToAgentLogin,
     children: [
       {
         path: '/index',

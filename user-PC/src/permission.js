@@ -27,8 +27,18 @@ router.beforeEach(async (to, from) => {
     NProgress.done()
     return true
   }
+  if (to.path === '/' || to.path === '/index') {
+    if (hasCandidateAccessToken()) {
+      removeToken()
+      clearCandidateSession()
+      useUserStore().$reset()
+      isRelogin.show = false
+    }
+    NProgress.done()
+    return { path: '/agent/login', query: to.query, replace: true }
+  }
   if (import.meta.env.VITE_FRONTEND_ONLY === 'true') {
-    if (to.path === '/' || to.path === '/index' || to.path === '/login') {
+    if (to.path === '/login') {
       NProgress.done()
       return { path: '/agent/login', query: to.query, replace: true }
     }
