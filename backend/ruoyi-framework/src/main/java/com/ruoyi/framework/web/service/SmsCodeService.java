@@ -103,7 +103,7 @@ public class SmsCodeService
 
     private void validateScene(String scene)
     {
-        if (!"register".equals(scene) && !"login".equals(scene))
+        if (!"register".equals(scene) && !"login".equals(scene) && !"bind_phone".equals(scene))
         {
             throw new ServiceException("短信验证码场景无效");
         }

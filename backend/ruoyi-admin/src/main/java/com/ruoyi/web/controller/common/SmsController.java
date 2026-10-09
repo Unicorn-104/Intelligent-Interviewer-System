@@ -42,6 +42,13 @@ public class SmsController extends BaseController
         {
             return error("该手机号尚未注册");
         }
+        if ("bind_phone".equals(scene))
+        {
+            if (user != null && !getUserId().equals(user.getUserId()))
+            {
+                return error("该手机号已被其他账号绑定");
+            }
+        }
 
         AjaxResult ajax = success();
         String devCode = smsCodeService.sendCode(phone, scene);
