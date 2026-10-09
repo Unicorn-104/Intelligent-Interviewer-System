@@ -1,5 +1,12 @@
 import { signalTicket, signalSend, signalStreamUrl } from '@/api/system/conference'
 
+// ICE 服务器：至少提供 STUN，让跨网络 P2P 能拿到公网候选地址；
+// 生产环境若存在对称 NAT / 严格防火墙，需在此基础上补配自建 TURN（coturn）中继。
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' }
+]
+
 /**
  * 面试视频会议 WebRTC 点对点连接（SSE 信令 + P2P 媒体）
  *
@@ -29,8 +36,12 @@ export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft }) {
     return signalTicket(sessionId)
       .then((res) => {
         const data = res && res.data
-        // 纯前端演示模式（无后端）拿不到票据时静默跳过，页面保留本地演示
-        if (destroyed || !data || !data.ticket) return
+        // 纯前端演示模式（无后端）拿不到票据时跳过；生产环境出现该情况说明票据接口异常，需暴露
+        if (destroyed) return
+        if (!data || !data.ticket) {
+          console.error('[conference] 信令票据获取失败：接口未返回 ticket', res)
+          return
+        }
         ticket = data.ticket
         role = data.role
         // 对端已在本房间（本端后进场）时不会再收到 peer-joined，用票据携带的 peers 快照补判，
@@ -38,7 +49,10 @@ export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft }) {
         if (data.peers && data.peers.length) peerOnline = true
         openStream()
       })
-      .catch(() => {})
+      .catch((error) => {
+        // 票据接口 401 / 网络失败 / 代理未转发都会走到这里，静默会导致画面永远停在等待占位
+        console.error('[conference] 信令票据请求失败，无法建立 SSE 信令通道', error)
+      })
   }
 
   function openStream() {
@@ -52,7 +66,12 @@ export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft }) {
       }
       handleSignal(msg)
     })
-    es.onerror = () => scheduleReconnect()
+    es.onerror = () => {
+      // CONNECTING=0 OPEN=1 CLOSED=2；服务器部署下若 Nginx 未转发 /prod-api 或缓冲 SSE，
+      // 通道会反复报错重连，这里打印状态便于从 F12 直接定位
+      console.error('[conference] SSE 信令通道异常，readyState =', es && es.readyState, 'url =', signalStreamUrl(ticket))
+      scheduleReconnect()
+    }
     // 通道建立后再发起协商：此时本端 emitter 已在后端注册，
     // 能确保收到对端的 answer / ICE，避免仅凭 peers 快照抢跑而漏收回包
     es.onopen = () => {
@@ -82,7 +101,7 @@ export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft }) {
 
   function ensurePeer() {
     if (pc) return pc
-    pc = new RTCPeerConnection({ iceServers: [] })
+    pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
     if (localStream) {
       localStream.getTracks().forEach((track) => pc.addTrack(track, localStream))
     }
