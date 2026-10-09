@@ -44,9 +44,18 @@ export function delNotice(noticeId) {
 }
 
 // 首页顶部公告列表（带已读状态）
-export function listNoticeTop() {
+export function listNoticeTop(query) {
   return request({
     url: '/system/notice/listTop',
+    method: 'get',
+    params: query
+  })
+}
+
+// 查询当前用户未读公告总数
+export function getNoticeUnreadCount() {
+  return request({
+    url: '/system/notice/unreadCount',
     method: 'get'
   })
 }

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   FILE_LIMITS,
+  isValidAccount,
   isValidPhoneNumber,
   isValidSmsCode,
   validateAvatarFile,
@@ -15,6 +16,13 @@ test('手机号与验证码校验拒绝错误格式', () => {
   assert.equal(isValidPhoneNumber('1380013800'), false)
   assert.equal(isValidSmsCode('123456'), true)
   assert.equal(isValidSmsCode('12345a'), false)
+})
+
+test('账号校验限制长度与字符范围', () => {
+  assert.equal(isValidAccount('lin_xiaoyu'), true)
+  assert.equal(isValidAccount('a'), false)
+  assert.equal(isValidAccount('账号一'), false)
+  assert.equal(isValidAccount('account name'), false)
 })
 
 test('头像上传校验格式与大小', () => {

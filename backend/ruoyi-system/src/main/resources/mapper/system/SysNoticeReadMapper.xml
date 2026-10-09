@@ -34,6 +34,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             n.notice_id    as noticeId,
             n.notice_title as noticeTitle,
             n.notice_type  as noticeType,
+            n.notice_content as noticeContent,
             n.status,
             n.create_by    as createBy,
             n.create_time  as createTime,

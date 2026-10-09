@@ -1,0 +1,520 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.agent.AgentApplicationMapper">
+
+    <resultMap id="ResumeOptionResult" type="com.ruoyi.system.domain.agent.AgentResumeOption">
+        <id property="id" column="resume_id"/>
+        <result property="name" column="resume_name"/>
+        <result property="jobDirection" column="job_direction"/>
+        <result property="isDefault" column="is_default"/>
+        <result property="completion" column="completion"/>
+        <result property="matchScore" column="match_score"/>
+        <result property="recommended" column="recommended"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="usedApplicationCount" column="used_application_count"/>
+        <result property="fileName" column="file_name"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="fileUrl" column="file_url"/>
+    </resultMap>
+
+    <resultMap id="ResumeDetailResult" type="com.ruoyi.system.domain.agent.AgentResumeDetail">
+        <id property="id" column="resume_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="resumeName" column="resume_name"/>
+        <result property="jobDirection" column="job_direction"/>
+        <result property="realName" column="real_name"/>
+        <result property="gender" column="gender"/>
+        <result property="workStatus" column="work_status"/>
+        <result property="currentCity" column="current_city"/>
+        <result property="phone" column="phone"/>
+        <result property="email" column="email"/>
+        <result property="targetRole" column="target_role"/>
+        <result property="salaryExpectation" column="salary_expectation"/>
+        <result property="targetCity" column="target_city"/>
+        <result property="arrivalTime" column="arrival_time"/>
+        <result property="isDefault" column="is_default"/>
+        <result property="completion" column="completion"/>
+        <result property="usedApplicationCount" column="used_application_count"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="fileName" column="file_name"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="filePath" column="file_path"/>
+        <collection property="educations" column="{resumeId=resume_id}" select="selectResumeEducation"/>
+        <collection property="works" column="{resumeId=resume_id}" select="selectResumeWork"/>
+        <collection property="projects" column="{resumeId=resume_id}" select="selectResumeProject"/>
+        <collection property="skills" column="{resumeId=resume_id}" select="selectResumeSkill"/>
+    </resultMap>
+
+    <resultMap id="ApplicationResult" type="com.ruoyi.system.domain.agent.AgentApplication">
+        <id property="id" column="application_id"/>
+        <result property="candidateId" column="candidate_id"/>
+        <result property="jobId" column="job_id"/>
+        <result property="resumeId" column="resume_id"/>
+        <result property="jobTitle" column="job_title"/>
+        <result property="companyName" column="company_name"/>
+        <result property="companyLogoUrl" column="company_logo_url"/>
+        <result property="locationText" column="location_text"/>
+        <result property="salaryMin" column="salary_min"/>
+        <result property="salaryMax" column="salary_max"/>
+        <result property="resumeName" column="resume_name"/>
+        <result property="statusCode" column="status_code"/>
+        <result property="matchedScore" column="matched_score"/>
+        <result property="appliedAt" column="applied_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="selectResumeOptions" resultMap="ResumeOptionResult">
+        SELECT
+            rbs.rbs_id AS resume_id,
+            rbs.rbs_resume_name AS resume_name,
+            rbs.rbs_job_direction AS job_direction,
+            rbs.rbs_is_default AS is_default,
+            (
+                (CASE WHEN rbs.rbs_job_direction IS NOT NULL AND rbs.rbs_job_direction != '' THEN 15 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_education edu WHERE edu.edu_resume_id = rbs.rbs_id) THEN 20 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_work work WHERE work.wrk_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_project project WHERE project.prj_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_skill skill WHERE skill.skl_resume_id = rbs.rbs_id) THEN 15 ELSE 0 END)
+            ) AS completion,
+            LEAST(99, GREATEST(60,
+                70
+                + (CASE WHEN rbs.rbs_job_direction IS NOT NULL AND pos.pos_title LIKE CONCAT('%', rbs.rbs_job_direction, '%') THEN 20 ELSE 0 END)
+                + (CASE WHEN rbs.rbs_is_default = 1 THEN 5 ELSE 0 END)
+            )) AS match_score,
+            CASE WHEN rbs.rbs_is_default = 1 THEN 1 ELSE 0 END AS recommended,
+            rbs.rbs_updated_at AS updated_at,
+            rbs.rbs_file_name AS file_name,
+            rbs.rbs_file_size AS file_size,
+            CASE WHEN rbs.rbs_file_path IS NULL OR rbs.rbs_file_path = '' THEN NULL
+                 ELSE CONCAT('/common/download/resource?resource=', rbs.rbs_file_path) END AS file_url,
+            (
+                SELECT COUNT(1)
+                FROM t_app_record app
+                INNER JOIN t_tal tal ON tal.tal_id = app.app_candidate_id
+                WHERE tal.tal_user_id = #{userId}
+                  AND app.app_resume_id = rbs.rbs_id
+            ) AS used_application_count
+        FROM t_res_base rbs
+        INNER JOIN t_pos pos ON pos.pos_id = #{jobId}
+        WHERE rbs.rbs_user_id = #{userId}
+          AND rbs.rbs_status = 1
+        ORDER BY recommended DESC, completion DESC, rbs.rbs_updated_at DESC
+    </select>
+
+    <select id="selectResumeById" resultMap="ResumeOptionResult">
+        SELECT
+            rbs.rbs_id AS resume_id,
+            rbs.rbs_resume_name AS resume_name,
+            rbs.rbs_job_direction AS job_direction,
+            rbs.rbs_is_default AS is_default,
+            (
+                (CASE WHEN rbs.rbs_job_direction IS NOT NULL AND rbs.rbs_job_direction != '' THEN 15 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_education edu WHERE edu.edu_resume_id = rbs.rbs_id) THEN 20 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_work work WHERE work.wrk_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_project project WHERE project.prj_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_skill skill WHERE skill.skl_resume_id = rbs.rbs_id) THEN 15 ELSE 0 END)
+            ) AS completion,
+            0 AS match_score,
+            CASE WHEN rbs.rbs_is_default = 1 THEN 1 ELSE 0 END AS recommended,
+            rbs.rbs_updated_at AS updated_at,
+            rbs.rbs_file_name AS file_name,
+            rbs.rbs_file_size AS file_size,
+            CASE WHEN rbs.rbs_file_path IS NULL OR rbs.rbs_file_path = '' THEN NULL
+                 ELSE CONCAT('/common/download/resource?resource=', rbs.rbs_file_path) END AS file_url,
+            0 AS used_application_count
+        FROM t_res_base rbs
+        WHERE rbs.rbs_id = #{resumeId}
+          AND rbs.rbs_user_id = #{userId}
+          AND rbs.rbs_status = 1
+    </select>
+
+    <select id="countActiveResumes" resultType="int">
+        SELECT COUNT(1)
+        FROM t_res_base
+        WHERE rbs_user_id = #{userId}
+          AND rbs_status = 1
+    </select>
+
+    <select id="selectResumeList" resultMap="ResumeOptionResult">
+        SELECT
+            rbs.rbs_id AS resume_id,
+            rbs.rbs_resume_name AS resume_name,
+            rbs.rbs_job_direction AS job_direction,
+            rbs.rbs_is_default AS is_default,
+            (
+                (CASE WHEN rbs.rbs_job_direction IS NOT NULL AND rbs.rbs_job_direction != '' THEN 15 ELSE 0 END)
+                + (CASE WHEN rbs.rbs_real_name IS NOT NULL AND rbs.rbs_real_name != '' THEN 10 ELSE 0 END)
+                + (CASE WHEN rbs.rbs_target_role IS NOT NULL AND rbs.rbs_target_role != '' THEN 10 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_education edu WHERE edu.edu_resume_id = rbs.rbs_id) THEN 20 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_work work WHERE work.wrk_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_project project WHERE project.prj_resume_id = rbs.rbs_id) THEN 15 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_skill skill WHERE skill.skl_resume_id = rbs.rbs_id) THEN 5 ELSE 0 END)
+            ) AS completion,
+            0 AS match_score,
+            CASE WHEN rbs.rbs_is_default = 1 THEN 1 ELSE 0 END AS recommended,
+            rbs.rbs_updated_at AS updated_at,
+            rbs.rbs_file_name AS file_name,
+            rbs.rbs_file_size AS file_size,
+            CASE WHEN rbs.rbs_file_path IS NULL OR rbs.rbs_file_path = '' THEN NULL
+                 ELSE CONCAT('/common/download/resource?resource=', rbs.rbs_file_path) END AS file_url,
+            (
+                SELECT COUNT(1)
+                FROM t_app_record app
+                INNER JOIN t_tal tal ON tal.tal_id = app.app_candidate_id
+                WHERE tal.tal_user_id = #{userId}
+                  AND app.app_resume_id = rbs.rbs_id
+            ) AS used_application_count
+        FROM t_res_base rbs
+        WHERE rbs.rbs_user_id = #{userId}
+          AND rbs.rbs_status = 1
+        ORDER BY recommended DESC, rbs.rbs_updated_at DESC, rbs.rbs_id DESC
+    </select>
+
+    <select id="selectResumeDetail" resultMap="ResumeDetailResult">
+        SELECT
+            rbs.rbs_id AS resume_id,
+            rbs.rbs_user_id AS user_id,
+            rbs.rbs_resume_name AS resume_name,
+            rbs.rbs_job_direction AS job_direction,
+            rbs.rbs_real_name AS real_name,
+            rbs.rbs_gender AS gender,
+            rbs.rbs_work_status AS work_status,
+            rbs.rbs_current_city AS current_city,
+            rbs.rbs_phone AS phone,
+            rbs.rbs_email AS email,
+            rbs.rbs_target_role AS target_role,
+            rbs.rbs_salary_expectation AS salary_expectation,
+            rbs.rbs_target_city AS target_city,
+            rbs.rbs_arrival_time AS arrival_time,
+            rbs.rbs_is_default AS is_default,
+            (
+                (CASE WHEN rbs.rbs_job_direction IS NOT NULL AND rbs.rbs_job_direction != '' THEN 15 ELSE 0 END)
+                + (CASE WHEN rbs.rbs_real_name IS NOT NULL AND rbs.rbs_real_name != '' THEN 10 ELSE 0 END)
+                + (CASE WHEN rbs.rbs_target_role IS NOT NULL AND rbs.rbs_target_role != '' THEN 10 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_education edu WHERE edu.edu_resume_id = rbs.rbs_id) THEN 20 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_work work WHERE work.wrk_resume_id = rbs.rbs_id) THEN 25 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_project project WHERE project.prj_resume_id = rbs.rbs_id) THEN 15 ELSE 0 END)
+                + (CASE WHEN EXISTS (SELECT 1 FROM t_res_skill skill WHERE skill.skl_resume_id = rbs.rbs_id) THEN 5 ELSE 0 END)
+            ) AS completion,
+            rbs.rbs_updated_at AS updated_at,
+            rbs.rbs_file_name AS file_name,
+            rbs.rbs_file_size AS file_size,
+            rbs.rbs_file_path AS file_path,
+            (
+                SELECT COUNT(1)
+                FROM t_app_record app
+                INNER JOIN t_tal tal ON tal.tal_id = app.app_candidate_id
+                WHERE tal.tal_user_id = #{userId}
+                  AND app.app_resume_id = rbs.rbs_id
+            ) AS used_application_count
+        FROM t_res_base rbs
+        WHERE rbs.rbs_id = #{resumeId}
+          AND rbs.rbs_user_id = #{userId}
+          AND rbs.rbs_status = 1
+    </select>
+
+    <select id="selectResumeEducation" resultType="com.ruoyi.system.domain.agent.AgentResumeEducation">
+        SELECT
+            edu_id AS id,
+            edu_resume_id AS resume_id,
+            edu_school AS school,
+            edu_major AS major,
+            edu_degree AS degree,
+            edu_start_date AS start_date,
+            edu_end_date AS end_date,
+            edu_description AS description
+        FROM t_res_education
+        WHERE edu_resume_id = #{resumeId}
+        ORDER BY edu_start_date DESC, edu_id ASC
+    </select>
+
+    <select id="selectResumeWork" resultType="com.ruoyi.system.domain.agent.AgentResumeWork">
+        SELECT
+            wrk_id AS id,
+            wrk_resume_id AS resume_id,
+            wrk_company AS company,
+            wrk_position AS position,
+            wrk_department AS department,
+            wrk_start_date AS start_date,
+            wrk_end_date AS end_date,
+            wrk_is_current AS current,
+            wrk_salary_range AS salary_range,
+            wrk_description AS description
+        FROM t_res_work
+        WHERE wrk_resume_id = #{resumeId}
+        ORDER BY wrk_start_date DESC, wrk_id ASC
+    </select>
+
+    <select id="selectResumeProject" resultType="com.ruoyi.system.domain.agent.AgentResumeProject">
+        SELECT
+            prj_id AS id,
+            prj_resume_id AS resume_id,
+            prj_name AS name,
+            prj_role AS role,
+            prj_start_date AS start_date,
+            prj_end_date AS end_date,
+            prj_description AS description,
+            prj_tech_stack AS tech_stack
+        FROM t_res_project
+        WHERE prj_resume_id = #{resumeId}
+        ORDER BY prj_start_date DESC, prj_id ASC
+    </select>
+
+    <select id="selectResumeSkill" resultType="com.ruoyi.system.domain.agent.AgentResumeSkill">
+        SELECT
+            skl_id AS id,
+            skl_resume_id AS resume_id,
+            skl_name AS name,
+            skl_level AS level
+        FROM t_res_skill
+        WHERE skl_resume_id = #{resumeId}
+        ORDER BY skl_id ASC
+    </select>
+
+    <insert id="insertResume" parameterType="com.ruoyi.system.domain.agent.AgentResumeRecord"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="rbs_id">
+        INSERT INTO t_res_base (
+            rbs_user_id,
+            rbs_resume_name,
+            rbs_job_direction,
+            rbs_is_default,
+            rbs_status
+        )
+        VALUES (
+            #{userId},
+            #{resumeName},
+            #{jobDirection},
+            #{isDefault},
+            1
+        )
+    </insert>
+
+    <update id="updateResumeBase" parameterType="com.ruoyi.system.domain.agent.AgentResumeDetail">
+        UPDATE t_res_base
+        SET rbs_resume_name = #{resumeName},
+            rbs_job_direction = #{jobDirection},
+            rbs_real_name = #{realName},
+            rbs_gender = #{gender},
+            rbs_work_status = #{workStatus},
+            rbs_current_city = #{currentCity},
+            rbs_phone = #{phone},
+            rbs_email = #{email},
+            rbs_target_role = #{targetRole},
+            rbs_salary_expectation = #{salaryExpectation},
+            rbs_target_city = #{targetCity},
+            rbs_arrival_time = #{arrivalTime}
+        WHERE rbs_id = #{id}
+          AND rbs_user_id = #{userId}
+          AND rbs_status = 1
+    </update>
+
+    <delete id="deleteResumeEducation">
+        DELETE FROM t_res_education WHERE edu_resume_id = #{resumeId}
+    </delete>
+
+    <delete id="deleteResumeWork">
+        DELETE FROM t_res_work WHERE wrk_resume_id = #{resumeId}
+    </delete>
+
+    <delete id="deleteResumeProject">
+        DELETE FROM t_res_project WHERE prj_resume_id = #{resumeId}
+    </delete>
+
+    <delete id="deleteResumeSkill">
+        DELETE FROM t_res_skill WHERE skl_resume_id = #{resumeId}
+    </delete>
+
+    <insert id="insertResumeEducation" parameterType="com.ruoyi.system.domain.agent.AgentResumeEducation">
+        INSERT INTO t_res_education (
+            edu_resume_id, edu_school, edu_major, edu_degree,
+            edu_start_date, edu_end_date, edu_description
+        )
+        VALUES (
+            #{resumeId}, #{school}, #{major}, #{degree},
+            #{startDate}, #{endDate}, #{description}
+        )
+    </insert>
+
+    <insert id="insertResumeWork" parameterType="com.ruoyi.system.domain.agent.AgentResumeWork">
+        INSERT INTO t_res_work (
+            wrk_resume_id, wrk_company, wrk_position, wrk_department,
+            wrk_start_date, wrk_end_date, wrk_is_current, wrk_salary_range, wrk_description
+        )
+        VALUES (
+            #{resumeId}, #{company}, #{position}, #{department},
+            #{startDate}, #{endDate}, #{current}, #{salaryRange}, #{description}
+        )
+    </insert>
+
+    <insert id="insertResumeProject" parameterType="com.ruoyi.system.domain.agent.AgentResumeProject">
+        INSERT INTO t_res_project (
+            prj_resume_id, prj_name, prj_role, prj_start_date,
+            prj_end_date, prj_description, prj_tech_stack
+        )
+        VALUES (
+            #{resumeId}, #{name}, #{role}, #{startDate},
+            #{endDate}, #{description}, #{techStack}
+        )
+    </insert>
+
+    <insert id="insertResumeSkill" parameterType="com.ruoyi.system.domain.agent.AgentResumeSkill">
+        INSERT INTO t_res_skill (skl_resume_id, skl_name, skl_level)
+        VALUES (#{resumeId}, #{name}, #{level})
+    </insert>
+
+    <update id="updateResumeFile">
+        UPDATE t_res_base
+        SET rbs_file_path = #{filePath},
+            rbs_file_name = #{fileName},
+            rbs_file_size = #{fileSize}
+        WHERE rbs_id = #{resumeId}
+          AND rbs_user_id = #{userId}
+          AND rbs_status = 1
+    </update>
+
+    <update id="softDeleteResume">
+        UPDATE t_res_base
+        SET rbs_status = 0, rbs_is_default = 0
+        WHERE rbs_id = #{resumeId}
+          AND rbs_user_id = #{userId}
+          AND rbs_status = 1
+    </update>
+
+    <update id="promoteFirstActiveResume">
+        UPDATE t_res_base
+        SET rbs_is_default = 1
+        WHERE rbs_id = (
+            SELECT resume_id
+            FROM (
+                SELECT rbs_id AS resume_id
+                FROM t_res_base
+                WHERE rbs_user_id = #{userId}
+                  AND rbs_status = 1
+                ORDER BY rbs_updated_at DESC, rbs_id DESC
+                LIMIT 1
+            ) candidate
+        )
+    </update>
+
+    <sql id="applicationSelect">
+        SELECT
+            app.app_id AS application_id,
+            app.app_candidate_id AS candidate_id,
+            app.app_position_id AS job_id,
+            app.app_resume_id AS resume_id,
+            pos.pos_title AS job_title,
+            cmp.cmp_name AS company_name,
+            cmp.cmp_logo_url AS company_logo_url,
+            pos.pos_work_city AS location_text,
+            pos.pos_salary_min AS salary_min,
+            pos.pos_salary_max AS salary_max,
+            rbs.rbs_resume_name AS resume_name,
+            app.app_status AS status_code,
+            app.app_matched_score AS matched_score,
+            app.app_created_at AS applied_at,
+            app.app_updated_at AS updated_at
+        FROM t_app_record app
+        INNER JOIN t_tal tal ON tal.tal_id = app.app_candidate_id
+        INNER JOIN t_pos pos ON pos.pos_id = app.app_position_id
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        LEFT JOIN t_res_base rbs ON rbs.rbs_id = app.app_resume_id
+    </sql>
+
+    <select id="selectApplicationList" resultMap="ApplicationResult">
+        <include refid="applicationSelect"/>
+        WHERE tal.tal_user_id = #{userId}
+        <choose>
+            <when test="status == 'active'">AND app.app_status IN (0, 1, 4)</when>
+            <when test="status == 'interview'">AND app.app_status IN (3, 5, 6)</when>
+            <when test="status == 'closed'">AND app.app_status IN (2, 7, 8)</when>
+        </choose>
+        ORDER BY app.app_updated_at DESC, app.app_id DESC
+    </select>
+
+    <select id="selectApplicationById" resultMap="ApplicationResult">
+        <include refid="applicationSelect"/>
+        WHERE tal.tal_user_id = #{userId}
+          AND app.app_id = #{applicationId}
+    </select>
+
+    <select id="selectExistingApplication" resultMap="ApplicationResult">
+        <include refid="applicationSelect"/>
+        WHERE tal.tal_user_id = #{userId}
+          AND app.app_position_id = #{jobId}
+        ORDER BY app.app_id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectCandidateId" resultType="long">
+        SELECT tal_id
+        FROM t_tal
+        WHERE tal_user_id = #{userId}
+          AND tal_company_id = #{companyId}
+        ORDER BY tal_id DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insertCandidate" parameterType="com.ruoyi.system.domain.agent.AgentCandidate"
+            useGeneratedKeys="true" keyProperty="candidateId" keyColumn="tal_id">
+        INSERT INTO t_tal (tal_user_id, tal_company_id, tal_resume_id, tal_status, tal_current_round)
+        VALUES (#{userId}, #{companyId}, #{resumeId}, 0, 0)
+    </insert>
+
+    <update id="updateCandidateResume">
+        UPDATE t_tal
+        SET tal_resume_id = #{resumeId}, tal_updated_at = CURRENT_TIMESTAMP
+        WHERE tal_id = #{candidateId}
+          AND tal_user_id = #{userId}
+          AND tal_company_id = #{companyId}
+    </update>
+
+    <insert id="insertApplication" parameterType="com.ruoyi.system.domain.agent.AgentApplication"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="app_id">
+        INSERT INTO t_app_record (
+            app_candidate_id,
+            app_position_id,
+            app_resume_id,
+            app_matched_score,
+            app_status
+        )
+        VALUES (
+            #{candidateId},
+            #{jobId},
+            #{resumeId},
+            #{matchedScore},
+            0
+        )
+    </insert>
+
+    <select id="selectTimeline" resultType="com.ruoyi.system.domain.agent.AgentTimeline">
+        SELECT
+            CAST(tsl_to_status AS CHAR) AS stage,
+            CASE
+                WHEN tsl_to_status IN (3, 4, 8, 9) THEN 'closed'
+                WHEN tsl_to_status IN (2, 5, 6, 7) THEN 'current'
+                WHEN tsl_to_status = 0 THEN 'processing'
+                ELSE 'done'
+            END AS state,
+            CASE tsl_to_status
+                WHEN 0 THEN '已投递'
+                WHEN 1 THEN '初筛通过'
+                WHEN 2 THEN '面试中'
+                WHEN 3 THEN '未通过'
+                WHEN 4 THEN '已录用'
+                WHEN 5 THEN '待笔试'
+                WHEN 6 THEN '笔试中'
+                WHEN 7 THEN '笔试通过'
+                WHEN 8 THEN '笔试未通过'
+                WHEN 9 THEN '笔试缺考'
+                ELSE '投递进度'
+            END AS title,
+            tsl_reason AS description,
+            tsl_created_at AS occurredAt
+        FROM t_tal_status_log
+        WHERE tsl_candidate_id = #{candidateId}
+          AND tsl_created_at >= #{occurredAfter}
+        ORDER BY tsl_created_at ASC, tsl_id ASC
+    </select>
+</mapper>

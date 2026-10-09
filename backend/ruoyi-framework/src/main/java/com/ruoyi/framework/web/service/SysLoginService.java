@@ -90,6 +90,14 @@ public class SysLoginService
     }
 
     /**
+     * 账号密码登录，不要求图形验证码。
+     */
+    public String loginByAccountPassword(String username, String password)
+    {
+        return authenticateWithPassword(username == null ? null : username.trim(), password);
+    }
+
+    /**
      * 手机短信验证码登录。
      */
     public String loginBySms(String phone, String smsCode)

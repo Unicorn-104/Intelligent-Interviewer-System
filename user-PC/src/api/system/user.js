@@ -78,6 +78,23 @@ export function getUserProfile() {
   })
 }
 
+// 查询求职者基础资料
+export function getAppProfile() {
+  return request({
+    url: '/app/profile',
+    method: 'get'
+  })
+}
+
+// 保存求职者基础资料
+export function updateAppProfile(data) {
+  return request({
+    url: '/app/profile',
+    method: 'put',
+    data
+  })
+}
+
 // 修改用户个人信息
 export function updateUserProfile(data) {
   return request({

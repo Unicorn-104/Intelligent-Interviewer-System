@@ -4,7 +4,7 @@
       <a class="brand" href="/agent/index"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span><span class="brand-tag">模拟面试</span></a>
       <div class="header-context">
         <span class="secure-state"><svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5z"/></svg>设备画面仅在本机预览</span>
-        <a class="exit-link" id="exitLink" href="/agent/application-detail?id=ai-product">退出模拟</a>
+        <a class="exit-link" id="exitLink" href="/agent/applications">退出模拟</a>
       </div>
     </div>
   </header>
@@ -51,15 +51,16 @@
     </section>
 
     <!-- 第三步：本地生成练习结果 -->
-    <section class="result-view" id="resultView"><div class="panel result-panel"><div class="result-mark"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></div><h2>本次模拟面试已完成</h2><p>以下结果根据答题完整度生成，仅作为练习参考。</p><div class="score-row"><div class="score-cell"><strong id="scoreValue">--</strong><small>模拟完成度</small></div><div class="score-cell"><strong id="answeredValue">--</strong><small>已回答</small></div><div class="score-cell"><strong id="skippedValue">--</strong><small>待补充</small></div></div><div class="feedback"><strong>练习建议</strong><p id="feedbackText"></p></div><div class="result-actions"><a id="returnLink" href="/agent/application-detail?id=ai-product">返回投递详情</a><button id="restartButton">重新模拟</button></div></div></section>
+    <section class="result-view" id="resultView"><div class="panel result-panel"><div class="result-mark"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></div><h2>本次模拟面试已完成</h2><p>以下结果根据答题完整度生成，仅作为练习参考。</p><div class="score-row"><div class="score-cell"><strong id="scoreValue">--</strong><small>模拟完成度</small></div><div class="score-cell"><strong id="answeredValue">--</strong><small>已回答</small></div><div class="score-cell"><strong id="skippedValue">--</strong><small>待补充</small></div></div><div class="feedback"><strong>练习建议</strong><p id="feedbackText"></p></div><div class="result-actions"><a id="returnLink" href="/agent/applications">返回投递跟踪</a><button id="restartButton">重新模拟</button></div></div></section>
   </main>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </template>
 
 <script setup>
 import { onMounted } from 'vue'
+import { resolveApplicationDetailPath } from '@/utils/agentApplication'
 
-onMounted(() => {
+onMounted(async () => {
   // 根据投递详情传入的岗位 ID，展示对应的模拟面试内容。
       const jobProfiles={
         'ai-product':{title:'高级产品经理（AI 方向）',company:'极氪智能科技有限公司'},
@@ -79,7 +80,7 @@ onMounted(() => {
         {type:'合规意识',title:'你如何看待 AI 面试中的公平性、隐私与合规问题？',tips:['说明数据最小化与授权原则','关注模型偏差和可解释性','保留人工复核与申诉通道']}
       ];
       const params=new URLSearchParams(location.search),jobId=params.get('job')||'ai-product',job=jobProfiles[jobId]||jobProfiles['ai-product'];
-      const detailUrl=`/agent/application-detail?id=${encodeURIComponent(jobId)}`;
+      const detailUrl=await resolveApplicationDetailPath(jobId);
       document.getElementById('pageTitle').textContent=job.title;document.getElementById('companyMeta').textContent=`${job.company} · 共 ${questions.length} 道岗位高频问题`;document.getElementById('exitLink').href=detailUrl;document.getElementById('returnLink').href=detailUrl;document.title=`${job.title} · AI 模拟面试`;
   
       let mediaStream=null,currentIndex=0,answers=Array(questions.length).fill(''),skipped=new Set(),secondsLeft=120,timerId=null;

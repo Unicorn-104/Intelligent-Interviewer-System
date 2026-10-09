@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.annotation.Log;
@@ -84,18 +85,29 @@ public class SysNoticeController extends BaseController
     }
 
     /**
-     * 首页顶部公告列表（返回全部正常公告，带当前用户已读标记，最多5条）
+     * 首页顶部公告列表（返回正常公告，带当前用户已读标记）
      */
     @GetMapping("/listTop")
     @ResponseBody
-    public AjaxResult listTop()
+    public AjaxResult listTop(@RequestParam(value = "limit", required = false, defaultValue = "5") Integer limit)
     {
         Long userId = getUserId();
-        List<SysNotice> list = noticeReadService.selectNoticeListWithReadStatus(userId, 5);
+        int safeLimit = Math.min(Math.max(limit == null ? 5 : limit, 1), 50);
+        List<SysNotice> list = noticeReadService.selectNoticeListWithReadStatus(userId, safeLimit);
         long unreadCount = list.stream().filter(n -> !n.getIsRead()).count();
         AjaxResult result = AjaxResult.success(list);
         result.put("unreadCount", unreadCount);
         return result;
+    }
+
+    /**
+     * 查询当前用户未读公告总数。
+     */
+    @GetMapping("/unreadCount")
+    @ResponseBody
+    public AjaxResult unreadCount()
+    {
+        return success(noticeReadService.selectUnreadCount(getUserId()));
     }
 
     /**

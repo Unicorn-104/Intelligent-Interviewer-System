@@ -23,8 +23,9 @@
 <script setup>
 import { onMounted } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
-
-import { validateAvatarFile, validateResumeFile } from '@/utils/agentValidation'
+import { getAppProfile, updateAppProfile, uploadAvatar } from '@/api/system/user'
+import useUserStore from '@/store/modules/user'
+import { isValidPhoneNumber, validateAvatarFile, validateResumeFile } from '@/utils/agentValidation'
 
 const props = defineProps({
   defaultView: {
@@ -33,72 +34,278 @@ const props = defineProps({
   }
 })
 
+const userStore = useUserStore()
+let currentProfile = {}
+let toastTimer
+
+const statusMap = {
+  '在职-考虑机会': 1,
+  '离职-随时到岗': 2,
+  '在校-寻找实习': 3
+}
+const statusLabels = {
+  1: '在职-考虑机会',
+  2: '离职-随时到岗',
+  3: '在校-寻找实习'
+}
+const sexMap = { 男: '0', 女: '1', 不公开: '2' }
+const sexLabels = { 0: '男', 1: '女', 2: '不公开' }
+
+function byId(id) {
+  return document.getElementById(id)
+}
+
+function showToast(text) {
+  const toast = byId('toast')
+  if (!toast) return
+  toast.textContent = text
+  toast.classList.add('show')
+  clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => toast.classList.remove('show'), 2400)
+}
+
+function resolveAvatarUrl(avatar) {
+  if (!avatar) return ''
+  if (/^(https?:|data:|blob:)/i.test(avatar)) return avatar
+  return `${import.meta.env.VITE_APP_BASE_API}${avatar}`
+}
+
+function getDisplayName(profile) {
+  return profile.realName || profile.nickName || '求职者'
+}
+
+function calculateCompletion(profile) {
+  const fields = [
+    profile.nickName,
+    profile.realName,
+    profile.email,
+    profile.phonenumber,
+    profile.currentCity,
+    profile.currentStatus,
+    profile.targetDirection,
+    profile.remark
+  ]
+  return Math.round(fields.filter(value => String(value ?? '').trim()).length / fields.length * 100)
+}
+
+function renderAvatar(avatar) {
+  const holder = byId('profileAvatar')
+  if (!holder) return
+  holder.replaceChildren()
+  const url = resolveAvatarUrl(avatar)
+  if (url) {
+    const image = document.createElement('img')
+    image.src = url
+    image.alt = '个人头像'
+    holder.appendChild(image)
+    return
+  }
+  holder.textContent = getDisplayName(currentProfile).slice(0, 1)
+}
+
+function renderProfileSummary(profile) {
+  const name = getDisplayName(profile)
+  const meta = document.querySelectorAll('.identity-meta span')
+  byId('profileTitle').textContent = name
+  if (meta[0]) meta[0].textContent = profile.targetDirection || '未设置期望岗位'
+  if (meta[1]) meta[1].textContent = profile.currentCity || '未设置城市'
+  if (meta[2]) meta[2].textContent = `求职状态：${statusLabels[Number(profile.currentStatus)] || '未设置'}`
+  const bio = document.querySelector('.identity-bio')
+  if (bio) bio.textContent = profile.remark || '填写个人简介，让企业更好地了解你。'
+  const completion = calculateCompletion(profile)
+  const completionValue = document.querySelector('.completion-value')
+  const completionText = document.querySelector('.completion-head strong')
+  if (completionValue) completionValue.style.width = `${completion}%`
+  if (completionText) completionText.textContent = `${completion}%`
+  renderAvatar(profile.avatar)
+}
+
+function setProfileForm(profile) {
+  byId('nickname').value = profile.nickName || ''
+  byId('realname').value = profile.realName || ''
+  byId('gender').value = sexLabels[profile.sex] ? sexLabels[profile.sex] : '不公开'
+  byId('status').value = statusLabels[Number(profile.currentStatus)] || '在职-考虑机会'
+  byId('city').value = profile.currentCity || ''
+  byId('phone').value = profile.phonenumber || ''
+  byId('email').value = profile.email || ''
+  byId('role').value = profile.targetDirection || ''
+  byId('bio').value = profile.remark || ''
+  renderProfileSummary(profile)
+}
+
+function readProfileForm() {
+  return {
+    ...currentProfile,
+    nickName: byId('nickname').value.trim(),
+    realName: byId('realname').value.trim(),
+    sex: sexMap[byId('gender').value] || '2',
+    currentStatus: statusMap[byId('status').value] || null,
+    currentCity: byId('city').value.trim(),
+    phonenumber: byId('phone').value.trim(),
+    email: byId('email').value.trim(),
+    targetDirection: byId('role').value.trim(),
+    remark: byId('bio').value.trim()
+  }
+}
+
+function validateProfile(profile) {
+  if (!profile.nickName) return '个人昵称不能为空'
+  if (profile.nickName.length > 30) return '个人昵称不能超过 30 个字符'
+  if (profile.phonenumber && !isValidPhoneNumber(profile.phonenumber)) return '请输入正确的手机号码'
+  if (profile.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) return '请输入正确的邮箱地址'
+  return ''
+}
+
+async function loadProfile() {
+  const form = byId('profileForm')
+  if (form) form.setAttribute('aria-busy', 'true')
+  try {
+    const response = await getAppProfile()
+    currentProfile = response.data || {}
+    setProfileForm(currentProfile)
+  } catch (error) {
+    showToast(error?.message || '基础资料加载失败，请稍后重试')
+  } finally {
+    if (form) form.removeAttribute('aria-busy')
+  }
+}
+
+async function saveProfile(event) {
+  event.preventDefault()
+  const profile = readProfileForm()
+  const validationMessage = validateProfile(profile)
+  if (validationMessage) {
+    showToast(validationMessage)
+    return
+  }
+  const submitButton = event.currentTarget.querySelector('button[type="submit"]')
+  submitButton.disabled = true
+  try {
+    const response = await updateAppProfile({
+      nickName: profile.nickName,
+      realName: profile.realName,
+      sex: profile.sex,
+      phonenumber: profile.phonenumber,
+      email: profile.email,
+      remark: profile.remark,
+      currentCity: profile.currentCity,
+      currentStatus: profile.currentStatus,
+      targetDirection: profile.targetDirection,
+      targetCity: currentProfile.targetCity || null
+    })
+    currentProfile = { ...currentProfile, ...(response.data || profile) }
+    setProfileForm(currentProfile)
+    userStore.nickName = currentProfile.nickName || userStore.nickName
+    showToast('个人资料已保存')
+  } catch (error) {
+    showToast(error?.message || '个人资料保存失败，请稍后重试')
+  } finally {
+    submitButton.disabled = false
+  }
+}
+
+async function handleAvatarChange(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  const validation = validateAvatarFile(file)
+  if (!validation.valid) {
+    showToast(validation.message)
+    return
+  }
+  const formData = new FormData()
+  formData.append('avatarfile', file, file.name)
+  try {
+    const response = await uploadAvatar(formData)
+    currentProfile.avatar = response.imgUrl || currentProfile.avatar
+    userStore.avatar = resolveAvatarUrl(currentProfile.avatar)
+    renderAvatar(currentProfile.avatar)
+    showToast('头像已更新')
+  } catch (error) {
+    showToast(error?.message || '头像上传失败，请稍后重试')
+  }
+}
+
 onMounted(() => {
-  const views=[...document.querySelectorAll('.view')],tabs=[...document.querySelectorAll('.side-button')],toast=document.getElementById('toast');let toastTimer;
-      function showToast(text){toast.textContent=text;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2400)}
-      const viewPaths={basic:'/agent/profile-basic',resumes:'/agent/profile-resumes',security:'/agent/profile-security'}
-      function setView(name,updatePath=true){const target=viewPaths[name]?name:'basic';tabs.forEach(tab=>tab.classList.toggle('active',tab.dataset.view===target));views.forEach(view=>view.classList.toggle('active',view.id===`view-${target}`));if(updatePath)history.replaceState(null,'',viewPaths[target])}
-      tabs.forEach(tab=>tab.addEventListener('click',()=>setView(tab.dataset.view)));
-      const requested=location.hash.slice(1),initialView=['basic','resumes','security'].includes(requested)?requested:props.defaultView;setView(initialView,false);
-      const savedName=localStorage.getItem('candidateName');if(savedName){document.getElementById('realname').value=savedName;document.getElementById('profileTitle').textContent=savedName}
-      document.getElementById('profileForm').addEventListener('submit',event=>{event.preventDefault();const name=document.getElementById('realname').value.trim()||'林晓雨',bio=document.getElementById('bio').value.trim();document.getElementById('profileTitle').textContent=name;document.querySelector('.identity-bio').textContent=bio;localStorage.setItem('candidateName',name);showToast('个人资料已保存')});
-      const avatarEdit=document.querySelector('.avatar-edit'),avatarInput=document.getElementById('avatarInput');avatarEdit.tabIndex=0;avatarEdit.setAttribute('role','button');avatarEdit.setAttribute('aria-label','更换头像');avatarEdit.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();avatarInput.click()}});
-      avatarInput.addEventListener('change', event => {
-        const file = event.target.files[0]
-        if (!file) return
-        const validation = validateAvatarFile(file)
-        if (!validation.valid) {
-          showToast(validation.message)
-          event.target.value = ''
-          return
-        }
-        const reader = new FileReader()
-        reader.onload = () => {
-          ;['profileAvatar'].forEach(id => {
-            const holder = document.getElementById(id)
-            if (!holder) return
-            holder.textContent = ''
-            const image = document.createElement('img')
-            image.src = reader.result
-            image.alt = '个人头像'
-            holder.appendChild(image)
-          })
-          showToast('头像已更新')
-        }
-        reader.readAsDataURL(file)
-      })
-      document.getElementById('createResume').addEventListener('click',()=>window.__agentNavigate('/agent/resume-editor?id=new'));
-      // 上传入口仅接受 PDF，并在演示环境中记录文件名与大小。
-      const uploadResume=document.getElementById('uploadResume'),resumeFileInput=document.getElementById('resumeFileInput');
-      uploadResume.addEventListener('click',()=>resumeFileInput.click());
-      resumeFileInput.addEventListener('change',event=>{const file=event.target.files?.[0];if(!file)return;const validation=validateResumeFile(file);if(!validation.valid){showToast(validation.message);event.target.value='';return}localStorage.setItem('uploadedResume',JSON.stringify({name:file.name,size:file.size,updated:new Date().toISOString()}));showToast('已上传：'+file.name);event.target.value='';});
-      document.querySelectorAll('.resume-card').forEach(card => {
-        const link = card.querySelector('.edit-link')
-        card.tabIndex = 0
-        card.setAttribute('role', 'link')
-        card.addEventListener('click', event => {
-          if (!event.target.closest('a,button')) window.__agentNavigate(link.href)
-        })
-        card.addEventListener('keydown', event => {
-          if (event.key === 'Enter') window.__agentNavigate(link.href)
-        })
-      })
-      document.querySelectorAll('.icon-action').forEach(button=>button.addEventListener('click',()=>showToast('已复制一份简历草稿')));
-      const saved=JSON.parse(localStorage.getItem('resumeDraft')||'null');if(saved?.title)document.getElementById('primaryResumeTitle').textContent=saved.title;
-      const dialog=document.getElementById('securityDialog'),dialogTitle=document.getElementById('dialogTitle'),dialogCopy=document.getElementById('dialogCopy')
-      document.querySelectorAll('[data-security]').forEach(button => button.addEventListener('click', () => {
-        const action = button.dataset.security
-        dialogTitle.textContent = action
-        dialogCopy.textContent = action === '注销账号'
-          ? '这是高风险操作。演示页面不会真正删除账号，请输入验证码进行确认。'
-          : '为保护账号安全，请先完成身份验证。'
-        dialog.showModal()
-      }))
-      document.getElementById('dialogConfirm').addEventListener('click', event => {
-        event.preventDefault()
-        dialog.close()
-        showToast('演示操作已完成')
-      })
+  const views = [...document.querySelectorAll('.view')]
+  const tabs = [...document.querySelectorAll('.side-button')]
+  const viewPaths = { basic: '/agent/profile-basic', resumes: '/agent/profile-resumes', security: '/agent/profile-security' }
+  const setView = (name, updatePath = true) => {
+    const target = viewPaths[name] ? name : 'basic'
+    tabs.forEach(tab => tab.classList.toggle('active', tab.dataset.view === target))
+    views.forEach(view => view.classList.toggle('active', view.id === `view-${target}`))
+    if (updatePath) history.replaceState(null, '', viewPaths[target])
+  }
+  tabs.forEach(tab => tab.addEventListener('click', () => setView(tab.dataset.view)))
+  const requested = location.hash.slice(1)
+  setView(['basic', 'resumes', 'security'].includes(requested) ? requested : props.defaultView, false)
+
+  const gender = byId('gender')
+  gender.innerHTML = '<option>女</option><option>男</option><option>不公开</option>'
+  const status = byId('status')
+  status.innerHTML = '<option>在职-考虑机会</option><option>离职-随时到岗</option><option>在校-寻找实习</option>'
+  byId('nickname').required = true
+  byId('profileForm').addEventListener('submit', saveProfile)
+  byId('profileForm').addEventListener('reset', event => {
+    event.preventDefault()
+    setProfileForm(currentProfile)
+    showToast('已恢复未保存修改')
+  })
+  byId('avatarInput').addEventListener('change', handleAvatarChange)
+  loadProfile()
+
+  byId('createResume').addEventListener('click', () => window.__agentNavigate('/agent/resume-editor?id=new'))
+  const uploadResume = byId('uploadResume')
+  const resumeFileInput = byId('resumeFileInput')
+  uploadResume.addEventListener('click', () => resumeFileInput.click())
+  resumeFileInput.addEventListener('change', event => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const validation = validateResumeFile(file)
+    if (!validation.valid) {
+      showToast(validation.message)
+      event.target.value = ''
+      return
+    }
+    localStorage.setItem('uploadedResume', JSON.stringify({ name: file.name, size: file.size, updated: new Date().toISOString() }))
+    showToast(`已上传：${file.name}`)
+    event.target.value = ''
+  })
+  document.querySelectorAll('.resume-card').forEach(card => {
+    const link = card.querySelector('.edit-link')
+    card.tabIndex = 0
+    card.setAttribute('role', 'link')
+    card.addEventListener('click', event => {
+      if (!event.target.closest('a,button')) window.__agentNavigate(link.href)
+    })
+    card.addEventListener('keydown', event => {
+      if (event.key === 'Enter') window.__agentNavigate(link.href)
+    })
+  })
+  document.querySelectorAll('.icon-action').forEach(button => button.addEventListener('click', () => showToast('已复制一份简历草稿')))
+  try {
+    const saved = JSON.parse(localStorage.getItem('resumeDraft') || 'null')
+    if (saved?.title) byId('primaryResumeTitle').textContent = saved.title
+  } catch {
+    // 忽略损坏的本地简历草稿，避免影响基础资料页面。
+  }
+
+  const dialog = byId('securityDialog')
+  const dialogTitle = byId('dialogTitle')
+  const dialogCopy = byId('dialogCopy')
+  document.querySelectorAll('[data-security]').forEach(button => button.addEventListener('click', () => {
+    const action = button.dataset.security
+    dialogTitle.textContent = action
+    dialogCopy.textContent = action === '注销账号'
+      ? '这是高风险操作。演示页面不会真正删除账号，请输入验证码进行确认。'
+      : '为保护账号安全，请先完成身份验证。'
+    dialog.showModal()
+  }))
+  byId('dialogConfirm').addEventListener('click', event => {
+    event.preventDefault()
+    dialog.close()
+    showToast('演示操作已完成')
+  })
 })
 </script>
 
