@@ -4,6 +4,7 @@ import java.util.Date;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.system.domain.Company;
 import com.ruoyi.system.mapper.CompanyMapper;
@@ -15,6 +16,7 @@ import com.ruoyi.system.service.ICompanyService;
  * @author TQY
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 public class CompanyServiceImpl implements ICompanyService
 {
     @Autowired

@@ -3,6 +3,7 @@ package com.ruoyi.system.service.impl;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.system.domain.ModelProvider;
 import com.ruoyi.system.mapper.ModelProviderMapper;
 import com.ruoyi.system.service.IModelProviderService;
@@ -13,6 +14,7 @@ import com.ruoyi.system.service.IModelProviderService;
  * @author TQY
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 public class ModelProviderServiceImpl implements IModelProviderService
 {
     @Autowired

@@ -3,16 +3,17 @@ package com.ruoyi.system.service.impl;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.system.domain.PromptVersion;
 import com.ruoyi.system.mapper.PromptVersionMapper;
 import com.ruoyi.system.service.IPromptVersionService;
 
 /**
- * Prompt版本Service业务层处理
- *
+ * Prompt鐗堟湰Service涓氬姟灞傚鐞? *
  * @author TQY
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 public class PromptVersionServiceImpl implements IPromptVersionService
 {
     @Autowired

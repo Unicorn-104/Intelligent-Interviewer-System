@@ -3,17 +3,18 @@ package com.ruoyi.system.service.impl;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.system.domain.UserVerify;
 import com.ruoyi.system.mapper.UserVerifyMapper;
 import com.ruoyi.system.service.IUserVerifyService;
 
 /**
- * 用户实名认证Service业务层处理
- *
+ * 鐢ㄦ埛瀹炲悕璁よ瘉Service涓氬姟灞傚鐞? *
  * @author TQY
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 public class UserVerifyServiceImpl implements IUserVerifyService
 {
     @Autowired

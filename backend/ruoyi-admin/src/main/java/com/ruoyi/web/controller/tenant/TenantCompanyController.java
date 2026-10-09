@@ -1,6 +1,7 @@
 package com.ruoyi.web.controller.tenant;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
@@ -21,6 +22,7 @@ public class TenantCompanyController extends BaseController {
     @Autowired
     private ICompanyService companyService;
 
+    @PreAuthorize("@ss.hasPermi('tenant:company:list')")
     @GetMapping("/list")
     public TableDataInfo list(
             @RequestParam(required = false) String companyName,
@@ -51,27 +53,55 @@ public class TenantCompanyController extends BaseController {
         return getDataTable(result);
     }
 
+    @PreAuthorize("@ss.hasPermi('tenant:company:query')")
     @GetMapping("/{companyId}")
     public AjaxResult getInfo(@PathVariable("companyId") Long companyId) {
-        return success(companyService.selectCompanyByCmpId(companyId));
+        Company c = companyService.selectCompanyByCmpId(companyId);
+        if (c == null) {
+            return error("企业不存在");
+        }
+        Map<String, Object> item = new HashMap<>();
+        item.put("companyId", c.getCmpId());
+        item.put("companyName", c.getCmpName());
+        item.put("creditCode", c.getCmpCreditCode());
+        item.put("industry", c.getCmpIndustry());
+        item.put("size", c.getCmpSize());
+        item.put("city", c.getCmpCity());
+        item.put("address", c.getCmpAddress());
+        item.put("website", c.getCmpWebsite());
+        item.put("intro", c.getCmpIntro());
+        item.put("verifyStatus", c.getCmpVerifyStatus() != null ? c.getCmpVerifyStatus() : 0);
+        item.put("createTime", c.getCmpCreatedAt());
+        return success(item);
     }
 
+    @PreAuthorize("@ss.hasPermi('tenant:company:add')")
     @PostMapping
     public AjaxResult add(@RequestBody Map<String, Object> data) {
+        String companyName = (String) data.get("companyName");
+        if (companyName == null || companyName.trim().isEmpty()) {
+            return AjaxResult.error("企业名称不能为空");
+        }
         Company company = new Company();
-        company.setCmpName((String) data.get("companyName"));
+        company.setCmpName(companyName);
         company.setCmpStatus(1);
         return toAjax(companyService.insertCompany(company));
     }
 
+    @PreAuthorize("@ss.hasPermi('tenant:company:edit')")
     @PutMapping
     public AjaxResult edit(@RequestBody Map<String, Object> data) {
+        Object companyIdObj = data.get("companyId");
+        if (companyIdObj == null) {
+            return AjaxResult.error("企业ID不能为空");
+        }
         Company company = new Company();
-        company.setCmpId(Long.valueOf(data.get("companyId").toString()));
+        company.setCmpId(Long.valueOf(companyIdObj.toString()));
         company.setCmpName((String) data.get("companyName"));
         return toAjax(companyService.updateCompany(company));
     }
 
+    @PreAuthorize("@ss.hasPermi('tenant:company:remove')")
     @DeleteMapping("/{companyIds}")
     public AjaxResult remove(@PathVariable Long[] companyIds) {
         for (Long id : companyIds) {
@@ -80,18 +110,39 @@ public class TenantCompanyController extends BaseController {
         return success();
     }
 
+    @PreAuthorize("@ss.hasPermi('tenant:company:edit')")
     @PutMapping("/changeStatus")
     public AjaxResult changeStatus(@RequestBody Map<String, Object> data) {
-        return success();
+        Object companyIdObj = data.get("companyId");
+        if (companyIdObj == null) {
+            return AjaxResult.error("企业ID不能为空");
+        }
+        Object statusObj = data.get("status");
+        if (statusObj == null) {
+            return AjaxResult.error("状态不能为空");
+        }
+        Company company = new Company();
+        company.setCmpId(((Number) companyIdObj).longValue());
+        company.setCmpStatus(Integer.valueOf(statusObj.toString()));
+        return toAjax(companyService.updateCompany(company));
     }
 
     /**
      * 企业审核
      */
+    @PreAuthorize("@ss.hasPermi('tenant:company:audit')")
     @PutMapping("/audit")
     public AjaxResult audit(@RequestBody Map<String, Object> data) {
-        Long companyId = Long.valueOf(data.get("companyId").toString());
-        Integer status = Integer.valueOf(data.get("status").toString()); // 1通过 2拒绝
+        Object companyIdObj = data.get("companyId");
+        if (companyIdObj == null) {
+            return AjaxResult.error("企业ID不能为空");
+        }
+        Object statusObj = data.get("status");
+        if (statusObj == null) {
+            return AjaxResult.error("审核状态不能为空");
+        }
+        Long companyId = Long.valueOf(companyIdObj.toString());
+        Integer status = Integer.valueOf(statusObj.toString()); // 1通过 2拒绝
         String rejectReason = data.get("rejectReason") != null ? data.get("rejectReason").toString() : "";
         return toAjax(companyService.verifyCompany(companyId, status, getUserId(), rejectReason));
     }
