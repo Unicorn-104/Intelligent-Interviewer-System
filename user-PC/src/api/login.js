@@ -87,7 +87,7 @@ export function sendSmsCode(phone, scene) {
   return request({
     url: '/sms/code',
     headers: {
-      isToken: false,
+      isToken: scene !== 'bind_phone',
       repeatSubmit: false
     },
     method: 'post',
