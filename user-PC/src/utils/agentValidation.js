@@ -9,6 +9,10 @@ export function isValidPhoneNumber(value) {
   return /^1[3-9]\d{9}$/.test(String(value || '').trim())
 }
 
+export function isValidAccount(value) {
+  return /^[A-Za-z0-9_-]{2,20}$/.test(String(value || '').trim())
+}
+
 export function isValidSmsCode(value) {
   return /^\d{6}$/.test(String(value || '').trim())
 }

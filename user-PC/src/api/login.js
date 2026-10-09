@@ -36,6 +36,23 @@ export function loginByPhonePassword(phone, password) {
   })
 }
 
+// 账号密码登录
+export function loginByAccountPassword(username, password) {
+  return request({
+    url: '/login',
+    headers: {
+      isToken: false,
+      repeatSubmit: false
+    },
+    method: 'post',
+    data: {
+      username,
+      password,
+      loginType: 'account_password'
+    }
+  })
+}
+
 // 手机短信验证码登录
 export function loginBySms(phone, smsCode) {
   return request({
