@@ -3,17 +3,18 @@ package com.ruoyi.system.service.impl;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.system.domain.SysHealth;
 import com.ruoyi.system.mapper.SysHealthMapper;
 import com.ruoyi.system.service.ISysHealthService;
 
 /**
- * 服务健康监控Service业务层处理
- *
+ * 鏈嶅姟鍋ュ悍鐩戞帶Service涓氬姟灞傚鐞? *
  * @author TQY
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 public class SysHealthServiceImpl implements ISysHealthService
 {
     @Autowired

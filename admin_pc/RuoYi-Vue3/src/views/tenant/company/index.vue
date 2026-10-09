@@ -39,8 +39,8 @@
           <template #default="scope">
             <div class="action-buttons">
               <template v-if="scope.row.verifyStatus === 0">
-                <el-button type="success" size="small" @click="handleAudit(scope.row, 1)">通过</el-button>
-                <el-button type="danger" size="small" @click="handleAudit(scope.row, 2)">拒绝</el-button>
+                <el-button type="success" size="small" v-hasPermi="['tenant:company:audit']" @click="handleAudit(scope.row, 1)">通过</el-button>
+                <el-button type="danger" size="small" v-hasPermi="['tenant:company:audit']" @click="handleAudit(scope.row, 2)">拒绝</el-button>
               </template>
               <el-button type="primary" size="small" link @click="handleDetail(scope.row)">详情</el-button>
             </div>

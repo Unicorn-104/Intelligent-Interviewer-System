@@ -80,6 +80,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="cmpIntro != null">cmp_intro = #{cmpIntro},</if>
             <if test="cmpDetailJson != null">cmp_detail_json = #{cmpDetailJson},</if>
             <if test="cmpStatus != null">cmp_status = #{cmpStatus},</if>
+            <if test="apiQuota != null">api_quota = #{apiQuota},</if>
+            <if test="apiUsed != null">api_used = #{apiUsed},</if>
         </trim>
         where cmp_id = #{cmpId}
     </update>

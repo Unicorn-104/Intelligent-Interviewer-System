@@ -460,7 +460,7 @@ function handleDelete(row) {
 
 /** 多选框选中数据 */
 function handleSelectionChange(selection) {
-  ids.value = selection.map((item) => item.id)
+  ids.value = selection.map((item) => item.modelId)
 }
 
 getList()

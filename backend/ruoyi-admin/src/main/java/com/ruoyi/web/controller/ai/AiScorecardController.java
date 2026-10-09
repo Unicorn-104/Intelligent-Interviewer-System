@@ -1,12 +1,17 @@
 package com.ruoyi.web.controller.ai;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import com.ruoyi.common.core.controller.BaseController;
+import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
 import java.util.*;
 
 /**
- * AI记分卡配置（对齐前端 /ai/scorecard 接口）
+ * AI评分卡配置（对齐前端 /ai/scorecard 接口）
  *
  * @author TQY
  */
@@ -14,55 +19,98 @@ import java.util.*;
 @RequestMapping("/ai/scorecard")
 public class AiScorecardController extends BaseController {
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @PreAuthorize("@ss.hasPermi('ai:scorecard:list')")
     @GetMapping("/list")
     public TableDataInfo list() {
         startPage();
-        
-        // 返回测试数据
+        String sql = "SELECT sc_id, sc_name, sc_direction, sc_dimensions, sc_status, sc_created_at FROM t_scorecard ORDER BY sc_id DESC";
+        List<Map<String, Object>> rawList = jdbcTemplate.queryForList(sql);
+
         List<Map<String, Object>> result = new ArrayList<>();
-        
-        Map<String, Object> item1 = new HashMap<>();
-        item1.put("id", 1);
-        item1.put("cardName", "技术岗位评分卡");
-        item1.put("jobDirection", "技术面");
-        List<Map<String, Object>> dims1 = new ArrayList<>();
-        Map<String, Object> d1 = new HashMap<>();
-        d1.put("name", "技术能力");
-        d1.put("weight", 40);
-        dims1.add(d1);
-        Map<String, Object> d2 = new HashMap<>();
-        d2.put("name", "沟通能力");
-        d2.put("weight", 30);
-        dims1.add(d2);
-        Map<String, Object> d3 = new HashMap<>();
-        d3.put("name", "项目经验");
-        d3.put("weight", 30);
-        dims1.add(d3);
-        item1.put("dimensions", dims1);
-        item1.put("status", 1);
-        result.add(item1);
-        
-        Map<String, Object> item2 = new HashMap<>();
-        item2.put("id", 2);
-        item2.put("cardName", "HR岗位评分卡");
-        item2.put("jobDirection", "HR面");
-        List<Map<String, Object>> dims2 = new ArrayList<>();
-        Map<String, Object> d4 = new HashMap<>();
-        d4.put("name", "沟通能力");
-        d4.put("weight", 40);
-        dims2.add(d4);
-        Map<String, Object> d5 = new HashMap<>();
-        d5.put("name", "应变能力");
-        d5.put("weight", 30);
-        dims2.add(d5);
-        Map<String, Object> d6 = new HashMap<>();
-        d6.put("name", "服务意识");
-        d6.put("weight", 30);
-        dims2.add(d6);
-        item2.put("dimensions", dims2);
-        item2.put("status", 1);
-        result.add(item2);
-        
+        for (Map<String, Object> row : rawList) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("cardId", row.get("sc_id"));
+            item.put("cardName", row.get("sc_name"));
+            item.put("jobDirection", row.get("sc_direction"));
+            try {
+                String dims = (String) row.get("sc_dimensions");
+                if (dims != null && !dims.isEmpty()) {
+                    item.put("dimensions", com.alibaba.fastjson2.JSON.parse(dims));
+                } else {
+                    item.put("dimensions", new ArrayList<>());
+                }
+            } catch (Exception e) {
+                item.put("dimensions", new ArrayList<>());
+            }
+            item.put("status", row.get("sc_status"));
+            result.add(item);
+        }
         return getDataTable(result);
+    }
+
+    @PreAuthorize("@ss.hasPermi('ai:scorecard:query')")
+    @GetMapping("/{cardId}")
+    public AjaxResult getInfo(@PathVariable("cardId") Long cardId) {
+        String sql = "SELECT sc_id, sc_name, sc_direction, sc_dimensions, sc_status, sc_created_at FROM t_scorecard WHERE sc_id = ?";
+        List<Map<String, Object>> list = jdbcTemplate.queryForList(sql, cardId);
+        if (list.isEmpty()) {
+            return error("评分卡不存在");
+        }
+        return success(list.get(0));
+    }
+
+    @PreAuthorize("@ss.hasPermi('ai:scorecard:add')")
+    @PostMapping
+    public AjaxResult add(@RequestBody Map<String, Object> data) {
+        String name = (String) data.get("cardName");
+        if (name == null || name.trim().isEmpty()) {
+            return AjaxResult.error("评分卡名称不能为空");
+        }
+        String direction = (String) data.get("jobDirection");
+        Object dimensions = data.get("dimensions");
+        String dimsJson = dimensions != null ? com.alibaba.fastjson2.JSON.toJSONString(dimensions) : "[]";
+        Object statusObj = data.get("status");
+        Integer status = statusObj != null ? Integer.valueOf(statusObj.toString()) : 1;
+
+        int rows = jdbcTemplate.update(
+            "INSERT INTO t_scorecard (sc_name, sc_direction, sc_dimensions, sc_status) VALUES (?, ?, ?, ?)",
+            name, direction, dimsJson, status
+        );
+        return toAjax(rows);
+    }
+
+    @PreAuthorize("@ss.hasPermi('ai:scorecard:edit')")
+    @PutMapping
+    public AjaxResult edit(@RequestBody Map<String, Object> data) {
+        Object cardIdObj = data.get("cardId");
+        if (cardIdObj == null) {
+            return AjaxResult.error("评分卡ID不能为空");
+        }
+        Long cardId = ((Number) cardIdObj).longValue();
+        String name = (String) data.get("cardName");
+        String direction = (String) data.get("jobDirection");
+        Object dimensions = data.get("dimensions");
+        String dimsJson = dimensions != null ? com.alibaba.fastjson2.JSON.toJSONString(dimensions) : "[]";
+        Object statusObj = data.get("status");
+        Integer status = statusObj != null ? Integer.valueOf(statusObj.toString()) : 1;
+
+        int rows = jdbcTemplate.update(
+            "UPDATE t_scorecard SET sc_name = ?, sc_direction = ?, sc_dimensions = ?, sc_status = ? WHERE sc_id = ?",
+            name, direction, dimsJson, status, cardId
+        );
+        return toAjax(rows);
+    }
+
+    @PreAuthorize("@ss.hasPermi('ai:scorecard:remove')")
+    @Transactional(rollbackFor = Exception.class)
+    @DeleteMapping("/{cardIds}")
+    public AjaxResult remove(@PathVariable Long[] cardIds) {
+        for (Long id : cardIds) {
+            jdbcTemplate.update("DELETE FROM t_scorecard WHERE sc_id = ?", id);
+        }
+        return success();
     }
 }

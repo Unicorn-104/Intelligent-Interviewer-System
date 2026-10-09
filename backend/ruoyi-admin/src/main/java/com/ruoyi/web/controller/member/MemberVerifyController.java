@@ -2,6 +2,7 @@ package com.ruoyi.web.controller.member;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
@@ -23,6 +24,7 @@ public class MemberVerifyController extends BaseController {
     /**
      * 查询实名认证列表
      */
+    @PreAuthorize("@ss.hasPermi('member:verify:list')")
     @GetMapping("/list")
     public TableDataInfo list(
             @RequestParam(required = false) String userName,
@@ -30,7 +32,7 @@ public class MemberVerifyController extends BaseController {
             @RequestParam(required = false) Integer status
     ) {
         startPage();
-        
+
         StringBuilder sql = new StringBuilder(
             "SELECT v.vef_id as verify_id, v.vef_real_name as real_name, v.vef_id_card as id_card, " +
             "v.vef_front_img as front_img, v.vef_back_img as back_img, v.vef_status as status, " +
@@ -40,33 +42,38 @@ public class MemberVerifyController extends BaseController {
             "LEFT JOIN sys_user u ON v.vef_user_id = u.user_id " +
             "WHERE 1=1 "
         );
-        
+
         List<Object> params = new ArrayList<>();
-        
+
         if (userName != null && !userName.isEmpty()) {
             sql.append("AND (u.user_name LIKE ? OR u.nick_name LIKE ?) ");
             params.add("%" + userName + "%");
             params.add("%" + userName + "%");
         }
-        
+
         if (status != null) {
             sql.append("AND v.vef_status = ? ");
             params.add(status);
         }
-        
+
         sql.append("ORDER BY v.vef_created_at DESC");
-        
+
         List<Map<String, Object>> list = jdbcTemplate.queryForList(sql.toString(), params.toArray());
-        
-        // 转换字段名
+
         List<Map<String, Object>> result = new ArrayList<>();
         for (Map<String, Object> item : list) {
             Map<String, Object> map = new HashMap<>();
             map.put("verifyId", item.get("verify_id"));
+            map.put("userId", item.get("user_id"));
             map.put("userName", item.get("nick_name") != null ? item.get("nick_name") : item.get("user_name"));
             map.put("phone", item.get("phone"));
             map.put("realName", item.get("real_name"));
-            map.put("idCard", item.get("id_card"));
+            // 身份证号脱敏：只显示前4位和后4位
+            String idCard = (String) item.get("id_card");
+            if (idCard != null && idCard.length() >= 8) {
+                idCard = idCard.substring(0, 4) + "**********" + idCard.substring(idCard.length() - 4);
+            }
+            map.put("idCard", idCard);
             map.put("frontImg", item.get("front_img"));
             map.put("backImg", item.get("back_img"));
             map.put("status", item.get("status"));
@@ -75,31 +82,32 @@ public class MemberVerifyController extends BaseController {
             map.put("verifiedAt", item.get("verified_at"));
             result.add(map);
         }
-        
+
         return getDataTable(result);
     }
 
     /**
      * 审核
      */
+    @PreAuthorize("@ss.hasPermi('member:verify:audit')")
     @PutMapping("/audit")
     public AjaxResult audit(@RequestBody Map<String, Object> data) {
         Object verifyIdObj = data.get("verifyId");
         Object statusObj = data.get("status");
         String reason = (String) data.get("reason");
-        
+
         if (verifyIdObj == null || statusObj == null) {
             return AjaxResult.error("参数错误");
         }
-        
-        Integer verifyId = Integer.valueOf(verifyIdObj.toString());
+
+        Long verifyId = Long.valueOf(verifyIdObj.toString());
         Integer status = Integer.valueOf(statusObj.toString());
-        
+
         jdbcTemplate.update(
             "UPDATE t_usr_verify SET vef_status = ?, vef_reject_reason = ?, vef_verified_at = NOW() WHERE vef_id = ?",
             status, reason, verifyId
         );
-        
+
         return success();
     }
 }
