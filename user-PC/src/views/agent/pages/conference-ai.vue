@@ -132,6 +132,7 @@
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, nextTick, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { getCurrentSession, getProgress, listCaptions, heartbeat, finishSession, updateMedia } from '@/api/system/conference'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, requestMedia, requestMediaWithFallback, savePreferredDevice } from '@/utils/media'
 import { createConferenceRtc } from '@/utils/webrtc'
@@ -157,6 +158,7 @@ const Icon = defineComponent({
   }
 })
 
+const route = useRoute()
 const stageRef = ref(null)
 const splitRef = ref(null)
 const selfVideo = ref(null)
@@ -495,13 +497,24 @@ onMounted(() => {
 })
 
 async function initSession() {
+  // 优先使用 URL 携带的 sessionId（等候室跳转时传入），与 HR 端保持同一场次；
+  // 服务端反查的「当前场次」在多活跃场次环境下可能与对端解析结果不一致，仅作兜底
+  const urlSessionId = route.query.sessionId
+  if (urlSessionId) {
+    sessionId.value = urlSessionId
+    startRtc()
+  }
   try {
     const res = await getCurrentSession()
     if (res.data && res.data.sessionId) {
-      sessionId.value = res.data.sessionId
-      if (res.data.positionTitle) header.value.positionTitle = res.data.positionTitle
-      if (res.data.roundNo) header.value.roundNo = res.data.roundNo
-      startRtc()
+      if (!sessionId.value) {
+        sessionId.value = res.data.sessionId
+        startRtc()
+      }
+      if (String(res.data.sessionId) === String(sessionId.value)) {
+        if (res.data.positionTitle) header.value.positionTitle = res.data.positionTitle
+        if (res.data.roundNo) header.value.roundNo = res.data.roundNo
+      }
     }
   } catch (error) {
     // 无后端时保留本地演示

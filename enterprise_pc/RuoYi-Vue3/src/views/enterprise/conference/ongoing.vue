@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, FileText, Sparkles, Timer, Mic, MicOff,
   Video, MonitorUp, Copy, MessageSquareText, Settings, PhoneOff, CircleCheck,
@@ -12,6 +12,7 @@ import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMedi
 import { createConferenceRtc } from '@/utils/webrtc'
 
 const router = useRouter()
+const route = useRoute()
 
 const leftOpen = ref(true)
 const rightOpen = ref(true)
@@ -374,18 +375,34 @@ async function refreshRtt() {
   }
 }
 
-// 拉取当前场次并同步进度、字幕；后端不可用时静默保留 mock
+// 拉取场次并同步进度、字幕；后端不可用时静默保留 mock
 async function initSession() {
+  // 优先使用 URL 携带的 sessionId（等候室跳转时传入），与候选人端保持同一场次；
+  // 服务端反查的「当前场次」在多活跃场次环境下可能与对端解析结果不一致，仅作兜底
+  const urlSessionId = route.query.sessionId
+  if (urlSessionId) {
+    sessionId.value = urlSessionId
+    startRtc()
+  }
   try {
     const s = await getCurrentSession()
-    if (!s.data || !s.data.sessionId) return
-    sessionId.value = s.data.sessionId
-    startRtc()
-    // 回填候选人 / 面试官信息，替换页面上的演示值
-    if (s.data.candidateName) candidate.value.name = s.data.candidateName
-    if (s.data.positionTitle) candidate.value.position = s.data.positionTitle
-    if (s.data.interviewerName) interviewerName.value = s.data.interviewerName
-
+    if (s.data && s.data.sessionId) {
+      if (!sessionId.value) {
+        sessionId.value = s.data.sessionId
+        startRtc()
+      }
+      if (String(s.data.sessionId) === String(sessionId.value)) {
+        // 回填候选人 / 面试官信息，替换页面上的演示值
+        if (s.data.candidateName) candidate.value.name = s.data.candidateName
+        if (s.data.positionTitle) candidate.value.position = s.data.positionTitle
+        if (s.data.interviewerName) interviewerName.value = s.data.interviewerName
+      }
+    }
+  } catch (e) {
+    // 本地未启动后端时保留 mock 演示
+  }
+  if (!sessionId.value) return
+  try {
     const p = await getProgress(sessionId.value)
     if (p.data) {
       progress.value.total = p.data.totalQuestionNo || progress.value.total
