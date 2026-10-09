@@ -48,7 +48,8 @@ public class SysRegisterService
                 password = registerBody.getPassword();
         SysUser sysUser = new SysUser();
 
-        boolean phoneRegister = StringUtils.isNotEmpty(phone);
+        boolean accountRegister = "account_password".equalsIgnoreCase(registerBody.getRegisterType());
+        boolean phoneRegister = !accountRegister && StringUtils.isNotEmpty(phone);
         if (phoneRegister)
         {
             phone = phone.trim();
@@ -59,12 +60,16 @@ public class SysRegisterService
         }
         else
         {
+            username = StringUtils.isEmpty(username) ? "" : username.trim();
             sysUser.setUserName(username);
-            // 兼容后台旧注册流程：未传手机号时继续校验图形验证码。
-            boolean captchaEnabled = configService.selectCaptchaEnabled();
-            if (captchaEnabled)
+            // 账号密码注册由用户端单独声明注册方式，不再依赖后台图形验证码页面。
+            if (!accountRegister)
             {
-                validateCaptcha(username, registerBody.getCode(), registerBody.getUuid());
+                boolean captchaEnabled = configService.selectCaptchaEnabled();
+                if (captchaEnabled)
+                {
+                    validateCaptcha(username, registerBody.getCode(), registerBody.getUuid());
+                }
             }
         }
 

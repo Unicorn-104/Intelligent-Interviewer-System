@@ -67,6 +67,10 @@ public class SysLoginController
         {
             token = loginService.loginByPhonePassword(loginBody.getPhone(), loginBody.getPassword());
         }
+        else if ("account_password".equalsIgnoreCase(loginBody.getLoginType()))
+        {
+            token = loginService.loginByAccountPassword(loginBody.getUsername(), loginBody.getPassword());
+        }
         else
         {
             token = loginService.login(loginBody.getUsername(), loginBody.getPassword(), loginBody.getCode(),
