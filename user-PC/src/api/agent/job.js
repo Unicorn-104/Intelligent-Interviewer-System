@@ -8,6 +8,13 @@ export function listJobs(params) {
   })
 }
 
+export function listJobCategories() {
+  return request({
+    url: '/system/enterprise/jobs/categories',
+    method: 'get'
+  })
+}
+
 export function getJob(jobId) {
   return request({
     url: `/agent/v1/jobs/${jobId}`,

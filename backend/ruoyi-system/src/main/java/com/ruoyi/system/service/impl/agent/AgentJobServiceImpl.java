@@ -40,6 +40,12 @@ public class AgentJobServiceImpl implements IAgentJobService
     }
 
     @Override
+    public List<String> selectJobCategories()
+    {
+        return jobMapper.selectJobCategories();
+    }
+
+    @Override
     public AgentJob selectJob(Long jobId, Long userId)
     {
         if (jobId == null)

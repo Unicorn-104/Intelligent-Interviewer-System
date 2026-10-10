@@ -44,6 +44,15 @@ public class EnterpriseJobController extends BaseController
     }
 
     /**
+     * 查询求职者端岗位分类选项。
+     */
+    @GetMapping("/categories")
+    public AjaxResult categories()
+    {
+        return success(agentJobService.selectJobCategories());
+    }
+
+    /**
      * 分页查询当前公司岗位，支持 keyword/dept/status 过滤
      */
     @GetMapping("/list")
