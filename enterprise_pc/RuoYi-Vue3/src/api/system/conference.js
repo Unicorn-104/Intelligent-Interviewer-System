@@ -252,6 +252,14 @@ export function listCandidatePositions(peerUserId) {
   })
 }
 
+// 本企业全体在职用户（HR 发起面试时选择面试官）
+export function listInterviewers() {
+  return request({
+    url: '/system/conference/interviewers',
+    method: 'get'
+  })
+}
+
 // 等候室状态（双方会前检测与就绪情况）
 export function getWaitingRoom(sessionId) {
   return request({
