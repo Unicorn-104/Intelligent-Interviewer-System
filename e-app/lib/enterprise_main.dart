@@ -14,6 +14,7 @@ import 'features/enterprise/notification/notification_log_page.dart';
 import 'features/enterprise/notification/notification_templates_page.dart';
 import 'features/enterprise/notification/survey_result_page.dart';
 import 'features/enterprise/offer/offer_page.dart';
+import 'features/enterprise/profile/account_page.dart';
 import 'features/enterprise/review/review_page.dart';
 import 'features/enterprise/schedule/interview_schedule_page.dart';
 import 'features/enterprise/schedule/reschedule_review_page.dart';
@@ -64,6 +65,8 @@ class _Module {
 }
 
 // 工作台概览使用真实接口；消息、公告及尚未接入的业务页保留演示标识。
+void _noop() {}
+
 const _modules = <_Module>[
   _Module(
     '工作台',
@@ -110,7 +113,9 @@ const _modules = <_Module>[
       _ModulePage('录播回放', RecordingPage(), isDemo: true),
     ],
   ),
-  _Module('我的', Icons.person_outline, [_ModulePage('账号', _AccountPage())]),
+  _Module('我的', Icons.person_outline, [
+    _ModulePage('账号', AccountPage(onLogout: _noop)),
+  ]),
 ];
 
 class EnterpriseModuleShell extends StatefulWidget {
@@ -127,10 +132,12 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
   int _index = 0;
   bool _pageIsDemo = false;
   bool? _detailIsDemo;
+  final _accountKey = GlobalKey<AccountPageState>();
 
   void _selectTab(int index) {
     if (index == _index) {
       _navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
+      if (index == 3) _accountKey.currentState?.reload();
       return;
     }
     setState(() {
@@ -201,6 +208,7 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
                     onDemoChanged: (value) =>
                         setState(() => _pageIsDemo = value),
                     onLogout: widget.onLogout,
+                    accountKey: _accountKey,
                     onOpenTodo: _navigateTodo,
                   ),
                 ),
@@ -227,12 +235,14 @@ class _ModuleTabs extends StatefulWidget {
     required this.onDemoChanged,
     required this.onLogout,
     required this.onOpenTodo,
+    required this.accountKey,
   });
 
   final _Module module;
   final ValueChanged<bool> onDemoChanged;
   final VoidCallback onLogout;
   final ValueChanged<String?> onOpenTodo;
+  final GlobalKey<AccountPageState> accountKey;
 
   @override
   State<_ModuleTabs> createState() => _ModuleTabsState();
@@ -288,7 +298,7 @@ class _ModuleTabsState extends State<_ModuleTabs>
           child: KeyedSubtree(
             key: ValueKey(_currentPage),
             child: widget.module.label == '我的'
-                ? _AccountPage(onLogout: widget.onLogout)
+                ? AccountPage(key: widget.accountKey, onLogout: widget.onLogout)
                 : page.page is OverviewPage
                 ? OverviewPage(
                     onOpenTodo: widget.onOpenTodo,
@@ -324,34 +334,6 @@ class _DemoBanner extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _AccountPage extends StatelessWidget {
-  const _AccountPage({this.onLogout});
-
-  final VoidCallback? onLogout;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        const Card(
-          child: ListTile(
-            leading: Icon(Icons.verified_user_outlined),
-            title: Text('已登录'),
-            subtitle: Text('当前登录信息与设置将在第三阶段整理'),
-          ),
-        ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: onLogout,
-          icon: const Icon(Icons.logout),
-          label: const Text('退出登录'),
-        ),
-      ],
     );
   }
 }
