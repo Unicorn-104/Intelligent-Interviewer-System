@@ -96,12 +96,13 @@ const _modules = <_Module>[
     '面试',
     Icons.event_note_outlined,
     [
-      _ModulePage('日程', InterviewSchedulePage(), isDemo: true),
+      _ModulePage('日程', RealInterviewSchedulePage()),
       _ModulePage('工作台', InterviewWorkbenchPage(), isDemo: true),
       _ModulePage('终审', ReviewPage(), isDemo: true),
       _ModulePage('Offer', OfferPage(), isDemo: true),
     ],
     more: [
+      _ModulePage('演示排期', InterviewSchedulePage(), isDemo: true),
       _ModulePage('改期审批', RescheduleReviewPage(), isDemo: true),
       _ModulePage('面试入口', InterviewEntrancePage(), isDemo: true),
       _ModulePage('设备检测', DeviceCheckPage(), isDemo: true),
