@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'features/enterprise/dashboard/overview_page.dart';
+import 'widgets/demo_data_badge.dart';
 import 'features/enterprise/interview/device_check_page.dart';
 import 'features/enterprise/interview/interview_entrance_page.dart';
 import 'features/enterprise/interview/interview_workbench_page.dart';
@@ -305,6 +306,8 @@ class _ModuleTabsState extends State<_ModuleTabs>
                     onOpenNotifications: () => _tabs.animateTo(1),
                     onOpenAnnouncements: () => _tabs.animateTo(2),
                   )
+                : page.isDemo && page.page is AssistantPlaceholderPage
+                ? const DemoDataBadge(child: AssistantPlaceholderPage())
                 : page.page,
           ),
         ),

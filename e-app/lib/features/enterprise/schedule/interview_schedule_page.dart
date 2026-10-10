@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/demo_data_badge.dart';
 
 import '../../../api/schedule_api.dart';
 import '../../../core/network/api_exception.dart';
@@ -138,7 +139,9 @@ class _RealInterviewSchedulePageState extends State<RealInterviewSchedulePage> {
             .toList()
           ..sort();
     return Scaffold(
-      appBar: AppBar(title: const Text('面试日程')),
+      appBar: MediaQuery.orientationOf(context) == Orientation.landscape
+          ? null
+          : AppBar(title: const Text('面试日程')),
       body: Column(
         children: [
           Padding(
@@ -170,7 +173,7 @@ class _RealInterviewSchedulePageState extends State<RealInterviewSchedulePage> {
               ],
             ),
           ),
-          if (dates.isNotEmpty)
+          if (dates.isNotEmpty && MediaQuery.sizeOf(context).height >= 450)
             SizedBox(
               height: 46,
               child: ListView(
@@ -456,35 +459,37 @@ class _DemoInterviewSchedulePageState extends State<InterviewSchedulePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('面试日程'),
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const InterviewerCalendarPage(),
+    return DemoDataBadge(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('面试日程'),
+          actions: [
+            TextButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const InterviewerCalendarPage(),
+                ),
               ),
+              icon: const Icon(Icons.calendar_view_week_outlined, size: 18),
+              label: const Text('面试官日历'),
             ),
-            icon: const Icon(Icons.calendar_view_week_outlined, size: 18),
-            label: const Text('面试官日历'),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openInvite,
-        backgroundColor: AppColors.interactive,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('发起邀约'),
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildDateStrip(),
-          Expanded(child: _buildBody()),
-        ],
+          ],
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _openInvite,
+          backgroundColor: AppColors.interactive,
+          foregroundColor: Colors.white,
+          icon: const Icon(Icons.add),
+          label: const Text('发起邀约'),
+        ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDateStrip(),
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }
