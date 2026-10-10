@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'features/enterprise/dashboard/overview_page.dart';
 import 'features/enterprise/interview/device_check_page.dart';
 import 'features/enterprise/interview/interview_entrance_page.dart';
 import 'features/enterprise/interview/interview_workbench_page.dart';
@@ -62,13 +63,13 @@ class _Module {
   final List<_ModulePage> more;
 }
 
-// 第一阶段仅调整入口与导航；概览、岗位链路及个人信息在后续阶段整合。
+// 工作台概览使用真实接口；消息、公告及尚未接入的业务页保留演示标识。
 const _modules = <_Module>[
   _Module(
     '工作台',
     Icons.dashboard_outlined,
     [
-      _ModulePage('概览', _PendingOverview()),
+      _ModulePage('概览', OverviewPage()),
       _ModulePage('通知', NotificationLogPage(), isDemo: true),
       _ModulePage('公告', NoticePage(), isDemo: true),
       _ModulePage('消息', MessageCenterPage(), isDemo: true),
@@ -139,6 +140,25 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
     });
   }
 
+  // 后端 DashboardServiceImpl.buildTodos 目前只会生成以下三种 go。
+  void _navigateTodo(String? go) {
+    switch (go) {
+      case '/enterprise/interviews':
+        _selectTab(2); // 面试 · 真实日程
+      case '/enterprise/jobs':
+        _selectTab(1); // 招聘 · 岗位
+      case '/enterprise/meeting/ai':
+        _selectTab(2); // 先进入真实日程，不打开仍为演示数据的工作台。
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('请先在面试日程中核对实际会话')));
+      default:
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('该功能请在 Web 端操作')));
+    }
+  }
+
   Future<void> _openMore(_ModulePage page) async {
     setState(() => _detailIsDemo = page.isDemo);
     await _navigatorKeys[_index].currentState?.push<void>(
@@ -181,6 +201,7 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
                     onDemoChanged: (value) =>
                         setState(() => _pageIsDemo = value),
                     onLogout: widget.onLogout,
+                    onOpenTodo: _navigateTodo,
                   ),
                 ),
               ),
@@ -205,11 +226,13 @@ class _ModuleTabs extends StatefulWidget {
     required this.module,
     required this.onDemoChanged,
     required this.onLogout,
+    required this.onOpenTodo,
   });
 
   final _Module module;
   final ValueChanged<bool> onDemoChanged;
   final VoidCallback onLogout;
+  final ValueChanged<String?> onOpenTodo;
 
   @override
   State<_ModuleTabs> createState() => _ModuleTabsState();
@@ -261,6 +284,12 @@ class _ModuleTabsState extends State<_ModuleTabs>
             key: ValueKey(_currentPage),
             child: widget.module.label == '我的'
                 ? _AccountPage(onLogout: widget.onLogout)
+                : page.page is OverviewPage
+                ? OverviewPage(
+                    onOpenTodo: widget.onOpenTodo,
+                    onOpenNotifications: () => _tabs.animateTo(1),
+                    onOpenAnnouncements: () => _tabs.animateTo(2),
+                  )
                 : page.page,
           ),
         ),
@@ -289,24 +318,6 @@ class _DemoBanner extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PendingOverview extends StatelessWidget {
-  const _PendingOverview();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          '概览与待办将在第三阶段整合。\n通知和公告请使用顶部标签。',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
       ),
     );
   }
