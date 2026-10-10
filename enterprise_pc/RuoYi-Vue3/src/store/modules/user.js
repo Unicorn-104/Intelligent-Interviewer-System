@@ -1,5 +1,5 @@
 import { login, logout, getInfo } from '@/api/login'
-import { getToken, setToken, removeToken } from '@/utils/auth'
+import { getToken, setToken, removeToken, setRefreshToken, removeRefreshToken } from '@/utils/auth'
 import defAva from '@/assets/images/profile.jpg'
 
 const useUserStore = defineStore(
@@ -24,6 +24,9 @@ const useUserStore = defineStore(
         return new Promise((resolve, reject) => {
           login(username, password, code, uuid).then(res => {
             setToken(res.token)
+            if (res.refreshToken) {
+              setRefreshToken(res.refreshToken)
+            }
             this.token = res.token
             resolve()
           }).catch(error => {
@@ -62,6 +65,7 @@ const useUserStore = defineStore(
             this.roles = []
             this.permissions = []
             removeToken()
+            removeRefreshToken()
             resolve()
           }).catch(error => {
             reject(error)
