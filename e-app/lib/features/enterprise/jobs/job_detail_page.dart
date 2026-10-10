@@ -29,14 +29,14 @@ class JobDetailPage extends StatefulWidget {
 class _JobDetailPageState extends State<JobDetailPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
-  bool _candidateLoading = false;
+  bool _candidateLoading = true;
   bool _candidateTooMany = false;
-  bool _candidatesRequested = false;
+
   String? _candidateError;
   List<Map<String, dynamic>>? _candidates;
 
-  bool _interviewLoading = false;
-  bool _interviewsRequested = false;
+  bool _interviewLoading = true;
+
   bool _tooManyInterviews = false;
   String? _interviewError;
   DateTimeRange? _interviewRange;
@@ -52,26 +52,16 @@ class _JobDetailPageState extends State<JobDetailPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this)..addListener(_onTabChanged);
+    _tabs = TabController(length: 3, vsync: this);
     _loadProfile();
+    _loadCandidates();
+    _loadInterviews();
   }
 
-  /// 拉取岗位画像；未生成时后端返回 jdProfile=null。
   @override
   void dispose() {
     _tabs.dispose();
     super.dispose();
-  }
-
-  void _onTabChanged() {
-    if (_tabs.indexIsChanging || !mounted) return;
-    if (_tabs.index == 1 && !_candidatesRequested) {
-      _candidatesRequested = true;
-      _loadCandidates();
-    } else if (_tabs.index == 2 && !_interviewsRequested) {
-      _interviewsRequested = true;
-      _loadInterviews();
-    }
   }
 
   Future<void> _loadCandidates() async {
@@ -191,6 +181,7 @@ class _JobDetailPageState extends State<JobDetailPage>
     }
   }
 
+  /// 拉取岗位画像；未生成时后端返回 jdProfile=null。
   Future<void> _loadProfile() async {
     setState(() => _loading = true);
     try {
@@ -570,7 +561,79 @@ class _JobDetailPageState extends State<JobDetailPage>
         ),
       );
     }
+    // 旧数据只有 requirements / responsibilities，不应落入新画像的空字段布局。
+    const newFields = ['summary', 'education', 'years', 'skills'];
+    final hasNewStructure = newFields.any(profile.containsKey);
+    if (!hasNewStructure &&
+        (profile.containsKey('requirements') ||
+            profile.containsKey('responsibilities'))) {
+      return _buildLegacyProfileCard(result, profile);
+    }
     return _buildProfileCard(result, profile);
+  }
+
+  /// 历史岗位的 JD JSON 没有新画像字段，直接展示已存储的两个条目列表。
+  Widget _buildLegacyProfileCard(Map<String, dynamic> result, Map profile) {
+    final skillNames =
+        (result['skills'] as List?)
+            ?.whereType<Map>()
+            .map((skill) => skill['name'])
+            .whereType<String>()
+            .where((name) => name.trim().isNotEmpty)
+            .toSet()
+            .toList() ??
+        const <String>[];
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ..._buildLegacyItems('岗位要求', profile['requirements']),
+            const SizedBox(height: 16),
+            ..._buildLegacyItems('工作职责', profile['responsibilities']),
+            if (skillNames.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _GroupLabel('技能标签'),
+              _ProfileRow(field: '岗位技能', value: skillNames.join('、')),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildLegacyItems(String title, Object? rawItems) {
+    final items = rawItems is List
+        ? rawItems
+              .whereType<String>()
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)
+              .toList()
+        : const <String>[];
+    return [
+      _GroupLabel(title),
+      const SizedBox(height: 8),
+      if (items.isEmpty)
+        Text('暂无$title', style: Theme.of(context).textTheme.bodySmall)
+      else
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('•  ', style: Theme.of(context).textTheme.bodyMedium),
+                Expanded(
+                  child: Text(
+                    item,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ],
+            ),
+          ),
+    ];
   }
 
   /// 已生成画像：按后端扁平结构渲染
