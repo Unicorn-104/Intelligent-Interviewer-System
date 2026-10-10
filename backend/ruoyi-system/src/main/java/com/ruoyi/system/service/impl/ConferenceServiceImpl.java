@@ -3,6 +3,7 @@ package com.ruoyi.system.service.impl;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -15,8 +16,10 @@ import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.system.domain.ImMessage;
 import com.ruoyi.system.mapper.ConferenceMapper;
 import com.ruoyi.system.service.IConferenceService;
+import com.ruoyi.system.service.IImService;
 
 /**
  * 视频会议（面试链路）服务层实现
@@ -38,8 +41,13 @@ public class ConferenceServiceImpl implements IConferenceService
 
     /** 未指定时长时的默认面试时长（分钟） */
     private static final int DEFAULT_INTERVIEW_MINUTES = 45;
-    /** 默认面试模式：AI + HR 协同 */
-    private static final int DEFAULT_INTERVIEW_MODE = 2;
+    /** 面试模式：1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工 */
+    private static final int MODE_AI_ONLY = 1;
+    private static final int MODE_AI_ONE = 2;
+    private static final int MODE_AI_MULTI = 3;
+    private static final int MODE_HUMAN_ONLY = 4;
+    /** 默认面试模式：AI + 单面试官 */
+    private static final int DEFAULT_INTERVIEW_MODE = MODE_AI_ONE;
 
     /** 下载验证码缓存前缀 */
     private static final String DOWNLOAD_CODE_KEY = "conference:download:code:";
@@ -56,6 +64,9 @@ public class ConferenceServiceImpl implements IConferenceService
 
     @Autowired
     private RedisCache redisCache;
+
+    @Autowired
+    private IImService imService;
 
     @Override
     public Map<String, Object> getCurrentSession(Long userId)
@@ -119,7 +130,8 @@ public class ConferenceServiceImpl implements IConferenceService
 
     @Override
     @Transactional
-    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes, Integer mode)
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes,
+            Integer mode, List<Long> interviewerIds, String candidateAppUrl)
     {
         if (peerUserId == null)
         {
@@ -136,14 +148,18 @@ public class ConferenceServiceImpl implements IConferenceService
         }
         Long candidateId = toLong(talent.get("candidateId"));
 
+        int interviewMode = mode == null || mode < MODE_AI_ONLY || mode > MODE_HUMAN_ONLY ? DEFAULT_INTERVIEW_MODE : mode;
+        List<Long> selected = normalizeInterviewers(interviewerIds);
+        validateInterviewerCount(interviewMode, selected.size());
+
         Map<String, Object> query = new HashMap<>();
         query.put("candidateId", candidateId);
-        query.put("interviewerId", userId);
         Map<String, Object> active = conferenceMapper.selectActiveSessionByCandidate(query);
 
         Long sessionId;
         String roomId;
         String roomToken;
+        boolean created = false;
         if (active != null && !active.isEmpty())
         {
             // 已有未结束场次：复用，仅在缺少令牌时补写
@@ -159,16 +175,19 @@ public class ConferenceServiceImpl implements IConferenceService
         }
         else
         {
+            created = true;
             if (positionId == null)
             {
                 throw new ServiceException("请选择面试岗位");
             }
             int duration = durationMinutes == null || durationMinutes <= 0 ? DEFAULT_INTERVIEW_MINUTES : durationMinutes;
             // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
+            // 纯AI 无面试官时，预约面试官回落到发起人，满足非空约束
+            Long sessionInterviewerId = selected.isEmpty() ? userId : selected.get(0);
             Map<String, Object> appointment = new HashMap<>();
             appointment.put("candidateId", candidateId);
             appointment.put("positionId", positionId);
-            appointment.put("interviewerId", userId);
+            appointment.put("interviewerId", sessionInterviewerId);
             appointment.put("durationMinutes", duration);
             conferenceMapper.insertAppointment(appointment);
 
@@ -176,17 +195,43 @@ public class ConferenceServiceImpl implements IConferenceService
             session.put("appointmentId", toLong(appointment.get("appointmentId")));
             session.put("candidateId", candidateId);
             session.put("positionId", positionId);
-            session.put("interviewerId", userId);
-            session.put("mode", mode == null || mode < 1 || mode > 2 ? DEFAULT_INTERVIEW_MODE : mode);
+            session.put("interviewerId", sessionInterviewerId);
+            session.put("mode", interviewMode);
             conferenceMapper.insertSession(session);
 
             sessionId = toLong(session.get("sessionId"));
             roomId = "INTERVIEW-" + sessionId;
             roomToken = randomToken();
             saveRoomToken(sessionId, roomId, roomToken);
+
+            // 每位被指派面试官：写入关联（首位为主面试官）+ 各自一条面试行程
+            for (int i = 0; i < selected.size(); i++)
+            {
+                Long interviewerId = selected.get(i);
+                if (i > 0)
+                {
+                    Map<String, Object> extra = new HashMap<>();
+                    extra.put("candidateId", candidateId);
+                    extra.put("positionId", positionId);
+                    extra.put("interviewerId", interviewerId);
+                    extra.put("durationMinutes", duration);
+                    conferenceMapper.insertAppointment(extra);
+                }
+                Map<String, Object> link = new HashMap<>();
+                link.put("sessionId", sessionId);
+                link.put("userId", interviewerId);
+                link.put("isPrimary", i == 0 ? 1 : 0);
+                conferenceMapper.insertSessionInterviewer(link);
+            }
         }
 
         Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);
+        if (created)
+        {
+            sendInterviewerNotices(userId, selected, candidateAppUrl, str(ctx.get("positionTitle")),
+                    str(ctx.get("candidateName")), str(ctx.get("appointmentStartAt")), roomToken);
+        }
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", sessionId);
         result.put("roomId", roomId);
@@ -198,8 +243,106 @@ public class ConferenceServiceImpl implements IConferenceService
         result.put("appointmentStartAt", ctx.get("appointmentStartAt"));
         result.put("appointmentEndAt", ctx.get("appointmentEndAt"));
         result.put("durationMinutes", ctx.get("durationMinutes"));
+        result.put("mode", ctx.get("mode"));
         result.put("status", ctx.get("status"));
+        result.put("interviewers", conferenceMapper.selectSessionInterviewers(sessionId));
         return result;
+    }
+
+    @Override
+    public List<Map<String, Object>> listInterviewers(Long userId)
+    {
+        Map<String, Object> params = new HashMap<>();
+        params.put("companyId", resolveCompanyId(userId));
+        params.put("userId", userId);
+        return conferenceMapper.selectCompanyEmployees(params);
+    }
+
+    /**
+     * 面试官ID去重并剔除空值
+     */
+    private List<Long> normalizeInterviewers(List<Long> interviewerIds)
+    {
+        LinkedHashSet<Long> set = new LinkedHashSet<>();
+        if (interviewerIds != null)
+        {
+            for (Long id : interviewerIds)
+            {
+                if (id != null)
+                {
+                    set.add(id);
+                }
+            }
+        }
+        return new ArrayList<>(set);
+    }
+
+    /**
+     * 按面试模式校验面试官人数（模式严格联动人数）
+     */
+    private void validateInterviewerCount(int mode, int count)
+    {
+        switch (mode)
+        {
+            case MODE_AI_ONLY:
+                if (count != 0)
+                {
+                    throw new ServiceException("纯AI面试无需选择面试官");
+                }
+                break;
+            case MODE_AI_ONE:
+                if (count != 1)
+                {
+                    throw new ServiceException("AI + 单面试官模式需选择 1 位面试官");
+                }
+                break;
+            case MODE_AI_MULTI:
+                if (count < 2)
+                {
+                    throw new ServiceException("AI + 多面试官模式需选择至少 2 位面试官");
+                }
+                break;
+            case MODE_HUMAN_ONLY:
+                if (count < 1)
+                {
+                    throw new ServiceException("无AI纯人工模式需选择至少 1 位面试官");
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    /**
+     * 向被指派面试官推送面试信息（复用 IM 系统消息 type=5）
+     */
+    private void sendInterviewerNotices(Long senderId, List<Long> interviewerIds, String candidateAppUrl,
+            String positionTitle, String candidateName, String startAt, String roomToken)
+    {
+        if (interviewerIds.isEmpty())
+        {
+            return;
+        }
+        String link = StringUtils.isEmpty(candidateAppUrl) ? null
+                : candidateAppUrl + "/conference-join?token=" + roomToken;
+        String content = "【面试邀约】您已被指派为「" + StringUtils.nvl(positionTitle, "岗位") + "」候选人 "
+                + StringUtils.nvl(candidateName, "候选人") + " 的面试官，面试时间 " + StringUtils.nvl(startAt, "待定")
+                + "。请准时进入会议。";
+        if (link != null)
+        {
+            content += "会议链接：" + link;
+        }
+        for (Long interviewerId : interviewerIds)
+        {
+            if (interviewerId.equals(senderId))
+            {
+                continue;
+            }
+            ImMessage message = new ImMessage();
+            message.setType(5);
+            message.setContent(content);
+            imService.sendMessage(message, senderId, interviewerId);
+        }
     }
 
     @Override

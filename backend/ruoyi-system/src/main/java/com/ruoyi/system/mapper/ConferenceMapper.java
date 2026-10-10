@@ -200,4 +200,39 @@ public interface ConferenceMapper
      * 查询场次下全部参与者的会前状态（用于等候室展示双方）
      */
     public List<Map<String, Object>> selectParticipantStates(@Param("sessionId") Long sessionId);
+
+    /**
+     * 写入 / 更新场次面试官关联（多面试官）
+     */
+    public int insertSessionInterviewer(Map<String, Object> params);
+
+    /**
+     * 查询场次全部被指派面试官（主面试官优先）
+     */
+    public List<Map<String, Object>> selectSessionInterviewers(@Param("sessionId") Long sessionId);
+
+    /**
+     * 查询场次主面试官用户ID（无则返回 null）
+     */
+    public Long selectPrimaryInterviewerId(@Param("sessionId") Long sessionId);
+
+    /**
+     * 清除场次内全部主面试官标记（用于主面试官移交）
+     */
+    public int clearSessionInterviewerPrimary(@Param("sessionId") Long sessionId);
+
+    /**
+     * 标记面试官已加入会议
+     */
+    public int markSessionInterviewerJoined(Map<String, Object> params);
+
+    /**
+     * 把场次主面试官同步为该用户（ses_interviewer_id 兼容旧逻辑）
+     */
+    public int updateSessionPrimaryInterviewer(@Param("sessionId") Long sessionId, @Param("userId") Long userId);
+
+    /**
+     * 查询本企业全部在职用户（HR 发起面试时选择面试官）
+     */
+    public List<Map<String, Object>> selectCompanyEmployees(Map<String, Object> params);
 }

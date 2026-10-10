@@ -72,7 +72,17 @@ public class ConferenceController extends BaseController
     public AjaxResult createLink(@RequestBody Map<String, Object> body)
     {
         return success(conferenceService.createRoomLink(getUserId(), longOf(body, "peerUserId"),
-                longOf(body, "positionId"), intOf(body, "durationMinutes"), intOf(body, "mode")));
+                longOf(body, "positionId"), intOf(body, "durationMinutes"), intOf(body, "mode"),
+                longListOf(body, "interviewerIds"), str(body, "candidateAppUrl")));
+    }
+
+    /**
+     * 本企业全体在职用户（HR 发起面试时选择面试官）
+     */
+    @GetMapping("/interviewers")
+    public AjaxResult interviewers()
+    {
+        return success(conferenceService.listInterviewers(getUserId()));
     }
 
     /**
@@ -341,5 +351,24 @@ public class ConferenceController extends BaseController
             return null;
         }
         return value instanceof Number ? ((Number) value).longValue() : Long.valueOf(value.toString());
+    }
+
+    private static java.util.List<Long> longListOf(Map<String, Object> body, String key)
+    {
+        Object value = body.get(key);
+        if (!(value instanceof java.util.Collection))
+        {
+            return null;
+        }
+        java.util.List<Long> result = new java.util.ArrayList<>();
+        for (Object item : (java.util.Collection<?>) value)
+        {
+            if (item == null)
+            {
+                continue;
+            }
+            result.add(item instanceof Number ? ((Number) item).longValue() : Long.valueOf(item.toString()));
+        }
+        return result;
     }
 }
