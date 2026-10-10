@@ -11,7 +11,7 @@ import org.springframework.web.bind.MissingPathVariableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import com.ruoyi.common.constant.HttpStatus;
+import com.ruoyi.common.constant.ErrorCode;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.text.Convert;
 import com.ruoyi.common.exception.DemoModeException;
@@ -37,7 +37,7 @@ public class GlobalExceptionHandler
     {
         String requestURI = request.getRequestURI();
         log.error("请求地址'{}',权限校验失败'{}'", requestURI, e.getMessage());
-        return AjaxResult.error(HttpStatus.FORBIDDEN, "没有权限，请联系管理员授权");
+        return AjaxResult.error(ErrorCode.FORBIDDEN, "没有权限，请联系管理员授权");
     }
 
     /**
@@ -49,7 +49,7 @@ public class GlobalExceptionHandler
     {
         String requestURI = request.getRequestURI();
         log.error("请求地址'{}',不支持'{}'请求", requestURI, e.getMethod());
-        return AjaxResult.error(e.getMessage());
+        return AjaxResult.error(ErrorCode.METHOD_NOT_ALLOWED, e.getMessage());
     }
 
     /**
@@ -60,7 +60,7 @@ public class GlobalExceptionHandler
     {
         log.error(e.getMessage(), e);
         Integer code = e.getCode();
-        return StringUtils.isNotNull(code) ? AjaxResult.error(code, e.getMessage()) : AjaxResult.error(e.getMessage());
+        return StringUtils.isNotNull(code) ? AjaxResult.error(code, e.getMessage()) : AjaxResult.error(ErrorCode.ERROR, e.getMessage());
     }
 
     /**
@@ -71,7 +71,7 @@ public class GlobalExceptionHandler
     {
         String requestURI = request.getRequestURI();
         log.error("请求路径中缺少必需的路径变量'{}',发生系统异常.", requestURI, e);
-        return AjaxResult.error(String.format("请求路径中缺少必需的路径变量[%s]", e.getVariableName()));
+        return AjaxResult.error(ErrorCode.BAD_REQUEST, String.format("请求路径中缺少必需的路径变量[%s]", e.getVariableName()));
     }
 
     /**
@@ -87,7 +87,7 @@ public class GlobalExceptionHandler
             value = EscapeUtil.clean(value);
         }
         log.error("请求参数类型不匹配'{}',发生系统异常.", requestURI, e);
-        return AjaxResult.error(String.format("请求参数类型不匹配，参数[%s]要求类型为：'%s'，但输入值为：'%s'", e.getName(), e.getRequiredType().getName(), value));
+        return AjaxResult.error(ErrorCode.BAD_REQUEST, String.format("请求参数类型不匹配，参数[%s]要求类型为：'%s'，但输入值为：'%s'", e.getName(), e.getRequiredType().getName(), value));
     }
 
     /**
@@ -98,7 +98,7 @@ public class GlobalExceptionHandler
     {
         String requestURI = request.getRequestURI();
         log.error("请求地址'{}',发生未知异常.", requestURI, e);
-        return AjaxResult.error(e.getMessage());
+        return AjaxResult.error(ErrorCode.ERROR, e.getMessage());
     }
 
     /**
@@ -109,7 +109,7 @@ public class GlobalExceptionHandler
     {
         String requestURI = request.getRequestURI();
         log.error("请求地址'{}',发生系统异常.", requestURI, e);
-        return AjaxResult.error(e.getMessage());
+        return AjaxResult.error(ErrorCode.ERROR, e.getMessage());
     }
 
     /**
@@ -120,7 +120,7 @@ public class GlobalExceptionHandler
     {
         log.error(e.getMessage(), e);
         String message = e.getAllErrors().get(0).getDefaultMessage();
-        return AjaxResult.error(message);
+        return AjaxResult.error(ErrorCode.BAD_REQUEST, message);
     }
 
     /**
@@ -131,7 +131,7 @@ public class GlobalExceptionHandler
     {
         log.error(e.getMessage(), e);
         String message = e.getBindingResult().getFieldError().getDefaultMessage();
-        return AjaxResult.error(message);
+        return AjaxResult.error(ErrorCode.BAD_REQUEST, message);
     }
 
     /**
