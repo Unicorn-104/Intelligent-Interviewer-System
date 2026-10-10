@@ -34,7 +34,8 @@ export default defineConfig(({ mode, command }) => {
           target: 'http://localhost:8080',
           // target: 'https://api.wzs.pub/mock/13',
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/dev-api/, '')
+          // 企业端已迁移到 /api/v1 版本前缀，后端同时兼容旧路径
+          rewrite: (p) => p.replace(/^\/dev-api/, '/api/v1')
         }
       }
     },
