@@ -275,7 +275,12 @@ class _ModuleTabsState extends State<_ModuleTabs>
               isScrollable: true,
               tabAlignment: TabAlignment.start,
               tabs: [
-                for (final item in widget.module.pages) Tab(text: item.label),
+                for (var index = 0; index < widget.module.pages.length; index++)
+                  Tab(
+                    text: widget.module.label == '面试'
+                        ? '${index + 1} ${widget.module.pages[index].label}'
+                        : widget.module.pages[index].label,
+                  ),
               ],
             ),
           ),
