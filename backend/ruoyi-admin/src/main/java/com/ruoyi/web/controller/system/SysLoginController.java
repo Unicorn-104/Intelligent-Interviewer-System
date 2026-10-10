@@ -2,6 +2,7 @@ package com.ruoyi.web.controller.system;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.constant.Constants;
+import com.ruoyi.common.constant.HttpStatus;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.entity.SysMenu;
 import com.ruoyi.common.core.domain.entity.SysUser;
@@ -76,7 +78,27 @@ public class SysLoginController
             token = loginService.login(loginBody.getUsername(), loginBody.getPassword(), loginBody.getCode(),
                     loginBody.getUuid());
         }
-        ajax.put(Constants.TOKEN, token);
+        // 返回访问令牌与刷新令牌
+        ajax.putAll(tokenService.createTokenPair(token));
+        return ajax;
+    }
+
+    /**
+     * 刷新访问令牌方法
+     *
+     * @param body 请求体，包含刷新令牌
+     * @return 结果
+     */
+    @PostMapping("/auth/refresh")
+    public AjaxResult refresh(@RequestBody Map<String, String> body)
+    {
+        Map<String, Object> tokenPair = tokenService.refreshAccessToken(body.get(Constants.REFRESH_TOKEN));
+        if (tokenPair == null)
+        {
+            return AjaxResult.error(HttpStatus.UNAUTHORIZED, "刷新令牌无效或已过期");
+        }
+        AjaxResult ajax = AjaxResult.success();
+        ajax.putAll(tokenPair);
         return ajax;
     }
 
