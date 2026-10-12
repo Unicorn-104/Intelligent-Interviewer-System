@@ -1,5 +1,6 @@
 package com.ruoyi.framework.web.service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -10,6 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Component;
 import com.ruoyi.common.constant.CacheConstants;
 import com.ruoyi.common.constant.Constants;
@@ -257,7 +261,7 @@ public class TokenService
     }
 
     /**
-     * 退出登录：访问令牌加入黑名单，删除会话缓存与该用户全部刷新令牌
+     * 退出登录：访问令牌加入黑名单，删除当前会话缓存与该会话的刷新令牌（不影响该用户其它在线设备）
      *
      * @param request 请求
      */
@@ -272,7 +276,7 @@ public class TokenService
         if (loginUser != null)
         {
             delLoginUser(loginUser.getToken());
-            clearRefreshTokens(loginUser.getUserId());
+            clearSessionRefreshTokens(loginUser.getUserId(), loginUser.getToken());
         }
         try
         {
@@ -315,6 +319,8 @@ public class TokenService
     public long incrementTokenVersion(Long userId)
     {
         long next = getTokenVersion(userId) + 1;
+        // 存活用户的版本号键有意不设 TTL：若设 TTL，键到期后版本号回落为 0，
+        // 会使携带 ver>=1 的在用令牌被误杀；用户删除场景由 invalidateUserTokens 写入带 TTL 的键兜底清理孤儿键
         redisCache.setCacheObject(CacheConstants.TOKEN_VERSION_KEY + userId, next);
         return next;
     }
@@ -340,13 +346,14 @@ public class TokenService
     }
 
     /**
-     * 清除用户的全部刷新令牌
+     * 清除指定会话的刷新令牌（不影响该用户其它会话），索引清空后同步删除索引键
      *
-     * @param userId 用户ID
+     * @param userId    用户ID
+     * @param sessionId 会话标识，即访问令牌中的 login_user_key
      */
-    public void clearRefreshTokens(Long userId)
+    private void clearSessionRefreshTokens(Long userId, String sessionId)
     {
-        if (userId == null)
+        if (userId == null || StringUtils.isEmpty(sessionId))
         {
             return;
         }
@@ -354,12 +361,22 @@ public class TokenService
         Set<Object> jtis = redisCache.getCacheSet(indexKey);
         if (jtis != null)
         {
-            for (Object jti : jtis)
+            String suffix = ":" + sessionId;
+            for (Object jti : new ArrayList<>(jtis))
             {
-                redisCache.deleteObject(CacheConstants.REFRESH_TOKEN_KEY + jti);
+                Object value = redisCache.getCacheObject(CacheConstants.REFRESH_TOKEN_KEY + jti);
+                if (value != null && value.toString().endsWith(suffix))
+                {
+                    redisCache.deleteObject(CacheConstants.REFRESH_TOKEN_KEY + jti);
+                    redisCache.redisTemplate.opsForSet().remove(indexKey, jti);
+                }
             }
         }
-        redisCache.deleteObject(indexKey);
+        Long remaining = redisCache.redisTemplate.opsForSet().size(indexKey);
+        if (remaining == null || remaining == 0L)
+        {
+            redisCache.deleteObject(indexKey);
+        }
     }
 
     /**
@@ -375,7 +392,7 @@ public class TokenService
             return;
         }
         // 清理其它会话的登录缓存
-        Collection<String> keys = redisCache.keys(CacheConstants.LOGIN_TOKEN_KEY + "*");
+        Collection<String> keys = scanKeys(CacheConstants.LOGIN_TOKEN_KEY + "*");
         if (keys != null)
         {
             for (String key : keys)
@@ -409,7 +426,8 @@ public class TokenService
                 redisCache.redisTemplate.opsForSet().remove(indexKey, jti);
             }
         }
-        if (redisCache.redisTemplate.opsForSet().size(indexKey) == 0)
+        Long remaining = redisCache.redisTemplate.opsForSet().size(indexKey);
+        if (remaining == null || remaining == 0L)
         {
             redisCache.deleteObject(indexKey);
         }
@@ -449,7 +467,8 @@ public class TokenService
                 }
             }
         }
-        if (redisCache.redisTemplate.opsForSet().size(indexKey) == 0)
+        Long remaining = redisCache.redisTemplate.opsForSet().size(indexKey);
+        if (remaining == null || remaining == 0L)
         {
             redisCache.deleteObject(indexKey);
         }
@@ -584,6 +603,34 @@ public class TokenService
     }
 
     /**
+     * 以 SCAN 游标方式按模式匹配键名，替代 KEYS 命令，避免大键空间下阻塞 Redis
+     *
+     * @param pattern 键名匹配模式
+     * @return 匹配的键名集合
+     */
+    @SuppressWarnings("unchecked")
+    private Collection<String> scanKeys(String pattern)
+    {
+        return (Collection<String>) redisCache.redisTemplate.execute((RedisCallback<Collection<String>>) connection ->
+        {
+            Collection<String> keys = new ArrayList<>();
+            ScanOptions options = ScanOptions.scanOptions().match(pattern).count(500).build();
+            try (Cursor<byte[]> cursor = connection.keyCommands().scan(options))
+            {
+                while (cursor.hasNext())
+                {
+                    keys.add(new String(cursor.next(), StandardCharsets.UTF_8));
+                }
+            }
+            catch (Exception e)
+            {
+                log.error("SCAN 扫描键失败'{}'", e.getMessage());
+            }
+            return keys;
+        });
+    }
+
+    /**
      * 角色权限变更后，刷新所有持有该角色的在线用户权限
      *
      * @param roleId            变更的角色ID
@@ -593,7 +640,7 @@ public class TokenService
     {
         // 扫描所有在线 token
         String pattern = CacheConstants.LOGIN_TOKEN_KEY + "*";
-        Collection<String> keys = redisCache.keys(pattern);
+        Collection<String> keys = scanKeys(pattern);
         if (keys == null || keys.isEmpty())
         {
             return;

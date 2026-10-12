@@ -55,6 +55,8 @@ public class ApiVersionPrefixFilter extends OncePerRequestFilter
 
         private final String servletPath;
 
+        private final String requestURL;
+
         ApiVersionRequestWrapper(HttpServletRequest request)
         {
             super(request);
@@ -62,6 +64,7 @@ public class ApiVersionPrefixFilter extends OncePerRequestFilter
             String path = request.getRequestURI().substring(contextPath.length() + API_VERSION_PREFIX.length());
             this.servletPath = path.isEmpty() ? "/" : path;
             this.requestURI = contextPath + this.servletPath;
+            this.requestURL = buildRequestURL(request);
         }
 
         @Override
@@ -74,6 +77,30 @@ public class ApiVersionPrefixFilter extends OncePerRequestFilter
         public String getServletPath()
         {
             return servletPath;
+        }
+
+        @Override
+        public StringBuffer getRequestURL()
+        {
+            return new StringBuffer(requestURL);
+        }
+
+        /**
+         * 按重写后的 requestURI 重建完整 URL，避免下游取 getRequestURL 时仍拿到带 /api/v1 前缀的旧地址
+         */
+        private String buildRequestURL(HttpServletRequest request)
+        {
+            StringBuilder url = new StringBuilder();
+            url.append(request.getScheme()).append("://").append(request.getServerName());
+            int port = request.getServerPort();
+            boolean isDefaultPort = ("http".equalsIgnoreCase(request.getScheme()) && port == 80)
+                    || ("https".equalsIgnoreCase(request.getScheme()) && port == 443);
+            if (!isDefaultPort)
+            {
+                url.append(":").append(port);
+            }
+            url.append(requestURI);
+            return url.toString();
         }
     }
 }
