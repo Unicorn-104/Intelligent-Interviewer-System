@@ -14,24 +14,34 @@ export const candidates = [
   { userId: 110, name: '赵磊', role: '产品经理', match: 82, stage: '已淘汰', tone: 'red', color: '#ef4444' }
 ]
 
+// 面试块状态：pending=待确认(橙) confirmed=已确认(蓝) completed=已完成(灰) conflict=冲突(红框) cancelled=已取消(浅灰删除线)
+// 通知状态 notify：unsent=未发送(灰铃) sending=发送中(加载) failed=发送失败(红叹号) sent=已送达(不显示)
+// startMin: 从09:00开始的分钟偏移；durMin: 面试时长分钟数（日历总范围09:00-18:00=540分钟）
 export const schedule = [
-  { day: 0, top: 72, duration: 48, name: '高嘉怡', time: '10:00-10:45', level: 1 },
-  { day: 0, top: 345, duration: 48, name: '周俊杰', time: '15:00-15:45', level: 1 },
-  { day: 1, top: 32, duration: 48, name: '孙瑞峰', time: '09:30-10:15', level: 1 },
-  { day: 1, top: 126, duration: 48, name: '吴宇航', time: '11:00-11:45', level: 1 },
-  { day: 1, top: 428, duration: 48, name: '郑欣怡', time: '16:00-16:45', level: 1 },
-  { day: 2, top: 8, duration: 48, name: '高翔', time: '09:00-09:45', level: 3 },
-  { day: 2, top: 80, duration: 48, name: '王一诺', time: '10:15-11:00', level: 3 },
-  { day: 2, top: 140, duration: 48, name: '林晓晴', time: '11:15-12:00', level: 3 },
-  { day: 2, top: 300, duration: 48, name: '张雨桐', time: '14:00-14:45', level: 3 },
-  { day: 2, top: 365, duration: 48, name: '周嘉懿', time: '15:15-16:00', level: 3 },
-  { day: 3, top: 8, duration: 48, name: '李明轩', time: '09:00-09:45', level: 2 },
-  { day: 3, top: 90, duration: 48, name: '顾承宇', time: '10:30-11:15', level: 2 },
-  { day: 3, top: 275, duration: 48, name: '许安昊', time: '13:30-14:15', level: 2 },
-  { day: 3, top: 350, duration: 48, name: '赵可欣', time: '15:00-15:45', level: 2 },
-  { day: 4, top: 312, duration: 48, name: '顾言', time: '14:30-15:15', level: 2 },
-  { day: 4, top: 420, duration: 48, name: '程曦', time: '16:00-16:45', level: 2 },
-  { day: 5, top: 72, duration: 48, name: '夏沫', time: '10:00-10:45', level: 1 },
-  { day: 5, top: 312, duration: 48, name: '白一帆', time: '14:30-15:15', level: 1 },
-  { day: 6, top: 290, duration: 48, name: '邱雨', time: '14:00-14:45', level: 1 }
+  // 周一
+  { id:1, day:0, startMin:60, durMin:45, candidate:'高嘉怡', position:'前端开发', interviewer:'陈静', stage:'技术面', status:'confirmed', notify:'sent', time:'10:00-10:45' },
+  { id:2, day:0, startMin:360, durMin:45, candidate:'周俊杰', position:'后端开发', interviewer:'王磊', stage:'技术面', status:'pending', notify:'unsent', time:'15:00-15:45' },
+  // 周二
+  { id:3, day:1, startMin:30, durMin:45, candidate:'孙瑞峰', position:'前端开发', interviewer:'陈静', stage:'技术面', status:'confirmed', notify:'sent', time:'09:30-10:15' },
+  { id:4, day:1, startMin:120, durMin:45, candidate:'吴宇航', position:'测试工程师', interviewer:'赵敏', stage:'技术面', status:'confirmed', notify:'sent', time:'11:00-11:45' },
+  { id:5, day:1, startMin:420, durMin:45, candidate:'郑欣怡', position:'UI设计师', interviewer:'李薇', stage:'作品集面', status:'pending', notify:'failed', time:'16:00-16:45' },
+  // 周三（今天，场次最多）
+  { id:6, day:2, startMin:0, durMin:45, candidate:'高翔', position:'后端开发', interviewer:'王磊', stage:'技术面', status:'confirmed', notify:'sent', time:'09:00-09:45' },
+  { id:7, day:2, startMin:75, durMin:45, candidate:'王一诺', position:'UI设计师', interviewer:'李薇', stage:'作品集面', status:'pending', notify:'unsent', time:'10:15-11:00' },
+  { id:8, day:2, startMin:135, durMin:45, candidate:'林晓晴', position:'产品经理', interviewer:'刘洋', stage:'业务面', status:'confirmed', notify:'sent', time:'11:15-12:00' },
+  { id:9, day:2, startMin:300, durMin:45, candidate:'张雨桐', position:'前端开发', interviewer:'陈静', stage:'技术面', status:'pending', notify:'unsent', time:'14:00-14:45' },
+  { id:10, day:2, startMin:375, durMin:45, candidate:'周嘉懿', position:'数据分析师', interviewer:'赵峰', stage:'SQL面', status:'confirmed', notify:'sent', time:'15:15-16:00' },
+  // 周四
+  { id:11, day:3, startMin:0, durMin:45, candidate:'李明轩', position:'后端开发', interviewer:'王磊', stage:'项目深挖', status:'confirmed', notify:'sent', time:'09:00-09:45' },
+  { id:12, day:3, startMin:90, durMin:45, candidate:'顾承宇', position:'前端开发', interviewer:'陈静', stage:'技术面', status:'confirmed', notify:'sent', time:'10:30-11:15' },
+  { id:13, day:3, startMin:270, durMin:45, candidate:'许安昊', position:'产品经理', interviewer:'刘洋', stage:'业务面', status:'confirmed', notify:'sent', time:'13:30-14:15' },
+  { id:14, day:3, startMin:360, durMin:45, candidate:'赵可欣', position:'UI设计师', interviewer:'李薇', stage:'作品集面', status:'conflict', notify:'unsent', time:'15:00-15:45' },
+  // 周五
+  { id:15, day:4, startMin:330, durMin:45, candidate:'顾言', position:'后端开发', interviewer:'王磊', stage:'技术面', status:'confirmed', notify:'sent', time:'14:30-15:15' },
+  { id:16, day:4, startMin:420, durMin:45, candidate:'程曦', position:'测试工程师', interviewer:'赵敏', stage:'技术面', status:'completed', notify:'sent', time:'16:00-16:45' },
+  // 周六
+  { id:17, day:5, startMin:60, durMin:45, candidate:'夏沫', position:'前端开发', interviewer:'陈静', stage:'技术面', status:'pending', notify:'unsent', time:'10:00-10:45' },
+  { id:18, day:5, startMin:330, durMin:45, candidate:'白一帆', position:'产品经理', interviewer:'刘洋', stage:'业务面', status:'confirmed', notify:'sent', time:'14:30-15:15' },
+  // 周日
+  { id:19, day:6, startMin:300, durMin:45, candidate:'邱雨', position:'数据分析师', interviewer:'赵峰', stage:'SQL面', status:'confirmed', notify:'sent', time:'14:00-14:45' }
 ]
