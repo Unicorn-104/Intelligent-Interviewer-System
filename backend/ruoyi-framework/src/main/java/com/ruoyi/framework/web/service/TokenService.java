@@ -319,6 +319,8 @@ public class TokenService
     public long incrementTokenVersion(Long userId)
     {
         long next = getTokenVersion(userId) + 1;
+        // 存活用户的版本号键有意不设 TTL：若设 TTL，键到期后版本号回落为 0，
+        // 会使携带 ver>=1 的在用令牌被误杀；用户删除场景由 invalidateUserTokens 写入带 TTL 的键兜底清理孤儿键
         redisCache.setCacheObject(CacheConstants.TOKEN_VERSION_KEY + userId, next);
         return next;
     }
