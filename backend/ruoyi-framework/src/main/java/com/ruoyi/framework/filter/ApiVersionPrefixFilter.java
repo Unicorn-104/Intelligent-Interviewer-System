@@ -33,7 +33,10 @@ public class ApiVersionPrefixFilter extends OncePerRequestFilter
             throws ServletException, IOException
     {
         String uri = request.getRequestURI();
-        if (uri != null && uri.startsWith(request.getContextPath() + API_VERSION_PREFIX))
+        String prefix = request.getContextPath() + API_VERSION_PREFIX;
+        // 前缀后必须紧跟 '/' 或到达结尾，避免把 /api/v10 误判为 /api/v1
+        if (uri != null && uri.startsWith(prefix)
+                && (uri.length() == prefix.length() || uri.charAt(prefix.length()) == '/'))
         {
             filterChain.doFilter(new ApiVersionRequestWrapper(request), response);
         }
