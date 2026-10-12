@@ -71,4 +71,46 @@ public class ApiVersionPrefixFilterTest
         assertSame(request, chain.getRequest(), "无版本前缀的旧路径不应被包装");
         assertEquals("/system/user", ((HttpServletRequest) chain.getRequest()).getServletPath());
     }
+
+    @Test
+    public void requestUrlReflectsRewrittenUriWithNonDefaultPort() throws Exception
+    {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRequestURI("/api/v1/system/user");
+        request.setScheme("http");
+        request.setServerName("localhost");
+        request.setServerPort(8080);
+        MockFilterChain chain = new MockFilterChain();
+        filter.doFilter(request, new MockHttpServletResponse(), chain);
+
+        HttpServletRequest downstream = (HttpServletRequest) chain.getRequest();
+        assertEquals("http://localhost:8080/system/user", downstream.getRequestURL().toString(),
+                "getRequestURL 应使用重写后的 URI 且保留非默认端口");
+    }
+
+    @Test
+    public void requestUrlOmitsDefaultPort() throws Exception
+    {
+        MockHttpServletRequest http = new MockHttpServletRequest();
+        http.setRequestURI("/api/v1/system/user");
+        http.setScheme("http");
+        http.setServerName("example.com");
+        http.setServerPort(80);
+        MockFilterChain httpChain = new MockFilterChain();
+        filter.doFilter(http, new MockHttpServletResponse(), httpChain);
+        assertEquals("http://example.com/system/user",
+                ((HttpServletRequest) httpChain.getRequest()).getRequestURL().toString(),
+                "http 默认端口 80 不应出现在 URL 中");
+
+        MockHttpServletRequest https = new MockHttpServletRequest();
+        https.setRequestURI("/api/v1/system/user");
+        https.setScheme("https");
+        https.setServerName("example.com");
+        https.setServerPort(443);
+        MockFilterChain httpsChain = new MockFilterChain();
+        filter.doFilter(https, new MockHttpServletResponse(), httpsChain);
+        assertEquals("https://example.com/system/user",
+                ((HttpServletRequest) httpsChain.getRequest()).getRequestURL().toString(),
+                "https 默认端口 443 不应出现在 URL 中");
+    }
 }
