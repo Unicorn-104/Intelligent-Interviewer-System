@@ -1,5 +1,6 @@
 package com.ruoyi.framework.web.service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -10,6 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Component;
 import com.ruoyi.common.constant.CacheConstants;
 import com.ruoyi.common.constant.Constants;
@@ -375,7 +379,7 @@ public class TokenService
             return;
         }
         // 清理其它会话的登录缓存
-        Collection<String> keys = redisCache.keys(CacheConstants.LOGIN_TOKEN_KEY + "*");
+        Collection<String> keys = scanKeys(CacheConstants.LOGIN_TOKEN_KEY + "*");
         if (keys != null)
         {
             for (String key : keys)
@@ -584,6 +588,34 @@ public class TokenService
     }
 
     /**
+     * 以 SCAN 游标方式按模式匹配键名，替代 KEYS 命令，避免大键空间下阻塞 Redis
+     *
+     * @param pattern 键名匹配模式
+     * @return 匹配的键名集合
+     */
+    @SuppressWarnings("unchecked")
+    private Collection<String> scanKeys(String pattern)
+    {
+        return (Collection<String>) redisCache.redisTemplate.execute((RedisCallback<Collection<String>>) connection ->
+        {
+            Collection<String> keys = new ArrayList<>();
+            ScanOptions options = ScanOptions.scanOptions().match(pattern).count(500).build();
+            try (Cursor<byte[]> cursor = connection.keyCommands().scan(options))
+            {
+                while (cursor.hasNext())
+                {
+                    keys.add(new String(cursor.next(), StandardCharsets.UTF_8));
+                }
+            }
+            catch (Exception e)
+            {
+                log.error("SCAN 扫描键失败'{}'", e.getMessage());
+            }
+            return keys;
+        });
+    }
+
+    /**
      * 角色权限变更后，刷新所有持有该角色的在线用户权限
      *
      * @param roleId            变更的角色ID
@@ -593,7 +625,7 @@ public class TokenService
     {
         // 扫描所有在线 token
         String pattern = CacheConstants.LOGIN_TOKEN_KEY + "*";
-        Collection<String> keys = redisCache.keys(pattern);
+        Collection<String> keys = scanKeys(pattern);
         if (keys == null || keys.isEmpty())
         {
             return;
