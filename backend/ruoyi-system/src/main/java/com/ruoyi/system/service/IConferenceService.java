@@ -45,6 +45,16 @@ public interface IConferenceService
     public List<Map<String, Object>> listInterviewers(Long userId);
 
     /**
+     * 面试官加入会议（后到面试官点击「加入本次面试」，记录已加入状态）
+     */
+    public Map<String, Object> joinInterviewer(Long userId, Long sessionId);
+
+    /**
+     * 移交主面试官（仅现任主面试官可操作，接收人须为本场次面试官）
+     */
+    public Map<String, Object> transferPrimary(Long userId, Long sessionId, Long targetUserId);
+
+    /**
      * 候选人在本企业投递过的岗位（HR 发起面试时选择岗位）
      */
     public List<Map<String, Object>> listCandidatePositions(Long userId, Long peerUserId);

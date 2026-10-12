@@ -53,6 +53,9 @@ public class ConferenceServiceImpl implements IConferenceService
     private static final String DOWNLOAD_CODE_KEY = "conference:download:code:";
     /** 下载验证码有效期（秒） */
     private static final int DOWNLOAD_CODE_TTL = 300;
+    /** 非主面试官允许兜底开启面试的宽限期（毫秒）：预约开始时间后 5 分钟 */
+    private static final long START_GRACE_MS = 5 * 60 * 1000L;
+
     /** 录制码率估算值（Kbps），用于把录制时长换算成存储占用 */
     private static final int RECORDING_BITRATE_KBPS = 1500;
     /** 默认保留天数 / 存储上限（GB） */
@@ -78,13 +81,14 @@ public class ConferenceServiceImpl implements IConferenceService
         }
         ctx.put("role", userId.equals(toLong(ctx.get("candidateUserId"))) ? "CANDIDATE" : "HR");
         conferenceMapper.ensureMeetingState(toLong(ctx.get("sessionId")));
+        decorateInterviewers(ctx, toLong(ctx.get("sessionId")));
         return ctx;
     }
 
     @Override
     public Map<String, Object> getSessionContext(Long userId, Long sessionId)
     {
-        return requireParticipant(userId, sessionId, false);
+        return requireAccess(userId, sessionId);
     }
 
     @Override
@@ -125,7 +129,7 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("本场面试已结束");
         }
-        return requireParticipant(userId, toLong(ctx.get("sessionId")), false);
+        return requireAccess(userId, toLong(ctx.get("sessionId")));
     }
 
     @Override
@@ -151,6 +155,7 @@ public class ConferenceServiceImpl implements IConferenceService
         int interviewMode = mode == null || mode < MODE_AI_ONLY || mode > MODE_HUMAN_ONLY ? DEFAULT_INTERVIEW_MODE : mode;
         List<Long> selected = normalizeInterviewers(interviewerIds);
         validateInterviewerCount(interviewMode, selected.size());
+        validateInterviewerScope(userId, selected);
 
         Map<String, Object> query = new HashMap<>();
         query.put("candidateId", candidateId);
@@ -258,6 +263,66 @@ public class ConferenceServiceImpl implements IConferenceService
         return conferenceMapper.selectCompanyEmployees(params);
     }
 
+    @Override
+    public Map<String, Object> joinInterviewer(Long userId, Long sessionId)
+    {
+        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        if (!"HR".equals(ctx.get("role")))
+        {
+            throw new ServiceException("仅面试官可加入本次面试");
+        }
+        // 兼容旧场次：尚无关联记录时补写一条，按 ses_interviewer_id 判定主面试官
+        if (!isAssignedInterviewer(userId, sessionId))
+        {
+            Map<String, Object> link = new HashMap<>();
+            link.put("sessionId", sessionId);
+            link.put("userId", userId);
+            link.put("isPrimary", userId.equals(toLong(ctx.get("interviewerId"))) ? 1 : 0);
+            conferenceMapper.insertSessionInterviewer(link);
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("sessionId", sessionId);
+        params.put("userId", userId);
+        params.put("mutedAv", 0);
+        conferenceMapper.markSessionInterviewerJoined(params);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("joined", true);
+        result.put("interviewers", conferenceMapper.selectSessionInterviewers(sessionId));
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> transferPrimary(Long userId, Long sessionId, Long targetUserId)
+    {
+        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        if (!isPrimaryInterviewer(ctx, userId, sessionId))
+        {
+            throw new ServiceException("仅主面试官可移交主持人");
+        }
+        if (targetUserId == null || targetUserId.equals(userId))
+        {
+            throw new ServiceException("请选择另一位面试官作为移交对象");
+        }
+        if (!isAssignedInterviewer(targetUserId, sessionId))
+        {
+            throw new ServiceException("该用户不是本场次面试官");
+        }
+        conferenceMapper.clearSessionInterviewerPrimary(sessionId);
+        Map<String, Object> link = new HashMap<>();
+        link.put("sessionId", sessionId);
+        link.put("userId", targetUserId);
+        link.put("isPrimary", 1);
+        conferenceMapper.insertSessionInterviewer(link);
+        conferenceMapper.updateSessionPrimaryInterviewer(sessionId, targetUserId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("primaryInterviewerId", targetUserId);
+        result.put("interviewers", conferenceMapper.selectSessionInterviewers(sessionId));
+        return result;
+    }
+
     /**
      * 面试官ID去重并剔除空值
      */
@@ -314,6 +379,29 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     /**
+     * 校验所选面试官均属于发起人所在企业（与面试官选择器数据源保持一致）
+     */
+    private void validateInterviewerScope(Long userId, List<Long> selected)
+    {
+        if (selected.isEmpty())
+        {
+            return;
+        }
+        LinkedHashSet<Long> allowed = new LinkedHashSet<>();
+        for (Map<String, Object> item : listInterviewers(userId))
+        {
+            allowed.add(toLong(item.get("userId")));
+        }
+        for (Long interviewerId : selected)
+        {
+            if (!allowed.contains(interviewerId))
+            {
+                throw new ServiceException("所选面试官不属于当前企业，无法指派");
+            }
+        }
+    }
+
+    /**
      * 向被指派面试官推送面试信息（复用 IM 系统消息 type=5）
      */
     private void sendInterviewerNotices(Long senderId, List<Long> interviewerIds, String candidateAppUrl,
@@ -361,7 +449,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public Map<String, Object> getWaitingRoom(Long userId, Long sessionId)
     {
-        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        Map<String, Object> ctx = requireAccess(userId, sessionId);
         List<Map<String, Object>> participants = conferenceMapper.selectParticipantStates(sessionId);
         Map<String, Object> self = null;
         Map<String, Object> peer = null;
@@ -392,7 +480,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public Map<String, Object> reportParticipantState(Long userId, Long sessionId, Map<String, Object> body)
     {
-        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        Map<String, Object> ctx = requireAccess(userId, sessionId);
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
         params.put("userId", userId);
@@ -417,7 +505,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public Map<String, Object> reportEnvironmentCheck(Long userId, Long sessionId, Map<String, Object> body)
     {
-        requireParticipant(userId, sessionId, false);
+        requireAccess(userId, sessionId);
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
         params.put("camStatus", toInt(body.get("camStatus")));
@@ -459,6 +547,11 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("候选人尚未同意面试录制告知");
         }
+        if ("HR".equals(ctx.get("role")))
+        {
+            // 主面试官可随时开启；非主面试官须等到预约开始时间 5 分钟后兜底开启
+            assertPrimaryOrGrace(ctx, userId, sessionId, "开启");
+        }
         if (toInt(ctx.get("status")) == 0)
         {
             conferenceMapper.startSession(sessionId);
@@ -469,7 +562,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public Map<String, Object> getProgress(Long userId, Long sessionId)
     {
-        requireParticipant(userId, sessionId, false);
+        requireAccess(userId, sessionId);
         Map<String, Object> state = meetingState(sessionId);
         int total = toInt(state.get("totalQuestionNo"));
         int answered = toInt(state.get("answeredCount"));
@@ -516,7 +609,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public Map<String, Object> updateMedia(Long userId, Long sessionId, Map<String, Object> body)
     {
-        requireParticipant(userId, sessionId, false);
+        requireAccess(userId, sessionId);
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
         params.put("micEnabled", toSwitch(body.get("microphoneEnabled")));
@@ -534,7 +627,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public Map<String, Object> heartbeat(Long userId, Long sessionId)
     {
-        requireParticipant(userId, sessionId, false);
+        requireAccess(userId, sessionId);
         conferenceMapper.touchHeartbeat(sessionId);
         Map<String, Object> state = meetingState(sessionId);
         state.put("serverTime", DateUtils.parseDateToStr(DateUtils.YYYY_MM_DD_HH_MM_SS, DateUtils.getNowDate()));
@@ -544,7 +637,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public List<Map<String, Object>> getCaptions(Long userId, Long sessionId, Integer afterSequence, Integer limit)
     {
-        requireParticipant(userId, sessionId, false);
+        requireAccess(userId, sessionId);
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
         params.put("afterSequence", afterSequence == null ? 0 : afterSequence);
@@ -555,7 +648,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public List<Map<String, Object>> getCopilot(Long userId, Long sessionId, Integer afterSequence, Integer limit)
     {
-        requireParticipant(userId, sessionId, false);
+        requireAccess(userId, sessionId);
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
         params.put("afterSequence", afterSequence == null ? 0 : afterSequence);
@@ -634,7 +727,11 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public Map<String, Object> finishSession(Long userId, Long sessionId, String endReason)
     {
-        requireParticipant(userId, sessionId, false);
+        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        if ("HR".equals(ctx.get("role")))
+        {
+            assertPrimaryOrGrace(ctx, userId, sessionId, "结束");
+        }
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
         params.put("status", 2);
@@ -667,7 +764,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     public Map<String, Object> getSessionResult(Long userId, Long sessionId)
     {
-        requireParticipant(userId, sessionId, false);
+        requireAccess(userId, sessionId);
         return buildSessionResult(sessionId);
     }
 
@@ -836,7 +933,7 @@ public class ConferenceServiceImpl implements IConferenceService
             throw new ServiceException("面试场次不存在");
         }
         boolean isCandidate = userId.equals(toLong(ctx.get("candidateUserId")));
-        boolean isInterviewer = userId.equals(toLong(ctx.get("interviewerId")));
+        boolean isInterviewer = userId.equals(toLong(ctx.get("interviewerId"))) || isAssignedInterviewer(userId, sessionId);
         if (!isCandidate && !isInterviewer)
         {
             throw new ServiceException("无权访问该面试场次");
@@ -847,7 +944,114 @@ public class ConferenceServiceImpl implements IConferenceService
         }
         ctx.put("role", isCandidate ? "CANDIDATE" : "HR");
         conferenceMapper.ensureMeetingState(sessionId);
+        decorateInterviewers(ctx, sessionId);
         return ctx;
+    }
+
+    /**
+     * 校验当前用户对该场次的访问权限：候选人、任一被指派面试官，或同企业观察者（OBSERVER）。
+     * 用于只读 / 本人状态类接口，观察者不可执行面试官控制类操作。
+     */
+    private Map<String, Object> requireAccess(Long userId, Long sessionId)
+    {
+        Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);
+        if (ctx == null || ctx.isEmpty())
+        {
+            throw new ServiceException("面试场次不存在");
+        }
+        String role = resolveRole(userId, sessionId, ctx);
+        if (role == null)
+        {
+            throw new ServiceException("无权访问该面试场次");
+        }
+        ctx.put("role", role);
+        conferenceMapper.ensureMeetingState(sessionId);
+        decorateInterviewers(ctx, sessionId);
+        return ctx;
+    }
+
+    /**
+     * 解析用户在该场次中的角色：CANDIDATE / HR / OBSERVER，无权限返回 null
+     */
+    private String resolveRole(Long userId, Long sessionId, Map<String, Object> ctx)
+    {
+        if (userId.equals(toLong(ctx.get("candidateUserId"))))
+        {
+            return "CANDIDATE";
+        }
+        if (userId.equals(toLong(ctx.get("interviewerId"))) || isAssignedInterviewer(userId, sessionId))
+        {
+            return "HR";
+        }
+        Long sessionCompanyId = toLong(ctx.get("companyId"));
+        if (sessionCompanyId != null && sessionCompanyId.equals(resolveCompanyId(userId)))
+        {
+            return "OBSERVER";
+        }
+        return null;
+    }
+
+    /**
+     * 该用户是否为场次被指派面试官（关联表）
+     */
+    private boolean isAssignedInterviewer(Long userId, Long sessionId)
+    {
+        for (Map<String, Object> item : conferenceMapper.selectSessionInterviewers(sessionId))
+        {
+            if (userId.equals(toLong(item.get("userId"))))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 该用户是否为场次主面试官（无关联记录时回落到 ses_interviewer_id）
+     */
+    private boolean isPrimaryInterviewer(Map<String, Object> ctx, Long userId, Long sessionId)
+    {
+        Long primaryId = conferenceMapper.selectPrimaryInterviewerId(sessionId);
+        if (primaryId == null)
+        {
+            primaryId = toLong(ctx.get("interviewerId"));
+        }
+        return userId.equals(primaryId);
+    }
+
+    /**
+     * 主面试官可随时操作；非主面试官仅当已过预约开始时间 5 分钟后方可兜底操作
+     */
+    private void assertPrimaryOrGrace(Map<String, Object> ctx, Long userId, Long sessionId, String action)
+    {
+        if (isPrimaryInterviewer(ctx, userId, sessionId))
+        {
+            return;
+        }
+        java.util.Date startAt = DateUtils.parseDate(ctx.get("appointmentStartAt"));
+        if (startAt == null || System.currentTimeMillis() < startAt.getTime() + START_GRACE_MS)
+        {
+            throw new ServiceException("仅主面试官可" + action + "本次面试，请等待主面试官操作，或于预约时间 5 分钟后重试");
+        }
+    }
+
+    /**
+     * 为场次上下文补充面试官列表与主面试官ID（供前端渲染与权限判断）
+     */
+    private void decorateInterviewers(Map<String, Object> ctx, Long sessionId)
+    {
+        List<Map<String, Object>> interviewers = conferenceMapper.selectSessionInterviewers(sessionId);
+        ctx.put("interviewers", interviewers);
+        Long primaryId = null;
+        for (Map<String, Object> item : interviewers)
+        {
+            if (toInt(item.get("isPrimary")) == 1)
+            {
+                primaryId = toLong(item.get("userId"));
+                break;
+            }
+        }
+        ctx.put("primaryInterviewerId", primaryId == null ? toLong(ctx.get("interviewerId")) : primaryId);
     }
 
     /**

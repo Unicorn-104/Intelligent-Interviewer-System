@@ -86,6 +86,24 @@ public class ConferenceController extends BaseController
     }
 
     /**
+     * 面试官加入会议（后到面试官点击「加入本次面试」）
+     */
+    @PostMapping("/session/{sessionId}/interviewer/join")
+    public AjaxResult interviewerJoin(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.joinInterviewer(getUserId(), sessionId));
+    }
+
+    /**
+     * 移交主面试官
+     */
+    @PostMapping("/session/{sessionId}/interviewer/transfer")
+    public AjaxResult interviewerTransfer(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.transferPrimary(getUserId(), sessionId, longOf(body, "targetUserId")));
+    }
+
+    /**
      * 候选人在本企业投递过的岗位（HR 发起面试时选择岗位）
      */
     @GetMapping("/link/positions")

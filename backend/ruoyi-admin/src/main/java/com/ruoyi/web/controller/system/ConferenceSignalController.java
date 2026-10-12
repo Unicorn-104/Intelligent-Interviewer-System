@@ -56,7 +56,7 @@ public class ConferenceSignalController extends BaseController
     {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = body.get("payload") instanceof Map ? (Map<String, Object>) body.get("payload") : null;
-        conferenceSignalService.relay(ticket, str(body, "type"), payload);
+        conferenceSignalService.relay(ticket, str(body, "type"), payload, longOf(body, "to"));
         return success();
     }
 
@@ -64,5 +64,15 @@ public class ConferenceSignalController extends BaseController
     {
         Object value = map == null ? null : map.get(key);
         return value == null ? null : value.toString();
+    }
+
+    private Long longOf(Map<String, Object> map, String key)
+    {
+        Object value = map == null ? null : map.get(key);
+        if (value == null)
+        {
+            return null;
+        }
+        return value instanceof Number ? ((Number) value).longValue() : Long.valueOf(value.toString());
     }
 }
