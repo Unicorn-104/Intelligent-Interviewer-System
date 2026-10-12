@@ -320,17 +320,23 @@ public class TokenService
     }
 
     /**
-     * 清除用户令牌版本号，用户被删除时调用，避免残留无有效期的孤儿键
+     * 用户被删除时清理其全部登录态：递增令牌版本号（带 TTL，到期自动清理不留孤儿键）、
+     * 删除在线会话缓存与全部刷新令牌，确保已签发的访问令牌立即失效。
+     * 注意不能只删除版本键——旧令牌 ver 可能为 0，键删除后 getTokenVersion 回落为 0 仍会校验通过
      *
      * @param userId 用户ID
      */
-    public void clearTokenVersion(Long userId)
+    public void invalidateUserTokens(Long userId)
     {
         if (userId == null)
         {
             return;
         }
-        redisCache.deleteObject(CacheConstants.TOKEN_VERSION_KEY + userId);
+        // 递增版本号并保留足够长的有效期：携带旧版本号（含 0）的令牌立即失效，键到期后自动清理
+        long next = getTokenVersion(userId) + 1;
+        redisCache.setCacheObject(CacheConstants.TOKEN_VERSION_KEY + userId, next, refreshExpireTime, TimeUnit.DAYS);
+        // 删除该用户全部在线会话与刷新令牌（不含 ver 声明的旧令牌依赖会话缓存，删除后同样失效）
+        clearOtherSessions(userId, null);
     }
 
     /**

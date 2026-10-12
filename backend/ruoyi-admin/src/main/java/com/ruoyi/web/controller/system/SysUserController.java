@@ -192,9 +192,8 @@ public class SysUserController extends BaseController
         {
             for (Long userId : userIds)
             {
-                // 用户已删除，清理其令牌版本号与刷新令牌索引，避免残留无有效期的孤儿键
-                tokenService.clearTokenVersion(userId);
-                tokenService.clearRefreshTokens(userId);
+                // 用户已删除，递增令牌版本号并清理在线会话与刷新令牌，确保已签发的访问令牌立即失效
+                tokenService.invalidateUserTokens(userId);
             }
         }
         return toAjax(rows);
