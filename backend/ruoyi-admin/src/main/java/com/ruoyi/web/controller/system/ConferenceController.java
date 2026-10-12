@@ -345,6 +345,19 @@ public class ConferenceController extends BaseController
                 intOf(body, "keepDays"), intOf(body, "maxStorageGb")));
     }
 
+    /**
+     * 上传录制分片（浏览器端 MediaRecorder 切片，末片 last=true 触发服务端拼接落盘）
+     */
+    @PostMapping("/recordings/{sessionId}/chunk")
+    public AjaxResult recordingChunk(@PathVariable Long sessionId,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam("index") int index,
+            @RequestParam(value = "last", required = false, defaultValue = "false") boolean last,
+            @RequestParam(value = "durationSec", required = false) Integer durationSec)
+    {
+        return success(conferenceService.uploadRecordingChunk(getUserId(), sessionId, file, index, last, durationSec));
+    }
+
     private static Integer intOf(Map<String, Object> body, String key)
     {
         Object value = body.get(key);

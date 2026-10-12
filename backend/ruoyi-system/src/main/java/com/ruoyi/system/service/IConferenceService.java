@@ -2,6 +2,7 @@ package com.ruoyi.system.service;
 
 import java.util.List;
 import java.util.Map;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 视频会议（面试链路）服务层
@@ -186,4 +187,16 @@ public interface IConferenceService
      * 保存录制存储策略
      */
     public Map<String, Object> saveStoragePolicy(Long userId, Integer keepDays, Integer maxStorageGb);
+
+    /**
+     * 接收录制分片并顺序暂存；last=true 时按序拼接落盘为完整录制文件，
+     * 回写场次的录制 URL / 时长 / 字节数 / 访问有效期。仅主面试官（或宽限期后）可上传。
+     *
+     * @param file       分片二进制
+     * @param index      分片序号（从 0 开始，严格递增）
+     * @param last       是否最后一片
+     * @param durationSec 录制总时长（秒，仅末片携带）
+     */
+    public Map<String, Object> uploadRecordingChunk(Long userId, Long sessionId,
+            MultipartFile file, int index, boolean last, Integer durationSec);
 }

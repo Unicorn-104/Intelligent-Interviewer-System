@@ -402,6 +402,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                p.pos_title as positionTitle,
                date_format(s.ses_end_at, '%Y-%m-%d') as interviewDate,
                ifnull(s.ses_rec_duration_sec, 0) as durationSec,
+               s.ses_rec_size_bytes as recSizeBytes,
                s.ses_status as status,
                s.ses_mode as mode,
                s.ses_rec_url as recUrl,
@@ -427,8 +428,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by s.ses_end_at desc, s.ses_id desc
     </select>
 
-    <select id="selectRecordingSecondsTotal" parameterType="Long" resultType="java.lang.Long">
-        select ifnull(sum(s.ses_rec_duration_sec), 0)
+    <select id="selectRecordingStorageTotal" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select ifnull(sum(s.ses_rec_duration_sec), 0) as totalSeconds,
+               ifnull(sum(s.ses_rec_size_bytes), 0)    as totalBytes
         from t_int_session s
         join t_pos p on p.pos_id = s.ses_position_id
         where p.pos_company_id = #{companyId}
@@ -438,6 +440,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select s.ses_id as sessionId,
                s.ses_rec_url as recUrl,
                ifnull(s.ses_rec_duration_sec, 0) as durationSec,
+               s.ses_rec_size_bytes as recSizeBytes,
                ifnull(u.nick_name, u.user_name) as candidateName,
                p.pos_title as positionTitle,
                date_format(s.ses_end_at, '%Y-%m-%d') as interviewDate,
@@ -465,6 +468,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_int_session
         set ses_rec_access_level = #{level},
             ses_rec_expires_at = date_add(sysdate(), interval #{validDays} day),
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId}
+    </update>
+
+    <update id="updateRecordingFile">
+        update t_int_session
+        set ses_rec_url = #{recUrl},
+            ses_rec_duration_sec = #{durationSec},
+            ses_rec_size_bytes = #{sizeBytes},
+            ses_rec_expires_at = date_add(sysdate(), interval #{keepDays} day),
             ses_updated_at = sysdate()
         where ses_id = #{sessionId}
     </update>

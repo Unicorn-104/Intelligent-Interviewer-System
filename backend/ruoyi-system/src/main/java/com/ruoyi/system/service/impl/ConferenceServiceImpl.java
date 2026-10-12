@@ -1,6 +1,14 @@
 package com.ruoyi.system.service.impl;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -8,10 +16,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.common.config.RuoYiConfig;
+import com.ruoyi.common.constant.Constants;
 import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
@@ -58,6 +70,8 @@ public class ConferenceServiceImpl implements IConferenceService
 
     /** 录制码率估算值（Kbps），用于把录制时长换算成存储占用 */
     private static final int RECORDING_BITRATE_KBPS = 1500;
+    /** 录制分片临时目录名（java.io.tmpdir 下，按场次分子目录） */
+    private static final String RECORDING_CHUNK_DIR = "recruit-recording";
     /** 默认保留天数 / 存储上限（GB） */
     private static final int DEFAULT_KEEP_DAYS = 90;
     private static final int DEFAULT_MAX_STORAGE_GB = 500;
@@ -787,14 +801,18 @@ public class ConferenceServiceImpl implements IConferenceService
         Long companyId = resolveCompanyId(userId);
         Map<String, Object> policy = storagePolicy(companyId);
         int maxGb = toInt(policy.get("maxStorageGb"));
-        long seconds = toLong(conferenceMapper.selectRecordingSecondsTotal(companyId));
-        // 码率估算：字节 = 秒 × 码率(Kbps) × 1000 ÷ 8
-        double usedGb = seconds * (double) RECORDING_BITRATE_KBPS * 1000 / 8 / 1024 / 1024 / 1024;
+        Map<String, Object> totals = conferenceMapper.selectRecordingStorageTotal(companyId);
+        long seconds = toLong(totals == null ? null : totals.get("totalSeconds"));
+        long bytes = toLong(totals == null ? null : totals.get("totalBytes"));
+        // 优先按真实文件大小统计；历史数据无字节数时回落到按码率估算
+        double usedGb = bytes > 0 ? bytes / 1024.0 / 1024 / 1024
+                : seconds * (double) RECORDING_BITRATE_KBPS * 1000 / 8 / 1024 / 1024 / 1024;
         double used = Math.round(usedGb * 100) / 100.0;
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("usedGb", used);
         result.put("maxGb", maxGb);
         result.put("usedSeconds", seconds);
+        result.put("usedBytes", bytes);
         result.put("keepDays", policy.get("keepDays"));
         result.put("percent", maxGb > 0 ? Math.round(used * 1000 / maxGb) / 10.0 : 0);
         return result;
@@ -918,6 +936,142 @@ public class ConferenceServiceImpl implements IConferenceService
         params.put("maxStorageGb", maxStorageGb);
         conferenceMapper.upsertStoragePolicy(params);
         return storagePolicy(companyId);
+    }
+
+    @Override
+    public Map<String, Object> uploadRecordingChunk(Long userId, Long sessionId,
+            MultipartFile file, int index, boolean last, Integer durationSec)
+    {
+        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        if ("HR".equals(ctx.get("role")))
+        {
+            // 录制为主面试官独占操作；非主面试官沿用预约时间 5 分钟宽限兜底规则
+            assertPrimaryOrGrace(ctx, userId, sessionId, "上传录制");
+        }
+        if (file == null || file.isEmpty() || index < 0)
+        {
+            throw new ServiceException("录制分片无效");
+        }
+        Path chunkDir = recordingChunkDir(sessionId);
+        Path chunkFile = chunkDir.resolve("chunk_" + index + ".webm");
+        try
+        {
+            Files.createDirectories(chunkDir);
+            file.transferTo(chunkFile.toFile());
+        }
+        catch (Exception e)
+        {
+            throw new ServiceException("录制分片暂存失败：" + e.getMessage());
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("index", index);
+        if (!last)
+        {
+            result.put("status", "chunked");
+            return result;
+        }
+        // 末片到达：按序号拼接为完整文件并落盘到上传目录
+        String recUrl = finalizeRecording(sessionId, chunkDir, durationSec, toLong(ctx.get("companyId")));
+        result.put("status", "finalized");
+        result.put("recUrl", recUrl);
+        return result;
+    }
+
+    /**
+     * 分片临时目录（位于 profile 目录之外，避免未完成的分片被 /profile/** 匿名下载）
+     */
+    private Path recordingChunkDir(Long sessionId)
+    {
+        return Paths.get(System.getProperty("java.io.tmpdir"), RECORDING_CHUNK_DIR, String.valueOf(sessionId));
+    }
+
+    /**
+     * 按分片序号顺序拼接落盘，回写场次录制元数据，并清理临时分片与旧录制文件
+     */
+    private String finalizeRecording(Long sessionId, Path chunkDir, Integer durationSec, Long companyId)
+    {
+        List<Path> chunks = new ArrayList<>();
+        try (Stream<Path> files = Files.list(chunkDir))
+        {
+            files.filter(p -> p.getFileName().toString().startsWith("chunk_")
+                            && p.getFileName().toString().endsWith(".webm"))
+                    .sorted(Comparator.comparingInt(p -> parseChunkIndex(p.getFileName().toString())))
+                    .forEach(chunks::add);
+        }
+        catch (Exception e)
+        {
+            throw new ServiceException("读取录制分片失败：" + e.getMessage());
+        }
+        if (chunks.isEmpty())
+        {
+            throw new ServiceException("未找到录制分片");
+        }
+        String datePath = DateUtils.datePath();
+        String fileName = UUID.randomUUID().toString().replace("-", "") + ".webm";
+        File target = new File(RuoYiConfig.getUploadPath() + File.separator + "recording"
+                + File.separator + datePath, fileName);
+        if (!target.getParentFile().exists() && !target.getParentFile().mkdirs())
+        {
+            throw new ServiceException("创建录制目录失败");
+        }
+        long totalBytes = 0;
+        try (OutputStream out = new FileOutputStream(target))
+        {
+            for (Path chunk : chunks)
+            {
+                Files.copy(chunk, out);
+                totalBytes += Files.size(chunk);
+            }
+        }
+        catch (Exception e)
+        {
+            throw new ServiceException("录制文件写入失败：" + e.getMessage());
+        }
+        // 重复录制时删除旧文件，避免孤儿文件占空间
+        Map<String, Object> detail = conferenceMapper.selectRecordingDetail(sessionId);
+        String oldUrl = detail == null ? null : str(detail.get("recUrl"));
+        if (StringUtils.isNotEmpty(oldUrl))
+        {
+            File old = new File(RuoYiConfig.getProfile() + StringUtils.substringAfter(oldUrl, Constants.RESOURCE_PREFIX));
+            if (old.exists() && !old.equals(target))
+            {
+                old.delete();
+            }
+        }
+        int keepDays = toInt(storagePolicy(companyId).get("keepDays"));
+        Map<String, Object> params = new HashMap<>();
+        params.put("sessionId", sessionId);
+        params.put("recUrl", Constants.RESOURCE_PREFIX + "/upload/recording/" + datePath + "/" + fileName);
+        params.put("durationSec", durationSec == null || durationSec < 0 ? 0 : durationSec);
+        params.put("sizeBytes", totalBytes);
+        params.put("keepDays", keepDays);
+        conferenceMapper.updateRecordingFile(params);
+        try
+        {
+            for (Path chunk : chunks)
+            {
+                Files.deleteIfExists(chunk);
+            }
+            Files.deleteIfExists(chunkDir);
+        }
+        catch (Exception e)
+        {
+            // 临时分片清理失败不影响录制结果
+        }
+        return (String) params.get("recUrl");
+    }
+
+    private static int parseChunkIndex(String fileName)
+    {
+        try
+        {
+            return Integer.parseInt(fileName.substring("chunk_".length(), fileName.length() - ".webm".length()));
+        }
+        catch (NumberFormatException e)
+        {
+            return Integer.MAX_VALUE;
+        }
     }
 
     /**

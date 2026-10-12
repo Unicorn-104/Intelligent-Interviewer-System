@@ -157,9 +157,14 @@ public interface ConferenceMapper
     public List<Map<String, Object>> selectRecordingList(Map<String, Object> params);
 
     /**
-     * 企业录制总时长（秒），用于估算存储占用
+     * 企业录制总时长（秒）与真实字节数之和，用于统计存储占用
      */
-    public Long selectRecordingSecondsTotal(@Param("companyId") Long companyId);
+    public Map<String, Object> selectRecordingStorageTotal(@Param("companyId") Long companyId);
+
+    /**
+     * 录制落盘后回写文件地址 / 时长 / 字节数 / 访问有效期
+     */
+    public int updateRecordingFile(Map<String, Object> params);
 
     /**
      * 回放详情
