@@ -7,12 +7,14 @@ import {
   CircleX, Pencil, ArrowUpRight, AlertTriangle, GripVertical, Lightbulb, X
 } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { getCurrentSession, getProgress, listCaptions, heartbeat, handleCopilot, finishSession } from '@/api/system/conference'
+import { getCurrentSession, getSessionContext, getProgress, listCaptions, heartbeat, handleCopilot, finishSession, joinInterviewer, transferPrimary } from '@/api/system/conference'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, requestMedia, requestMediaWithFallback, savePreferredDevice } from '@/utils/media'
 import { createConferenceRtc } from '@/utils/webrtc'
+import useUserStore from '@/store/modules/user'
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
 
 const leftOpen = ref(true)
 const rightOpen = ref(true)
@@ -23,8 +25,19 @@ const peerVideo = ref(null)
 const frameRef = ref(null)
 const selfPos = ref({ x: null, y: null })
 const toast = ref('')
-// 候选人远端音视频流（WebRTC 到达后渲染到主画面）
-const peerStream = ref(null)
+// 远端音视频流：userId -> MediaStream（多面试官时每人一路）
+const peerStreams = ref({})
+// 参与者列表（候选人 + 其他面试官），主画面可切换
+const participants = ref([])
+// 主画面当前选中的参与者用户ID
+const selectedUserId = ref(null)
+// 本人用户ID / 场次主面试官ID / 面试模式 / 本人在场次中的角色
+const myUserId = ref(Number(userStore.id) || null)
+const primaryInterviewerId = ref(null)
+const interviewMode = ref(2)
+const sessionRole = ref(null)
+// 本人是否已加入本次面试（未加入时不发布本地音视频）
+const joined = ref(true)
 // 设备申请失败的原因；非空时小窗展示「重新检测」入口
 const mediaError = ref('')
 // 结束会议二次确认
@@ -80,6 +93,32 @@ const selfStyle = computed(() =>
     : { left: `${selfPos.value.x}px`, top: `${selfPos.value.y}px` }
 )
 
+// 面试模式展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
+const modeLabel = computed(() => {
+  switch (interviewMode.value) {
+    case 1: return '纯 AI 面试'
+    case 3: return 'AI + 多面试官'
+    case 4: return '无 AI · 纯人工'
+    default: return 'AI + HR 协同'
+  }
+})
+// 无AI纯人工模式不展示 AI 协同面板
+const showAiPanel = computed(() => interviewMode.value !== 4)
+// 后到的面试官需手动加入本次面试；观察者只观看、不发布
+const showJoinButton = computed(() => sessionRole.value === 'HR' && !joined.value)
+// 主画面选中的远端流
+const selectedStream = computed(() => {
+  const id = selectedUserId.value
+  if (id == null) return null
+  return peerStreams.value[String(id)] || null
+})
+const selectedName = computed(() => {
+  const item = participants.value.find((p) => String(p.userId) === String(selectedUserId.value))
+  return item ? item.name : '参与者'
+})
+// 本人是否为主面试官
+const isSelfPrimary = computed(() => String(myUserId.value) === String(primaryInterviewerId.value))
+
 let timerId = null
 let captionId = null
 let captionIndex = 0
@@ -90,6 +129,7 @@ let videoTrack = null
 let audioTrack = null
 let localVideoStream = null
 let rtc = null
+let joinRecorded = false
 
 // 当前进行中的面试场次（无后端数据时为 null，页面继续用 mock 演示）
 const sessionId = ref(null)
@@ -176,7 +216,7 @@ async function openMedia() {
     mediaError.value = ''
   }
   if (mediaError.value) notify(mediaError.value)
-  rtc?.attachLocalTracks(videoTrack, audioTrack)
+  if (joined.value) rtc?.attachLocalTracks(videoTrack, audioTrack)
 }
 
 // 会议设置：真实切换摄像头/麦克风（外接设备即在此选择）
@@ -235,7 +275,7 @@ async function applyDevice(kind) {
   // 同步重建合并流，确保 releaseMedia 能停止新轨道（旧轨道已 stop，重复 stop 无副作用）
   stream = rebuildLocalStream()
 
-  rtc?.attachLocalTracks(videoTrack, audioTrack)
+  if (joined.value) rtc?.attachLocalTracks(videoTrack, audioTrack)
   notify('已切换设备')
 }
 
@@ -245,25 +285,125 @@ function rebuildLocalStream() {
   return tracks.length ? new MediaStream(tracks) : null
 }
 
-// WebRTC 信令连接：拿到场次后建立，候选人远端流到达后渲染到主画面
+// WebRTC 网状信令连接：拿到场次后建立，各远端流按 userId 分别缓存，主画面按选中项渲染
 function startRtc() {
   if (rtc || !sessionId.value) return
   rtc = createConferenceRtc({
     sessionId: sessionId.value,
-    onPeerStream: (s) => {
-      peerStream.value = s
-      nextTick(() => {
-        if (peerVideo.value) peerVideo.value.srcObject = s
-      })
+    onPeerStream: (userId, stream) => {
+      peerStreams.value = { ...peerStreams.value, [String(userId)]: stream }
     },
-    onPeerLeft: () => {
-      peerStream.value = null
-      if (peerVideo.value) peerVideo.value.srcObject = null
+    onPeerLeft: (userId) => {
+      const next = { ...peerStreams.value }
+      delete next[String(userId)]
+      peerStreams.value = next
     }
   })
   rtc.start()
-  // 媒体采集先于信令就绪时补挂本地轨道
-  if (videoTrack || audioTrack) rtc.attachLocalTracks(videoTrack, audioTrack)
+  // 媒体采集先于信令就绪时补挂本地轨道（仅已加入时发布）
+  if (joined.value && (videoTrack || audioTrack)) rtc.attachLocalTracks(videoTrack, audioTrack)
+}
+
+// 主画面选中流变化时重新绑定 video 元素
+watch(selectedStream, (s) => {
+  nextTick(() => {
+    if (peerVideo.value) peerVideo.value.srcObject = s
+  })
+}, { flush: 'post' })
+
+function selectMain(userId) {
+  selectedUserId.value = userId
+}
+
+// 应用场次上下文：回填信息、面试官列表、模式与本人在场次中的角色
+function applySessionContext(ctx) {
+  if (!ctx) return
+  if (ctx.candidateName) candidate.value.name = ctx.candidateName
+  if (ctx.positionTitle) candidate.value.position = ctx.positionTitle
+  // 小窗标注的是「我」，优先展示当前登录面试官本人姓名
+  interviewerName.value = userStore.nickName || userStore.name || ctx.interviewerName || interviewerName.value
+  if (ctx.mode) interviewMode.value = Number(ctx.mode)
+  sessionRole.value = ctx.role || null
+  primaryInterviewerId.value = ctx.primaryInterviewerId != null ? Number(ctx.primaryInterviewerId) : null
+
+  const list = []
+  if (ctx.candidateUserId != null) {
+    list.push({ userId: Number(ctx.candidateUserId), name: ctx.candidateName || '候选人', roleLabel: '候选人', candidate: true, primary: false })
+  }
+  const interviewers = ctx.interviewers || []
+  interviewers.forEach((it) => {
+    const uid = Number(it.userId)
+    // 本人的画面用本地小窗呈现，不重复放入可切换列表
+    if (String(uid) === String(myUserId.value)) return
+    list.push({
+      userId: uid,
+      name: it.userName || '面试官',
+      roleLabel: Number(it.isPrimary) === 1 ? '主面试官' : '面试官',
+      candidate: false,
+      primary: Number(it.isPrimary) === 1
+    })
+  })
+  participants.value = list
+  if (selectedUserId.value == null && list.length) selectedUserId.value = list[0].userId
+
+  // 加入状态：主面试官自动加入；其他面试官按服务端记录，未加入需手动点「加入本次面试」；
+  // 观察者只观看不发布
+  if (sessionRole.value === 'OBSERVER') {
+    joined.value = false
+  } else if (sessionRole.value === 'HR') {
+    if (isSelfPrimary.value) {
+      joined.value = true
+      recordJoin()
+    } else {
+      const selfMeta = interviewers.find((x) => String(x.userId) === String(myUserId.value))
+      joined.value = !!selfMeta && Number(selfMeta.joinStatus) === 1
+    }
+  }
+  if (joined.value && (videoTrack || audioTrack)) rtc?.attachLocalTracks(videoTrack, audioTrack)
+}
+
+// 加入本次面试：标记加入并开始发布本地音视频
+async function joinNow(silent) {
+  if (joined.value) return
+  joined.value = true
+  if (!silent) notify('已加入本次面试')
+  if (videoTrack || audioTrack) rtc?.attachLocalTracks(videoTrack, audioTrack)
+  await recordJoin()
+}
+
+// 向服务端登记「已加入」（仅登记一次，避免刷新上下文时循环调用）
+async function recordJoin() {
+  if (joinRecorded || !sessionId.value) return
+  joinRecorded = true
+  try {
+    await joinInterviewer(sessionId.value)
+    await refreshContext()
+  } catch (e) {
+    // 网络异常时保持已加入的本地状态
+  }
+}
+
+// 重新拉取场次上下文（面试官列表 / 主面试官可能已变化）
+async function refreshContext() {
+  if (!sessionId.value) return
+  try {
+    const res = await getSessionContext(sessionId.value)
+    applySessionContext(res.data)
+  } catch (e) {
+    // 忽略
+  }
+}
+
+// 移交主持人给其他面试官
+async function handoverPrimary(item) {
+  if (!sessionId.value) return
+  try {
+    await transferPrimary(sessionId.value, item.userId)
+    notify(`已将主持人移交给 ${item.name}`)
+    await refreshContext()
+  } catch (e) {
+    notify('移交失败，请重试')
+  }
 }
 
 function toggleMic() {
@@ -383,25 +523,20 @@ async function initSession() {
   if (urlSessionId) {
     sessionId.value = urlSessionId
     startRtc()
-  }
-  try {
-    const s = await getCurrentSession()
-    if (s.data && s.data.sessionId) {
-      if (!sessionId.value) {
+  } else {
+    try {
+      const s = await getCurrentSession()
+      if (s.data && s.data.sessionId) {
         sessionId.value = s.data.sessionId
         startRtc()
       }
-      if (String(s.data.sessionId) === String(sessionId.value)) {
-        // 回填候选人 / 面试官信息，替换页面上的演示值
-        if (s.data.candidateName) candidate.value.name = s.data.candidateName
-        if (s.data.positionTitle) candidate.value.position = s.data.positionTitle
-        if (s.data.interviewerName) interviewerName.value = s.data.interviewerName
-      }
+    } catch (e) {
+      // 本地未启动后端时保留 mock 演示
     }
-  } catch (e) {
-    // 本地未启动后端时保留 mock 演示
   }
   if (!sessionId.value) return
+  // 拉取场次上下文：候选人 / 面试官列表 / 面试模式 / 本人在场次中的角色（主面试官自动加入）
+  await refreshContext()
   try {
     const p = await getProgress(sessionId.value)
     if (p.data) {
@@ -467,11 +602,12 @@ onBeforeUnmount(() => {
         <div class="tb-title">
           <strong>高级前端工程师</strong>
           <span class="chip">第 1 轮 / 共 2 轮</span>
-          <span class="chip mode"><Sparkles :size="12" />AI + HR 协同</span>
+          <span class="chip mode"><Sparkles v-if="showAiPanel" :size="12" />{{ modeLabel }}</span>
         </div>
       </div>
       <div class="tb-right">
-        <button class="tb-icon" :title="rightOpen ? '收起协同面板' : '展开协同面板'" @click="rightOpen = !rightOpen">
+        <button v-if="showJoinButton" class="tb-join" @click="joinNow()">加入本次面试</button>
+        <button v-if="showAiPanel" class="tb-icon" :title="rightOpen ? '收起协同面板' : '展开协同面板'" @click="rightOpen = !rightOpen">
           <ChevronRight v-if="rightOpen" :size="17" />
           <ChevronLeft v-else :size="17" />
         </button>
@@ -496,7 +632,7 @@ onBeforeUnmount(() => {
 
         <div class="info-row"><span>应聘岗位</span><b>{{ candidate.position }}</b></div>
         <div class="info-row"><span>当前阶段</span><b>专业技术面</b></div>
-        <div class="info-row"><span>面试模式</span><b>AI + HR 协同</b></div>
+        <div class="info-row"><span>面试模式</span><b>{{ modeLabel }}</b></div>
 
         <button class="resume" @click="notify('已打开候选人简历详情')">
           <FileText :size="16" />查看候选人简历<ArrowUpRight :size="15" />
@@ -514,10 +650,30 @@ onBeforeUnmount(() => {
 
       <section class="stage">
         <div ref="frameRef" class="main-video">
-          <video v-show="peerStream" ref="peerVideo" class="peer-video" autoplay playsinline />
-          <div v-if="!peerStream" class="peer-waiting"><Video :size="26" /><span>等待候选人画面…</span></div>
+          <video v-show="selectedStream" ref="peerVideo" class="peer-video" autoplay playsinline />
+          <div v-if="!selectedStream" class="peer-waiting"><Video :size="26" /><span>等待 {{ selectedName }} 画面…</span></div>
 
-          <span class="tag-main"><i />候选人 · {{ candidate.name }}</span>
+          <span class="tag-main"><i />{{ selectedName }}</span>
+
+          <!-- 参与者列表：多人同场时可在主画面间切换；主面试官可将主持人移交给他人 -->
+          <div v-if="participants.length > 1" class="participant-rail">
+            <div
+              v-for="p in participants"
+              :key="p.userId"
+              class="rail-item"
+              :class="{ active: String(p.userId) === String(selectedUserId) }"
+              @click="selectMain(p.userId)"
+            >
+              <span class="rail-avatar">{{ (p.name || '?').slice(0, 1) }}</span>
+              <span class="rail-meta"><b>{{ p.name }}</b><small>{{ p.roleLabel }}</small></span>
+              <button
+                v-if="isSelfPrimary && !p.candidate"
+                class="rail-transfer"
+                title="将主持人身份移交给该面试官"
+                @click.stop="handoverPrimary(p)"
+              >移交</button>
+            </div>
+          </div>
           <div class="tag-right">
             <span class="tag-quality" :class="quality" @click="toggleQuality">
               {{ quality === 'hd' ? '高清 1080P' : '流畅 480P' }}
@@ -558,7 +714,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <aside v-show="rightOpen" class="right">
+      <aside v-show="rightOpen && showAiPanel" class="right">
         <div class="right-head">
           <h2>AI 实时协同</h2>
         </div>
@@ -741,6 +897,14 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 .tb-exit:hover { color: var(--text); border-color: var(--line-strong); }
+.tb-join {
+  height: 32px; padding: 0 14px;
+  border: 0; border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px; font-weight: 600;
+}
+.tb-join:hover { background: var(--primary-strong); }
 .tb-title { display: flex; align-items: center; gap: 10px; }
 .tb-title strong { font-size: 16px; letter-spacing: .2px; }
 .chip {
@@ -890,6 +1054,48 @@ onBeforeUnmount(() => {
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* 参与者列表：叠在主画面左侧，点击切换主画面 */
+.participant-rail {
+  position: absolute; left: 14px; top: 52px;
+  width: 176px; max-height: calc(100% - 66px);
+  overflow: auto;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.rail-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: rgba(9, 14, 24, .62);
+  backdrop-filter: blur(6px);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.rail-item:hover { border-color: var(--line-strong); }
+.rail-item.active { border-color: var(--primary); background: rgba(37, 99, 235, .28); }
+.rail-avatar {
+  width: 28px; height: 28px; flex: none;
+  border-radius: 8px;
+  display: grid; place-items: center;
+  background: var(--panel-2); color: #cfe0ff;
+  font-size: 12px; font-weight: 600;
+}
+.rail-meta { flex: 1; min-width: 0; line-height: 1.35; }
+.rail-meta b {
+  display: block; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rail-meta small { font-size: 10px; color: var(--muted); }
+.rail-transfer {
+  flex: none;
+  height: 22px; padding: 0 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: #cfe0ff;
+  font-size: 10px;
+}
+.rail-transfer:hover { border-color: var(--primary); color: #fff; }
 
 /* 自己小窗 */
 .self-win {

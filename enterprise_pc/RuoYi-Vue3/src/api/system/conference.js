@@ -260,6 +260,23 @@ export function listInterviewers() {
   })
 }
 
+// 面试官加入会议（后到面试官点击「加入本次面试」）
+export function joinInterviewer(sessionId) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/interviewer/join',
+    method: 'post'
+  })
+}
+
+// 移交主面试官
+export function transferPrimary(sessionId, targetUserId) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/interviewer/transfer',
+    method: 'post',
+    data: { targetUserId: targetUserId }
+  })
+}
+
 // 等候室状态（双方会前检测与就绪情况）
 export function getWaitingRoom(sessionId) {
   return request({
