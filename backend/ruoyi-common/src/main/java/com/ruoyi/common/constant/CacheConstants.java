@@ -51,4 +51,24 @@ public class CacheConstants
      * 登录账户密码错误次数 redis key
      */
     public static final String PWD_ERR_CNT_KEY = "pwd_err_cnt:";
+
+    /**
+     * 刷新令牌 redis key，refresh:{jti} -> userId:sessionId，一次性使用
+     */
+    public static final String REFRESH_TOKEN_KEY = "refresh:";
+
+    /**
+     * 用户刷新令牌索引 redis key，user_refresh:{userId} -> Set<jti>
+     */
+    public static final String USER_REFRESH_KEY = "user_refresh:";
+
+    /**
+     * 访问令牌黑名单 redis key，blacklist:access:{jti} -> 1
+     */
+    public static final String ACCESS_BLACKLIST_KEY = "blacklist:access:";
+
+    /**
+     * 令牌版本号 redis key，user_token_ver:{userId} -> number
+     */
+    public static final String TOKEN_VERSION_KEY = "user_token_ver:";
 }

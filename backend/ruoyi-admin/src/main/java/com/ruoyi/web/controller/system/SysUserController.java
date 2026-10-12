@@ -27,6 +27,7 @@ import com.ruoyi.common.enums.BusinessType;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.common.utils.poi.ExcelUtil;
+import com.ruoyi.framework.web.service.TokenService;
 import com.ruoyi.system.service.ISysDeptService;
 import com.ruoyi.system.service.ISysPostService;
 import com.ruoyi.system.service.ISysRoleService;
@@ -52,6 +53,9 @@ public class SysUserController extends BaseController
 
     @Autowired
     private ISysPostService postService;
+
+    @Autowired
+    private TokenService tokenService;
 
     /**
      * 获取用户列表
@@ -183,7 +187,16 @@ public class SysUserController extends BaseController
         {
             return error("当前用户不能删除");
         }
-        return toAjax(userService.deleteUserByIds(userIds));
+        int rows = userService.deleteUserByIds(userIds);
+        if (rows > 0)
+        {
+            for (Long userId : userIds)
+            {
+                // 用户已删除，递增令牌版本号并清理在线会话与刷新令牌，确保已签发的访问令牌立即失效
+                tokenService.invalidateUserTokens(userId);
+            }
+        }
+        return toAjax(rows);
     }
 
     /**
@@ -198,7 +211,13 @@ public class SysUserController extends BaseController
         userService.checkUserDataScope(user.getUserId());
         user.setPassword(SecurityUtils.encryptPassword(user.getPassword()));
         user.setUpdateBy(getUsername());
-        return toAjax(userService.resetPwd(user));
+        int rows = userService.resetPwd(user);
+        if (rows > 0)
+        {
+            // 密码重置后递增令牌版本号，使该用户已签发的访问令牌与刷新令牌全部失效
+            tokenService.incrementTokenVersion(user.getUserId());
+        }
+        return toAjax(rows);
     }
 
     /**
