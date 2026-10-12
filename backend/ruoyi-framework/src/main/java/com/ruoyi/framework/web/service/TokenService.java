@@ -261,7 +261,7 @@ public class TokenService
     }
 
     /**
-     * 退出登录：访问令牌加入黑名单，删除会话缓存与该用户全部刷新令牌
+     * 退出登录：访问令牌加入黑名单，删除当前会话缓存与该会话的刷新令牌（不影响该用户其它在线设备）
      *
      * @param request 请求
      */
@@ -276,7 +276,7 @@ public class TokenService
         if (loginUser != null)
         {
             delLoginUser(loginUser.getToken());
-            clearRefreshTokens(loginUser.getUserId());
+            clearSessionRefreshTokens(loginUser.getUserId(), loginUser.getToken());
         }
         try
         {
@@ -344,13 +344,14 @@ public class TokenService
     }
 
     /**
-     * 清除用户的全部刷新令牌
+     * 清除指定会话的刷新令牌（不影响该用户其它会话），索引清空后同步删除索引键
      *
-     * @param userId 用户ID
+     * @param userId    用户ID
+     * @param sessionId 会话标识，即访问令牌中的 login_user_key
      */
-    public void clearRefreshTokens(Long userId)
+    private void clearSessionRefreshTokens(Long userId, String sessionId)
     {
-        if (userId == null)
+        if (userId == null || StringUtils.isEmpty(sessionId))
         {
             return;
         }
@@ -358,12 +359,22 @@ public class TokenService
         Set<Object> jtis = redisCache.getCacheSet(indexKey);
         if (jtis != null)
         {
-            for (Object jti : jtis)
+            String suffix = ":" + sessionId;
+            for (Object jti : new ArrayList<>(jtis))
             {
-                redisCache.deleteObject(CacheConstants.REFRESH_TOKEN_KEY + jti);
+                Object value = redisCache.getCacheObject(CacheConstants.REFRESH_TOKEN_KEY + jti);
+                if (value != null && value.toString().endsWith(suffix))
+                {
+                    redisCache.deleteObject(CacheConstants.REFRESH_TOKEN_KEY + jti);
+                    redisCache.redisTemplate.opsForSet().remove(indexKey, jti);
+                }
             }
         }
-        redisCache.deleteObject(indexKey);
+        Long remaining = redisCache.redisTemplate.opsForSet().size(indexKey);
+        if (remaining == null || remaining == 0L)
+        {
+            redisCache.deleteObject(indexKey);
+        }
     }
 
     /**

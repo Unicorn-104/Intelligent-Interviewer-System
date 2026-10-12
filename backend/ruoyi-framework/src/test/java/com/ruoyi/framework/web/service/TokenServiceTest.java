@@ -265,4 +265,34 @@ public class TokenServiceTest
 
         assertNull(tokenService.getLoginUser(bearerRequest(token)), "刷新令牌不应通过 getLoginUser 认证通道");
     }
+
+    /**
+     * 场景7：退出登录仅清理当前会话——会话缓存与该会话的刷新令牌被删除，
+     * 该用户其它在线会话的刷新令牌不受影响，访问令牌 jti 进入黑名单
+     */
+    @Test
+    public void logoutClearsOnlyCurrentSessionRefreshTokens()
+    {
+        cache.put(CacheConstants.LOGIN_TOKEN_KEY + "sess-1", loginUser(1L, "sess-1"));
+        String indexKey = CacheConstants.USER_REFRESH_KEY + 1L;
+        setCache.put(indexKey, new LinkedHashSet<>(Arrays.asList("jti-a", "jti-b")));
+        cache.put(CacheConstants.REFRESH_TOKEN_KEY + "jti-a", "1:sess-1");
+        cache.put(CacheConstants.REFRESH_TOKEN_KEY + "jti-b", "1:sess-2");
+        when(setOperations.size(indexKey)).thenReturn(1L);
+
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(Constants.LOGIN_USER_KEY, "sess-1");
+        claims.put(Constants.JWT_JTI, "jti-access-1");
+        claims.put(Constants.JWT_TYPE, Constants.TOKEN_TYPE_ACCESS);
+        String token = buildToken(claims);
+
+        tokenService.logout(bearerRequest(token));
+
+        assertFalse(cache.containsKey(CacheConstants.LOGIN_TOKEN_KEY + "sess-1"), "当前会话缓存应被删除");
+        assertFalse(cache.containsKey(CacheConstants.REFRESH_TOKEN_KEY + "jti-a"), "当前会话的刷新令牌应被删除");
+        assertTrue(cache.containsKey(CacheConstants.REFRESH_TOKEN_KEY + "jti-b"), "其它会话的刷新令牌不应被误删");
+        verify(setOperations).remove(indexKey, "jti-a");
+        verify(redisCache, never()).deleteObject(indexKey);
+        assertTrue(cache.containsKey(CacheConstants.ACCESS_BLACKLIST_KEY + "jti-access-1"), "访问令牌应进入黑名单");
+    }
 }
