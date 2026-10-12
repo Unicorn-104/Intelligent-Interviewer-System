@@ -295,4 +295,19 @@ public class TokenServiceTest
         verify(redisCache, never()).deleteObject(indexKey);
         assertTrue(cache.containsKey(CacheConstants.ACCESS_BLACKLIST_KEY + "jti-access-1"), "访问令牌应进入黑名单");
     }
+
+    /**
+     * 场景8：刷新令牌索引 size 返回 null（键不存在时 Redis 返回 nil）不应抛 NPE，
+     * 并按“已清空”语义删除索引键
+     */
+    @Test
+    public void forceLogoutHandlesNullSetSizeWithoutNpe()
+    {
+        cache.put(CacheConstants.LOGIN_TOKEN_KEY + "sess-1", loginUser(1L, "sess-1"));
+        String indexKey = CacheConstants.USER_REFRESH_KEY + 1L;
+        // 不 stub setOperations.size()，Mockito 对包装类型返回值默认为 null
+        tokenService.forceLogout("sess-1");
+
+        verify(redisCache).deleteObject(indexKey);
+    }
 }

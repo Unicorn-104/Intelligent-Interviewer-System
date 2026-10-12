@@ -424,7 +424,8 @@ public class TokenService
                 redisCache.redisTemplate.opsForSet().remove(indexKey, jti);
             }
         }
-        if (redisCache.redisTemplate.opsForSet().size(indexKey) == 0)
+        Long remaining = redisCache.redisTemplate.opsForSet().size(indexKey);
+        if (remaining == null || remaining == 0L)
         {
             redisCache.deleteObject(indexKey);
         }
@@ -464,7 +465,8 @@ public class TokenService
                 }
             }
         }
-        if (redisCache.redisTemplate.opsForSet().size(indexKey) == 0)
+        Long remaining = redisCache.redisTemplate.opsForSet().size(indexKey);
+        if (remaining == null || remaining == 0L)
         {
             redisCache.deleteObject(indexKey);
         }
