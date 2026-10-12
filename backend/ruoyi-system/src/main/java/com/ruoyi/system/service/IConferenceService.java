@@ -32,8 +32,27 @@ public interface IConferenceService
 
     /**
      * HR 生成 / 复用会议链接（内部按需创建预约与场次）
+     *
+     * @param interviewerIds 被指派的面试官用户ID（按面试模式校验人数，纯AI 可为空）
+     * @param candidateAppUrl 候选人端地址，用于在系统消息中拼接会议链接（可为空）
      */
-    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes, Integer mode);
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes,
+            Integer mode, List<Long> interviewerIds, String candidateAppUrl);
+
+    /**
+     * 本企业全体在职用户（HR 发起面试时选择面试官）
+     */
+    public List<Map<String, Object>> listInterviewers(Long userId);
+
+    /**
+     * 面试官加入会议（后到面试官点击「加入本次面试」，记录已加入状态）
+     */
+    public Map<String, Object> joinInterviewer(Long userId, Long sessionId);
+
+    /**
+     * 移交主面试官（仅现任主面试官可操作，接收人须为本场次面试官）
+     */
+    public Map<String, Object> transferPrimary(Long userId, Long sessionId, Long targetUserId);
 
     /**
      * 候选人在本企业投递过的岗位（HR 发起面试时选择岗位）

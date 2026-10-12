@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { Search, Video, Zap, Smile, Paperclip, Send, Settings2, FileText, Bell, Copy } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import { listSessions, listMessages, sendMessage, readSession, readAll, uploadFile, listQuickReplies, saveQuickReply, deleteQuickReply } from '@/api/system/im'
-import { createRoomLink, listCandidatePositions } from '@/api/system/conference'
+import { createRoomLink, listCandidatePositions, listInterviewers } from '@/api/system/conference'
 import { refreshUnread, totalUnread } from '@/views/enterprise/store/unread'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 
@@ -229,8 +229,14 @@ const linkOpen = ref(false)
 const positionsLoading = ref(false)
 const generating = ref(false)
 const positions = ref([])
+const interviewers = ref([])
+const selectedInterviewerIds = ref([])
 const linkResult = ref(null)
 const linkForm = ref({ peerUserId: null, positionId: null, durationMinutes: 45, mode: 2 })
+
+// 面试模式与面试官人数严格联动
+const MODE_HINT = { 1: '纯AI 无需面试官，本企业成员可凭链接旁听', 2: '需选择 1 位面试官', 3: '需选择至少 2 位面试官', 4: '需选择至少 1 位面试官' }
+const needInterviewers = computed(() => linkForm.value.mode !== 1)
 
 // 当前会话对方用户 ID（新会话态取 newChat）
 const peerUserId = computed(() => activeConv.value?.peerId ?? newChat.value?.peerId ?? null)
@@ -242,9 +248,50 @@ function openLinkModal() {
   if (peer == null) { ElMessage.warning('当前会话缺少对方信息，无法发起视频面试'); return }
   linkForm.value = { peerUserId: peer, positionId: null, durationMinutes: 45, mode: 2 }
   positions.value = []
+  selectedInterviewerIds.value = []
   linkResult.value = null
   linkOpen.value = true
   loadPositions()
+  loadInterviewers()
+}
+
+async function loadInterviewers() {
+  try {
+    const res = await listInterviewers()
+    interviewers.value = res.data || []
+  } catch (e) {
+    interviewers.value = []
+  }
+}
+
+function toggleInterviewer(id) {
+  const list = selectedInterviewerIds.value
+  const idx = list.indexOf(id)
+  // 单面试官模式为单选，多面试官 / 纯人工可多选
+  if (linkForm.value.mode === 2) {
+    selectedInterviewerIds.value = idx >= 0 ? [] : [id]
+    return
+  }
+  if (idx >= 0) list.splice(idx, 1)
+  else list.push(id)
+}
+
+function validateMode() {
+  const mode = linkForm.value.mode
+  const count = selectedInterviewerIds.value.length
+  if (mode === 1 && count > 0) { ElMessage.warning('纯AI面试无需选择面试官'); return false }
+  if (mode === 2 && count !== 1) { ElMessage.warning('AI + 单面试官模式需选择 1 位面试官'); return false }
+  if (mode === 3 && count < 2) { ElMessage.warning('AI + 多面试官模式需选择至少 2 位面试官'); return false }
+  if (mode === 4 && count < 1) { ElMessage.warning('无AI纯人工模式需选择至少 1 位面试官'); return false }
+  return true
+}
+
+// 切换模式时收敛已选面试官，避免残留不符合人数要求的选择
+function onModeChange() {
+  if (linkForm.value.mode === 1) selectedInterviewerIds.value = []
+  else if (linkForm.value.mode === 2 && selectedInterviewerIds.value.length > 1) {
+    selectedInterviewerIds.value = selectedInterviewerIds.value.slice(0, 1)
+  }
 }
 
 async function loadPositions() {
@@ -263,13 +310,16 @@ async function loadPositions() {
 
 async function generateLink() {
   if (linkForm.value.positionId == null) { ElMessage.warning('请选择面试岗位'); return }
+  if (!validateMode()) return
   generating.value = true
   try {
     const res = await createRoomLink({
       peerUserId: linkForm.value.peerUserId,
       positionId: linkForm.value.positionId,
       durationMinutes: linkForm.value.durationMinutes,
-      mode: linkForm.value.mode
+      mode: linkForm.value.mode,
+      interviewerIds: selectedInterviewerIds.value,
+      candidateAppUrl: import.meta.env.VITE_CANDIDATE_APP_URL
     })
     linkResult.value = res.data || null
   } catch (e) {
@@ -415,11 +465,28 @@ onMounted(async () => {
         </label>
         <label class="lf-row">
           <span>面试模式</span>
-          <select v-model.number="linkForm.mode">
-            <option :value="2">AI + HR 协同</option>
-            <option :value="1">纯 AI</option>
+          <select v-model.number="linkForm.mode" @change="onModeChange">
+            <option :value="2">AI + 单面试官</option>
+            <option :value="3">AI + 多面试官</option>
+            <option :value="4">无AI纯人工</option>
+            <option :value="1">纯AI</option>
           </select>
         </label>
+        <div class="lf-row lf-col">
+          <span>面试官</span>
+          <div class="lf-interviewers">
+            <p class="lf-mode-hint">{{ MODE_HINT[linkForm.mode] }}</p>
+            <div v-if="needInterviewers" class="lf-iv-list">
+              <label v-for="iv in interviewers" :key="iv.userId" class="lf-iv" :class="{on: selectedInterviewerIds.includes(iv.userId)}">
+                <input type="checkbox" :checked="selectedInterviewerIds.includes(iv.userId)" @change="toggleInterviewer(iv.userId)" />
+                <b>{{ iv.userName }}</b>
+                <small v-if="iv.jobTitle || iv.department">{{ iv.jobTitle || iv.department }}</small>
+              </label>
+              <p v-if="!interviewers.length" class="lf-iv-empty">本企业暂无可用成员</p>
+            </div>
+            <p v-else class="lf-iv-empty">纯AI 模式无需选择面试官</p>
+          </div>
+        </div>
         <button class="lf-generate" :disabled="generating || linkForm.positionId == null" @click="generateLink">
           {{ generating ? '生成中…' : '生成链接' }}
         </button>
@@ -448,6 +515,17 @@ onMounted(async () => {
 .lf-num{width:120px;flex:none}
 .lf-row select:focus,.lf-num:focus{border-color:#2563eb}
 .lf-row em{font-style:normal;color:#8392a7;font-size:11px}
+.lf-col{align-items:flex-start}
+.lf-interviewers{flex:1;min-width:0}
+.lf-mode-hint{color:#8392a7;font-size:10px;margin-bottom:6px}
+.lf-iv-list{max-height:150px;overflow:auto;border:1px solid #dfe6ef;border-radius:8px;padding:6px}
+.lf-iv{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer}
+.lf-iv:hover{background:#f4f8ff}
+.lf-iv.on{background:#edf4ff}
+.lf-iv input{accent-color:#2563eb}
+.lf-iv b{font-size:12px;color:#40516a;font-weight:500}
+.lf-iv small{color:#9aa7b8;font-size:10px}
+.lf-iv-empty{color:#9aa7b8;font-size:10px;padding:8px}
 .lf-generate{height:38px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-size:13px;font-weight:600;cursor:pointer}
 .lf-generate:disabled{background:#c9d3df;cursor:not-allowed}
 .lf-result{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid #e6ebf2;border-radius:10px;background:#f8fafc}
