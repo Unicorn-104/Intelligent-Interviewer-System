@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.InterviewReviewMapper">
+
+    <!-- ============ HR 终审与级联流转（UC-12 步骤7-10 / UC-15） ============ -->
+
+    <select id="selectReviewList" resultType="java.util.LinkedHashMap">
+        select s.ses_id as sessionId, s.ses_candidate_id as candidateId,
+               s.ses_position_id as positionId, s.ses_cascade_round as round,
+               s.ses_mode as mode, s.ses_rec_url as recUrl,
+               e.evl_id as evaluationId, e.evl_overall_score as overallScore,
+               e.evl_recommendation as recommendation, e.evl_hr_status as hrStatus,
+               e.evl_hr_recommendation as hrRecommendation,
+               u.nick_name as candidateName, pos.pos_title as positionTitle
+        from t_int_session s
+        join t_int_evaluation e on e.evl_session_id = s.ses_id
+        left join t_tal t on t.tal_id = s.ses_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_pos pos on pos.pos_id = s.ses_position_id
+        <where>
+            <if test="status != null">
+                e.evl_hr_status = #{status}
+            </if>
+        </where>
+        order by e.evl_created_at desc
+    </select>
+
+    <select id="selectReviewDetail" resultType="java.util.LinkedHashMap">
+        select s.ses_id as sessionId, s.ses_candidate_id as candidateId,
+               s.ses_cascade_round as round, s.ses_mode as mode, s.ses_rec_url as recUrl,
+               e.evl_overall_score as overallScore,
+               cast(e.evl_dimension_scores as char) as dimensionScores,
+               e.evl_summary as summary, e.evl_advantages as advantages,
+               e.evl_risks as risks, e.evl_gaps as gaps,
+               e.evl_recommendation as recommendation,
+               e.evl_hr_status as hrStatus, e.evl_hr_comment as hrComment,
+               e.evl_hr_recommendation as hrRecommendation,
+               u.nick_name as candidateName, pos.pos_title as positionTitle
+        from t_int_session s
+        join t_int_evaluation e on e.evl_session_id = s.ses_id
+        left join t_tal t on t.tal_id = s.ses_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_pos pos on pos.pos_id = s.ses_position_id
+        where s.ses_id = #{sessionId}
+    </select>
+
+    <select id="selectSessionBase" resultType="java.util.LinkedHashMap">
+        select s.ses_id as sessionId, s.ses_candidate_id as candidateId,
+               s.ses_position_id as positionId, s.ses_interviewer_id as interviewerId,
+               s.ses_template_id as templateId, s.ses_cascade_round as round,
+               e.evl_overall_score as overallScore,
+               t.tal_user_id as candidateUserId, pos.pos_title as positionTitle
+        from t_int_session s
+        left join t_int_evaluation e on e.evl_session_id = s.ses_id
+        left join t_tal t on t.tal_id = s.ses_candidate_id
+        left join t_pos pos on pos.pos_id = s.ses_position_id
+        where s.ses_id = #{sessionId}
+    </select>
+
+    <update id="updateHrStatus">
+        update t_int_evaluation
+        set evl_hr_status = #{hrStatus}, evl_hr_recommendation = #{hrRecommendation},
+            evl_hr_comment = #{hrComment}, evl_hr_updated_at = now()
+        where evl_session_id = #{sessionId}
+    </update>
+
+    <update id="updateDimensionScores">
+        update t_int_evaluation
+        set evl_dimension_scores = #{dimsJson}, evl_overall_score = #{overallScore},
+            evl_hr_updated_at = now()
+        where evl_session_id = #{sessionId}
+    </update>
+
+    <select id="selectCascadeRule" resultType="java.util.LinkedHashMap">
+        select csr_id as ruleId, csr_template_id as templateId, csr_current_round as round,
+               csr_dimension as dimension, csr_pass_threshold as passThreshold,
+               csr_action_pass as actionPass, csr_action_fail as actionFail
+        from t_int_cascade_rule
+        where csr_template_id = #{templateId} and csr_current_round = #{round}
+        limit 1
+    </select>
+
+    <insert id="insertCascadeAppointment">
+        insert into t_sch_appointment
+            (apt_candidate_id, apt_position_id, apt_interviewer_id,
+             apt_start_time, apt_end_time, apt_status)
+        values
+            (#{candidateId}, #{positionId}, #{interviewerId},
+             #{startTime}, #{endTime}, 0)
+    </insert>
+
+    <update id="updateTalStatus">
+        update t_tal
+        set tal_status = #{status}, tal_updated_at = now()
+        where tal_id = #{talId}
+    </update>
+
+    <insert id="insertMessage">
+        insert into t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content, msg_is_read)
+        values (#{receiverId}, 0, 1, #{title}, #{content}, 0)
+    </insert>
+
+</mapper>

@@ -257,11 +257,13 @@ class _SlotLine extends StatelessWidget {
         ),
         Icon(Icons.schedule, size: 14, color: color),
         const SizedBox(width: 6),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: color,
-            fontWeight: FontWeight.w500,
+        Expanded(
+          child: Text(
+            value,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
       ],

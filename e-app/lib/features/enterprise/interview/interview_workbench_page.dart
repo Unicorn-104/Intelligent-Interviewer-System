@@ -205,17 +205,34 @@ class _InterviewWorkbenchPageState extends State<InterviewWorkbenchPage> {
             ),
           ],
         ),
-        body: Column(
-          children: [
-            _buildProgressBar(session),
-            // 上：对话区（字幕流）
-            Expanded(flex: 5, child: _buildCaptionArea()),
-            // 下：AI 提词建议卡片
-            Expanded(flex: 6, child: _buildCopilotArea()),
-            _buildActionBar(),
-          ],
-        ),
+        body:
+            MediaQuery.orientationOf(context) == Orientation.landscape &&
+                MediaQuery.sizeOf(context).height < 450
+            ? _buildCompactWorkbench(session)
+            : Column(
+                children: [
+                  _buildProgressBar(session),
+                  // 上：对话区（字幕流）
+                  Expanded(flex: 5, child: _buildCaptionArea()),
+                  // 下：AI 提词建议卡片
+                  Expanded(flex: 6, child: _buildCopilotArea()),
+                  _buildActionBar(),
+                ],
+              ),
       ),
+    );
+  }
+
+  // 横屏低高度时卡片纵向压缩会导致操作区不可见，改为整页滚动。
+  Widget _buildCompactWorkbench(Map<String, dynamic> session) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 12),
+      children: [
+        _buildProgressBar(session),
+        SizedBox(height: 240, child: _buildCaptionArea()),
+        SizedBox(height: 245, child: _buildCopilotArea()),
+        _buildActionBar(),
+      ],
     );
   }
 
@@ -246,7 +263,11 @@ class _InterviewWorkbenchPageState extends State<InterviewWorkbenchPage> {
             ],
           ),
           const SizedBox(height: 4),
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
             children: [
               Text(
                 _ended
@@ -258,7 +279,6 @@ class _InterviewWorkbenchPageState extends State<InterviewWorkbenchPage> {
                   color: _ended ? AppColors.muted : AppColors.green,
                 ),
               ),
-              const Spacer(),
               if (!_ended)
                 TextButton.icon(
                   onPressed: _advance,
@@ -431,8 +451,11 @@ class _InterviewWorkbenchPageState extends State<InterviewWorkbenchPage> {
             ),
           const SizedBox(height: 8),
           if (suggestion != null && !_ended)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              runSpacing: 6,
               children: [
                 TextButton(onPressed: _ignore, child: const Text('忽略，自由提问')),
                 const SizedBox(width: 6),
