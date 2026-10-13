@@ -136,6 +136,46 @@ public class Constants
     public static final String JWT_AUTHORITIES = "authorities";
 
     /**
+     * 令牌唯一标识
+     */
+    public static final String JWT_JTI = "jti";
+
+    /**
+     * 令牌类型，取值见 TOKEN_TYPE_ACCESS / TOKEN_TYPE_REFRESH
+     */
+    public static final String JWT_TYPE = "typ";
+
+    /**
+     * 令牌版本号，与 user_token_ver:{userId} 比对
+     */
+    public static final String JWT_VER = "ver";
+
+    /**
+     * 访问令牌类型
+     */
+    public static final String TOKEN_TYPE_ACCESS = "access";
+
+    /**
+     * 刷新令牌类型
+     */
+    public static final String TOKEN_TYPE_REFRESH = "refresh";
+
+    /**
+     * 访问令牌过期时间字段
+     */
+    public static final String TOKEN_EXPIRE_AT = "expireAt";
+
+    /**
+     * 刷新令牌字段
+     */
+    public static final String REFRESH_TOKEN = "refreshToken";
+
+    /**
+     * 刷新令牌过期时间字段
+     */
+    public static final String REFRESH_EXPIRE_AT = "refreshExpireAt";
+
+    /**
      * 资源映射路径 前缀
      */
     public static final String RESOURCE_PREFIX = "/profile";

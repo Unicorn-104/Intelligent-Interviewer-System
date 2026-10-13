@@ -38,6 +38,7 @@ import { clearCandidateSession } from '@/utils/agentSession'
 import { removeToken } from '@/utils/auth'
 import useUserStore from '@/store/modules/user'
 import { getNoticeUnreadCount } from '@/api/system/notice'
+import { getImUnreadCount } from '@/api/system/im'
 
 defineProps({
   active: {
@@ -65,8 +66,11 @@ const navItems = computed(() => baseNavItems.map(item => ({
 
 async function loadUnreadCount() {
   try {
-    const response = await getNoticeUnreadCount()
-    unreadCount.value = Number(response.data || 0)
+    const [noticeResponse, imResponse] = await Promise.all([
+      getNoticeUnreadCount(),
+      getImUnreadCount()
+    ])
+    unreadCount.value = Number(noticeResponse.data || 0) + Number(imResponse.count || 0)
   } catch {
     unreadCount.value = 0
   }

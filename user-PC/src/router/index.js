@@ -3,6 +3,15 @@ import { createWebHistory, createRouter } from 'vue-router'
 import Layout from '@/layout'
 
 const agentPageModules = import.meta.glob('../views/agent/pages/*.vue')
+const redirectToAgentLogin = (to) => ({
+  path: '/agent/login',
+  query: to.query
+})
+const redirectToAgentRegister = (to) => ({
+  path: '/agent/register',
+  query: to.query
+})
+
 const agentPageDefinitions = [
   ['index', 'AgentIndex', '求职者端工作台'],
   ['login', 'AgentLogin', '求职者端登录'],
@@ -103,12 +112,12 @@ export const constantRoutes = [
   },
   {
     path: '/login',
-    component: () => import('@/views/login'),
+    redirect: redirectToAgentLogin,
     hidden: true
   },
   {
     path: '/register',
-    component: () => import('@/views/register'),
+    redirect: redirectToAgentRegister,
     hidden: true
   },
   {
@@ -124,7 +133,7 @@ export const constantRoutes = [
   {
     path: '',
     component: Layout,
-    redirect: '/index',
+    redirect: redirectToAgentLogin,
     children: [
       {
         path: '/index',
