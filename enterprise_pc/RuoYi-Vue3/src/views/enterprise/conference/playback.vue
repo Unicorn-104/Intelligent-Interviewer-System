@@ -13,17 +13,21 @@ const router = useRouter()
 const toast = ref('')
 
 const record = ref({
-  id: route.query.id || 'REC-20260618-001',
-  candidate: '王芳',
-  position: '高级前端工程师',
-  date: '2026-06-18 14:30',
-  mode: 'AI + HR 协同',
-  duration: 2538,
-  interviewers: '林晓雯（HR）· 张伟（技术）',
-  status: '已完成'
+  id: route.query.id ? String(route.query.id) : '',
+  candidate: '',
+  position: '',
+  date: '',
+  mode: '',
+  duration: 0,
+  interviewers: ''
 })
 
 const playerRef = ref(null)
+const videoRef = ref(null)
+// 真实录制文件地址（/profile/upload/... 相对路径），为空时展示占位
+const recUrl = ref('')
+// 录制文件加载失败（外链失效 / 文件丢失）标记，触发后降级为占位提示
+const loadFailed = ref(false)
 const playing = ref(false)
 const current = ref(0)
 const volume = ref(80)
@@ -31,25 +35,20 @@ const rate = ref(1)
 const rateOpen = ref(false)
 const rates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
-const chapters = ref([
-  { label: '自我介绍', t: 0 },
-  { label: '分布式事务选型', t: 420 },
-  { label: 'TCC 与补偿设计', t: 1120 },
-  { label: '线上踩坑复盘', t: 1860 },
-  { label: '候选人提问', t: 2340 }
-])
+// 资源相对路径拼接后端基地址（dev 走 /dev-api 代理，生产走同域反代）
+function assetUrl(url) {
+  if (!url) return ''
+  return url.startsWith('http') ? url : import.meta.env.VITE_APP_BASE_API + url
+}
 
-const qa = ref([
-  { t: 132, q: '请介绍一下你在订单中心的核心职责', score: 88 },
-  { t: 460, q: '为什么最终选择 TCC 而不是 XA？', score: 92 },
-  { t: 1180, q: '补偿阶段失败时如何保证最终一致？', score: 85 },
-  { t: 1900, q: '线上出现过哪些分布式事务问题？', score: 90 },
-  { t: 2360, q: '你对我们团队的技术栈有什么想了解的？', score: 86 }
-])
+// 问答时间线与问答记录：均由后端 t_int_dialogue 实时返回，无数据时为空
+const chapters = ref([])
+
+const qa = ref([])
 
 let timerId = null
 
-const percent = computed(() => (current.value / record.value.duration) * 100)
+const percent = computed(() => (record.value.duration > 0 ? (current.value / record.value.duration) * 100 : 0))
 const fmt = (value) => {
   const v = Math.max(0, Math.floor(value))
   const m = String(Math.floor(v / 60)).padStart(2, '0')
@@ -58,35 +57,40 @@ const fmt = (value) => {
 }
 
 function toggle() {
-  playing.value = !playing.value
-  if (playing.value) start()
-  else stop()
+  const v = videoRef.value
+  if (!v || !recUrl.value) return
+  if (v.paused) v.play().catch(() => notify('播放失败，请重试'))
+  else v.pause()
 }
 
-function start() {
-  stop()
-  timerId = setInterval(() => {
-    current.value += 1 * rate.value
-    if (current.value >= record.value.duration) {
-      current.value = record.value.duration
-      playing.value = false
-      stop()
-    }
-  }, 1000)
+function onTimeUpdate() {
+  const v = videoRef.value
+  if (!v) return
+  current.value = v.currentTime
+  if (!Number.isNaN(v.duration) && v.duration > 0) record.value.duration = Math.round(v.duration)
 }
 
-function stop() {
-  if (timerId) clearInterval(timerId)
-  timerId = null
+function onEnded() {
+  playing.value = false
+}
+
+// 视频加载/解码失败：标记失败并降级为占位提示（外链失效、文件丢失等）
+function onVideoError() {
+  loadFailed.value = true
+  playing.value = false
 }
 
 function seek(event) {
   const rect = event.currentTarget.getBoundingClientRect()
   const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
-  current.value = Math.round(ratio * record.value.duration)
+  const v = videoRef.value
+  if (v && v.duration) v.currentTime = ratio * v.duration
+  else current.value = Math.round(ratio * record.value.duration)
 }
 
 function jump(seconds) {
+  const v = videoRef.value
+  if (v && v.duration) v.currentTime = seconds
   current.value = seconds
   notify(`已跳转至 ${fmt(seconds)}`)
 }
@@ -94,8 +98,14 @@ function jump(seconds) {
 function setRate(value) {
   rate.value = value
   rateOpen.value = false
-  if (playing.value) start()
+  const v = videoRef.value
+  if (v) v.playbackRate = value
   notify(`播放速度 ${value}x`)
+}
+
+function setVolume() {
+  const v = videoRef.value
+  if (v) v.volume = volume.value / 100
 }
 
 function toggleFullscreen() {
@@ -110,7 +120,18 @@ function notify(msg) {
   setTimeout(() => (toast.value = ''), 2000)
 }
 
-// 拉取回放详情并覆盖 mock；后端无数据时保留 mock
+// 面试模式数值转展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
+function modeLabel(mode) {
+  switch (Number(mode)) {
+    case 1: return '纯 AI 面试'
+    case 2: return 'AI + HR 协同'
+    case 3: return 'AI + 多面试官'
+    case 4: return '无 AI · 纯人工'
+    default: return ''
+  }
+}
+
+// 拉取回放详情，页面展示字段全部来自后端真实数据
 async function initPlayback() {
   const id = route.query.id
   if (!id) return
@@ -118,22 +139,24 @@ async function initPlayback() {
     const res = await getPlayback(id)
     const d = res.data
     if (!d) return
-    record.value.duration = d.durationSec || record.value.duration
-    record.value.candidate = d.candidateName || record.value.candidate
-    record.value.position = d.positionTitle || record.value.position
-    record.value.date = d.interviewDate || record.value.date
+    recUrl.value = d.recUrl || ''
+    loadFailed.value = false
+    record.value.duration = d.durationSec || 0
+    record.value.candidate = d.candidateName || ''
+    record.value.position = d.positionTitle || ''
+    record.value.date = d.interviewDate || ''
+    record.value.mode = modeLabel(d.mode)
+    if (Array.isArray(d.interviewers) && d.interviewers.length > 0) {
+      record.value.interviewers = d.interviewers.map((i) => i.userName).filter(Boolean).join(' · ')
+    }
     const date = d.interviewDate || ''
     record.value.id = `REC-${date.replaceAll('-', '')}-${String(d.sessionId).padStart(3, '0')}`
-    if (Array.isArray(d.chapters) && d.chapters.length > 0) {
-      chapters.value = d.chapters.map((c) => ({
-        label: c.title && c.title.length > 16 ? `${c.title.slice(0, 16)}…` : c.title,
-        t: c.second
-      }))
-    }
-    if (Array.isArray(d.qa) && d.qa.length > 0) {
-      // 后端不返回评分，用占位符避免 UI 出现空白
-      qa.value = d.qa.map((q) => ({ t: q.second, q: q.title, score: '—' }))
-    }
+    chapters.value = Array.isArray(d.chapters) ? d.chapters.map((c) => ({
+      label: c.title && c.title.length > 16 ? `${c.title.slice(0, 16)}…` : c.title,
+      t: c.second
+    })) : []
+    // 后端不返回评分，用占位符避免 UI 出现空白
+    qa.value = Array.isArray(d.qa) ? d.qa.map((q) => ({ t: q.second, q: q.title, score: '—' })) : []
   } catch (e) {
     // 无后端数据时保留 mock
   }
@@ -144,7 +167,6 @@ onMounted(() => {
   initPlayback()
 })
 onBeforeUnmount(() => {
-  stop()
   document.removeEventListener('click', closeRate)
 })
 
@@ -175,13 +197,25 @@ function closeRate(event) {
       <div class="layout">
         <section class="player-col">
           <div ref="playerRef" class="player">
-            <img class="poster" src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=1400&q=85" alt="回放画面" />
+            <video
+              v-if="recUrl && !loadFailed"
+              ref="videoRef"
+              class="rec-video"
+              :src="assetUrl(recUrl)"
+              preload="metadata"
+              @error="onVideoError"
+              @timeupdate="onTimeUpdate"
+              @playing="playing = true"
+              @pause="playing = false"
+              @ended="onEnded"
+            />
+            <div v-else class="no-rec">{{ loadFailed ? '录制文件加载失败（可能已过期或外链失效）' : '该场次暂无录制文件' }}</div>
             <span class="badge-rec"><i />录制回放</span>
-            <button class="center-play" :class="{ hidden: playing }" @click="toggle">
+            <button v-if="recUrl && !loadFailed" class="center-play" :class="{ hidden: playing }" @click="toggle">
               <Play :size="30" />
             </button>
 
-            <div class="controls">
+            <div v-if="recUrl && !loadFailed" class="controls">
               <button class="c-btn" @click="toggle">
                 <Pause v-if="playing" :size="20" /><Play v-else :size="20" />
               </button>
@@ -200,7 +234,7 @@ function closeRate(event) {
               </div>
               <div class="volume">
                 <Volume2 :size="18" />
-                <input v-model.number="volume" type="range" min="0" max="100" />
+                <input v-model.number="volume" type="range" min="0" max="100" @input="setVolume" />
               </div>
               <button class="c-btn" title="全屏" @click="toggleFullscreen"><Maximize :size="19" /></button>
             </div>
@@ -258,7 +292,8 @@ function closeRate(event) {
 
 .player { position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: #0b0f18; box-shadow: 0 20px 50px rgba(15, 23, 42, .28); }
 .player:fullscreen { border-radius: 0; aspect-ratio: auto; height: 100%; }
-.poster { width: 100%; height: 100%; object-fit: cover; display: block; opacity: .92; }
+.rec-video { width: 100%; height: 100%; object-fit: contain; display: block; background: #0b0f18; }
+.no-rec { width: 100%; height: 100%; display: grid; place-items: center; color: #8fa1bd; font-size: 14px; background: #0b0f18; }
 .badge-rec {
   position: absolute; left: 14px; top: 14px;
   height: 26px; padding: 0 11px;
