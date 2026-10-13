@@ -7,6 +7,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <resultMap id="AgentJobResult" type="com.ruoyi.system.domain.agent.AgentJob">
         <id property="id" column="job_id"/>
         <result property="title" column="job_title"/>
+        <result property="category" column="job_category"/>
         <result property="companyId" column="company_id"/>
         <result property="companyName" column="company_name"/>
         <result property="companyLogoUrl" column="company_logo_url"/>
@@ -37,6 +38,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         SELECT
             pos.pos_id AS job_id,
             pos.pos_title AS job_title,
+            pos.pos_department AS job_category,
             pos.pos_company_id AS company_id,
             cmp.cmp_name AS company_name,
             cmp.cmp_logo_url AS company_logo_url,
@@ -97,12 +99,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 pos.pos_title LIKE CONCAT('%', #{query.keyword}, '%')
                 OR cmp.cmp_name LIKE CONCAT('%', #{query.keyword}, '%')
                 OR pos.pos_work_city LIKE CONCAT('%', #{query.keyword}, '%')
+                OR pos.pos_department LIKE CONCAT('%', #{query.keyword}, '%')
                 OR EXISTS (
                     SELECT 1 FROM t_pos_skill search_skill
                     WHERE search_skill.psk_position_id = pos.pos_id
                       AND search_skill.psk_name LIKE CONCAT('%', #{query.keyword}, '%')
                 )
             )
+        </if>
+        <if test="query.category != null and query.category != ''">
+            AND pos.pos_department = #{query.category}
         </if>
         <if test="query.city != null and query.city != ''">
             AND pos.pos_work_city LIKE CONCAT('%', #{query.city}, '%')
@@ -125,6 +131,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <when test="query.sort == 'match'">ORDER BY COALESCE(match_score, 0) DESC, pos.pos_created_at DESC</when>
             <otherwise>ORDER BY pos.pos_created_at DESC, pos.pos_id DESC</otherwise>
         </choose>
+    </select>
+
+    <select id="selectJobCategories" resultType="java.lang.String">
+        SELECT DISTINCT pos.pos_department
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        WHERE pos.pos_status = 1
+          AND cmp.cmp_status = 1
+          AND pos.pos_department IS NOT NULL
+          AND pos.pos_department != ''
+        ORDER BY pos.pos_department
     </select>
 
     <select id="selectJobById" resultMap="AgentJobResult">

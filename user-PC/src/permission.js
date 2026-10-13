@@ -27,10 +27,20 @@ router.beforeEach(async (to, from) => {
     NProgress.done()
     return true
   }
+  if (to.path === '/' || to.path === '/index') {
+    if (hasCandidateAccessToken()) {
+      removeToken()
+      clearCandidateSession()
+      useUserStore().$reset()
+      isRelogin.show = false
+    }
+    NProgress.done()
+    return { path: '/agent/login', query: to.query, replace: true }
+  }
   if (import.meta.env.VITE_FRONTEND_ONLY === 'true') {
-    if (to.path === '/' || to.path === '/index' || to.path === '/login') {
+    if (to.path === '/login') {
       NProgress.done()
-      return { path: '/agent/index', replace: true }
+      return { path: '/agent/login', query: to.query, replace: true }
     }
     NProgress.done()
     return true
@@ -72,7 +82,11 @@ router.beforeEach(async (to, from) => {
     const isLock = useLockStore().isLock
     if (to.path === '/login') {
       NProgress.done()
-      return { path: '/' }
+      return { path: '/agent/index', replace: true }
+    }
+    if (to.path === '/register') {
+      NProgress.done()
+      return { path: '/agent/index', replace: true }
     }
     if (isWhiteList(to.path)) {
       return true
@@ -116,7 +130,11 @@ router.beforeEach(async (to, from) => {
       return true
     }
     NProgress.done()
-    return `/login?redirect=${to.fullPath}` // 否则全部重定向到登录页
+    return {
+      path: '/agent/login',
+      query: { redirect: to.fullPath },
+      replace: true
+    }
   }
 })
 
