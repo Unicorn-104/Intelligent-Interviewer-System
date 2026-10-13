@@ -28,10 +28,8 @@ import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
-import com.ruoyi.system.domain.ImMessage;
 import com.ruoyi.system.mapper.ConferenceMapper;
 import com.ruoyi.system.service.IConferenceService;
-import com.ruoyi.system.service.IImService;
 
 /**
  * 视频会议（面试链路）服务层实现
@@ -81,9 +79,6 @@ public class ConferenceServiceImpl implements IConferenceService
 
     @Autowired
     private RedisCache redisCache;
-
-    @Autowired
-    private IImService imService;
 
     @Override
     public Map<String, Object> getCurrentSession(Long userId)
@@ -149,7 +144,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     @Transactional
     public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes,
-            Integer mode, List<Long> interviewerIds, String candidateAppUrl)
+            Integer mode, List<Long> interviewerIds)
     {
         if (peerUserId == null)
         {
@@ -178,7 +173,6 @@ public class ConferenceServiceImpl implements IConferenceService
         Long sessionId;
         String roomId;
         String roomToken;
-        boolean created = false;
         if (active != null && !active.isEmpty())
         {
             // 已有未结束场次：复用，仅在缺少令牌时补写
@@ -194,7 +188,6 @@ public class ConferenceServiceImpl implements IConferenceService
         }
         else
         {
-            created = true;
             if (positionId == null)
             {
                 throw new ServiceException("请选择面试岗位");
@@ -245,11 +238,6 @@ public class ConferenceServiceImpl implements IConferenceService
         }
 
         Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);
-        if (created)
-        {
-            sendInterviewerNotices(userId, selected, candidateAppUrl, str(ctx.get("positionTitle")),
-                    str(ctx.get("candidateName")), str(ctx.get("appointmentStartAt")), roomToken);
-        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", sessionId);
@@ -416,35 +404,30 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     /**
-     * 向被指派面试官推送面试信息（复用 IM 系统消息 type=5）
+     * 当前用户收到的面试邀约通知（消息中心「面试预约通知」系统会话）
      */
-    private void sendInterviewerNotices(Long senderId, List<Long> interviewerIds, String candidateAppUrl,
-            String positionTitle, String candidateName, String startAt, String roomToken)
+    @Override
+    public List<Map<String, Object>> listInterviewerNotices(Long userId)
     {
-        if (interviewerIds.isEmpty())
+        return conferenceMapper.selectInterviewerNotices(userId);
+    }
+
+    /**
+     * 面试官回应邀约：接受（1）或拒绝（2）被指派
+     */
+    @Override
+    public Map<String, Object> respondInterviewNotice(Long userId, Long sessionId, boolean accept)
+    {
+        if (!isAssignedInterviewer(userId, sessionId))
         {
-            return;
+            throw new ServiceException("您不是本场次面试官，无法回应邀约");
         }
-        String link = StringUtils.isEmpty(candidateAppUrl) ? null
-                : candidateAppUrl + "/conference-join?token=" + roomToken;
-        String content = "【面试邀约】您已被指派为「" + StringUtils.nvl(positionTitle, "岗位") + "」候选人 "
-                + StringUtils.nvl(candidateName, "候选人") + " 的面试官，面试时间 " + StringUtils.nvl(startAt, "待定")
-                + "。请准时进入会议。";
-        if (link != null)
-        {
-            content += "会议链接：" + link;
-        }
-        for (Long interviewerId : interviewerIds)
-        {
-            if (interviewerId.equals(senderId))
-            {
-                continue;
-            }
-            ImMessage message = new ImMessage();
-            message.setType(5);
-            message.setContent(content);
-            imService.sendMessage(message, senderId, interviewerId);
-        }
+        int acceptStatus = accept ? 1 : 2;
+        conferenceMapper.updateInterviewerAcceptStatus(sessionId, userId, acceptStatus);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("acceptStatus", acceptStatus);
+        return result;
     }
 
     @Override
@@ -847,6 +830,17 @@ public class ConferenceServiceImpl implements IConferenceService
         }
         detail.put("chapters", chapters);
         detail.put("qa", qa);
+        // 面试官列表：优先取场次面试官关联表，旧场次无关联记录时回落到主面试官
+        List<Map<String, Object>> interviewers = conferenceMapper.selectSessionInterviewers(sessionId);
+        if (interviewers.isEmpty() && StringUtils.isNotEmpty(str(detail.get("primaryInterviewerName"))))
+        {
+            Map<String, Object> primary = new LinkedHashMap<>();
+            primary.put("userName", detail.get("primaryInterviewerName"));
+            primary.put("isPrimary", 1);
+            interviewers = new ArrayList<>();
+            interviewers.add(primary);
+        }
+        detail.put("interviewers", interviewers);
         return detail;
     }
 

@@ -73,7 +73,26 @@ public class ConferenceController extends BaseController
     {
         return success(conferenceService.createRoomLink(getUserId(), longOf(body, "peerUserId"),
                 longOf(body, "positionId"), intOf(body, "durationMinutes"), intOf(body, "mode"),
-                longListOf(body, "interviewerIds"), str(body, "candidateAppUrl")));
+                longListOf(body, "interviewerIds")));
+    }
+
+    /**
+     * 当前用户收到的面试邀约通知（消息中心「面试预约通知」系统会话）
+     */
+    @GetMapping("/interviewer/notices")
+    public AjaxResult interviewerNotices()
+    {
+        return success(conferenceService.listInterviewerNotices(getUserId()));
+    }
+
+    /**
+     * 面试官回应邀约：接受或拒绝被指派
+     */
+    @PostMapping("/interviewer/notices/{sessionId}/respond")
+    public AjaxResult respondInterviewNotice(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.respondInterviewNotice(getUserId(), sessionId,
+                Boolean.TRUE.equals(body.get("accept"))));
     }
 
     /**

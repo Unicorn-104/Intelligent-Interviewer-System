@@ -217,6 +217,17 @@ public interface ConferenceMapper
     public List<Map<String, Object>> selectSessionInterviewers(@Param("sessionId") Long sessionId);
 
     /**
+     * 查询某用户收到的面试邀约通知（消息中心「面试预约通知」系统会话）
+     */
+    public List<Map<String, Object>> selectInterviewerNotices(@Param("userId") Long userId);
+
+    /**
+     * 更新某用户在某场次的面试邀约接受状态（0-待确认，1-已接受，2-已拒绝）
+     */
+    public int updateInterviewerAcceptStatus(@Param("sessionId") Long sessionId, @Param("userId") Long userId,
+            @Param("acceptStatus") Integer acceptStatus);
+
+    /**
      * 查询场次主面试官用户ID（无则返回 null）
      */
     public Long selectPrimaryInterviewerId(@Param("sessionId") Long sessionId);
