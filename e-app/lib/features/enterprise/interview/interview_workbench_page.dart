@@ -69,13 +69,26 @@ class _InterviewWorkbenchPageState extends State<InterviewWorkbenchPage> {
       _captionCursor++;
       _elapsed = (_elapsed + 3).clamp(18, 44);
     });
+    _scrollCaptionsToEnd();
+  }
+
+  void _scrollCaptionsToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_captionsScroll.hasClients) {
-        _captionsScroll.animateTo(
-          _captionsScroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+      if (mounted && _captionsScroll.hasClients) {
+        _captionsScroll
+            .animateTo(
+              _captionsScroll.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            )
+            .then((_) {
+              // 懒加载字幕在滚动后才测出真实高度，再校准一次末尾位置。
+              if (mounted && _captionsScroll.hasClients) {
+                _captionsScroll.jumpTo(
+                  _captionsScroll.position.maxScrollExtent,
+                );
+              }
+            });
       }
     });
   }
@@ -93,6 +106,7 @@ class _InterviewWorkbenchPageState extends State<InterviewWorkbenchPage> {
       });
       _nextSuggestion();
     });
+    _scrollCaptionsToEnd();
   }
 
   /// 编辑后采纳（UC-14 B4：编辑后提问）。
@@ -181,30 +195,37 @@ class _InterviewWorkbenchPageState extends State<InterviewWorkbenchPage> {
   @override
   Widget build(BuildContext context) {
     final session = mockExecutionSession;
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     return DemoDataBadge(
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            '${session['candidateName']} · ${session['positionName']}',
-          ),
-          actions: [
-            Container(
-              margin: const EdgeInsets.only(right: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.primarySoft,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${session['mode']}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.interactive,
+        appBar: landscape
+            ? null
+            : AppBar(
+                title: Text(
+                  '${session['candidateName']} · ${session['positionName']}',
                 ),
+                actions: [
+                  Container(
+                    margin: const EdgeInsets.only(right: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${session['mode']}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.interactive,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
         body:
             MediaQuery.orientationOf(context) == Orientation.landscape &&
                 MediaQuery.sizeOf(context).height < 450
@@ -228,8 +249,18 @@ class _InterviewWorkbenchPageState extends State<InterviewWorkbenchPage> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 12),
       children: [
-        _buildProgressBar(session),
-        SizedBox(height: 240, child: _buildCaptionArea()),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+          child: Text(
+            _ended
+                ? '面试已结束'
+                : _takenOver
+                ? 'HR 主导模式（AI 静默监听）'
+                : '实时字幕与 AI 提词 · 演示数据',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        SizedBox(height: 200, child: _buildCaptionArea()),
         SizedBox(height: 245, child: _buildCopilotArea()),
         _buildActionBar(),
       ],
