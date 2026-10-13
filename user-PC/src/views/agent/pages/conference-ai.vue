@@ -9,7 +9,7 @@
       <div class="ca-tb-right">
         <span class="ca-timer">{{ clock }}</span>
         <span class="ca-net" :class="netLevel"><i />{{ netLevel === 'ok' ? '网络良好' : '网络波动' }}</span>
-        <span class="ca-rec"><i />录制中</span>
+        <span v-if="recording" class="ca-rec"><i />录制中</span>
       </div>
     </header>
 
@@ -20,24 +20,25 @@
 
     <section class="ca-stage">
       <div ref="stageRef" class="ca-video">
-        <video v-show="selectedStream" ref="peerVideo" class="ca-main-video" autoplay playsinline />
-        <div v-if="!selectedStream" class="ca-main-waiting">
-          <Icon name="video" :size="30" />
-          <span>{{ waitingText }}</span>
-        </div>
-        <span v-if="selectedStream" class="ca-main-tag"><i />{{ selectedName }}</span>
-
-        <!-- 面试官列表：多人同场时可切换主画面 -->
-        <div v-if="interviewers.length > 1" class="ca-rail">
-          <div
-            v-for="p in interviewers"
-            :key="p.userId"
-            class="ca-rail-item"
-            :class="{ active: String(p.userId) === String(selectedUserId) }"
-            @click="selectMain(p.userId)"
-          >
-            <span class="ca-rail-avatar">{{ (p.name || '?').slice(0, 1) }}</span>
-            <span class="ca-rail-meta"><b>{{ p.name }}</b><small>{{ p.roleLabel }}</small></span>
+        <!-- 面试官宫格：多位面试官画面并排占据主区，本人画面仍以小窗独立呈现 -->
+        <div class="ca-grid" :class="`g${Math.min(interviewers.length || 1, 6)}`">
+          <div v-for="p in interviewers" :key="p.userId" class="ca-tile">
+            <video
+              v-show="tileStream(p.userId)"
+              :ref="(el) => setTileEl(p.userId, el)"
+              class="ca-tile-video"
+              autoplay
+              playsinline
+            />
+            <div v-if="!tileStream(p.userId)" class="ca-tile-waiting">
+              <Icon name="video" :size="26" />
+              <span>等待 {{ p.name }} 画面…</span>
+            </div>
+            <span v-if="tileStream(p.userId)" class="ca-tile-tag"><i />{{ p.name }} · {{ p.roleLabel }}</span>
+          </div>
+          <div v-if="!interviewers.length" class="ca-grid-empty">
+            <Icon name="video" :size="30" />
+            <span>等待面试官进入…</span>
           </div>
         </div>
 
@@ -178,7 +179,6 @@ const Icon = defineComponent({
 const route = useRoute()
 const stageRef = ref(null)
 const selfVideo = ref(null)
-const peerVideo = ref(null)
 const capListRef = ref(null)
 const selfPos = ref({ x: null, y: null })
 const selfVisible = ref(true)
@@ -187,12 +187,12 @@ const aiRef = ref(null)
 const aiPos = ref({ x: null, y: null })
 // 远端音视频流：userId -> MediaStream（多面试官时每人一路）
 const peerStreams = ref({})
-// 面试官列表（主画面可切换）
+// 面试官列表（宫格中每位各占一格）
 const interviewers = ref([])
-// 主画面当前选中的面试官用户ID
-const selectedUserId = ref(null)
 // 面试模式（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
 const interviewMode = ref(2)
+// 企业端是否正在录制（由面试官通过信令同步，未收到即为未录制）
+const recording = ref(false)
 
 const micOn = ref(true)
 const camOn = ref(true)
@@ -245,19 +245,28 @@ const modeLabel = computed(() => {
 })
 // 无AI纯人工模式不展示 AI 面板与 AI 出题
 const showAiPanel = computed(() => interviewMode.value !== 4)
-// 主画面选中的面试官流
-const selectedStream = computed(() => {
-  const id = selectedUserId.value
-  if (id == null) return null
-  return peerStreams.value[String(id)] || null
-})
-const selectedName = computed(() => {
-  const item = interviewers.value.find((p) => String(p.userId) === String(selectedUserId.value))
-  return item ? item.name : '面试官'
-})
-const waitingText = computed(() =>
-  interviewers.value.length ? `等待 ${selectedName.value} 画面…` : '等待面试官进入…'
-)
+// 宫格中每位面试官的 <video>：userId -> element，流到达后同步 srcObject
+const tileEls = {}
+function tileStream(userId) {
+  return peerStreams.value[String(userId)] || null
+}
+function setTileEl(userId, el) {
+  const key = String(userId)
+  if (el) {
+    tileEls[key] = el
+    const s = tileStream(userId)
+    if (el.srcObject !== s) el.srcObject = s
+  } else {
+    delete tileEls[key]
+  }
+}
+watch(peerStreams, () => {
+  interviewers.value.forEach((p) => {
+    const el = tileEls[String(p.userId)]
+    const s = tileStream(p.userId)
+    if (el && el.srcObject !== s) el.srcObject = s
+  })
+}, { flush: 'post' })
 
 let videoTrack = null
 let audioTrack = null
@@ -382,22 +391,15 @@ function startRtc() {
       const next = { ...peerStreams.value }
       delete next[String(userId)]
       peerStreams.value = next
+    },
+    // 面试官广播的录制状态：企业端未开录制时为 false，候选人端据此展示「录制中」标识
+    onControl: (type, payload) => {
+      if (type === 'recording') recording.value = !!payload.on
     }
   })
   rtc.start()
   // 媒体采集先于信令就绪时补挂本地轨道
   if (videoTrack || audioTrack) rtc.attachLocalTracks(videoTrack, audioTrack)
-}
-
-// 主画面选中流变化时重新绑定 video 元素
-watch(selectedStream, (s) => {
-  nextTick(() => {
-    if (peerVideo.value) peerVideo.value.srcObject = s
-  })
-}, { flush: 'post' })
-
-function selectMain(userId) {
-  selectedUserId.value = userId
 }
 
 // 应用场次上下文：回填顶部信息、面试官列表与面试模式
@@ -406,13 +408,11 @@ function applySessionContext(ctx) {
   if (ctx.positionTitle) header.value.positionTitle = ctx.positionTitle
   if (ctx.roundNo) header.value.roundNo = ctx.roundNo
   if (ctx.mode) interviewMode.value = Number(ctx.mode)
-  const list = (ctx.interviewers || []).map((it) => ({
+  interviewers.value = (ctx.interviewers || []).map((it) => ({
     userId: Number(it.userId),
     name: it.userName || '面试官',
     roleLabel: Number(it.isPrimary) === 1 ? '主面试官' : '面试官'
   }))
-  interviewers.value = list
-  if (selectedUserId.value == null && list.length) selectedUserId.value = list[0].userId
 }
 
 // 重新拉取场次上下文（面试官列表可能变化）
@@ -695,22 +695,22 @@ onBeforeUnmount(() => {
 .ca-stage { flex: 1; min-height: 0; padding: 12px; display: flex; }
 .ca-video { position: relative; flex: 1; min-width: 0; border-radius: 14px; overflow: hidden; background: radial-gradient(120% 90% at 50% 20%, #1E2A44 0%, #10141C 62%, #0A0D14 100%); box-shadow: 0 24px 60px rgba(0, 0, 0, .5); }
 
-/* 主画面：当前选中的面试官 */
-.ca-main-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; background: #05070c; }
-.ca-main-waiting { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; }
-.ca-main-waiting svg { color: #4A5768; }
-.ca-main-tag { position: absolute; left: 16px; bottom: 160px; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; background: rgba(6, 9, 14, .62); backdrop-filter: blur(6px); color: #fff; font-size: 12px; }
-.ca-main-tag i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
-
-/* 面试官列表：叠在主画面左侧，点击切换主画面 */
-.ca-rail { position: absolute; left: 14px; top: 14px; bottom: 160px; width: 168px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
-.ca-rail-item { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 9px; background: rgba(6, 9, 14, .62); backdrop-filter: blur(6px); border: 1px solid transparent; cursor: pointer; }
-.ca-rail-item:hover { border-color: var(--line); }
-.ca-rail-item.active { border-color: var(--b); background: rgba(43, 127, 255, .28); }
-.ca-rail-avatar { width: 28px; height: 28px; flex: none; border-radius: 8px; display: grid; place-items: center; background: rgba(255, 255, 255, .1); color: #CFE0FF; font-size: 12px; font-weight: 600; }
-.ca-rail-meta { flex: 1; min-width: 0; line-height: 1.35; }
-.ca-rail-meta b { display: block; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ca-rail-meta small { font-size: 10px; color: #97A5BB; }
+/* 面试官宫格：多位面试官画面并排占据主区；格子保持 16:9 并整体垂直居中，避免出现大面积黑边 */
+.ca-grid { position: absolute; inset: 0; padding: 8px; display: grid; gap: 8px; align-content: center; }
+.ca-grid.g1 { grid-template-columns: 1fr; }
+.ca-grid.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ca-grid.g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ca-grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ca-grid.g5, .ca-grid.g6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* contain：完整显示画面不裁切（cover 会把摄像头画面放大裁掉边缘） */
+.ca-tile { position: relative; min-width: 0; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #05070c; border: 1px solid var(--line); }
+.ca-tile-video { width: 100%; height: 100%; object-fit: contain; display: block; background: #05070c; }
+.ca-tile-waiting { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; }
+.ca-tile-waiting svg { color: #4A5768; }
+.ca-grid-empty { grid-column: 1 / -1; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; }
+.ca-grid-empty svg { color: #4A5768; }
+.ca-tile-tag { position: absolute; left: 10px; bottom: 8px; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: rgba(6, 9, 14, .62); backdrop-filter: blur(6px); color: #fff; font-size: 12px; }
+.ca-tile-tag i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 
 /* AI 画中画：无AI 纯人工模式隐藏 */
 .ca-ai-pip { position: absolute; width: 150px; padding: 12px; border-radius: 12px; background: rgba(12, 17, 26, .74); border: 1px solid var(--line); backdrop-filter: blur(8px); text-align: center; cursor: move; }
@@ -791,7 +791,6 @@ onBeforeUnmount(() => {
   .ca-question { right: 14px; width: 68%; top: 14px; }
   .ca-q-text { font-size: 13px; }
   .ca-self { width: 120px; height: 68px; }
-  .ca-rail { width: 148px; }
   .ca-ai-pip { width: 128px; padding: 10px; }
 }
 </style>

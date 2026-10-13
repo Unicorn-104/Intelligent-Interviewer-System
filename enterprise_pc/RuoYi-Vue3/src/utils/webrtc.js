@@ -21,8 +21,9 @@ const ICE_SERVERS = [
  * - ICE 候选在远端描述设置前到达则按连接排队，setRemoteDescription 后冲刷。
  *
  * 回调：onPeerStream(userId, stream) / onPeerLeft(userId) / onPeerState(userId, state)
+ *       onControl(type, payload) 接收业务控制消息（如录制状态同步）
  */
-export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft, onPeerState }) {
+export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft, onPeerState, onControl }) {
   let ticket = ''
   let selfId = null
   let es = null
@@ -82,8 +83,11 @@ export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft, onPee
 
   function scheduleReconnect() {
     if (destroyed) return
+    // 仅重连信令通道：WebRTC 媒体是 P2P，不依赖 SSE。信令瞬断时若销毁所有
+    // RTCPeerConnection，会把正在播放的画面一并打断，且重连后仅不礼让方重发 offer、
+    // 与对端 EventSource 就绪时机错开就会永久卡在「等待画面」。这里保留既有连接，
+    // 人员真正离开由后端 peer-left / bye 驱动，连接异常由 onconnectionstatechange 兜底。
     closeStream()
-    closeAllPeers()
     clearTimeout(reconnectTimer)
     reconnectTimer = setTimeout(start, 2000)
   }
@@ -99,6 +103,11 @@ export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft, onPee
   function send(type, payload, to) {
     if (!ticket) return
     signalSend(ticket, { type: type, payload: payload || {}, to: to == null ? undefined : to }).catch(() => {})
+  }
+
+  // 发送业务控制消息（如录制状态）；to 为空时广播给房间内所有参与者
+  function sendControl(type, payload, to) {
+    send(type, payload, to)
   }
 
   // id 较小的一方主动发起，双方判定一致，避免同一对连接同时 offer 造成冲突
@@ -269,6 +278,10 @@ export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft, onPee
         if (state) handleIce(state, msg.payload || {})
         break
       }
+      case 'recording':
+        // 录制状态由正在录制的面试官广播；转交业务层更新 UI
+        if (onControl) onControl('recording', msg.payload || {})
+        break
       default:
         break
     }
@@ -343,5 +356,5 @@ export function createConferenceRtc({ sessionId, onPeerStream, onPeerLeft, onPee
     peers.clear()
   }
 
-  return { start, attachLocalTracks, detachLocalTracks, destroy }
+  return { start, attachLocalTracks, detachLocalTracks, sendControl, destroy }
 }

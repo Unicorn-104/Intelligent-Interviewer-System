@@ -3,6 +3,7 @@ package com.ruoyi.web.controller.system;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,10 +21,14 @@ import com.ruoyi.system.service.IImService;
 /**
  * IM即时通讯（消息中心）
  *
+ * 企业端专属接口：仅允许企业角色（biz_1 企业管理员 / biz_2 招聘HR / biz_3 面试官）
+ * 或超级管理员访问，防止求职者等 C 端角色调用。
+ *
  * @author ruoyi
  */
 @RestController
 @RequestMapping("/system/im")
+@PreAuthorize("@ss.hasAnyRoles('biz_1,biz_2,biz_3')")
 public class ImController extends BaseController
 {
     @Autowired

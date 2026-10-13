@@ -1,15 +1,17 @@
 <script setup>
 import { ref, computed, nextTick, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Video, Zap, Smile, Paperclip, Send, Settings2, FileText, Bell, Copy } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import { listSessions, listMessages, sendMessage, readSession, readAll, uploadFile, listQuickReplies, saveQuickReply, deleteQuickReply } from '@/api/system/im'
-import { createRoomLink, listCandidatePositions, listInterviewers } from '@/api/system/conference'
+import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice } from '@/api/system/conference'
 import { refreshUnread, totalUnread } from '@/views/enterprise/store/unread'
+import { match as pinyinMatch } from 'pinyin-pro'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 
 const route = useRoute()
+const router = useRouter()
 const keyword = ref('')
 const input = ref('')
 const scroller = ref()
@@ -26,6 +28,7 @@ const newChat = ref(null)
 
 // 新会话态：peerId 存在且尚未建立会话时构造虚拟会话
 const activeConv = computed(() => {
+  if (activeId.value === SYSTEM_NOTICE_ID) return noticeConv.value
   if (activeId.value != null) return conversations.value.find(c => c.id === activeId.value) || null
   if (newChat.value) return { id: null, name: newChat.value.peerName, summary: '', avatar: '', unread: 0 }
   return null
@@ -62,10 +65,27 @@ async function removeTpl(t) {
 
 const emojis = ['😀','😄','😊','😉','👍','🙏','👌','','🤝','','❤️','😅','🤔','👏','🙌','✅','☕','']
 
+// 会话搜索：中文直接包含匹配；英文关键词额外支持拼音全拼与首字母模糊匹配（如 lina/ln → 李娜，zghr → 张工HR）
+function convMatch(text, kw) {
+  if (!text) return false
+  if (text.includes(kw)) return true
+  if (/^[a-zA-Z]+$/.test(kw)) {
+    try {
+      return !!pinyinMatch(text, kw)
+    } catch (e) {
+      return false
+    }
+  }
+  return false
+}
+
 const filtered = computed(() => {
   const kw = keyword.value.trim()
-  if (!kw) return conversations.value
-  return conversations.value.filter(c => c.name?.includes(kw) || c.summary?.includes(kw))
+  const notice = noticeConv.value
+  if (!kw) return [notice, ...conversations.value]
+  const rest = conversations.value.filter(c => convMatch(c.name, kw) || convMatch(c.summary, kw))
+  if (convMatch(notice.name, kw) || convMatch(notice.summary, kw)) return [notice, ...rest]
+  return rest
 })
 
 // 种子数据里写入的失效外链（DNS 无法解析）会导致浏览器报 ERR_NAME_NOT_RESOLVED，
@@ -101,6 +121,73 @@ function scrollToBottom() {
   nextTick(() => { if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight })
 }
 
+// 将文本消息中的 http(s) 链接拆分为可点击片段，普通聊天消息里的链接可直接打开
+function linkParts(text) {
+  if (!text) return []
+  const parts = []
+  const re = /https?:\/\/[^\s]+/g
+  let last = 0
+  let m
+  while ((m = re.exec(text))) {
+    if (m.index > last) parts.push({ text: text.slice(last, m.index) })
+    parts.push({ text: m[0], href: m[0] })
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push({ text: text.slice(last) })
+  return parts
+}
+
+// ---------- 面试预约通知（固定在消息中心顶部的系统会话） ----------
+const SYSTEM_NOTICE_ID = '__notices__'
+const NOTICE_MODE_LABEL = { 1: '纯AI', 2: 'AI + 单面试官', 3: 'AI + 多面试官', 4: '无AI纯人工' }
+const notices = ref([])
+const noticesLoading = ref(false)
+
+const pendingNoticeCount = computed(() => notices.value.filter(n => Number(n.acceptStatus) === 0).length)
+
+// 系统会话：始终置顶，未读数为待确认邀约数
+const noticeConv = computed(() => ({
+  id: SYSTEM_NOTICE_ID,
+  system: true,
+  name: '面试预约通知',
+  avatar: '',
+  summary: notices.value.length ? `共 ${notices.value.length} 条邀约，待确认 ${pendingNoticeCount.value} 条` : '暂无面试邀约',
+  time: notices.value.length ? notices.value[0].noticeAt : '',
+  unread: pendingNoticeCount.value
+}))
+
+function noticeStatusText(s) {
+  return Number(s) === 1 ? '已接受' : Number(s) === 2 ? '已拒绝' : '待确认'
+}
+
+async function loadNotices() {
+  noticesLoading.value = true
+  try {
+    const res = await listInterviewerNotices()
+    notices.value = res.data || []
+  } catch (e) {
+    notices.value = []
+  } finally {
+    noticesLoading.value = false
+  }
+}
+loadNotices()
+
+async function respondNotice(n, accept) {
+  try {
+    await respondInterviewNotice(n.sessionId, accept)
+    ElMessage.success(accept ? '已接受面试邀约' : '已拒绝面试邀约')
+    await loadNotices()
+  } catch (e) {
+    ElMessage.error(e?.message || '操作失败')
+  }
+}
+
+// 接受邀约后可进入等候室（与链接进入一致，走会前准备页）
+function enterWaitingRoom(n) {
+  router.push({ path: '/enterprise/conference/prep', query: { sessionId: n.sessionId } })
+}
+
 async function loadConversations() {
   try {
     const res = await listSessions()
@@ -121,6 +208,10 @@ async function loadConversations() {
 async function openConv(c) {
   newChat.value = null
   activeId.value = c.id
+  if (c.system) {
+    await loadNotices()
+    return
+  }
   c.unread = 0
   loading.value = true
   try {
@@ -318,8 +409,7 @@ async function generateLink() {
       positionId: linkForm.value.positionId,
       durationMinutes: linkForm.value.durationMinutes,
       mode: linkForm.value.mode,
-      interviewerIds: selectedInterviewerIds.value,
-      candidateAppUrl: import.meta.env.VITE_CANDIDATE_APP_URL
+      interviewerIds: selectedInterviewerIds.value
     })
     linkResult.value = res.data || null
   } catch (e) {
@@ -344,7 +434,8 @@ async function sendLinkToChat() {
   try {
     const company = linkResult.value.companyName || '公司'
     const position = linkResult.value.positionTitle || '岗位'
-    const body = { type: 5, content: `【面试邀请】${company} ${position} 视频面试，请点击链接进入：${linkUrl.value}` }
+    // 以普通文本消息发送（type=1），与日常聊天一致，链接在气泡内可点击
+    const body = { type: 1, content: `【面试邀请】${company} ${position} 视频面试，请点击链接进入：${linkUrl.value}` }
     if (activeId.value != null) body.sessionId = activeId.value
     else body.peerId = newChat.value.peerId
     await sendMessage(body)
@@ -363,6 +454,8 @@ onMounted(async () => {
     startChatWith(peerId, peerName || ('用户' + peerId))
   } else if (conversations.value.length) {
     openConv(conversations.value[0])
+  } else {
+    openConv(noticeConv.value)
   }
   refreshUnread()
 })
@@ -372,7 +465,7 @@ onMounted(async () => {
   <div class="messages-page">
     <aside class="conversation-panel">
       <div class="search-row">
-        <label class="conversation-search"><Search :size="16"/><input v-model="keyword" placeholder="搜索会话、姓名或关键词"/></label>
+        <label class="conversation-search"><Search :size="16"/><input v-model="keyword" placeholder="搜索会话、姓名（支持拼音/首字母）"/></label>
         <button class="read-all" :disabled="!totalUnread" title="全部已读" @click="markRead"><Bell :size="15"/></button>
       </div>
       <div class="conversation-list">
@@ -389,9 +482,31 @@ onMounted(async () => {
         <header class="chat-head">
           <MiniAvatar :name="activeConv.name" :size="40" color="#356f65" :src="activeConv.avatar"/>
           <div class="chat-head-info"><h2>{{activeConv.name}}</h2><p>{{activeConv.summary}}</p></div>
-          <button class="btn primary" @click="openLinkModal"><Video :size="16"/>发起视频面试</button>
+          <button v-if="!activeConv.system" class="btn primary" @click="openLinkModal"><Video :size="16"/>发起视频面试</button>
         </header>
-        <div ref="scroller" class="message-stream">
+        <div v-if="activeConv.system" class="notice-stream">
+          <p v-if="noticesLoading" class="stream-loading">加载中…</p>
+          <p v-else-if="!notices.length" class="stream-loading">暂无面试预约通知</p>
+          <article v-for="n in notices" :key="n.sessionId" class="notice-card">
+            <header class="nc-head">
+              <span class="nc-badge" :class="'st'+Number(n.acceptStatus)">{{ noticeStatusText(n.acceptStatus) }}</span>
+              <em v-if="Number(n.isPrimary)===1" class="nc-primary">主面试官</em>
+              <time>{{ n.noticeAt }}</time>
+            </header>
+            <h3>{{ n.candidateName }} · {{ n.positionTitle }}</h3>
+            <p class="nc-line">面试方式：{{ NOTICE_MODE_LABEL[n.mode] || '—' }}</p>
+            <p class="nc-line">预约时间：{{ n.appointmentStartAt }} ~ {{ n.appointmentEndAt }}</p>
+            <div class="nc-actions">
+              <template v-if="Number(n.acceptStatus)===0">
+                <button class="nc-accept" @click="respondNotice(n, true)">接受担任本次面试</button>
+                <button class="nc-reject" @click="respondNotice(n, false)">拒绝</button>
+              </template>
+              <button v-else-if="Number(n.acceptStatus)===1" class="nc-enter" @click="enterWaitingRoom(n)">进入等候室</button>
+              <span v-else class="nc-rejected">已拒绝本次面试</span>
+            </div>
+          </article>
+        </div>
+        <div v-else ref="scroller" class="message-stream">
           <div v-for="msg in messages" :key="msg.id" :class="['message-row', msg.type===5?'system':(msg.mine?'me':'other')]">
             <template v-if="msg.type===5"><span class="system-line">{{msg.text}}</span></template>
             <template v-else-if="msg.type===3">
@@ -403,13 +518,13 @@ onMounted(async () => {
               <time v-if="msg.time">{{msg.time}}</time>
             </template>
             <template v-else>
-              <span class="bubble">{{msg.text}}</span>
+              <span class="bubble"><template v-for="(p, i) in linkParts(msg.text)" :key="i"><a v-if="p.href" class="bubble-link" :href="p.href" target="_blank" rel="noopener noreferrer">{{ p.text }}</a><template v-else>{{ p.text }}</template></template></span>
               <time v-if="msg.time">{{msg.time}}</time>
             </template>
           </div>
           <p v-if="loading" class="stream-loading">加载中…</p>
         </div>
-        <footer class="composer">
+        <footer v-if="!activeConv.system" class="composer">
           <div class="emoji-pop" v-if="emojiOpen">
             <button v-for="e in emojis" :key="e" @click="addEmoji(e)">{{e}}</button>
           </div>
@@ -504,7 +619,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.messages-page{height:calc(100vh - 64px);padding:24px;display:grid;grid-template-columns:292px minmax(540px,1fr) 260px;gap:1px}.conversation-panel,.chat-panel,.template-panel{background:white;border:1px solid #e5ebf3}.conversation-panel{border-radius:14px 0 0 14px;overflow:hidden;display:flex;flex-direction:column}.search-row{display:flex;align-items:center;gap:8px;margin:14px;flex:none}.conversation-search{height:38px;flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#f2f5f9;border-radius:9px;padding:0 11px;color:#8999af}.conversation-search input{width:100%;border:0;outline:0;background:transparent;font-size:11px}.read-all{width:38px;height:38px;flex:none;border:1px solid #e0e7f0;border-radius:9px;background:white;color:#64748b;display:grid;place-items:center;cursor:pointer}.read-all:hover:not(:disabled){border-color:#8eb2fa;color:#2563eb}.read-all:disabled{opacity:.4;cursor:not-allowed}.conversation-list{overflow:auto;flex:1}.conversation-list article{height:77px;border-top:1px solid #e8edf4;display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:0 14px;position:relative;cursor:pointer}.conversation-list article.active{background:#edf4ff}.conversation-list article>div{min-width:0}.conversation-list h3{font-size:12px}.conversation-list p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#7d8ca1;font-size:10px;margin-top:5px}.conversation-list time{position:absolute;right:14px;top:13px;color:#98a5b7;font-size:9px}.conversation-list em{position:absolute;right:14px;bottom:11px;width:19px;height:19px;border-radius:50%;background:#2563eb;color:white;font-style:normal;font-size:9px;display:grid;place-items:center;line-height:1}.empty-list{border-top:1px solid #e8edf4;text-align:center;color:#98a5b7;font-size:10px;padding:24px 0;margin:0}.chat-panel{display:flex;flex-direction:column}.chat-head{height:86px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;gap:10px;padding:0 16px;flex:none}.chat-head-info{flex:1;min-width:0}.chat-head h2{font-size:14px;display:flex;gap:6px;align-items:center}.chat-head p{display:block;color:#7c8ca3;font-size:9px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.message-stream{flex:1;overflow:auto;background:#f8fafc;padding:18px 18px 10px}.stream-loading{text-align:center;color:#98a5b7;font-size:10px}.message-row{display:flex;flex-direction:column;align-items:flex-start;margin-bottom:17px}.message-row.me{align-items:flex-end}.bubble{max-width:76%;padding:11px 13px;border-radius:5px 13px 13px 13px;background:#eaf1ff;font-size:11px;line-height:1.55;white-space:pre-wrap;word-break:break-word}.message-row.me .bubble{background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px}.file-bubble{display:flex;align-items:center;gap:7px;text-decoration:none;color:inherit;cursor:pointer}.file-bubble svg{color:#2563eb;flex:none}.file-bubble b{font-weight:500;font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-bubble small{color:#2563eb;font-size:9px}.img-bubble{padding:4px}.img-bubble img{max-width:220px;max-height:180px;border-radius:8px;display:block}.message-row time{color:#9aa7b8;font-size:9px;margin-top:4px}.message-row.system{align-items:center;margin:5px 0 17px}.system-line{color:#95a2b4;font-size:9px;display:flex;align-items:center;width:80%;gap:8px}.system-line:before,.system-line:after{content:'';height:1px;background:#e5ebf3;flex:1}.chat-empty{flex:1;display:grid;place-items:center;color:#98a5b7;font-size:12px}.composer{min-height:86px;border-top:1px solid #e5ebf3;padding:8px 15px;position:relative;flex:none}.composer-tools{height:28px;display:flex;gap:5px;align-items:center}.composer-tools button{border:0;background:none;color:#64748b;padding:4px;cursor:pointer}.composer-tools .quick{margin-left:auto;display:flex;align-items:center;gap:5px;color:#2563eb;font-size:10px}.composer>div:last-child{display:flex;gap:8px;align-items:flex-end}.composer textarea{min-height:36px;max-height:96px;flex:1;border:0;outline:0;border-radius:8px;background:#f0f4f9;padding:9px 11px;font-size:11px;resize:none;font-family:inherit;line-height:1.5}.send{height:36px;border:0;border-radius:8px;background:#2563eb;color:white;padding:0 13px;display:flex;align-items:center;gap:6px;cursor:pointer}.emoji-pop{position:absolute;left:14px;bottom:80px;background:white;border:1px solid #e0e7f0;border-radius:10px;padding:8px;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;box-shadow:0 8px 24px rgba(30,41,59,.14);z-index:5}.emoji-pop button{border:0;background:none;font-size:16px;padding:4px;border-radius:6px;cursor:pointer}.emoji-pop button:hover{background:#f0f4f9}.template-panel{border-radius:0 14px 14px 0;display:flex;flex-direction:column;overflow:hidden}.template-panel header{height:60px;padding:0 14px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;justify-content:space-between}.template-panel header span{font-size:12px;font-weight:700;display:flex;align-items:center;gap:7px}.template-panel header svg{color:#2563eb}.template-panel header small{color:#9aa7b8;font-size:8px}.template-list{padding:12px;display:flex;flex-direction:column;gap:9px;overflow:auto}.template-list button{border:1px solid #e0e7f0;border-radius:8px;background:white;padding:8px 9px;text-align:left;cursor:pointer}.template-list button:hover{border-color:#8eb2fa;background:#f8fbff}.template-list label{display:block;color:#8392a7;font-size:9px;margin-bottom:4px}.template-list span{font-size:10px;line-height:1.45;color:#40516a}.ai-tip{margin:3px 12px;padding:10px;background:#edf4ff;color:#2563eb;border-radius:9px;display:flex;gap:7px}.ai-tip svg{flex:none}.ai-tip p{font-size:9px;color:#6a7d99;line-height:1.45}.ai-tip b{color:#315b9e;display:block}.manage{height:42px;border:0;border-top:1px solid #e5ebf3;background:white;color:#2563eb;margin-top:auto;display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;cursor:pointer}
+.messages-page{height:calc(100vh - 64px);padding:24px;display:grid;grid-template-columns:292px minmax(540px,1fr) 260px;grid-template-rows:minmax(0,1fr);gap:1px;overflow:hidden}.conversation-panel,.chat-panel,.template-panel{background:white;border:1px solid #e5ebf3}.conversation-panel{border-radius:14px 0 0 14px;overflow:hidden;display:flex;flex-direction:column}.search-row{display:flex;align-items:center;gap:8px;margin:14px;flex:none}.conversation-search{height:38px;flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#f2f5f9;border-radius:9px;padding:0 11px;color:#8999af}.conversation-search input{width:100%;border:0;outline:0;background:transparent;font-size:11px}.read-all{width:38px;height:38px;flex:none;border:1px solid #e0e7f0;border-radius:9px;background:white;color:#64748b;display:grid;place-items:center;cursor:pointer}.read-all:hover:not(:disabled){border-color:#8eb2fa;color:#2563eb}.read-all:disabled{opacity:.4;cursor:not-allowed}.conversation-list{overflow:auto;flex:1}.conversation-list article{height:77px;border-top:1px solid #e8edf4;display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:0 14px;position:relative;cursor:pointer}.conversation-list article.active{background:#edf4ff}.conversation-list article>div{min-width:0}.conversation-list h3{font-size:12px}.conversation-list p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#7d8ca1;font-size:10px;margin-top:5px}.conversation-list time{position:absolute;right:14px;top:13px;color:#98a5b7;font-size:9px}.conversation-list em{position:absolute;right:14px;bottom:11px;width:19px;height:19px;border-radius:50%;background:#2563eb;color:white;font-style:normal;font-size:9px;display:grid;place-items:center;line-height:1}.empty-list{border-top:1px solid #e8edf4;text-align:center;color:#98a5b7;font-size:10px;padding:24px 0;margin:0}.chat-panel{display:flex;flex-direction:column;min-height:0;overflow:hidden}.chat-head{height:86px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;gap:10px;padding:0 16px;flex:none}.chat-head-info{flex:1;min-width:0}.chat-head h2{font-size:14px;display:flex;gap:6px;align-items:center}.chat-head p{display:block;color:#7c8ca3;font-size:9px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.message-stream{flex:1;overflow:auto;background:#f8fafc;padding:18px 18px 10px}.stream-loading{text-align:center;color:#98a5b7;font-size:10px}.message-row{display:flex;flex-direction:column;align-items:flex-start;margin-bottom:17px}.message-row.me{align-items:flex-end}.bubble{max-width:76%;padding:11px 13px;border-radius:5px 13px 13px 13px;background:#eaf1ff;font-size:11px;line-height:1.55;white-space:pre-wrap;word-break:break-word}.message-row.me .bubble{background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px}.bubble-link{color:#2563eb;text-decoration:underline;word-break:break-all;cursor:pointer}.file-bubble{display:flex;align-items:center;gap:7px;text-decoration:none;color:inherit;cursor:pointer}.file-bubble svg{color:#2563eb;flex:none}.file-bubble b{font-weight:500;font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-bubble small{color:#2563eb;font-size:9px}.img-bubble{padding:4px}.img-bubble img{max-width:220px;max-height:180px;border-radius:8px;display:block}.message-row time{color:#9aa7b8;font-size:9px;margin-top:4px}.message-row.system{align-items:center;margin:5px 0 17px}.system-line{color:#95a2b4;font-size:9px;display:flex;align-items:center;width:80%;gap:8px}.system-line:before,.system-line:after{content:'';height:1px;background:#e5ebf3;flex:1}.chat-empty{flex:1;display:grid;place-items:center;color:#98a5b7;font-size:12px}.composer{min-height:86px;border-top:1px solid #e5ebf3;padding:8px 15px;position:relative;flex:none}.composer-tools{height:28px;display:flex;gap:5px;align-items:center}.composer-tools button{border:0;background:none;color:#64748b;padding:4px;cursor:pointer}.composer-tools .quick{margin-left:auto;display:flex;align-items:center;gap:5px;color:#2563eb;font-size:10px}.composer>div:last-child{display:flex;gap:8px;align-items:flex-end}.composer textarea{min-height:36px;max-height:96px;flex:1;border:0;outline:0;border-radius:8px;background:#f0f4f9;padding:9px 11px;font-size:11px;resize:none;font-family:inherit;line-height:1.5}.send{height:36px;border:0;border-radius:8px;background:#2563eb;color:white;padding:0 13px;display:flex;align-items:center;gap:6px;cursor:pointer}.emoji-pop{position:absolute;left:14px;bottom:80px;background:white;border:1px solid #e0e7f0;border-radius:10px;padding:8px;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;box-shadow:0 8px 24px rgba(30,41,59,.14);z-index:5}.emoji-pop button{border:0;background:none;font-size:16px;padding:4px;border-radius:6px;cursor:pointer}.emoji-pop button:hover{background:#f0f4f9}.template-panel{border-radius:0 14px 14px 0;display:flex;flex-direction:column;overflow:hidden}.template-panel header{height:60px;padding:0 14px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;justify-content:space-between}.template-panel header span{font-size:12px;font-weight:700;display:flex;align-items:center;gap:7px}.template-panel header svg{color:#2563eb}.template-panel header small{color:#9aa7b8;font-size:8px}.template-list{padding:12px;display:flex;flex-direction:column;gap:9px;overflow:auto}.template-list button{border:1px solid #e0e7f0;border-radius:8px;background:white;padding:8px 9px;text-align:left;cursor:pointer}.template-list button:hover{border-color:#8eb2fa;background:#f8fbff}.template-list label{display:block;color:#8392a7;font-size:9px;margin-bottom:4px}.template-list span{font-size:10px;line-height:1.45;color:#40516a}.ai-tip{margin:3px 12px;padding:10px;background:#edf4ff;color:#2563eb;border-radius:9px;display:flex;gap:7px}.ai-tip svg{flex:none}.ai-tip p{font-size:9px;color:#6a7d99;line-height:1.45}.ai-tip b{color:#315b9e;display:block}.manage{height:42px;border:0;border-top:1px solid #e5ebf3;background:white;color:#2563eb;margin-top:auto;display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;cursor:pointer}
 .tpl-manage{display:flex;flex-direction:column;gap:12px}.tpl-form{display:flex;gap:8px}.tpl-form input{height:34px;border:1px solid #dfe6ef;border-radius:8px;padding:0 10px;font-size:12px;outline:none}.tpl-form input:focus{border-color:#2563eb}.tpl-form .cat{width:140px;flex:none}.tpl-form .cnt{flex:1;min-width:0}.tpl-form .save{height:34px;flex:none;border:0;border-radius:8px;background:#2563eb;color:white;padding:0 14px;font-size:11px;cursor:pointer}.tpl-form .cancel{height:34px;flex:none;border:1px solid #dfe6ef;border-radius:8px;background:white;color:#64748b;padding:0 12px;font-size:11px;cursor:pointer}
 .tpl-rows{max-height:340px;overflow:auto;border:1px solid #eef2f7;border-radius:9px}.tpl-row{display:grid;grid-template-columns:96px 1fr 88px;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid #f2f5f9;font-size:11px}.tpl-row:last-child{border-bottom:0}.tpl-row.on{background:#f4f8ff}.tpl-row label{color:#8392a7;font-size:10px}.tpl-row span{color:#40516a;line-height:1.45;word-break:break-word}.tpl-row .ops{display:flex;gap:8px;justify-content:flex-end}.tpl-row .ops button{border:0;background:none;color:#2563eb;font-size:10px;cursor:pointer;padding:0}.tpl-row .ops button.del{color:#ef4444}.none{padding:20px;text-align:center;color:#9aa7b9;font-size:11px}
 .link-form{display:flex;flex-direction:column;gap:14px}
@@ -535,4 +650,21 @@ onMounted(async () => {
 .lf-copy,.lf-send{height:34px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;font-size:12px;cursor:pointer}
 .lf-copy{flex:none;padding:0 14px;border:1px solid #dfe6ef;background:#fff;color:#2563eb}
 .lf-send{flex:1;border:0;background:#2563eb;color:#fff}
+.notice-stream{flex:1;overflow:auto;background:#f8fafc;padding:18px;display:flex;flex-direction:column;gap:14px}
+.notice-card{border:1px solid #e5ebf3;border-radius:12px;background:#fff;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.notice-card h3{font-size:14px;color:#26364d}
+.nc-head{display:flex;align-items:center;gap:8px}
+.nc-head time{margin-left:auto;color:#9aa7b8;font-size:10px}
+.nc-badge{font-size:10px;padding:2px 8px;border-radius:10px;background:#eef2f7;color:#8392a7}
+.nc-badge.st0{background:#fff4e5;color:#d97706}
+.nc-badge.st1{background:#e7f7ee;color:#16a34a}
+.nc-badge.st2{background:#fdecec;color:#dc2626}
+.nc-primary{font-style:normal;font-size:10px;padding:2px 8px;border-radius:10px;background:#edf4ff;color:#2563eb}
+.nc-line{font-size:12px;color:#5b6b82;line-height:1.5}
+.nc-actions{display:flex;gap:10px;margin-top:4px}
+.nc-accept,.nc-reject,.nc-enter{height:34px;border-radius:8px;font-size:12px;cursor:pointer;padding:0 16px}
+.nc-accept{flex:1;border:0;background:#2563eb;color:#fff}
+.nc-reject{border:1px solid #dfe6ef;background:#fff;color:#64748b;padding:0 18px}
+.nc-enter{border:0;background:#16a34a;color:#fff}
+.nc-rejected{font-size:12px;color:#9aa7b8}
 </style>

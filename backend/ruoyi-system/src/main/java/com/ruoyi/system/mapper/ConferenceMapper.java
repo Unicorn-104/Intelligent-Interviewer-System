@@ -157,9 +157,14 @@ public interface ConferenceMapper
     public List<Map<String, Object>> selectRecordingList(Map<String, Object> params);
 
     /**
-     * 企业录制总时长（秒），用于估算存储占用
+     * 企业录制总时长（秒）与真实字节数之和，用于统计存储占用
      */
-    public Long selectRecordingSecondsTotal(@Param("companyId") Long companyId);
+    public Map<String, Object> selectRecordingStorageTotal(@Param("companyId") Long companyId);
+
+    /**
+     * 录制落盘后回写文件地址 / 时长 / 字节数 / 访问有效期
+     */
+    public int updateRecordingFile(Map<String, Object> params);
 
     /**
      * 回放详情
@@ -210,6 +215,17 @@ public interface ConferenceMapper
      * 查询场次全部被指派面试官（主面试官优先）
      */
     public List<Map<String, Object>> selectSessionInterviewers(@Param("sessionId") Long sessionId);
+
+    /**
+     * 查询某用户收到的面试邀约通知（消息中心「面试预约通知」系统会话）
+     */
+    public List<Map<String, Object>> selectInterviewerNotices(@Param("userId") Long userId);
+
+    /**
+     * 更新某用户在某场次的面试邀约接受状态（0-待确认，1-已接受，2-已拒绝）
+     */
+    public int updateInterviewerAcceptStatus(@Param("sessionId") Long sessionId, @Param("userId") Long userId,
+            @Param("acceptStatus") Integer acceptStatus);
 
     /**
      * 查询场次主面试官用户ID（无则返回 null）

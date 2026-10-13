@@ -43,8 +43,8 @@ public class ConferenceSignalServiceImpl implements IConferenceSignalService
     private static final String USER_TICKET_KEY = "conference:signal:user:";
     /** 票据有效期（秒） */
     private static final int TICKET_TTL = 7200;
-    /** 允许转发的信令类型 */
-    private static final Set<String> SIGNAL_TYPES = new HashSet<>(Arrays.asList("offer", "answer", "ice", "ready", "bye"));
+    /** 允许转发的信令类型（recording 用于同步面试官与候选人的录制状态） */
+    private static final Set<String> SIGNAL_TYPES = new HashSet<>(Arrays.asList("offer", "answer", "ice", "ready", "bye", "recording"));
     /** 心跳间隔（秒），注释帧防止代理缓冲与空闲断流 */
     private static final int HEARTBEAT_SECONDS = 20;
 
