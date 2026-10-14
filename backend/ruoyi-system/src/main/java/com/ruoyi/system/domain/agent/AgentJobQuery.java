@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Min;
 public class AgentJobQuery
 {
     private String keyword;
+    private String category;
     private String city;
     private String district;
     private String employmentType;
@@ -25,6 +26,8 @@ public class AgentJobQuery
 
     public String getKeyword() { return keyword; }
     public void setKeyword(String keyword) { this.keyword = keyword; }
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
     public String getCity() { return city; }
     public void setCity(String city) { this.city = city; }
     public String getDistrict() { return district; }

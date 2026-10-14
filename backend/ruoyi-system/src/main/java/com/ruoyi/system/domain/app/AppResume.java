@@ -9,6 +9,8 @@ import java.util.List;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 /** C-App 结构化简历。 */
 public class AppResume implements Serializable
@@ -30,6 +32,22 @@ public class AppResume implements Serializable
     private Integer workCount;
     private Integer projectCount;
     private Integer skillCount;
+    @JsonIgnore
+    private String filePath;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String fileName;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Long fileSize;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String extractedText;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String parseMethod;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String structureMethod;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String unmappedText;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private List<String> parseWarnings = new ArrayList<>();
     @Valid
     private List<Education> educations = new ArrayList<>();
     @Valid
@@ -63,6 +81,29 @@ public class AppResume implements Serializable
     public void setProjectCount(Integer projectCount) { this.projectCount = projectCount; }
     public Integer getSkillCount() { return skillCount; }
     public void setSkillCount(Integer skillCount) { this.skillCount = skillCount; }
+    @JsonIgnore
+    public String getFilePath() { return filePath; }
+    public void setFilePath(String value) { filePath = value; }
+    public String getFileName() { return fileName; }
+    public void setFileName(String value) { fileName = value; }
+    public Long getFileSize() { return fileSize; }
+    public void setFileSize(Long value) { fileSize = value; }
+    public String getExtractedText() { return extractedText; }
+    public void setExtractedText(String value) { extractedText = value; }
+    public String getParseMethod() { return parseMethod; }
+    public void setParseMethod(String value) { parseMethod = value; }
+    public String getStructureMethod() { return structureMethod; }
+    public void setStructureMethod(String value) { structureMethod = value; }
+    public String getUnmappedText() { return unmappedText; }
+    public void setUnmappedText(String value) { unmappedText = value; }
+    public List<String> getParseWarnings() { return parseWarnings; }
+    public void setParseWarnings(List<String> value) { parseWarnings = value == null ? new ArrayList<>() : value; }
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    public String getPdfUrl()
+    {
+        return resumeId != null && filePath != null && !filePath.isBlank()
+                ? "/app/resumes/" + resumeId + "/pdf" : null;
+    }
     public List<Education> getEducations() { return educations; }
     public void setEducations(List<Education> educations) { this.educations = educations == null ? new ArrayList<>() : educations; }
     public List<Work> getWorks() { return works; }

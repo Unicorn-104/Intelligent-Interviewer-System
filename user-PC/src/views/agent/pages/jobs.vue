@@ -18,6 +18,10 @@
             <button v-if="keyword" class="clear-search" type="button" aria-label="清除搜索" @click="keyword = ''; loadJobs()">×</button>
           </label>
           <button class="search-submit" type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.8" /><path d="m16 16 4.3 4.3" /></svg>搜索</button>
+          <select v-model="category" class="filter-select category-select" aria-label="岗位分类" @change="loadJobs">
+            <option value="">全部岗位分类</option>
+            <option v-for="item in categories" :key="item" :value="item">{{ item }}</option>
+          </select>
           <select v-model="sort" class="filter-select" aria-label="岗位排序" @change="loadJobs">
             <option value="match">按匹配度排序</option>
             <option value="latest">按最新发布排序</option>
@@ -26,7 +30,7 @@
         </form>
         <div class="search-result-row">
           <div class="result-count">共找到 <span>{{ visibleJobs.length }}</span> 个匹配岗位</div>
-          <div class="result-hint">支持岗位名、公司、技能和城市模糊搜索</div>
+          <div class="result-hint">支持岗位名、公司、技能和城市模糊搜索，可按岗位分类筛选</div>
         </div>
         <div class="hot-tags">
           <span class="hot-label">试试：</span>
@@ -37,7 +41,7 @@
       <section>
         <div class="list-toolbar">
           <div>
-            <h2 class="list-title">{{ savedOnly ? '收藏的岗位' : keyword ? '搜索结果' : '推荐岗位' }}</h2>
+            <h2 class="list-title">{{ savedOnly ? '收藏的岗位' : keyword || category ? '搜索结果' : '推荐岗位' }}</h2>
             <p class="list-subtitle">{{ errorMessage || '岗位数据来自招聘数据库，可直接进入详情和投递流程' }}</p>
           </div>
           <div class="list-controls">
@@ -66,6 +70,7 @@
               </div>
               <div class="tag-row">
                 <span class="job-tag primary">{{ job.statusText }}</span>
+                <span v-if="job.category" class="job-tag">{{ job.category }}</span>
                 <span v-if="job.skills?.[0]" class="job-tag">{{ job.skills[0] }}</span>
                 <span class="job-tag">{{ job.educationText }}</span>
                 <span v-if="job.experienceRequired" class="job-tag">{{ job.experienceRequired }}</span>
@@ -101,10 +106,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
-import { listJobs } from '@/api/agent/job'
+import { listJobCategories, listJobs } from '@/api/agent/job'
 
 const jobs = ref([])
 const keyword = ref('')
+const category = ref('')
+const categories = ref([])
 const sort = ref('match')
 const loading = ref(false)
 const errorMessage = ref('')
@@ -121,12 +128,27 @@ async function loadJobs() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const response = await listJobs({ keyword: keyword.value || undefined, sort: sort.value, page: 1, size: 50 })
+    const response = await listJobs({
+      keyword: keyword.value || undefined,
+      category: category.value || undefined,
+      sort: sort.value,
+      page: 1,
+      size: 50
+    })
     jobs.value = response.data?.items || []
   } catch (error) {
     errorMessage.value = error?.message || '岗位数据暂时无法读取，请稍后重试'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadCategories() {
+  try {
+    const response = await listJobCategories()
+    categories.value = Array.isArray(response.data) ? response.data : []
+  } catch {
+    categories.value = []
   }
 }
 
@@ -192,7 +214,10 @@ function showToast(message) {
   toastTimer = setTimeout(() => { toastVisible.value = false }, 2400)
 }
 
-onMounted(loadJobs)
+onMounted(async () => {
+  await loadCategories()
+  await loadJobs()
+})
 </script>
 
 <style scoped>

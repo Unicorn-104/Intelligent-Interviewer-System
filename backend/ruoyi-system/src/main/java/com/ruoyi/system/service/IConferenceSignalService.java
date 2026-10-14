@@ -26,6 +26,7 @@ public interface IConferenceSignalService
      * 校验票据并把 {type, payload} 转发给同场次对端
      *
      * @param type offer | answer | ice | ready | bye
+     * @param toUserId 目标端；仅转发给该用户（多方网状定向信令），为空则广播
      */
-    public void relay(String ticket, String type, Map<String, Object> payload);
+    public void relay(String ticket, String type, Map<String, Object> payload, Long toUserId);
 }

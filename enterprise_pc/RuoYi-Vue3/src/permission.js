@@ -2,7 +2,7 @@ import router from './router'
 import { ElMessage } from 'element-plus'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
-import { getToken } from '@/utils/auth'
+import { getToken, removeToken } from '@/utils/auth'
 import { isHttp } from '@/utils/validate'
 import { isRelogin } from '@/utils/request'
 import useUserStore from '@/store/modules/user'
@@ -12,6 +12,30 @@ import usePermissionStore from '@/store/modules/permission'
 NProgress.configure({ showSpinner: false });
 
 const whiteList = ['/login', '/register'];
+
+// 企业端准入角色：超级管理员 + 企业超级管理员(biz_1)/招聘HR(biz_2)/面试官(biz_3)
+// 求职者(biz_4)、运营(biz_5)等其他角色禁止进入本端任何页面
+const ENTERPRISE_ROLES = ['admin', 'biz_1', 'biz_2', 'biz_3'];
+
+function hasEnterpriseAccess() {
+  const roles = useUserStore().roles || []
+  return roles.some(r => ENTERPRISE_ROLES.includes(r))
+}
+
+// 非企业角色：强制登出并弹回登录页，页面不予渲染
+function denyNonEnterprise(next) {
+  const userStore = useUserStore()
+  userStore.logOut().catch(() => {}).finally(() => {
+    // 兜底：即使后端登出接口失败，也确保本地令牌与角色被清除，避免 /login 被守卫弹回造成循环
+    removeToken()
+    userStore.token = ''
+    userStore.roles = []
+    userStore.permissions = []
+    ElMessage.error('您的账号无企业端访问权限，请前往求职者端登录')
+    next({ path: '/login', replace: true })
+    NProgress.done()
+  })
+}
 
 router.beforeEach((to, from, next) => {
   NProgress.start()
@@ -29,6 +53,11 @@ router.beforeEach((to, from, next) => {
         // 判断当前用户是否已拉取完user_info信息
         useUserStore().getInfo().then(() => {
           isRelogin.show = false
+          // 非企业角色登录后立即堵回登录页，不渲染任何企业端页面
+          if (!hasEnterpriseAccess()) {
+            denyNonEnterprise(next)
+            return
+          }
           usePermissionStore().generateRoutes().then(accessRoutes => {
             // 根据roles权限生成可访问的路由表
             accessRoutes.forEach(route => {

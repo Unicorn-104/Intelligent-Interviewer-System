@@ -13,6 +13,7 @@ public class AgentJob
 {
     private Long id;
     private String title;
+    private String category;
     private Long companyId;
     private String companyName;
     private String companyLogoUrl;
@@ -48,6 +49,8 @@ public class AgentJob
     public void setId(Long id) { this.id = id; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
     public Long getCompanyId() { return companyId; }
     public void setCompanyId(Long companyId) { this.companyId = companyId; }
     public String getCompanyName() { return companyName; }

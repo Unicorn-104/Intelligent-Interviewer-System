@@ -114,6 +114,8 @@ public class SysProfileController extends BaseController
             loginUser.getUser().setPwdUpdateDate(DateUtils.getNowDate());
             loginUser.getUser().setPassword(newPassword);
             tokenService.setLoginUser(loginUser);
+            // 密码变更后仅失效其它端的登录会话与刷新令牌，保留当前会话继续使用
+            tokenService.clearOtherSessions(userId, loginUser.getToken());
             return success();
         }
         return error("修改密码异常，请联系管理员");

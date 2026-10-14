@@ -14,23 +14,27 @@
         <result property="workCount" column="work_count" />
         <result property="projectCount" column="project_count" />
         <result property="skillCount" column="skill_count" />
+        <result property="filePath" column="rbs_file_path" />
+        <result property="fileName" column="rbs_file_name" />
+        <result property="fileSize" column="rbs_file_size" />
     </resultMap>
 
     <sql id="resumeColumns">
         select r.rbs_id as resume_id, r.rbs_user_id as user_id,
                r.rbs_resume_name as resume_name, r.rbs_job_direction as job_direction,
                r.rbs_is_default as is_default, r.rbs_status as status, r.rbs_updated_at as updated_at,
+               r.rbs_file_path, r.rbs_file_name, r.rbs_file_size,
                (select count(*) from t_res_education e where e.edu_resume_id = r.rbs_id) as education_count,
                (select count(*) from t_res_work w where w.wrk_resume_id = r.rbs_id) as work_count,
                (select count(*) from t_res_project p where p.prj_resume_id = r.rbs_id) as project_count,
                (select count(*) from t_res_skill s where s.skl_resume_id = r.rbs_id) as skill_count,
                least(100,
-                   if(nullif(trim(r.rbs_resume_name), '') is null, 0, 15)
-                   + if(nullif(trim(r.rbs_job_direction), '') is null, 0, 20)
-                   + if(exists(select 1 from t_res_education e where e.edu_resume_id = r.rbs_id), 20, 0)
-                   + if(exists(select 1 from t_res_work w where w.wrk_resume_id = r.rbs_id), 25, 0)
-                   + if(exists(select 1 from t_res_project p where p.prj_resume_id = r.rbs_id), 10, 0)
-                   + if(exists(select 1 from t_res_skill s where s.skl_resume_id = r.rbs_id), 10, 0)
+                   case when nullif(trim(r.rbs_resume_name), '') is null then 0 else 15 end
+                   + case when nullif(trim(r.rbs_job_direction), '') is null then 0 else 20 end
+                   + case when exists(select 1 from t_res_education e where e.edu_resume_id = r.rbs_id) then 20 else 0 end
+                   + case when exists(select 1 from t_res_work w where w.wrk_resume_id = r.rbs_id) then 25 else 0 end
+                   + case when exists(select 1 from t_res_project p where p.prj_resume_id = r.rbs_id) then 10 else 0 end
+                   + case when exists(select 1 from t_res_skill s where s.skl_resume_id = r.rbs_id) then 10 else 0 end
                ) as completeness
         from t_res_base r
     </sql>
@@ -44,6 +48,11 @@
     <select id="selectResume" resultMap="ResumeResult">
         <include refid="resumeColumns" />
         where r.rbs_id = #{resumeId} and r.rbs_user_id = #{userId} and r.rbs_status = 1
+    </select>
+    <select id="selectResumeForUpdate" resultMap="ResumeResult">
+        <include refid="resumeColumns" />
+        where r.rbs_id = #{resumeId} and r.rbs_user_id = #{userId} and r.rbs_status = 1
+        for update
     </select>
 
     <select id="selectEducations" resultType="com.ruoyi.system.domain.app.AppResume$Education">
@@ -72,12 +81,15 @@
     </select>
 
     <insert id="insertResume" parameterType="com.ruoyi.system.domain.app.AppResume" useGeneratedKeys="true" keyProperty="resumeId" keyColumn="rbs_id">
-        insert into t_res_base (rbs_user_id, rbs_resume_name, rbs_job_direction, rbs_is_default, rbs_status)
-        values (#{userId}, #{resumeName}, #{jobDirection}, #{isDefault}, 1)
+        insert into t_res_base (rbs_user_id, rbs_resume_name, rbs_job_direction, rbs_is_default, rbs_status,
+            rbs_file_path, rbs_file_name, rbs_file_size)
+        values (#{userId}, #{resumeName}, #{jobDirection}, #{isDefault}, 1,
+            #{filePath}, #{fileName}, #{fileSize})
     </insert>
     <update id="updateResume" parameterType="com.ruoyi.system.domain.app.AppResume">
         update t_res_base set rbs_resume_name = #{resumeName}, rbs_job_direction = #{jobDirection},
-            rbs_is_default = #{isDefault}, rbs_updated_at = now()
+            rbs_is_default = #{isDefault}, rbs_updated_at = now(),
+            rbs_file_path = #{filePath}, rbs_file_name = #{fileName}, rbs_file_size = #{fileSize}
         where rbs_id = #{resumeId} and rbs_user_id = #{userId} and rbs_status = 1
     </update>
     <update id="clearDefault">

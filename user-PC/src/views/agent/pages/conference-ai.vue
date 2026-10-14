@@ -4,12 +4,12 @@
       <div class="ca-tb-left">
         <strong>{{ header.positionTitle }}</strong>
         <span class="ca-chip">第 {{ header.roundNo }} 轮</span>
-        <span class="ca-chip mode">AI 面试</span>
+        <span class="ca-chip mode">{{ modeLabel }}</span>
       </div>
       <div class="ca-tb-right">
         <span class="ca-timer">{{ clock }}</span>
         <span class="ca-net" :class="netLevel"><i />{{ netLevel === 'ok' ? '网络良好' : '网络波动' }}</span>
-        <span class="ca-rec"><i />录制中</span>
+        <span v-if="recording" class="ca-rec"><i />录制中</span>
       </div>
     </header>
 
@@ -20,33 +20,51 @@
 
     <section class="ca-stage">
       <div ref="stageRef" class="ca-video">
-        <div ref="splitRef" class="ca-split" :style="{ '--left': leftRatio + '%' }">
-          <div class="ca-left">
-            <div class="ca-ai">
-              <div class="ca-orb">
-                <span class="ca-ring" />
-                <span class="ca-ring delay" />
-                <span class="ca-orb-core">AI</span>
-              </div>
-              <h2>AI 面试官 · 智聘</h2>
-              <p>正在聆听你的回答…</p>
+        <!-- 面试官宫格：多位面试官画面并排占据主区，本人画面仍以小窗独立呈现 -->
+        <div class="ca-grid" :class="`g${Math.min(interviewers.length || 1, 6)}`">
+          <div v-for="p in interviewers" :key="p.userId" class="ca-tile">
+            <video
+              v-show="tileStream(p.userId)"
+              :ref="(el) => setTileEl(p.userId, el)"
+              class="ca-tile-video"
+              autoplay
+              playsinline
+            />
+            <div v-if="!tileStream(p.userId)" class="ca-tile-waiting">
+              <Icon name="video" :size="26" />
+              <span>等待 {{ p.name }} 画面…</span>
             </div>
-
-            <div class="ca-question">
-              <div class="ca-q-head">
-                <span class="ca-q-index">第 {{ progress.current }} 题 / 共 {{ progress.total }} 题</span>
-                <div class="ca-q-bar"><u :style="{ width: (progress.current / progress.total) * 100 + '%' }" /></div>
-              </div>
-              <p class="ca-q-text">{{ questionText }}</p>
-            </div>
+            <span v-if="tileStream(p.userId)" class="ca-tile-tag"><i />{{ p.name }} · {{ p.roleLabel }}</span>
           </div>
-
-          <div class="ca-resizer" title="拖动调节画面大小" @mousedown.prevent="startResize"><i /></div>
-
-          <div class="ca-right">
-            <video v-show="peerStream" ref="peerVideo" class="ca-peer-video" autoplay playsinline />
-            <div v-if="!peerStream" class="ca-peer-waiting"><Icon name="video" :size="26" /><span>等待面试官画面…</span></div>
+          <div v-if="!interviewers.length" class="ca-grid-empty">
+            <Icon name="video" :size="30" />
+            <span>等待面试官进入…</span>
           </div>
+        </div>
+
+        <!-- AI 画中画：无AI 纯人工模式隐藏 -->
+        <div
+          v-if="showAiPanel"
+          ref="aiRef"
+          class="ca-ai-pip"
+          :style="aiStyle"
+          @mousedown.prevent="startDragAi"
+        >
+          <div class="ca-orb">
+            <span class="ca-ring" />
+            <span class="ca-ring delay" />
+            <span class="ca-orb-core">AI</span>
+          </div>
+          <div class="ca-ai-pip-meta"><b>AI 面试官</b><small>正在聆听…</small></div>
+        </div>
+
+        <!-- 当前题目：无AI 模式隐藏 -->
+        <div v-if="showAiPanel" class="ca-question">
+          <div class="ca-q-head">
+            <span class="ca-q-index">第 {{ progress.current }} 题 / 共 {{ progress.total }} 题</span>
+            <div class="ca-q-bar"><u :style="{ width: (progress.current / progress.total) * 100 + '%' }" /></div>
+          </div>
+          <p class="ca-q-text">{{ questionText }}</p>
         </div>
 
         <div class="ca-self" :style="selfStyle" @mousedown.prevent="startDrag">
@@ -131,9 +149,9 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onBeforeUnmount, onMounted, nextTick, ref } from 'vue'
+import { computed, defineComponent, h, onBeforeUnmount, onMounted, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { getCurrentSession, getProgress, listCaptions, heartbeat, finishSession, updateMedia } from '@/api/system/conference'
+import { getCurrentSession, getSessionContext, getProgress, listCaptions, heartbeat, finishSession, updateMedia } from '@/api/system/conference'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, requestMedia, requestMediaWithFallback, savePreferredDevice } from '@/utils/media'
 import { createConferenceRtc } from '@/utils/webrtc'
 
@@ -160,16 +178,21 @@ const Icon = defineComponent({
 
 const route = useRoute()
 const stageRef = ref(null)
-const splitRef = ref(null)
 const selfVideo = ref(null)
-const peerVideo = ref(null)
 const capListRef = ref(null)
 const selfPos = ref({ x: null, y: null })
 const selfVisible = ref(true)
-// AI 面板占左侧的宽度比例：拖动中间分隔条调节，限制在 25%~75%
-const leftRatio = ref(50)
-// 面试官远端音视频流（WebRTC 到达后渲染到右半屏）
-const peerStream = ref(null)
+// AI 画中画位置（拖动调整，默认右下角偏上，避开自画面小窗与字幕条）
+const aiRef = ref(null)
+const aiPos = ref({ x: null, y: null })
+// 远端音视频流：userId -> MediaStream（多面试官时每人一路）
+const peerStreams = ref({})
+// 面试官列表（宫格中每位各占一格）
+const interviewers = ref([])
+// 面试模式（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
+const interviewMode = ref(2)
+// 企业端是否正在录制（由面试官通过信令同步，未收到即为未录制）
+const recording = ref(false)
 
 const micOn = ref(true)
 const camOn = ref(true)
@@ -206,6 +229,44 @@ const captionPool = [
 const selfStyle = computed(() =>
   selfPos.value.x === null ? { right: '16px', bottom: '16px' } : { left: `${selfPos.value.x}px`, top: `${selfPos.value.y}px` }
 )
+
+// AI 画中画位置
+const aiStyle = computed(() =>
+  aiPos.value.x === null ? { right: '16px', bottom: '160px' } : { left: `${aiPos.value.x}px`, top: `${aiPos.value.y}px` }
+)
+// 面试模式展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
+const modeLabel = computed(() => {
+  switch (interviewMode.value) {
+    case 1: return '纯 AI 面试'
+    case 3: return 'AI + 多面试官'
+    case 4: return '纯人工面试'
+    default: return 'AI + HR 面试'
+  }
+})
+// 无AI纯人工模式不展示 AI 面板与 AI 出题
+const showAiPanel = computed(() => interviewMode.value !== 4)
+// 宫格中每位面试官的 <video>：userId -> element，流到达后同步 srcObject
+const tileEls = {}
+function tileStream(userId) {
+  return peerStreams.value[String(userId)] || null
+}
+function setTileEl(userId, el) {
+  const key = String(userId)
+  if (el) {
+    tileEls[key] = el
+    const s = tileStream(userId)
+    if (el.srcObject !== s) el.srcObject = s
+  } else {
+    delete tileEls[key]
+  }
+}
+watch(peerStreams, () => {
+  interviewers.value.forEach((p) => {
+    const el = tileEls[String(p.userId)]
+    const s = tileStream(p.userId)
+    if (el && el.srcObject !== s) el.srcObject = s
+  })
+}, { flush: 'post' })
 
 let videoTrack = null
 let audioTrack = null
@@ -245,13 +306,20 @@ function startDrag(event) {
   document.addEventListener('mouseup', up)
 }
 
-// 拖动中间分隔条，调节 AI 面板与面试官画面的宽度占比
-function startResize() {
-  const rect = splitRef.value?.getBoundingClientRect()
-  if (!rect || !rect.width) return
+// 拖动 AI 画中画，调整其在主画面中的位置
+function startDragAi(event) {
+  const stage = stageRef.value?.getBoundingClientRect()
+  const box = aiRef.value?.getBoundingClientRect()
+  if (!stage || !box) return
+  const offX = event.clientX - box.left
+  const offY = event.clientY - box.top
   const move = (ev) => {
-    const ratio = ((ev.clientX - rect.left) / rect.width) * 100
-    leftRatio.value = Math.min(75, Math.max(25, ratio))
+    const nx = ev.clientX - stage.left - offX
+    const ny = ev.clientY - stage.top - offY
+    aiPos.value = {
+      x: Math.max(8, Math.min(stage.width - box.width - 8, nx)),
+      y: Math.max(8, Math.min(stage.height - box.height - 8, ny))
+    }
   }
   const up = () => {
     document.removeEventListener('mousemove', move)
@@ -311,25 +379,51 @@ async function openCamera() {
   rtc?.attachLocalTracks(videoTrack, audioTrack)
 }
 
-// WebRTC 信令连接：拿到场次后建立，面试官远端流到达后渲染到右半屏
+// WebRTC 网状信令连接：拿到场次后建立，各面试官远端流按 userId 分别缓存，主画面按选中项渲染
 function startRtc() {
   if (rtc || !sessionId.value) return
   rtc = createConferenceRtc({
     sessionId: sessionId.value,
-    onPeerStream: (s) => {
-      peerStream.value = s
-      nextTick(() => {
-        if (peerVideo.value) peerVideo.value.srcObject = s
-      })
+    onPeerStream: (userId, s) => {
+      peerStreams.value = { ...peerStreams.value, [String(userId)]: s }
     },
-    onPeerLeft: () => {
-      peerStream.value = null
-      if (peerVideo.value) peerVideo.value.srcObject = null
+    onPeerLeft: (userId) => {
+      const next = { ...peerStreams.value }
+      delete next[String(userId)]
+      peerStreams.value = next
+    },
+    // 面试官广播的录制状态：企业端未开录制时为 false，候选人端据此展示「录制中」标识
+    onControl: (type, payload) => {
+      if (type === 'recording') recording.value = !!payload.on
     }
   })
   rtc.start()
   // 媒体采集先于信令就绪时补挂本地轨道
   if (videoTrack || audioTrack) rtc.attachLocalTracks(videoTrack, audioTrack)
+}
+
+// 应用场次上下文：回填顶部信息、面试官列表与面试模式
+function applySessionContext(ctx) {
+  if (!ctx) return
+  if (ctx.positionTitle) header.value.positionTitle = ctx.positionTitle
+  if (ctx.roundNo) header.value.roundNo = ctx.roundNo
+  if (ctx.mode) interviewMode.value = Number(ctx.mode)
+  interviewers.value = (ctx.interviewers || []).map((it) => ({
+    userId: Number(it.userId),
+    name: it.userName || '面试官',
+    roleLabel: Number(it.isPrimary) === 1 ? '主面试官' : '面试官'
+  }))
+}
+
+// 重新拉取场次上下文（面试官列表可能变化）
+async function refreshContext() {
+  if (!sessionId.value) return
+  try {
+    const res = await getSessionContext(sessionId.value)
+    applySessionContext(res.data)
+  } catch (e) {
+    // 忽略
+  }
 }
 
 function closeCamera() {
@@ -503,23 +597,20 @@ async function initSession() {
   if (urlSessionId) {
     sessionId.value = urlSessionId
     startRtc()
-  }
-  try {
-    const res = await getCurrentSession()
-    if (res.data && res.data.sessionId) {
-      if (!sessionId.value) {
+  } else {
+    try {
+      const res = await getCurrentSession()
+      if (res.data && res.data.sessionId) {
         sessionId.value = res.data.sessionId
         startRtc()
       }
-      if (String(res.data.sessionId) === String(sessionId.value)) {
-        if (res.data.positionTitle) header.value.positionTitle = res.data.positionTitle
-        if (res.data.roundNo) header.value.roundNo = res.data.roundNo
-      }
+    } catch (error) {
+      // 无后端时保留本地演示
     }
-  } catch (error) {
-    // 无后端时保留本地演示
   }
   if (!sessionId.value) return
+  // 拉取场次上下文：顶部信息 / 面试官列表 / 面试模式
+  await refreshContext()
   try {
     const p = await getProgress(sessionId.value)
     if (p.data) {
@@ -604,17 +695,32 @@ onBeforeUnmount(() => {
 .ca-stage { flex: 1; min-height: 0; padding: 12px; display: flex; }
 .ca-video { position: relative; flex: 1; min-width: 0; border-radius: 14px; overflow: hidden; background: radial-gradient(120% 90% at 50% 20%, #1E2A44 0%, #10141C 62%, #0A0D14 100%); box-shadow: 0 24px 60px rgba(0, 0, 0, .5); }
 
-.ca-split { position: absolute; inset: 0; display: flex; }
-.ca-left { position: relative; flex: 0 0 var(--left, 50%); min-width: 0; }
-.ca-resizer { position: relative; flex: 0 0 10px; cursor: col-resize; }
-.ca-resizer i { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 2px; height: 40px; border-radius: 999px; background: rgba(255, 255, 255, .28); transition: .16s; }
-.ca-resizer:hover i { height: 64px; background: var(--b); }
-.ca-right { position: relative; flex: 1 1 0; min-width: 0; border-left: 1px solid var(--line); background: #05070c; }
-.ca-peer-video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ca-peer-waiting { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; }
-.ca-peer-waiting svg { color: #4A5768; }
+/* 面试官宫格：多位面试官画面并排占据主区；格子保持 16:9 并整体垂直居中，避免出现大面积黑边 */
+.ca-grid { position: absolute; inset: 0; padding: 8px; display: grid; gap: 8px; align-content: center; }
+.ca-grid.g1 { grid-template-columns: 1fr; }
+.ca-grid.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ca-grid.g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ca-grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ca-grid.g5, .ca-grid.g6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* contain：完整显示画面不裁切（cover 会把摄像头画面放大裁掉边缘） */
+.ca-tile { position: relative; min-width: 0; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #05070c; border: 1px solid var(--line); }
+.ca-tile-video { width: 100%; height: 100%; object-fit: contain; display: block; background: #05070c; }
+.ca-tile-waiting { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; }
+.ca-tile-waiting svg { color: #4A5768; }
+.ca-grid-empty { grid-column: 1 / -1; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; }
+.ca-grid-empty svg { color: #4A5768; }
+.ca-tile-tag { position: absolute; left: 10px; bottom: 8px; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: rgba(6, 9, 14, .62); backdrop-filter: blur(6px); color: #fff; font-size: 12px; }
+.ca-tile-tag i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 
-.ca-ai { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%); text-align: center; }
+/* AI 画中画：无AI 纯人工模式隐藏 */
+.ca-ai-pip { position: absolute; width: 150px; padding: 12px; border-radius: 12px; background: rgba(12, 17, 26, .74); border: 1px solid var(--line); backdrop-filter: blur(8px); text-align: center; cursor: move; }
+.ca-ai-pip .ca-orb { width: 84px; height: 84px; }
+.ca-ai-pip .ca-orb-core { width: 58px; height: 58px; font-size: 15px; }
+.ca-ai-pip .ca-orb-core::after { width: 58px; height: 58px; }
+.ca-ai-pip .ca-ring { inset: 6px; }
+.ca-ai-pip-meta { margin-top: 8px; }
+.ca-ai-pip-meta b { display: block; font-size: 12px; }
+.ca-ai-pip-meta small { display: block; margin-top: 2px; color: #8394AC; font-size: 11px; }
 .ca-orb { position: relative; width: 136px; height: 136px; margin: 0 auto; display: grid; place-items: center; }
 .ca-orb-core { width: 96px; height: 96px; display: grid; place-items: center; border-radius: 50%; color: #fff; font-size: 24px; font-weight: 800; letter-spacing: 1px; background: linear-gradient(150deg, #2B7FFF, #1A3C6E); box-shadow: 0 0 40px rgba(43, 127, 255, .55); }
 .ca-orb-core::after { content: ''; position: absolute; width: 96px; height: 96px; border-radius: 50%; background: linear-gradient(150deg, rgba(43, 127, 255, .5), transparent 70%); animation: ca-spin 6s linear infinite; }
@@ -622,10 +728,9 @@ onBeforeUnmount(() => {
 .ca-ring { position: absolute; inset: 8px; border-radius: 50%; border: 1px solid rgba(43, 127, 255, .5); animation: ca-pulse 2.6s ease-out infinite; }
 .ca-ring.delay { animation-delay: 1.3s; }
 @keyframes ca-pulse { 0% { transform: scale(.86); opacity: .85; } 100% { transform: scale(1.28); opacity: 0; } }
-.ca-ai h2 { margin-top: 18px; font-size: 17px; }
-.ca-ai p { margin-top: 6px; color: #8394AC; font-size: 13px; }
 
-.ca-question { position: absolute; left: 20px; right: 20px; top: 18px; max-width: 560px; padding: 14px 16px; border-radius: 12px; background: rgba(12, 17, 26, .72); border: 1px solid var(--line); backdrop-filter: blur(8px); }
+/* 当前题目：右上角浮动，避开左侧面试官列表 */
+.ca-question { position: absolute; right: 18px; top: 16px; width: min(520px, 56%); padding: 14px 16px; border-radius: 12px; background: rgba(12, 17, 26, .72); border: 1px solid var(--line); backdrop-filter: blur(8px); }
 .ca-q-head { display: flex; align-items: center; gap: 12px; }
 .ca-q-index { font-size: 12px; color: #8FB8FF; font-weight: 600; white-space: nowrap; }
 .ca-q-bar { flex: 1; height: 5px; border-radius: 999px; background: rgba(255, 255, 255, .14); }
@@ -639,7 +744,7 @@ onBeforeUnmount(() => {
 .ca-self-name { position: absolute; left: 7px; bottom: 5px; font-size: 10px; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); pointer-events: none; }
 .ca-self-hide { position: absolute; right: 5px; top: 4px; width: 20px; height: 20px; border: 0; border-radius: 6px; background: rgba(8, 12, 20, .65); color: #fff; font-size: 15px; line-height: 1; display: grid; place-items: center; }
 .ca-self-restore { position: absolute; right: 16px; bottom: 16px; height: 32px; padding: 0 13px; border: 1px solid var(--line); border-radius: 8px; background: rgba(10, 14, 22, .75); color: #CFE0FF; font-size: 12px; }
-.ca-share-tip { position: absolute; right: 14px; top: 12px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; background: rgba(43, 127, 255, .92); color: #fff; font-size: 12px; }
+.ca-share-tip { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 6; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; background: rgba(43, 127, 255, .92); color: #fff; font-size: 12px; }
 
 .ca-captions { position: absolute; left: 0; right: 0; bottom: 0; max-height: 148px; padding: 12px 18px 14px; background: linear-gradient(180deg, rgba(6, 9, 14, 0), rgba(6, 9, 14, .86) 42%); display: flex; flex-direction: column; transition: .2s; }
 .ca-captions:not(.live) { opacity: .3; }
@@ -683,12 +788,9 @@ onBeforeUnmount(() => {
 .ca-set-field select:focus { border-color: var(--b); }
 
 @media (max-width: 900px) {
-  .ca-question { left: 14px; right: 14px; top: 14px; }
+  .ca-question { right: 14px; width: 68%; top: 14px; }
   .ca-q-text { font-size: 13px; }
   .ca-self { width: 120px; height: 68px; }
-  .ca-split { flex-direction: column; }
-  .ca-left { flex: 0 0 55%; }
-  .ca-resizer { display: none; }
-  .ca-right { flex: 1 1 0; border-left: 0; border-top: 1px solid var(--line); }
+  .ca-ai-pip { width: 128px; padding: 10px; }
 }
 </style>

@@ -43,8 +43,8 @@ public class ConferenceSignalServiceImpl implements IConferenceSignalService
     private static final String USER_TICKET_KEY = "conference:signal:user:";
     /** 票据有效期（秒） */
     private static final int TICKET_TTL = 7200;
-    /** 允许转发的信令类型 */
-    private static final Set<String> SIGNAL_TYPES = new HashSet<>(Arrays.asList("offer", "answer", "ice", "ready", "bye"));
+    /** 允许转发的信令类型（recording 用于同步面试官与候选人的录制状态） */
+    private static final Set<String> SIGNAL_TYPES = new HashSet<>(Arrays.asList("offer", "answer", "ice", "ready", "bye", "recording"));
     /** 心跳间隔（秒），注释帧防止代理缓冲与空闲断流 */
     private static final int HEARTBEAT_SECONDS = 20;
 
@@ -90,13 +90,11 @@ public class ConferenceSignalServiceImpl implements IConferenceSignalService
             throw new ServiceException("面试场次不存在");
         }
         Long candidateUserId = toLong(ctx.get("candidateUserId"));
-        Long interviewerId = toLong(ctx.get("interviewerId"));
-        boolean isCandidate = userId.equals(candidateUserId);
-        if (!isCandidate && !userId.equals(interviewerId))
+        String role = resolveRole(ctx, sessionId, userId);
+        if (role == null)
         {
             throw new ServiceException("无权访问该面试场次");
         }
-        String role = isCandidate ? "CANDIDATE" : "HR";
         String ticket = UUID.randomUUID().toString().replace("-", "");
 
         // 同一用户重复签发：删除旧票，使其立即失效
@@ -115,6 +113,7 @@ public class ConferenceSignalServiceImpl implements IConferenceSignalService
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ticket", ticket);
+        result.put("userId", userId);
         result.put("role", role);
         result.put("sessionId", sessionId);
         result.put("expiresInSeconds", TICKET_TTL);
@@ -125,15 +124,53 @@ public class ConferenceSignalServiceImpl implements IConferenceSignalService
             room.forEach((peerId, emitter) -> {
                 if (!peerId.equals(userId))
                 {
+                    String peerRole = resolveRole(ctx, sessionId, peerId);
                     Map<String, Object> peer = new LinkedHashMap<>();
                     peer.put("userId", peerId);
-                    peer.put("role", peerId.equals(candidateUserId) ? "CANDIDATE" : "HR");
+                    peer.put("role", peerRole == null ? (peerId.equals(candidateUserId) ? "CANDIDATE" : "HR") : peerRole);
                     peers.add(peer);
                 }
             });
         }
         result.put("peers", peers);
         return result;
+    }
+
+    /**
+     * 解析用户在信令场次中的角色：CANDIDATE / HR / OBSERVER，无权限返回 null
+     */
+    private String resolveRole(Map<String, Object> ctx, Long sessionId, Long userId)
+    {
+        if (userId.equals(toLong(ctx.get("candidateUserId"))))
+        {
+            return "CANDIDATE";
+        }
+        if (userId.equals(toLong(ctx.get("interviewerId"))) || isAssignedInterviewer(sessionId, userId))
+        {
+            return "HR";
+        }
+        Long sessionCompanyId = toLong(ctx.get("companyId"));
+        Long userCompanyId = conferenceMapper.selectCompanyIdByUser(userId);
+        if (sessionCompanyId != null && sessionCompanyId.equals(userCompanyId))
+        {
+            return "OBSERVER";
+        }
+        return null;
+    }
+
+    /**
+     * 该用户是否为场次被指派面试官（关联表）
+     */
+    private boolean isAssignedInterviewer(Long sessionId, Long userId)
+    {
+        for (Map<String, Object> item : conferenceMapper.selectSessionInterviewers(sessionId))
+        {
+            if (userId.equals(toLong(item.get("userId"))))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -163,14 +200,29 @@ public class ConferenceSignalServiceImpl implements IConferenceSignalService
     }
 
     @Override
-    public void relay(String ticket, String type, Map<String, Object> payload)
+    public void relay(String ticket, String type, Map<String, Object> payload, Long toUserId)
     {
         if (StringUtils.isEmpty(type) || !SIGNAL_TYPES.contains(type))
         {
             throw new ServiceException("不支持的信令类型");
         }
         JSONObject info = readTicket(ticket);
-        broadcast(info.getLong("sessionId"), info.getLong("userId"), info.getString("role"), type, payload);
+        Long sessionId = info.getLong("sessionId");
+        Long fromUserId = info.getLong("userId");
+        String fromRole = info.getString("role");
+        // 多方网状：offer / answer / ice 必须定向到目标端，否则会串到其他面试官的连接上；
+        // 未指定目标时（如 bye）仍按广播处理，兼容两人场景
+        if (toUserId != null && !toUserId.equals(fromUserId))
+        {
+            ConcurrentHashMap<Long, SseEmitter> room = rooms.get(sessionId);
+            SseEmitter target = room == null ? null : room.get(toUserId);
+            if (target != null)
+            {
+                pushTo(sessionId, toUserId, target, fromUserId, fromRole, type, payload);
+            }
+            return;
+        }
+        broadcast(sessionId, fromUserId, fromRole, type, payload);
     }
 
     /**

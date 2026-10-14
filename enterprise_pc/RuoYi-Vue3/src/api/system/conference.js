@@ -214,6 +214,17 @@ export function saveStoragePolicy(data) {
   })
 }
 
+// 上传录制分片（FormData 二进制，关闭防重复提交、放宽超时以容纳大分片）
+export function uploadRecordingChunk(sessionId, formData) {
+  return request({
+    url: '/system/conference/recordings/' + sessionId + '/chunk',
+    method: 'post',
+    data: formData,
+    headers: { repeatSubmit: false },
+    timeout: 60000
+  })
+}
+
 // ============================ 会议链接（会前） ============================
 
 // 会议链接匿名校验（统一入口页使用，不返回场次 ID）
@@ -249,6 +260,48 @@ export function listCandidatePositions(peerUserId) {
     url: '/system/conference/link/positions',
     method: 'get',
     params: { peerUserId: peerUserId }
+  })
+}
+
+// 本企业全体在职用户（HR 发起面试时选择面试官）
+export function listInterviewers() {
+  return request({
+    url: '/system/conference/interviewers',
+    method: 'get'
+  })
+}
+
+// 面试官收到的面试邀约通知（消息中心「面试预约通知」）
+export function listInterviewerNotices() {
+  return request({
+    url: '/system/conference/interviewer/notices',
+    method: 'get'
+  })
+}
+
+// 面试官回应邀约：accept=true 接受，false 拒绝
+export function respondInterviewNotice(sessionId, accept) {
+  return request({
+    url: '/system/conference/interviewer/notices/' + sessionId + '/respond',
+    method: 'post',
+    data: { accept: accept }
+  })
+}
+
+// 面试官加入会议（后到面试官点击「加入本次面试」）
+export function joinInterviewer(sessionId) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/interviewer/join',
+    method: 'post'
+  })
+}
+
+// 移交主面试官
+export function transferPrimary(sessionId, targetUserId) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/interviewer/transfer',
+    method: 'post',
+    data: { targetUserId: targetUserId }
   })
 }
 
