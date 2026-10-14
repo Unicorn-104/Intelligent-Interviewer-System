@@ -78,16 +78,122 @@
           <div v-else class="empty-state visible">当前暂无企业发布的在招岗位。</div>
         </div>
       </section>
+
+      <section class="schedule-section" aria-labelledby="scheduleHeading">
+        <article class="panel schedule-panel">
+          <div class="schedule-header">
+            <div>
+              <h2 id="scheduleHeading" class="panel-title">面试安排</h2>
+              <div class="schedule-caption">
+                <p class="panel-caption">查看即将开始的面试与会议时间</p>
+                <span v-if="scheduleMockEnabled" class="mock-badge">演示数据</span>
+              </div>
+            </div>
+            <div class="schedule-toolbar">
+              <div class="calendar-switcher" aria-label="切换面试月份">
+                <button class="calendar-nav" type="button" title="上个月" aria-label="上个月" @click="changeMonth(-1)">‹</button>
+                <strong>{{ scheduleMonthLabel }}</strong>
+                <button class="calendar-nav" type="button" title="下个月" aria-label="下个月" @click="changeMonth(1)">›</button>
+              </div>
+              <button class="today-button" type="button" @click="goToToday">回到今天</button>
+            </div>
+          </div>
+
+          <div class="schedule-layout">
+            <div class="calendar-area">
+              <div class="weekday-row" aria-hidden="true">
+                <span v-for="weekday in weekdayLabels" :key="weekday">{{ weekday }}</span>
+              </div>
+              <div class="calendar-grid">
+                <button
+                  v-for="cell in calendarCells"
+                  :key="cell.dateKey"
+                  class="calendar-day"
+                  :class="{ outside: !cell.inCurrentMonth, today: cell.isToday, selected: cell.dateKey === selectedDate, 'has-event': cell.items.length }"
+                  type="button"
+                  :aria-label="cellAriaLabel(cell)"
+                  @click="selectCalendarDate(cell)"
+                >
+                  <span class="day-number">{{ cell.day }}</span>
+                  <span v-if="cell.items.length" class="day-events"><i aria-hidden="true"></i><b>{{ cell.items.length }}</b></span>
+                </button>
+              </div>
+              <div class="calendar-legend" aria-label="日历标记说明">
+                <span><i class="legend-dot"></i>有面试</span>
+                <span><i class="legend-today"></i>今天</span>
+              </div>
+            </div>
+
+            <aside class="schedule-details" aria-live="polite">
+              <div class="details-heading">
+                <div><span class="details-kicker">SELECTED DATE</span><h3>{{ selectedDateLabel }}</h3></div>
+                <span v-if="scheduleLoading" class="loading-label">读取中...</span>
+              </div>
+              <div v-if="scheduleError" class="schedule-state error-state">
+                <strong>面试安排加载失败</strong>
+                <span>{{ scheduleError }}</span>
+                <button class="outline-button" type="button" @click="loadSchedule()">重新加载</button>
+              </div>
+              <div v-else-if="scheduleLoading" class="schedule-state">正在读取真实面试安排...</div>
+              <div v-else-if="selectedItems.length" class="schedule-list">
+                <article v-for="item in selectedItems" :key="`${item.appointmentId}-${item.sessionId || 'appointment'}`" class="schedule-item">
+                  <div class="schedule-item-time"><strong>{{ formatScheduleTime(item.startAt) }}</strong><span>{{ formatScheduleTime(item.endAt) }} 结束</span></div>
+                  <div class="schedule-item-copy">
+                    <h4>{{ item.positionTitle || '面试岗位' }}</h4>
+                    <p>{{ item.companyName || '企业信息待补充' }}</p>
+                    <div class="schedule-item-meta"><span class="schedule-status" :class="scheduleStatusClass(item)">{{ item.statusText || '待面试' }}</span><span>{{ Number(item.mode) === 2 ? 'AI + HR 协同' : '线上面试' }}</span></div>
+                  </div>
+                  <div class="schedule-item-actions">
+                    <button v-if="hasInterviewLink(item)" class="schedule-link" type="button" @click="openInterviewLink(item)">查看面试链接 <span aria-hidden="true">→</span></button>
+                    <span v-else class="schedule-link unavailable">等待企业发送链接</span>
+                    <button v-if="item.sessionId && !String(item.sessionId).startsWith('mock-')" class="schedule-link secondary" type="button" @click="openSchedule(item)">进入准备 <span aria-hidden="true">→</span></button>
+                  </div>
+                </article>
+              </div>
+              <div v-else class="schedule-state empty-schedule">
+                <span class="empty-calendar-icon" aria-hidden="true">◷</span>
+                <strong>当天暂无面试安排</strong>
+                <span>有新的面试邀约后，会自动显示在这里。</span>
+              </div>
+            </aside>
+          </div>
+        </article>
+      </section>
     </main>
+  </div>
+
+  <div v-if="linkDialogVisible" class="schedule-modal-backdrop" role="presentation" @click.self="closeInterviewLink">
+    <section class="schedule-modal" role="dialog" aria-modal="true" aria-labelledby="scheduleLinkTitle">
+      <button class="schedule-modal-close" type="button" aria-label="关闭面试链接弹窗" title="关闭" @click="closeInterviewLink">×</button>
+      <span class="details-kicker">INTERVIEW LINK</span>
+      <h2 id="scheduleLinkTitle">企业面试链接</h2>
+      <p class="schedule-modal-summary">{{ linkDialogItem?.companyName || '企业' }} · {{ linkDialogItem?.positionTitle || '岗位面试' }}</p>
+      <div class="schedule-modal-info">
+        <span>面试时间</span>
+        <strong>{{ formatScheduleDateTime(linkDialogItem?.startAt, linkDialogItem?.endAt) }}</strong>
+      </div>
+      <label class="schedule-link-field">
+        <span>专属面试入口</span>
+        <input :value="interviewLink" type="text" readonly aria-label="专属面试入口" @focus="$event.target.select()" />
+      </label>
+      <p v-if="linkDialogItem?.statusText === '已结束'" class="schedule-modal-tip expired">本场面试已结束，该链接已不能进入会议。</p>
+      <p v-else-if="isMockScheduleItem(linkDialogItem)" class="schedule-modal-tip">当前为演示链接，仅用于查看格式；真实面试链接会由企业端发送。</p>
+      <p v-else class="schedule-modal-tip">请使用此链接进入面试准备页，建议提前 10 分钟打开。</p>
+      <div class="schedule-modal-actions">
+        <button class="outline-button" type="button" @click="copyInterviewLink">{{ copiedLink ? '已复制' : '复制链接' }}</button>
+        <button class="primary-button" type="button" :disabled="linkDialogItem?.statusText === '已结束' || isMockScheduleItem(linkDialogItem)" @click="visitInterviewLink">打开面试</button>
+      </div>
+    </section>
   </div>
 
   <div class="toast" :class="{ show: toastVisible }" role="status"><span>✓</span><span>{{ toastMessage }}</span></div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { listJobs } from '@/api/agent/job'
+import { listCandidateSchedule } from '@/api/system/conference'
 
 const jobs = ref([])
 const keyword = ref('')
@@ -97,7 +203,60 @@ const errorMessage = ref('')
 const savedJobs = ref(new Set(readSavedJobs()))
 const toastVisible = ref(false)
 const toastMessage = ref('')
+const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+const todayKey = ref(formatDateKey(new Date()))
+const calendarDate = ref(startOfMonth(new Date()))
+const selectedDate = ref(todayKey.value)
+const scheduleItems = ref([])
+const scheduleLoading = ref(false)
+const scheduleError = ref('')
+const scheduleMockEnabled = import.meta.env.VITE_AGENT_SCHEDULE_MOCK === 'true'
+const linkDialogVisible = ref(false)
+const linkDialogItem = ref(null)
+const interviewLink = ref('')
+const copiedLink = ref(false)
 let toastTimer
+let todayTimer
+
+const scheduleMonthLabel = computed(() => {
+  const date = calendarDate.value
+  return `${date.getFullYear()}年${date.getMonth() + 1}月`
+})
+
+const scheduleByDate = computed(() => {
+  const grouped = {}
+  scheduleItems.value.forEach((item) => {
+    const dateKey = String(item.startAt || '').slice(0, 10)
+    if (!dateKey) return
+    if (!grouped[dateKey]) grouped[dateKey] = []
+    grouped[dateKey].push(item)
+  })
+  return grouped
+})
+
+const calendarCells = computed(() => {
+  const monthStart = startOfMonth(calendarDate.value)
+  const leadingDays = (monthStart.getDay() + 6) % 7
+  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()
+  const cellCount = Math.ceil((leadingDays + daysInMonth) / 7) * 7
+  const firstCell = new Date(monthStart)
+  firstCell.setDate(firstCell.getDate() - leadingDays)
+  return Array.from({ length: cellCount }, (_, index) => {
+    const date = new Date(firstCell)
+    date.setDate(firstCell.getDate() + index)
+    const dateKey = formatDateKey(date)
+    return {
+      dateKey,
+      day: date.getDate(),
+      inCurrentMonth: date.getMonth() === monthStart.getMonth(),
+      isToday: dateKey === todayKey.value,
+      items: scheduleByDate.value[dateKey] || []
+    }
+  })
+})
+
+const selectedItems = computed(() => scheduleByDate.value[selectedDate.value] || [])
+const selectedDateLabel = computed(() => formatChineseDate(selectedDate.value))
 
 async function loadJobs() {
   loading.value = true
@@ -111,6 +270,160 @@ async function loadJobs() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadSchedule() {
+  scheduleLoading.value = true
+  scheduleError.value = ''
+  const monthStart = startOfMonth(calendarDate.value)
+  const nextMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1)
+  const from = formatDateKey(monthStart)
+  const to = formatDateKey(nextMonth)
+  try {
+    const response = await listCandidateSchedule({ from, to })
+    const data = Array.isArray(response.data) ? response.data : []
+    scheduleItems.value = data
+  } catch (error) {
+    scheduleItems.value = []
+    scheduleError.value = error?.message || '面试安排暂时无法读取，请稍后重试'
+  } finally {
+    scheduleLoading.value = false
+  }
+}
+
+function changeMonth(offset) {
+  const current = calendarDate.value
+  calendarDate.value = new Date(current.getFullYear(), current.getMonth() + offset, 1)
+  selectedDate.value = formatDateKey(calendarDate.value)
+  loadSchedule()
+}
+
+function goToToday() {
+  const today = new Date()
+  todayKey.value = formatDateKey(today)
+  calendarDate.value = startOfMonth(today)
+  selectedDate.value = todayKey.value
+  loadSchedule()
+}
+
+function selectCalendarDate(cell) {
+  if (!cell.inCurrentMonth) {
+    const date = dateFromKey(cell.dateKey)
+    calendarDate.value = startOfMonth(date)
+    selectedDate.value = cell.dateKey
+    loadSchedule()
+    return
+  }
+  selectedDate.value = cell.dateKey
+}
+
+function cellAriaLabel(cell) {
+  return `${formatChineseDate(cell.dateKey)}${cell.items.length ? `，${cell.items.length} 场面试` : '，暂无面试'}`
+}
+
+function formatScheduleTime(value) {
+  const text = String(value || '')
+  return text.includes(' ') ? text.split(' ')[1] : text || '--:--'
+}
+
+function formatScheduleDateTime(startAt, endAt) {
+  const start = String(startAt || '')
+  const end = String(endAt || '')
+  if (!start) return '时间待定'
+  const date = start.split(' ')[0]
+  const startTime = formatScheduleTime(start)
+  const endTime = end ? formatScheduleTime(end) : ''
+  return `${date} ${startTime}${endTime ? ` - ${endTime}` : ''}`
+}
+
+function getInterviewLink(item) {
+  if (item?.interviewLink) return item.interviewLink
+  if (!item?.roomToken) return ''
+  return `${window.location.origin}/conference-join?token=${encodeURIComponent(item.roomToken)}`
+}
+
+function hasInterviewLink(item) {
+  return Boolean(getInterviewLink(item))
+}
+
+function isMockScheduleItem(item) {
+  return String(item?.appointmentId || '').startsWith('mock-')
+}
+
+function openInterviewLink(item) {
+  const link = getInterviewLink(item)
+  if (!link) {
+    showToast('企业尚未发送面试链接')
+    return
+  }
+  linkDialogItem.value = item
+  interviewLink.value = link
+  copiedLink.value = false
+  linkDialogVisible.value = true
+}
+
+function closeInterviewLink() {
+  linkDialogVisible.value = false
+  linkDialogItem.value = null
+  interviewLink.value = ''
+  copiedLink.value = false
+}
+
+async function copyInterviewLink() {
+  if (!interviewLink.value) return
+  try {
+    await navigator.clipboard.writeText(interviewLink.value)
+  } catch {
+    const input = document.createElement('textarea')
+    input.value = interviewLink.value
+    input.setAttribute('readonly', '')
+    input.style.position = 'fixed'
+    input.style.opacity = '0'
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    input.remove()
+  }
+  copiedLink.value = true
+  showToast('面试链接已复制')
+}
+
+function visitInterviewLink() {
+  if (!interviewLink.value || linkDialogItem.value?.statusText === '已结束' || isMockScheduleItem(linkDialogItem.value)) return
+  window.open(interviewLink.value, '_blank', 'noopener,noreferrer')
+}
+
+function scheduleStatusClass(item) {
+  const status = item.statusText || ''
+  if (status === '进行中') return 'in-progress'
+  if (status === '已结束') return 'finished'
+  return 'upcoming'
+}
+
+function openSchedule(item) {
+  window.__agentNavigate(`/agent/conference-prep?sessionId=${encodeURIComponent(item.sessionId)}`)
+}
+
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function formatDateKey(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function dateFromKey(value) {
+  const [year, month, day] = String(value).split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function formatChineseDate(value) {
+  const date = dateFromKey(value)
+  const weekday = weekdayLabels[(date.getDay() + 6) % 7]
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${weekday}`
 }
 
 function clearSearch() {
@@ -176,7 +489,24 @@ function showToast(message) {
   toastTimer = setTimeout(() => { toastVisible.value = false }, 2600)
 }
 
-onMounted(loadJobs)
+onMounted(() => {
+  loadJobs()
+  loadSchedule()
+  todayTimer = window.setInterval(() => {
+    const nextTodayKey = formatDateKey(new Date())
+    if (nextTodayKey !== todayKey.value) {
+      todayKey.value = nextTodayKey
+      if (calendarDate.value.getMonth() === new Date().getMonth()
+        && calendarDate.value.getFullYear() === new Date().getFullYear()) {
+        selectedDate.value = nextTodayKey
+      }
+    }
+  }, 60 * 1000)
+})
+
+onUnmounted(() => {
+  window.clearInterval(todayTimer)
+})
 
 </script>
 
@@ -504,4 +834,101 @@ onMounted(loadJobs)
       .notification-popover { top: 57px; right: 14px; width: min(320px, calc(100vw - 28px)); }
     }
     .job-card:focus-visible{outline:3px solid rgba(43,127,255,.22);outline-offset:3px}.job-card .bookmark-button,.job-card .apply-button{cursor:pointer}
+
+    /* 面试安排日历 */
+    .schedule-section { margin-top: 26px; }
+    .schedule-panel { overflow: hidden; }
+    .schedule-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 24px 19px; }
+    .schedule-caption { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .mock-badge { padding: 3px 7px; border: 1px solid #F1D59B; border-radius: 999px; color: #9A6815; background: #FFF8E9; font-size: 9px; font-weight: 700; }
+    .schedule-toolbar { display: flex; align-items: center; gap: 12px; }
+    .calendar-switcher { display: flex; align-items: center; gap: 12px; color: var(--primary); }
+    .calendar-switcher strong { min-width: 88px; color: var(--primary); font-size: 14px; text-align: center; }
+    .calendar-nav { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; color: var(--primary); background: #fff; font-size: 22px; line-height: 1; transition: border .2s, background .2s, color .2s; }
+    .calendar-nav:hover { border-color: #BCD1ED; color: var(--interactive); background: var(--interactive-soft); }
+    .today-button { min-height: 30px; padding: 0 11px; border: 1px solid #BCD1ED; border-radius: 7px; color: var(--interactive); background: #fff; font-size: 11px; font-weight: 700; }
+    .today-button:hover { background: var(--interactive-soft); }
+    .schedule-layout { display: grid; grid-template-columns: minmax(0, 1.28fr) minmax(320px, .72fr); border-top: 1px solid var(--line); }
+    .calendar-area { min-width: 0; padding: 22px 24px 18px; border-right: 1px solid var(--line); }
+    .weekday-row, .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; }
+    .weekday-row { margin-bottom: 7px; color: #93A0B3; font-size: 11px; font-weight: 700; text-align: center; }
+    .calendar-day { position: relative; min-width: 0; min-height: 70px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 7px 8px; border: 1px solid transparent; border-radius: 8px; color: var(--text); background: #fff; text-align: center; transition: border .2s, background .2s, box-shadow .2s; }
+    .calendar-day:hover { border-color: #C8DAF2; background: #F8FBFF; }
+    .calendar-day.outside { color: #B9C2CF; background: #FBFCFE; }
+    .calendar-day.today { border-color: #A7C9F6; background: #F7FBFF; }
+    .calendar-day.today .day-number { color: var(--interactive); font-weight: 800; }
+    .calendar-day.today::before { content: "今"; position: absolute; top: 5px; right: 6px; min-width: 13px; height: 13px; padding: 1px 3px; border-radius: 4px; color: #fff; background: var(--interactive); font-size: 8px; font-weight: 800; line-height: 11px; }
+    .calendar-day.selected { border-color: #8CB6EF; background: var(--interactive-soft); box-shadow: inset 0 0 0 1px rgba(43, 127, 255, .08); }
+    .calendar-day.selected .day-number { color: var(--primary); font-weight: 800; }
+    .day-number { font-size: 13px; line-height: 1.2; }
+    .day-events { display: inline-flex; align-items: center; gap: 5px; min-height: 17px; color: var(--interactive); font-size: 10px; font-weight: 800; }
+    .day-events i, .legend-dot { width: 6px; height: 6px; display: inline-block; border-radius: 50%; background: var(--interactive); }
+    .calendar-legend { display: flex; align-items: center; gap: 16px; margin-top: 14px; color: #718198; font-size: 10px; }
+    .calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend-today { width: 12px; height: 12px; display: inline-grid; place-items: center; border: 1px solid #A7C9F6; border-radius: 4px; color: var(--interactive); background: #F7FBFF; font-size: 8px; font-style: normal; }
+    .legend-today::after { content: "今"; }
+    .schedule-details { min-width: 0; padding: 22px 22px 20px; background: #FBFCFE; }
+    .details-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
+    .details-kicker { color: #9AA7B8; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
+    .details-heading h3 { margin: 4px 0 0; color: var(--primary); font-size: 16px; }
+    .loading-label { color: var(--interactive); font-size: 10px; font-weight: 700; }
+    .schedule-list { display: grid; gap: 10px; }
+    .schedule-item { position: relative; display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 12px; padding: 13px; border: 1px solid #E2EAF3; border-radius: 9px; background: #fff; }
+    .schedule-item-time { padding-right: 10px; border-right: 1px solid #E8EDF4; }
+    .schedule-item-time strong { display: block; color: var(--primary); font-size: 16px; line-height: 1.2; }
+    .schedule-item-time span { display: block; margin-top: 5px; color: #9AA7B8; font-size: 10px; white-space: nowrap; }
+    .schedule-item-copy { min-width: 0; }
+    .schedule-item-copy h4 { overflow: hidden; margin: 0; color: var(--primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .schedule-item-copy p { overflow: hidden; margin: 4px 0 0; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .schedule-item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 8px; color: #8492A5; font-size: 10px; }
+    .schedule-status { padding: 3px 6px; border-radius: 4px; color: #B36B16; background: var(--warning-soft); font-weight: 700; }
+    .schedule-status.in-progress { color: #167554; background: var(--success-soft); }
+    .schedule-status.finished { color: #738197; background: #F0F3F7; }
+    .schedule-item-actions { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 3px; }
+    .schedule-link { padding: 0; border: 0; color: var(--interactive); background: transparent; font-size: 11px; font-weight: 700; }
+    .schedule-link:hover { color: var(--primary); }
+    .schedule-link span { margin-left: 3px; }
+    .schedule-link.secondary { color: #718198; font-weight: 600; }
+    .schedule-link.unavailable { color: #9AA7B8; cursor: default; font-weight: 600; }
+    .schedule-state { min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: var(--muted); font-size: 11px; text-align: center; }
+    .schedule-state strong { color: var(--primary); font-size: 13px; }
+    .schedule-state .outline-button { margin-top: 5px; }
+    .error-state { color: #A95D64; }
+    .empty-calendar-icon { width: 38px; height: 38px; display: grid; place-items: center; margin-bottom: 3px; border-radius: 50%; color: #90A0B5; background: #EEF3F8; font-size: 21px; }
+    .schedule-modal-backdrop { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(16, 45, 83, .32); }
+    .schedule-modal { position: relative; width: min(520px, 100%); padding: 28px; border: 1px solid #DDE7F2; border-radius: 12px; background: #fff; box-shadow: 0 18px 50px rgba(16, 45, 83, .2); }
+    .schedule-modal-close { position: absolute; top: 15px; right: 17px; width: 30px; height: 30px; border: 0; color: #718198; background: transparent; font-size: 25px; line-height: 1; }
+    .schedule-modal h2 { margin: 7px 38px 0 0; color: var(--primary); font-size: 20px; }
+    .schedule-modal-summary { margin: 5px 0 20px; color: var(--muted); font-size: 12px; }
+    .schedule-modal-info { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 11px 13px; border-radius: 7px; background: #F7FAFE; color: #718198; font-size: 11px; }
+    .schedule-modal-info strong { color: var(--primary); font-size: 12px; font-weight: 700; text-align: right; }
+    .schedule-link-field { display: block; margin-top: 17px; color: var(--primary); font-size: 11px; font-weight: 700; }
+    .schedule-link-field input { width: 100%; height: 42px; margin-top: 7px; padding: 0 11px; border: 1px solid #D9E3EF; border-radius: 7px; color: #536985; background: #FBFCFE; font-size: 12px; outline: 0; }
+    .schedule-link-field input:focus { border-color: #8CB6EF; box-shadow: 0 0 0 3px rgba(43, 127, 255, .1); }
+    .schedule-modal-tip { margin: 12px 0 0; color: #718198; font-size: 11px; }
+    .schedule-modal-tip.expired { color: #A95D64; }
+    .schedule-modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
+    .schedule-modal-actions .outline-button, .schedule-modal-actions .primary-button { min-height: 36px; padding: 0 14px; border-radius: 7px; font-size: 11px; font-weight: 700; }
+    .schedule-modal-actions .primary-button { border: 1px solid var(--interactive); color: #fff; background: var(--interactive); }
+    .schedule-modal-actions .primary-button:disabled { border-color: #CBD5E2; color: #93A0B3; background: #E9EEF4; cursor: not-allowed; }
+
+    @media (max-width: 980px) {
+      .schedule-layout { grid-template-columns: 1fr; }
+      .calendar-area { border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+
+    @media (max-width: 640px) {
+      .schedule-header { display: block; padding-right: 18px; padding-left: 18px; }
+      .schedule-toolbar { justify-content: space-between; margin-top: 16px; }
+      .calendar-area { padding: 18px 14px 16px; }
+      .weekday-row, .calendar-grid { gap: 4px; }
+      .calendar-day { min-height: 58px; padding: 8px 4px 6px; }
+      .day-number { font-size: 12px; }
+      .schedule-details { padding: 18px; }
+      .schedule-item { grid-template-columns: 60px minmax(0, 1fr); gap: 10px; padding: 11px; }
+      .schedule-item-time strong { font-size: 15px; }
+      .schedule-modal { padding: 24px 18px 20px; }
+      .schedule-modal-info { align-items: flex-start; flex-direction: column; gap: 3px; }
+      .schedule-modal-info strong { text-align: left; }
+    }
 </style>

@@ -17,6 +17,11 @@ public interface IConferenceService
     public Map<String, Object> getCurrentSession(Long userId);
 
     /**
+     * 查询候选人在指定日期范围内的面试日程
+     */
+    public List<Map<String, Object>> listCandidateSchedule(Long userId, String from, String to);
+
+    /**
      * 指定场次的会议上下文（含角色：HR / CANDIDATE）
      */
     public Map<String, Object> getSessionContext(Long userId, Long sessionId);
@@ -196,7 +201,6 @@ public interface IConferenceService
      * 保存录制存储策略
      */
     public Map<String, Object> saveStoragePolicy(Long userId, Integer keepDays, Integer maxStorageGb);
-
     /**
      * 接收录制分片并顺序暂存；last=true 时按序拼接落盘为完整录制文件，
      * 回写场次的录制 URL / 时长 / 字节数 / 访问有效期。仅主面试官（或宽限期后）可上传。

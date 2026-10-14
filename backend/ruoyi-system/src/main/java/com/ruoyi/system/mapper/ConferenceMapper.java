@@ -22,6 +22,11 @@ public interface ConferenceMapper
     public Map<String, Object> selectCurrentSession(@Param("userId") Long userId);
 
     /**
+     * 查询候选人在指定日期范围内的面试日程
+     */
+    public List<Map<String, Object>> selectCandidateSchedule(Map<String, Object> params);
+
+    /**
      * 按场次ID查询面试场次上下文（含访问校验所需的双方用户ID）
      */
     public Map<String, Object> selectSessionContext(@Param("sessionId") Long sessionId);
@@ -205,7 +210,6 @@ public interface ConferenceMapper
      * 查询场次下全部参与者的会前状态（用于等候室展示双方）
      */
     public List<Map<String, Object>> selectParticipantStates(@Param("sessionId") Long sessionId);
-
     /**
      * 写入 / 更新场次面试官关联（多面试官）
      */

@@ -29,6 +29,16 @@ public class ConferenceController extends BaseController
     private IConferenceService conferenceService;
 
     /**
+     * 当前求职者在指定日期范围内的面试日程
+     */
+    @GetMapping("/schedule")
+    public AjaxResult schedule(@RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to)
+    {
+        return success(conferenceService.listCandidateSchedule(getUserId(), from, to));
+    }
+
+    /**
      * 当前用户进行中 / 待开始的面试场次上下文（无场次返回空对象）
      */
     @GetMapping("/session/current")
@@ -402,7 +412,6 @@ public class ConferenceController extends BaseController
         }
         return value instanceof Number ? ((Number) value).longValue() : Long.valueOf(value.toString());
     }
-
     private static java.util.List<Long> longListOf(Map<String, Object> body, String key)
     {
         Object value = body.get(key);
