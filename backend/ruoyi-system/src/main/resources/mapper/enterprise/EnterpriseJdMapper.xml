@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.EnterpriseJdMapper">
+
+    <!-- ============ 岗位画像（UC-01） ============ -->
+
+    <select id="selectPositionJd" resultType="java.util.LinkedHashMap">
+        select pos_id as positionId, pos_title as title, pos_department as department,
+               cast(pos_jd_json as char) as jdJson
+        from t_pos
+        where pos_id = #{posId}
+    </select>
+
+    <update id="updatePositionJd">
+        update t_pos
+        set pos_jd_json = #{jdJson}, pos_updated_at = now()
+        where pos_id = #{posId}
+    </update>
+
+    <select id="selectPositionSkills" resultType="java.util.LinkedHashMap">
+        select psk_id as skillId, psk_name as name, psk_required as required
+        from t_pos_skill
+        where psk_position_id = #{posId}
+        order by psk_id
+    </select>
+
+    <delete id="deletePositionSkills">
+        delete from t_pos_skill where psk_position_id = #{posId}
+    </delete>
+
+    <insert id="insertPositionSkill">
+        insert into t_pos_skill (psk_position_id, psk_name, psk_required)
+        values (#{posId}, #{name}, #{required})
+    </insert>
+
+</mapper>

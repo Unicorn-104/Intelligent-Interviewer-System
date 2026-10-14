@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.TalentPoolMapper">
+
+    <!-- ============ 人才库检索（UC-03） ============ -->
+
+    <select id="selectTalentList" resultType="java.util.LinkedHashMap">
+        select t.tal_id as talentId, t.tal_status as status, t.tal_matched_score as matchedScore,
+               t.tal_current_round as currentRound, t.tal_resume_id as resumeId,
+               u.nick_name as name, u.phonenumber as phone, u.email as email,
+               r.rbs_job_direction as jobDirection,
+               (select group_concat(tg_name separator ',') from t_tal_tag where tg_candidate_id = t.tal_id) as tags
+        from t_tal t
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_res_base r on r.rbs_id = t.tal_resume_id
+        where t.tal_company_id = #{companyId}
+        <if test="keyword != null and keyword != ''">
+            and (u.nick_name like concat('%', #{keyword}, '%')
+                 or u.phonenumber like concat('%', #{keyword}, '%'))
+        </if>
+        <if test="tag != null and tag != ''">
+            and exists (select 1 from t_tal_tag tg where tg.tg_candidate_id = t.tal_id and tg.tg_name = #{tag})
+        </if>
+        order by t.tal_id desc
+    </select>
+
+    <select id="selectTalentById" resultType="java.util.LinkedHashMap">
+        select t.tal_id as talentId, t.tal_status as status, t.tal_matched_score as matchedScore,
+               t.tal_current_round as currentRound, t.tal_resume_id as resumeId,
+               u.user_id as userId, u.nick_name as name, u.phonenumber as phone, u.email as email,
+               r.rbs_resume_name as resumeName, r.rbs_job_direction as jobDirection
+        from t_tal t
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_res_base r on r.rbs_id = t.tal_resume_id
+        where t.tal_id = #{talId} and t.tal_company_id = #{companyId}
+    </select>
+
+    <select id="selectTalentTags" resultType="java.util.LinkedHashMap">
+        select tg_name as name, tg_source as source
+        from t_tal_tag
+        where tg_candidate_id = #{talId}
+        order by tg_id
+    </select>
+
+    <!-- ============ 简历解析结果（UC-02 步骤4） ============ -->
+
+    <select id="selectEducation" resultType="java.util.LinkedHashMap">
+        select edu_school as school, edu_major as major, edu_degree as degree,
+               date_format(edu_start_date, '%Y-%m') as startDate,
+               date_format(edu_end_date, '%Y-%m') as endDate
+        from t_res_education
+        where edu_resume_id = #{resumeId}
+        order by edu_end_date desc
+    </select>
+
+    <select id="selectWork" resultType="java.util.LinkedHashMap">
+        select wrk_company as company, wrk_position as position,
+               date_format(wrk_start_date, '%Y-%m') as startDate,
+               case when wrk_is_current = 1 then '至今' else date_format(wrk_end_date, '%Y-%m') end as endDate,
+               wrk_description as summary
+        from t_res_work
+        where wrk_resume_id = #{resumeId}
+        order by wrk_start_date desc
+    </select>
+
+    <select id="selectProject" resultType="java.util.LinkedHashMap">
+        select prj_name as name, prj_role as role, prj_tech_stack as techStack,
+               prj_description as summary
+        from t_res_project
+        where prj_resume_id = #{resumeId}
+        order by prj_start_date desc
+    </select>
+
+    <select id="selectSkill" resultType="java.util.LinkedHashMap">
+        select skl_name as name, skl_level as level
+        from t_res_skill
+        where skl_resume_id = #{resumeId}
+        order by skl_level desc, skl_id
+    </select>
+
+    <select id="countEducation" resultType="int">
+        select count(*) from t_res_education where edu_resume_id = #{resumeId}
+    </select>
+
+    <select id="countWork" resultType="int">
+        select count(*) from t_res_work where wrk_resume_id = #{resumeId}
+    </select>
+
+    <select id="countProject" resultType="int">
+        select count(*) from t_res_project where prj_resume_id = #{resumeId}
+    </select>
+
+    <select id="countSkill" resultType="int">
+        select count(*) from t_res_skill where skl_resume_id = #{resumeId}
+    </select>
+
+</mapper>

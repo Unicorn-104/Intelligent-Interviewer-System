@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.PracticeTaskMapper">
+
+    <!-- ============ 在线实操环境预加载（UC-11） ============ -->
+
+    <select id="selectSessionBase" resultType="java.util.LinkedHashMap">
+        select s.ses_id as sessionId, s.ses_position_id as positionId, s.ses_template_id as templateId,
+               pos.pos_title as positionTitle
+        from t_int_session s
+        left join t_pos pos on pos.pos_id = s.ses_position_id
+        where s.ses_id = #{sessionId}
+    </select>
+
+    <select id="selectTasks" resultType="java.util.LinkedHashMap">
+        select tsk_id as taskId, tsk_title as title, tsk_description as description,
+               tsk_language as language, tsk_time_limit as timeLimit,
+               tsk_difficulty as difficulty, tsk_status as status
+        from t_practice_task t
+        where t.tsk_status = 1
+          and (t.tsk_template_id = (select ses_template_id from t_int_session where ses_id = #{sessionId})
+               or t.tsk_position_id = (select ses_position_id from t_int_session where ses_id = #{sessionId}))
+        order by t.tsk_id
+    </select>
+
+</mapper>

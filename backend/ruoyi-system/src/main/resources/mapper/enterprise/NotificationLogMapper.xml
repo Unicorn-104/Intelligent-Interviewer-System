@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.NotificationLogMapper">
+
+    <!-- ============ 通知发送日志与统计（UC-16 E2） ============ -->
+
+    <select id="selectLogs" resultType="java.util.LinkedHashMap">
+        select m.msg_id as msgId, m.msg_type as type, m.msg_title as title,
+               m.msg_content as content, m.msg_is_read as isRead,
+               date_format(m.msg_read_at, '%Y-%m-%d %H:%i') as readAt,
+               date_format(m.msg_created_at, '%Y-%m-%d %H:%i') as createdAt,
+               u.nick_name as receiverName
+        from t_msg m
+        left join sys_user u on u.user_id = m.msg_receiver_id
+        where m.msg_sender_id = 0
+        <if test="candidate != null and candidate != ''">
+            and u.nick_name like concat('%', #{candidate}, '%')
+        </if>
+        <if test="scene != null and scene != ''">
+            and m.msg_type = #{scene}
+        </if>
+        <if test="from != null and from != ''">
+            and m.msg_created_at &gt;= #{from}
+        </if>
+        <if test="to != null and to != ''">
+            and m.msg_created_at &lt;= #{to}
+        </if>
+        order by m.msg_created_at desc
+    </select>
+
+    <select id="selectStatsBase" resultType="java.util.LinkedHashMap">
+        select count(*) as total, sum(case when msg_is_read = 1 then 1 else 0 end) as read
+        from t_msg
+        where msg_sender_id = 0
+    </select>
+
+</mapper>
