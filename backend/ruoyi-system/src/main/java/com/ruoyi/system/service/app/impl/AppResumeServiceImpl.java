@@ -23,6 +23,8 @@ import com.ruoyi.system.mapper.app.AppResumeMapper;
 import com.ruoyi.system.service.app.IAppResumeService;
 import com.ruoyi.system.service.app.pdf.ResumePdfParser;
 import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
+import com.ruoyi.system.service.app.pdf.ResumeAiStructurer;
+import com.ruoyi.system.config.ResumeStructureProperties;
 
 /** C-App 简历服务。 */
 @Service
@@ -37,6 +39,10 @@ public class AppResumeServiceImpl implements IAppResumeService
     private ResumePdfParser pdfParser;
     @Autowired
     private ResumePdfStorage pdfStorage;
+    @Autowired
+    private ResumeAiStructurer aiStructurer;
+    @Autowired
+    private ResumeStructureProperties structureProperties;
 
     @Override
     public List<AppResume> selectResumeList(Long userId)
@@ -154,7 +160,17 @@ public class AppResumeServiceImpl implements IAppResumeService
     {
         ResumePdfParser.Result parsed = pdfParser.parse(pdfBytes);
         String text = parsed.text();
-        AppResume draft = parseStructured(text);
+        AppResume draft;
+        if (structureProperties.isEnabled())
+        {
+            draft = aiStructurer.structure(text);
+        }
+        else
+        {
+            draft = parseStructured(text);
+            draft.setStructureMethod("RULE");
+            draft.setParseWarnings(List.of("AI 编排已关闭，规则识别结果可能遗漏不同标题下的信息，请对照原文核对"));
+        }
         String baseName = originalFilename == null ? "扫描简历" : originalFilename.replaceFirst("(?i)\\.pdf$", "");
         draft.setResumeName(trimTo(baseName, 100));
         draft.setIsDefault(false);
