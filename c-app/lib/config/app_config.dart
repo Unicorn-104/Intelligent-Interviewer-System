@@ -7,4 +7,5 @@ abstract final class AppConfig {
   );
 
   static const requestTimeout = Duration(seconds: 12);
+  static const fileUploadTimeout = Duration(seconds: 180);
 }
