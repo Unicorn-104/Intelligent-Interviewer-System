@@ -1,11 +1,5 @@
 package com.ruoyi.system.service.app.impl;
 
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,34 +10,33 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import net.sourceforge.tess4j.ITesseract;
-import net.sourceforge.tess4j.Tesseract;
-import net.sourceforge.tess4j.TesseractException;
-import org.apache.pdfbox.Loader;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.rendering.ImageType;
-import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.domain.app.AppResume;
+import com.ruoyi.system.domain.app.AppResumePdfDocument;
 import com.ruoyi.system.mapper.app.AppResumeMapper;
 import com.ruoyi.system.service.app.IAppResumeService;
+import com.ruoyi.system.service.app.pdf.ResumePdfParser;
+import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
 
 /** C-App 简历服务。 */
 @Service
 public class AppResumeServiceImpl implements IAppResumeService
 {
-    private static final int MAX_PAGES = 8;
     private static final Pattern DATE_RANGE = Pattern.compile("((?:19|20)\\d{2})[./年-]?(\\d{1,2})?.{0,4}(?:至|[-–—~]|到).{0,4}((?:19|20)\\d{2})?[./年-]?(\\d{1,2})?");
     private static final Pattern JOB_DIRECTION = Pattern.compile("(?:求职意向|目标职位|应聘职位|期望职位)\\s*[:：]?\\s*([^\\n]{2,40})");
 
     @Autowired
     private AppResumeMapper resumeMapper;
+    @Autowired
+    private ResumePdfParser pdfParser;
+    @Autowired
+    private ResumePdfStorage pdfStorage;
 
     @Override
     public List<AppResume> selectResumeList(Long userId)
@@ -70,9 +63,53 @@ public class AppResumeServiceImpl implements IAppResumeService
     @Transactional
     public AppResume saveResume(Long userId, AppResume resume)
     {
+        return saveResumeInternal(userId, resume, null);
+    }
+
+    @Override
+    @Transactional
+    public AppResume saveResumeWithPdf(Long userId, AppResume resume, byte[] pdfBytes, String originalFilename)
+    {
+        AppResume previous = resume.getResumeId() == null ? null : lockResume(userId, resume.getResumeId());
+        normalize(resume);
+        pdfParser.validate(pdfBytes);
+        ResumePdfStorage.StoredPdf stored = pdfStorage.store(userId, pdfBytes, originalFilename);
+        // 数据库回滚时删除新文件；提交后才删除旧文件，保留重试能力。
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization()
+        {
+            @Override
+            public void afterCompletion(int status)
+            {
+                if (status != STATUS_COMMITTED) pdfStorage.delete(userId, stored.reference());
+                else if (previous != null) pdfStorage.delete(userId, previous.getFilePath());
+            }
+        });
+        return saveResumeInternal(userId, resume, stored);
+    }
+
+    @Override
+    public AppResumePdfDocument selectPdf(Long userId, Long resumeId)
+    {
+        AppResume resume = requireResume(userId, resumeId);
+        return new AppResumePdfDocument(pdfStorage.read(userId, resume.getFilePath()), resume.getFileName());
+    }
+
+    private AppResume requireResume(Long userId, Long resumeId)
+    {
+        AppResume resume = resumeMapper.selectResume(resumeId, userId);
+        if (resume == null) throw new ServiceException("简历不存在或无权访问");
+        return resume;
+    }
+
+    private AppResume saveResumeInternal(Long userId, AppResume resume, ResumePdfStorage.StoredPdf stored)
+    {
         normalize(resume);
         resume.setUserId(userId);
         boolean creating = resume.getResumeId() == null;
+        AppResume existing = creating ? null : lockResume(userId, resume.getResumeId());
+        resume.setFilePath(stored != null ? stored.reference() : existing == null ? null : existing.getFilePath());
+        resume.setFileName(stored != null ? stored.name() : existing == null ? null : existing.getFileName());
+        resume.setFileSize(stored != null ? Long.valueOf(stored.size()) : existing == null ? null : existing.getFileSize());
         if (creating)
         {
             if (resumeMapper.countActiveResumes(userId) == 0)
@@ -90,10 +127,6 @@ public class AppResumeServiceImpl implements IAppResumeService
         }
         else
         {
-            if (resumeMapper.selectResume(resume.getResumeId(), userId) == null)
-            {
-                throw new ServiceException("简历不存在或无权访问");
-            }
             if (Boolean.TRUE.equals(resume.getIsDefault()))
             {
                 resumeMapper.clearDefault(userId);
@@ -119,97 +152,27 @@ public class AppResumeServiceImpl implements IAppResumeService
     @Override
     public AppResume parsePdf(byte[] pdfBytes, String originalFilename)
     {
-        String text = extractPdfText(pdfBytes);
-        if (text.replaceAll("\\s", "").length() < 20)
-        {
-            throw new ServiceException("未识别到有效简历内容，请上传清晰、方向正确的扫描件");
-        }
+        ResumePdfParser.Result parsed = pdfParser.parse(pdfBytes);
+        String text = parsed.text();
         AppResume draft = parseStructured(text);
         String baseName = originalFilename == null ? "扫描简历" : originalFilename.replaceFirst("(?i)\\.pdf$", "");
         draft.setResumeName(trimTo(baseName, 100));
         draft.setIsDefault(false);
+        draft.setExtractedText(text);
+        draft.setParseMethod(parsed.method());
         return draft;
     }
 
-    private String extractPdfText(byte[] bytes)
+    private AppResume lockResume(Long userId, Long resumeId)
     {
-        try (PDDocument document = Loader.loadPDF(bytes))
-        {
-            if (document.getNumberOfPages() == 0 || document.getNumberOfPages() > MAX_PAGES)
-            {
-                throw new ServiceException("PDF 页数需为 1-" + MAX_PAGES + " 页");
-            }
-            String embedded = new PDFTextStripper().getText(document);
-            if (embedded.replaceAll("\\s", "").length() >= 80)
-            {
-                return embedded;
-            }
-            return recognizePages(document);
-        }
-        catch (ServiceException error)
-        {
-            throw error;
-        }
-        catch (IOException error)
-        {
-            throw new ServiceException("PDF 文件损坏或无法读取");
-        }
-    }
-
-    private String recognizePages(PDDocument document)
-    {
-        Path dataDir = null;
-        try
-        {
-            dataDir = Files.createTempDirectory("resume-ocr-");
-            copyModel("chi_sim.traineddata", dataDir);
-            copyModel("eng.traineddata", dataDir);
-            ITesseract ocr = new Tesseract();
-            ocr.setDatapath(dataDir.toString());
-            ocr.setLanguage("chi_sim+eng");
-            ocr.setPageSegMode(6);
-            ocr.setVariable("user_defined_dpi", "220");
-            PDFRenderer renderer = new PDFRenderer(document);
-            StringBuilder text = new StringBuilder();
-            for (int page = 0; page < document.getNumberOfPages(); page++)
-            {
-                BufferedImage image = renderer.renderImageWithDPI(page, 220, ImageType.GRAY);
-                text.append(ocr.doOCR(image)).append('\n');
-                image.flush();
-            }
-            return text.toString();
-        }
-        catch (IOException | TesseractException error)
-        {
-            throw new ServiceException("扫描件识别失败，请确认 PDF 清晰后重试");
-        }
-        finally
-        {
-            if (dataDir != null)
-            {
-                try
-                {
-                    Files.walk(dataDir).sorted((a, b) -> b.compareTo(a)).forEach(path -> {
-                        try { Files.deleteIfExists(path); } catch (IOException ignored) { }
-                    });
-                }
-                catch (IOException ignored) { }
-            }
-        }
-    }
-
-    private void copyModel(String name, Path target) throws IOException
-    {
-        ClassPathResource resource = new ClassPathResource("tessdata/" + name);
-        try (InputStream input = resource.getInputStream())
-        {
-            Files.copy(input, target.resolve(name), StandardCopyOption.REPLACE_EXISTING);
-        }
+        AppResume resume = resumeMapper.selectResumeForUpdate(resumeId, userId);
+        if (resume == null) throw new ServiceException("简历不存在或无权访问");
+        return resume;
     }
 
     private AppResume parseStructured(String raw)
     {
-        String text = raw.replace('\r', '\n').replaceAll("[ \\t]+", " ").replaceAll("\\n{2,}", "\\n").trim();
+        String text = raw.replace('\r', '\n').replaceAll("[ \\t]{2,}", "  ").replaceAll("\\n{2,}", "\n").trim();
         List<String> lines = Arrays.stream(text.split("\\n"))
                 .map(String::trim).filter(line -> !line.isEmpty()).collect(Collectors.toList());
         AppResume result = new AppResume();
@@ -351,8 +314,7 @@ public class AppResumeServiceImpl implements IAppResumeService
         if (resume.getIsDefault() == null) resume.setIsDefault(false);
         resume.getSkills().forEach(item -> {
             item.setName(trimTo(item.getName(), 50));
-            int level = item.getLevel() == null ? 2 : item.getLevel();
-            item.setLevel(Math.max(1, Math.min(4, level)));
+            if (item.getLevel() != null) item.setLevel(Math.max(1, Math.min(4, item.getLevel())));
         });
     }
 
