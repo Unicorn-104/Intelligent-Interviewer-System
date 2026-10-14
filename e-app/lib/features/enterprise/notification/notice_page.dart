@@ -1,18 +1,12 @@
 import 'package:flutter/material.dart';
-import '../../../widgets/demo_data_badge.dart';
 
+import '../../../api/message_api.dart';
+import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/page_states.dart';
 import '../../../widgets/skeleton_list.dart';
-import 'mock_notification.dart';
 
-/// 模块六：反馈与通知 - 公告页（P5）。
-///
-/// 依据接口盘点：复用 /system/notice/* 接口占位（listTop 置顶公告 +
-/// 列表 + 已读/未读 + 全部已读）。
-/// 数据来源：本地 Mock 数据（mock_notification.dart 的 mockNotices），
-/// TODO: P7阶段替换为真实接口（lib/api/message_api.dart 的
-/// listTopNotices / markNoticeRead）。
+/// 公告列表和已读状态均来自服务端；列表接口没有置顶字段。
 class NoticePage extends StatefulWidget {
   const NoticePage({super.key});
 
@@ -21,8 +15,13 @@ class NoticePage extends StatefulWidget {
 }
 
 class _NoticePageState extends State<NoticePage> {
-  List<Map<String, dynamic>>? _notices;
+  List<Map<String, dynamic>> _notices = const [];
+  int _unreadCount = 0;
   bool _loading = true;
+  bool _markingAll = false;
+  String? _error;
+  final Set<int> _marking = {};
+  int _request = 0;
 
   @override
   void initState() {
@@ -30,176 +29,189 @@ class _NoticePageState extends State<NoticePage> {
     _load();
   }
 
-  /// 模拟加载公告（置顶 + 普通）。
-  /// TODO: P7阶段替换为真实接口（message_api.listTopNotices 等）。
   Future<void> _load() async {
-    setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
+    final request = ++_request;
     setState(() {
-      _notices = List.of(mockNotices);
-      _loading = false;
+      _loading = true;
+      _error = null;
     });
+    try {
+      final result = await listTopNotices();
+      final rows = result['data'];
+      if (rows is! List) throw const ApiException('公告响应格式不正确');
+      final notices = rows
+          .whereType<Map>()
+          .map(
+            (row) => <String, dynamic>{
+              'id': int.tryParse('${row['noticeId']}'),
+              'title': _text(row['noticeTitle'], '未命名公告'),
+              'content': _text(row['noticeContent'], '暂无正文'),
+              'read': row['isRead'] == true,
+              'publishTime': _text(row['createTime'], '发布时间未提供'),
+            },
+          )
+          .toList();
+      if (!mounted || request != _request) return;
+      setState(() {
+        _notices = notices;
+        // 解包 Map 中的 unreadCount 来源于后端响应顶层，不从列表推算。
+        _unreadCount = int.tryParse('${result['unreadCount']}') ?? 0;
+      });
+    } catch (error) {
+      if (!mounted || request != _request) return;
+      setState(() => _error = _friendly(error));
+    } finally {
+      if (mounted && request == _request) setState(() => _loading = false);
+    }
   }
 
-  int get _unreadCount =>
-      (_notices ?? const []).where((n) => n['read'] == false).length;
-
-  /// 模拟标记已读。
-  /// TODO: P7阶段替换为真实接口（message_api.markNoticeRead）。
-  void _markRead(Map<String, dynamic> notice) {
-    setState(() => notice['read'] = true);
+  Future<void> _markRead(Map<String, dynamic> notice) async {
+    final id = notice['id'] as int?;
+    if (notice['read'] == true ||
+        _markingAll ||
+        id == null ||
+        _marking.contains(id)) {
+      return;
+    }
+    setState(() => _marking.add(id));
+    try {
+      await markNoticeRead(id);
+      if (!mounted) return;
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_friendly(error))));
+    } finally {
+      if (mounted) setState(() => _marking.remove(id));
+    }
   }
 
-  /// 模拟全部已读。
   Future<void> _markAllRead() async {
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() {
-      for (final notice in _notices ?? const <Map<String, dynamic>>[]) {
-        notice['read'] = true;
+    if (_markingAll || _marking.isNotEmpty) return;
+    setState(() => _markingAll = true);
+    try {
+      // 仅标记当前列表中实际返回的公告，成功后重新获取服务端未读数。
+      for (final notice in _notices.where((row) => row['read'] != true)) {
+        final id = notice['id'] as int?;
+        if (id != null) await markNoticeRead(id);
       }
-    });
-    messenger.showSnackBar(const SnackBar(content: Text('全部公告已标记为已读（模拟）')));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendly(error))));
+      }
+    } finally {
+      if (mounted) {
+        await _load();
+        if (mounted) setState(() => _markingAll = false);
+      }
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return DemoDataBadge(
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('公告'),
-          actions: [
-            if (_unreadCount > 0)
-              TextButton.icon(
-                onPressed: _markAllRead,
-                icon: const Icon(Icons.done_all, size: 18),
-                label: const Text('全部已读'),
-              ),
-          ],
-        ),
-        body: _loading
-            ? const SkeletonList(rows: 4)
-            : RefreshIndicator(
-                onRefresh: _load,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                  children: [
-                    if (_notices?.any((n) => n['pinned'] == true) ?? false) ...[
-                      const SectionTitle('置顶公告'),
-                      for (final notice
-                          in (_notices ?? const <Map<String, dynamic>>[]).where(
-                            (n) => n['pinned'] == true,
-                          ))
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _NoticeCard(
-                            notice: notice,
-                            onTap: () => _markRead(notice),
-                          ),
-                        ),
-                      const SizedBox(height: 6),
-                    ],
-                    const SectionTitle('全部公告'),
-                    for (final notice
-                        in (_notices ?? const <Map<String, dynamic>>[]).where(
-                          (n) => n['pinned'] != true,
-                        ))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _NoticeCard(
-                          notice: notice,
-                          onTap: () => _markRead(notice),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-      ),
-    );
-  }
-}
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: Text(_loading || _error != null ? '公告' : '公告 · 未读 $_unreadCount'),
+      actions: [
+        if (!_loading && _error == null && _unreadCount > 0)
+          TextButton.icon(
+            onPressed: _markingAll || _marking.isNotEmpty ? null : _markAllRead,
+            icon: const Icon(Icons.done_all, size: 18),
+            label: Text(_markingAll ? '处理中…' : '全部已读'),
+          ),
+      ],
+    ),
+    body: _body(),
+  );
 
-class _NoticeCard extends StatelessWidget {
-  const _NoticeCard({required this.notice, required this.onTap});
-
-  final Map<String, dynamic> notice;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final read = notice['read'] == true;
-    final pinned = notice['pinned'] == true;
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!read)
-                Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.only(top: 6, right: 10),
-                  decoration: const BoxDecoration(
-                    color: AppColors.red,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              Expanded(
+  Widget _body() {
+    if (_loading) return const SkeletonList(rows: 3);
+    if (_error != null) {
+      return PageMessage(
+        icon: Icons.cloud_off_outlined,
+        title: '公告加载失败',
+        message: _error!,
+        actionLabel: '重试',
+        onAction: _load,
+      );
+    }
+    if (_notices.isEmpty) {
+      return PageMessage(
+        icon: Icons.notifications_none,
+        title: '暂无公告',
+        message: '当前没有可显示的公告',
+        actionLabel: '刷新',
+        onAction: _load,
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+        itemCount: _notices.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final notice = _notices[index];
+          final read = notice['read'] == true;
+          final id = notice['id'] as int?;
+          return Card(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: id == null || _markingAll || _marking.contains(id)
+                  ? null
+                  : () => _markRead(notice),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        if (pinned) ...[
-                          Icon(
-                            Icons.push_pin,
-                            size: 14,
-                            color: AppColors.orange,
-                          ),
-                          const SizedBox(width: 4),
-                        ],
                         Expanded(
                           child: Text(
                             '${notice['title']}',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontWeight: read
-                                      ? FontWeight.w500
-                                      : FontWeight.w600,
-                                  color: read
-                                      ? AppColors.bodySoft
-                                      : AppColors.body,
-                                ),
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          read ? '已读' : '未读',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: read ? AppColors.muted : AppColors.red,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     Text(
                       '${notice['content']}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     Text(
                       '${notice['publishTime']}',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
+
+  static String _text(Object? value, String fallback) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? fallback : text;
+  }
+
+  static String _friendly(Object error) =>
+      error is ApiException ? error.message : '请求失败，请重试';
 }

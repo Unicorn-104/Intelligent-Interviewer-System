@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/dashboard_carousel.dart';
 import '../../../widgets/page_states.dart';
 import '../../../widgets/skeleton_list.dart';
 
@@ -103,6 +104,41 @@ class _OverviewPageState extends State<OverviewPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
         children: [
+          DashboardCarousel(
+            slides: [
+              DashboardSlide(
+                title: '欢迎回来',
+                subtitle: todos.isEmpty
+                    ? '当前暂无待办事项，祝您工作顺利'
+                    : '当前有 ${todos.length} 项待办，可在下方查看并处理',
+                icon: Icons.waving_hand_outlined,
+                colors: const [AppColors.brandDeep, AppColors.brand],
+              ),
+              DashboardSlide(
+                title: '招聘进展，一目了然',
+                subtitle:
+                    '在招岗位 ${_label(stats['activePositions'], '—')} 个 · '
+                    '候选简历 ${_label(stats['resumeCount'], '—')} 份',
+                icon: Icons.work_outline_rounded,
+                colors: const [AppColors.brand, AppColors.interactive],
+              ),
+              DashboardSlide(
+                title: '有序推进面试安排',
+                subtitle:
+                    '待处理面试 ${_label(stats['pendingInterviews'], '—')} 场 · '
+                    '本周已完成 ${_label(stats['weeklyCompleted'], '—')} 场',
+                icon: Icons.event_available_outlined,
+                colors: const [AppColors.interactive, AppColors.purple],
+              ),
+              const DashboardSlide(
+                title: '关注通知与公告',
+                subtitle: '通过下方消息入口查看通知与公告（演示数据）',
+                icon: Icons.notifications_active_outlined,
+                colors: [AppColors.brandDeep, AppColors.green],
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
           Text('招聘概览', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           LayoutBuilder(
