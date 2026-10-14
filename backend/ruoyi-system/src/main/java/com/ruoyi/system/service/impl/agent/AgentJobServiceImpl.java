@@ -2,7 +2,9 @@ package com.ruoyi.system.service.impl.agent;
 
 import java.math.BigDecimal;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -43,6 +45,20 @@ public class AgentJobServiceImpl implements IAgentJobService
     public List<String> selectJobCategories()
     {
         return jobMapper.selectJobCategories();
+    }
+
+    @Override
+    public Map<String, Object> selectJobFilterOptions()
+    {
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("categories", jobMapper.selectJobCategories());
+        options.put("cities", jobMapper.selectJobCities());
+        options.put("employmentTypes", jobMapper.selectJobTypes());
+        options.put("experiences", jobMapper.selectJobExperiences());
+        options.put("educations", jobMapper.selectJobEducations());
+        options.put("industries", jobMapper.selectJobIndustries());
+        options.put("companySizes", jobMapper.selectJobCompanySizes());
+        return options;
     }
 
     @Override
