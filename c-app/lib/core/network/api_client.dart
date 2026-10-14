@@ -6,29 +6,36 @@ import '../../config/app_config.dart';
 import 'api_exception.dart';
 
 class ApiClient {
-  ApiClient({HttpClient? httpClient})
+  ApiClient({HttpClient? httpClient, this.baseUrl = AppConfig.apiBaseUrl})
     : _httpClient = httpClient ?? HttpClient();
 
   final HttpClient _httpClient;
+  final String baseUrl;
 
-  Future<Map<String, dynamic>> get(String path, {String? token}) {
-    return _request('GET', path, token: token);
+  Future<Map<String, dynamic>> get(
+    String path, {
+    String? token,
+    Duration timeout = AppConfig.requestTimeout,
+  }) {
+    return _request('GET', path, token: token, timeout: timeout);
   }
 
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? body,
     String? token,
+    Duration timeout = AppConfig.requestTimeout,
   }) {
-    return _request('POST', path, body: body, token: token);
+    return _request('POST', path, body: body, token: token, timeout: timeout);
   }
 
   Future<Map<String, dynamic>> put(
     String path, {
     Map<String, dynamic>? body,
     String? token,
+    Duration timeout = AppConfig.requestTimeout,
   }) {
-    return _request('PUT', path, body: body, token: token);
+    return _request('PUT', path, body: body, token: token, timeout: timeout);
   }
 
   Future<Map<String, dynamic>> postFile(
@@ -36,12 +43,29 @@ class ApiClient {
     required String filePath,
     required String fieldName,
     String? token,
+    Map<String, dynamic>? jsonBody,
+    String jsonFieldName = 'resume',
   }) async {
-    final uri = Uri.parse('${AppConfig.apiBaseUrl}$path');
+    final uri = Uri.parse('$baseUrl$path');
     final file = File(filePath);
     final fileName = file.uri.pathSegments.last;
     final boundary =
         '----intelligent-interviewer-${DateTime.now().microsecondsSinceEpoch}';
+    final header = utf8.encode(
+      jsonBody != null
+          ? '--$boundary\r\n'
+                'Content-Disposition: form-data; name="$jsonFieldName"\r\n'
+                'Content-Type: application/json; charset=utf-8\r\n\r\n'
+                '${jsonEncode(jsonBody)}\r\n'
+          : '',
+    );
+    final fileHeader = utf8.encode(
+      '--$boundary\r\n'
+      'Content-Disposition: form-data; name="$fieldName"; '
+      'filename="${fileName.replaceAll('"', '')}"\r\n'
+      'Content-Type: ${_contentType(fileName)}\r\n\r\n',
+    );
+    final footer = utf8.encode('\r\n--$boundary--\r\n');
 
     try {
       final request = await _httpClient
@@ -55,22 +79,28 @@ class ApiClient {
       if (token != null && token.isNotEmpty) {
         request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
       }
+      request.contentLength =
+          header.length +
+          fileHeader.length +
+          await file.length() +
+          footer.length;
 
-      request.write('--$boundary\r\n');
-      request.write(
-        'Content-Disposition: form-data; name="$fieldName"; '
-        'filename="${fileName.replaceAll('"', '')}"\r\n',
-      );
-      request.write('Content-Type: ${_contentType(fileName)}\r\n\r\n');
+      request.add(header);
+      request.add(fileHeader);
       await request.addStream(file.openRead());
-      request.write('\r\n--$boundary--\r\n');
+      request.add(footer);
 
-      final response = await request.close().timeout(AppConfig.requestTimeout);
-      return _readResponse(response);
+      final response = await request.close().timeout(
+        AppConfig.fileUploadTimeout,
+      );
+      return await _readResponse(
+        response,
+        timeout: AppConfig.fileUploadTimeout,
+      );
     } on ApiException {
       rethrow;
     } on TimeoutException {
-      throw const ApiException('连接后端超时，请检查网络后重试');
+      throw const ApiException('PDF 上传或识别超时，请稍后重试');
     } on SocketException {
       throw const ApiException('无法连接后端服务，请确认服务已启动');
     } on FileSystemException {
@@ -87,17 +117,15 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
     String? token,
+    Duration timeout = AppConfig.requestTimeout,
   }) async {
-    final uri = Uri.parse('${AppConfig.apiBaseUrl}$path');
+    final uri = Uri.parse('$baseUrl$path');
 
     try {
       final request = switch (method) {
-        'GET' =>
-          await _httpClient.getUrl(uri).timeout(AppConfig.requestTimeout),
-        'POST' =>
-          await _httpClient.postUrl(uri).timeout(AppConfig.requestTimeout),
-        'PUT' =>
-          await _httpClient.putUrl(uri).timeout(AppConfig.requestTimeout),
+        'GET' => await _httpClient.getUrl(uri).timeout(timeout),
+        'POST' => await _httpClient.postUrl(uri).timeout(timeout),
+        'PUT' => await _httpClient.putUrl(uri).timeout(timeout),
         _ => throw const ApiException('不支持的请求方法'),
       };
 
@@ -110,8 +138,8 @@ class ApiClient {
         request.write(jsonEncode(body));
       }
 
-      final response = await request.close().timeout(AppConfig.requestTimeout);
-      return _readResponse(response);
+      final response = await request.close().timeout(timeout);
+      return _readResponse(response, timeout: timeout);
     } on ApiException {
       rethrow;
     } on TimeoutException {
@@ -126,12 +154,13 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> _readResponse(
-    HttpClientResponse response,
-  ) async {
+    HttpClientResponse response, {
+    Duration timeout = AppConfig.requestTimeout,
+  }) async {
     final responseText = await utf8.decoder
         .bind(response)
         .join()
-        .timeout(AppConfig.requestTimeout);
+        .timeout(timeout);
 
     if (responseText.isEmpty) {
       throw ApiException('后端返回了空响应', statusCode: response.statusCode);

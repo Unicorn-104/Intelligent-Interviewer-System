@@ -26,6 +26,18 @@ class ResumeApi {
   }
 
   Future<AppResume> save(String token, AppResume resume) async {
+    if (resume.localPdfPath != null) {
+      final json = await _client.postFile(
+        resume.resumeId == null
+            ? '/app/resumes/import-pdf'
+            : '/app/resumes/${resume.resumeId}/import-pdf',
+        token: token,
+        filePath: resume.localPdfPath!,
+        fieldName: 'file',
+        jsonBody: resume.toJson(),
+      );
+      return _resume(json);
+    }
     final json = resume.resumeId == null
         ? await _client.post(
             '/app/resumes',
@@ -48,6 +60,15 @@ class ResumeApi {
       fieldName: 'file',
     );
     final resume = _resume(json);
+    if (resume.structureMethod != 'AI') {
+      throw const ApiException('简历导入未完成，请重试');
+    }
+    if (resume.educations.isEmpty &&
+        resume.works.isEmpty &&
+        resume.projects.isEmpty &&
+        resume.skills.isEmpty) {
+      throw const ApiException('暂未识别到简历经历，请重试或选择更清晰的 PDF');
+    }
     return resume;
   }
 
