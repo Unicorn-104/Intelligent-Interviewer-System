@@ -96,6 +96,9 @@ application-local.properties
 upload/
 uploadPath/
 data/
+# Flutter API source directories are not runtime data.
+!/c-app/lib/features/*/data/
+!/c-app/lib/features/*/data/*.dart
 run/
 																																	
 ######################################################################
