@@ -72,10 +72,10 @@ void main() {
 
   for (final entry in [(0, '已下线', '上线'), (1, '在招', '下线'), (2, '暂停', '上线')]) {
     testWidgets('状态 ${entry.$1} 对应 ${entry.$2} 和 ${entry.$3}', (tester) async {
-      await card(tester, {'status': entry.$1, 'applicantCount': 0});
+      await card(tester, {'status': entry.$1, 'applicantCount': 1});
       expect(find.text(entry.$2), findsOneWidget);
       expect(find.text(entry.$3), findsOneWidget);
-      expect(find.text('0'), findsOneWidget);
+      expect(find.text('1'), findsOneWidget);
       final badgeY = tester
           .getCenter(find.byKey(const ValueKey('job-applicants-1')))
           .dy;
@@ -84,9 +84,9 @@ void main() {
     });
   }
 
-  testWidgets('缺失数显示破折号，未知状态不允许改动', (tester) async {
+  testWidgets('缺失数隐藏角标，未知状态不允许改动', (tester) async {
     await card(tester, {'status': null});
-    expect(find.text('—'), findsOneWidget);
+    expect(find.byKey(const ValueKey('job-applicants-1')), findsNothing);
     expect(find.text('状态未知'), findsOneWidget);
     expect(
       tester
@@ -95,6 +95,82 @@ void main() {
       isNull,
     );
   });
+
+  for (final count in [0, null, -1]) {
+    testWidgets('投递数 $count 不显示角标且原位置点击进入基础信息', (tester) async {
+      var opened = 0;
+      var applicants = 0;
+      await card(
+        tester,
+        {'applicantCount': count},
+        onOpen: () => opened++,
+        onApplicants: () => applicants++,
+      );
+      expect(find.byKey(const ValueKey('job-applicants-1')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('job-applicants-circle-1')),
+        findsNothing,
+      );
+      final rect = tester.getRect(
+        find.byKey(const ValueKey('job-list-card-1')),
+      );
+      await tester.tapAt(Offset(rect.right - 22, rect.top + 16));
+      expect((opened, applicants), (1, 0));
+    });
+  }
+
+  for (final entry in [
+    (1, '1', 18.0),
+    (9, '9', 18.0),
+    (10, '10', 20.0),
+    (99, '99', 20.0),
+    (100, '99+', 24.0),
+    (120, '99+', 24.0),
+  ]) {
+    testWidgets('投递数 ${entry.$1} 使用红底白字圆形角标 ${entry.$2}', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await card(tester, {'applicantCount': entry.$1});
+        final badge = find.byKey(const ValueKey('job-applicants-1'));
+        final circle = find.byKey(const ValueKey('job-applicants-circle-1'));
+        final container = tester.widget<Container>(circle);
+        final decoration = container.decoration! as BoxDecoration;
+        expect(decoration.shape, BoxShape.circle);
+        expect(decoration.color, AppColors.error);
+        expect(tester.getSize(circle), Size.square(entry.$3));
+        expect(tester.getSize(badge), const Size.square(44));
+        final number = tester.widget<Text>(
+          find.descendant(of: circle, matching: find.byType(Text)),
+        );
+        expect(number.data, entry.$2);
+        expect(number.style!.color, AppColors.canvas);
+        expect(number.style!.fontSize, 11);
+        expect(number.style!.fontWeight, FontWeight.w500);
+        expect(
+          tester.getSemantics(
+            find.bySemanticsLabel('累计投递 ${entry.$1} 人，查看求职者'),
+          ),
+          matchesSemantics(
+            label: '累计投递 ${entry.$1} 人，查看求职者',
+            isButton: true,
+            hasTapAction: true,
+          ),
+        );
+        final cardRect = tester.getRect(
+          find.byKey(const ValueKey('job-list-card-1')),
+        );
+        final circleRect = tester.getRect(circle);
+        expect(circleRect.top, lessThan(cardRect.top));
+        expect(circleRect.right, cardRect.right - 8);
+        expect(
+          circleRect.bottom,
+          lessThan(tester.getRect(find.text('在招')).top),
+        );
+      } finally {
+        handle.dispose();
+      }
+    });
+  }
 
   testWidgets('处理中禁用状态按钮', (tester) async {
     await card(tester, {}, changing: true);
@@ -110,6 +186,7 @@ void main() {
       const title = '这是一个很长很长很长的Java开发工程师岗位名称';
       await card(tester, {
         'title': title,
+        'applicantCount': 120,
         'education': 3,
         'experience': '3-5年',
         'salaryMin': 8500,
