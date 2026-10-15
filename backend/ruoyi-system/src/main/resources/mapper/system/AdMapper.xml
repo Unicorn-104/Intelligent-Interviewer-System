@@ -5,104 +5,130 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 <mapper namespace="com.ruoyi.system.mapper.AdMapper">
 
     <resultMap id="AdResult" type="com.ruoyi.system.domain.Ad">
-        <id     property="adId"            column="ad_id"              />
-        <result property="adSlotCode"      column="ad_slot_code"       />
-        <result property="adTitle"         column="ad_title"           />
-        <result property="adType"          column="ad_type"            />
-        <result property="adMediaUrl"      column="ad_media_url"       />
-        <result property="adCoverUrl"      column="ad_cover_url"       />
-        <result property="adJumpUrl"      column="ad_jump_url"        />
-        <result property="adTargetUsers"   column="ad_target_users"    />
-        <result property="adTargetDevices" column="ad_target_devices"  />
-        <result property="adFreqDaily"     column="ad_freq_daily"      />
-        <result property="adSortOrder"     column="ad_sort_order"      />
-        <result property="adStartAt"       column="ad_start_at"        />
-        <result property="adEndAt"         column="ad_end_at"          />
-        <result property="adStatus"        column="ad_status"          />
-        <result property="adCreatedAt"     column="ad_created_at"      />
-        <result property="adUpdatedAt"     column="ad_updated_at"      />
+        <id     property="advertId"          column="advert_id"          />
+        <result property="title"             column="title"              />
+        <result property="slotId"            column="slot_id"            />
+        <result property="adType"             column="ad_type"            />
+        <result property="mediaUrl"           column="media_url"          />
+        <result property="richContent"        column="rich_content"       />
+        <result property="jumpType"           column="jump_type"          />
+        <result property="jumpUrl"            column="jump_url"           />
+        <result property="startTime"         column="start_time"          />
+        <result property="endTime"            column="end_time"            />
+        <result property="dailyLimit"        column="daily_limit"         />
+        <result property="totalLimit"        column="total_limit"          />
+        <result property="packageTarget"     column="package_target"       />
+        <result property="exposure"           column="exposure"           />
+        <result property="clicks"             column="clicks"             />
+        <result property="ctr"                column="ctr"                />
+        <result property="status"             column="status"             />
+        <result property="slotName"           column="slot_name"          />
+        <result property="createBy"            column="create_by"          />
+        <result property="createTime"          column="create_time"        />
+        <result property="updateBy"            column="update_by"          />
+        <result property="updateTime"          column="update_time"        />
+        <result property="remark"               column="remark"            />
     </resultMap>
 
     <sql id="selectAdVo">
-        select ad_id, ad_slot_code, ad_title, ad_type, ad_media_url, ad_cover_url, ad_jump_url, ad_target_users, ad_target_devices, ad_freq_daily, ad_sort_order, ad_start_at, ad_end_at, ad_status, ad_created_at, ad_updated_at from t_ad
+        select a.ad_id as advert_id, 
+               a.ad_title as title, 
+               a.ad_slot_code as slot_id, 
+               CAST(a.ad_type AS CHAR) as ad_type, 
+               a.ad_media_url as media_url, 
+               '' as rich_content,
+               '' as jump_type,
+               a.ad_jump_url as jump_url, 
+               a.ad_start_at as start_time, 
+               a.ad_end_at as end_time, 
+               a.ad_freq_daily as daily_limit, 
+               0 as total_limit,
+               '' as package_target,
+               0 as exposure,
+               0 as clicks,
+               '' as ctr,
+               CAST(a.ad_status AS CHAR) as status,
+               s.slot_name,
+               '' as create_by, 
+               a.ad_created_at as create_time, 
+               '' as update_by, 
+               a.ad_updated_at as update_time, 
+               '' as remark
+        from t_ad a
+        left join t_ad_slot s on a.ad_slot_code = s.slot_code
     </sql>
 
     <select id="selectAdList" parameterType="com.ruoyi.system.domain.Ad" resultMap="AdResult">
         <include refid="selectAdVo"/>
         <where>
-            <if test="adSlotCode != null and adSlotCode != ''"> and ad_slot_code like concat('%', #{adSlotCode}, '%')</if>
-            <if test="adTitle != null and adTitle != ''"> and ad_title like concat('%', #{adTitle}, '%')</if>
-            <if test="adType != null"> and ad_type = #{adType}</if>
-            <if test="adStatus != null"> and ad_status = #{adStatus}</if>
+            <if test="title != null and title != ''"> and a.ad_title like concat('%', #{title}, '%')</if>
+            <if test="slotId != null and slotId != ''"> and a.ad_slot_code = #{slotId}</if>
+            <if test="status != null and status != ''"> and a.ad_status = #{status}</if>
         </where>
-        order by ad_sort_order, ad_created_at desc
+        order by a.ad_created_at desc
     </select>
 
-    <select id="selectAdByAdId" parameterType="Long" resultMap="AdResult">
+    <select id="selectAdByAdvertId" parameterType="Long" resultMap="AdResult">
         <include refid="selectAdVo"/>
-        where ad_id = #{adId}
+        where a.ad_id = #{advertId}
     </select>
 
-    <insert id="insertAd" parameterType="com.ruoyi.system.domain.Ad" useGeneratedKeys="true" keyProperty="adId">
+    <insert id="insertAd" parameterType="com.ruoyi.system.domain.Ad" useGeneratedKeys="true" keyProperty="advertId">
         insert into t_ad
         <trim prefix="(" suffix=")" suffixOverrides=",">
-            <if test="adSlotCode != null and adSlotCode != ''">ad_slot_code,</if>
-            <if test="adTitle != null and adTitle != ''">ad_title,</if>
-            <if test="adType != null">ad_type,</if>
-            <if test="adMediaUrl != null and adMediaUrl != ''">ad_media_url,</if>
-            <if test="adCoverUrl != null">ad_cover_url,</if>
-            <if test="adJumpUrl != null">ad_jump_url,</if>
-            <if test="adTargetUsers != null">ad_target_users,</if>
-            <if test="adTargetDevices != null">ad_target_devices,</if>
-            <if test="adFreqDaily != null">ad_freq_daily,</if>
-            <if test="adSortOrder != null">ad_sort_order,</if>
-            <if test="adStartAt != null">ad_start_at,</if>
-            <if test="adEndAt != null">ad_end_at,</if>
-            <if test="adStatus != null">ad_status,</if>
+            <if test="title != null and title != ''">ad_title,</if>
+            <if test="slotId != null and slotId != ''">ad_slot_code,</if>
+            <if test="adType != null and adType != ''">ad_type,</if>
+            <if test="mediaUrl != null and mediaUrl != ''">ad_media_url,</if>
+            <if test="jumpUrl != null and jumpUrl != ''">ad_jump_url,</if>
+            <if test="startTime != null and startTime != ''">ad_start_at,</if>
+            <if test="endTime != null and endTime != ''">ad_end_at,</if>
+            <if test="dailyLimit != null">ad_freq_daily,</if>
+            <if test="status != null and status != ''">ad_status,</if>
         </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
-            <if test="adSlotCode != null and adSlotCode != ''">#{adSlotCode},</if>
-            <if test="adTitle != null and adTitle != ''">#{adTitle},</if>
-            <if test="adType != null">#{adType},</if>
-            <if test="adMediaUrl != null and adMediaUrl != ''">#{adMediaUrl},</if>
-            <if test="adCoverUrl != null">#{adCoverUrl},</if>
-            <if test="adJumpUrl != null">#{adJumpUrl},</if>
-            <if test="adTargetUsers != null">#{adTargetUsers},</if>
-            <if test="adTargetDevices != null">#{adTargetDevices},</if>
-            <if test="adFreqDaily != null">#{adFreqDaily},</if>
-            <if test="adSortOrder != null">#{adSortOrder},</if>
-            <if test="adStartAt != null">#{adStartAt},</if>
-            <if test="adEndAt != null">#{adEndAt},</if>
-            <if test="adStatus != null">#{adStatus},</if>
+            <if test="title != null and title != ''">#{title},</if>
+            <if test="slotId != null and slotId != ''">#{slotId},</if>
+            <if test="adType != null and adType != ''">#{adType},</if>
+            <if test="mediaUrl != null and mediaUrl != ''">#{mediaUrl},</if>
+            <if test="jumpUrl != null and jumpUrl != ''">#{jumpUrl},</if>
+            <if test="startTime != null and startTime != ''">#{startTime},</if>
+            <if test="endTime != null and endTime != ''">#{endTime},</if>
+            <if test="dailyLimit != null">#{dailyLimit},</if>
+            <if test="status != null and status != ''">#{status},</if>
         </trim>
     </insert>
 
     <update id="updateAd" parameterType="com.ruoyi.system.domain.Ad">
         update t_ad
         <trim prefix="SET" suffixOverrides=",">
-            <if test="adSlotCode != null and adSlotCode != ''">ad_slot_code = #{adSlotCode},</if>
-            <if test="adTitle != null and adTitle != ''">ad_title = #{adTitle},</if>
-            <if test="adType != null">ad_type = #{adType},</if>
-            <if test="adMediaUrl != null and adMediaUrl != ''">ad_media_url = #{adMediaUrl},</if>
-            <if test="adCoverUrl != null">ad_cover_url = #{adCoverUrl},</if>
-            <if test="adJumpUrl != null">ad_jump_url = #{adJumpUrl},</if>
-            <if test="adTargetUsers != null">ad_target_users = #{adTargetUsers},</if>
-            <if test="adTargetDevices != null">ad_target_devices = #{adTargetDevices},</if>
-            <if test="adFreqDaily != null">ad_freq_daily = #{adFreqDaily},</if>
-            <if test="adSortOrder != null">ad_sort_order = #{adSortOrder},</if>
-            <if test="adStartAt != null">ad_start_at = #{adStartAt},</if>
-            <if test="adEndAt != null">ad_end_at = #{adEndAt},</if>
-            <if test="adStatus != null">ad_status = #{adStatus},</if>
+            <if test="title != null and title != ''">ad_title = #{title},</if>
+            <if test="slotId != null and slotId != ''">ad_slot_code = #{slotId},</if>
+            <if test="adType != null and adType != ''">ad_type = #{adType},</if>
+            <if test="mediaUrl != null and mediaUrl != ''">ad_media_url = #{mediaUrl},</if>
+            <if test="jumpUrl != null and jumpUrl != ''">ad_jump_url = #{jumpUrl},</if>
+            <if test="startTime != null and startTime != ''">ad_start_at = #{startTime},</if>
+            <if test="endTime != null and endTime != ''">ad_end_at = #{endTime},</if>
+            <if test="dailyLimit != null">ad_freq_daily = #{dailyLimit},</if>
+            <if test="status != null and status != ''">ad_status = #{status},</if>
         </trim>
-        where ad_id = #{adId}
+        where ad_id = #{advertId}
     </update>
 
-    <delete id="deleteAdByAdId" parameterType="Long">
-        delete from t_ad where ad_id = #{adId}
+    <update id="updateAdStatus" parameterType="com.ruoyi.system.domain.Ad">
+        update t_ad
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="status != null and status != ''">ad_status = #{status},</if>
+        </trim>
+        where ad_id = #{advertId}
+    </update>
+
+    <delete id="deleteAdByAdvertId" parameterType="Long">
+        delete from t_ad where ad_id = #{advertId}
     </delete>
 
-    <delete id="deleteAdByAdIds" parameterType="String">
-        delete from t_ad where ad_id in #{adIds}
+    <delete id="deleteAdByAdvertIds" parameterType="String">
+        delete from t_ad where ad_id in #{advertIds}
     </delete>
 
 </mapper>

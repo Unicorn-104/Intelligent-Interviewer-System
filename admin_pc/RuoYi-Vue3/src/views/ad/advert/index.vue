@@ -546,6 +546,11 @@ function jumpUrlPlaceholder() {
   if (t === 'app') return '请输入App内页面路由'
   return ''
 }
+
+onMounted(() => {
+  getList()
+  getSlotOptions()
+})
 </script>
 
 <style lang="scss" scoped>

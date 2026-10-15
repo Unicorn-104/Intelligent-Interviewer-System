@@ -3,6 +3,7 @@ package com.ruoyi.system.service.impl;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.system.mapper.AdMapper;
 import com.ruoyi.system.domain.Ad;
 import com.ruoyi.system.service.IAdService;
@@ -21,13 +22,13 @@ public class AdServiceImpl implements IAdService
     /**
      * 查询广告管理
      *
-     * @param adId 广告管理主键
+     * @param advertId 广告管理主键
      * @return 广告管理
      */
     @Override
-    public Ad selectAdByAdId(Long adId)
+    public Ad selectAdByAdvertId(Long advertId)
     {
-        return adMapper.selectAdByAdId(adId);
+        return adMapper.selectAdByAdvertId(advertId);
     }
 
     /**
@@ -51,6 +52,7 @@ public class AdServiceImpl implements IAdService
     @Override
     public int insertAd(Ad ad)
     {
+        ad.setCreateBy(SecurityUtils.getUsername());
         return adMapper.insertAd(ad);
     }
 
@@ -63,30 +65,44 @@ public class AdServiceImpl implements IAdService
     @Override
     public int updateAd(Ad ad)
     {
+        ad.setUpdateBy(SecurityUtils.getUsername());
         return adMapper.updateAd(ad);
     }
 
     /**
      * 批量删除广告管理
      *
-     * @param adIds 需要删除的广告管理主键
+     * @param advertIds 需要删除的广告管理主键
      * @return 结果
      */
     @Override
-    public int deleteAdByAdIds(Long[] adIds)
+    public int deleteAdByAdvertIds(Long[] advertIds)
     {
-        return adMapper.deleteAdByAdIds(adIds);
+        return adMapper.deleteAdByAdvertIds(advertIds);
     }
 
     /**
      * 删除广告管理信息
      *
-     * @param adId 广告管理主键
+     * @param advertId 广告管理主键
      * @return 结果
      */
     @Override
-    public int deleteAdByAdId(Long adId)
+    public int deleteAdByAdvertId(Long advertId)
     {
-        return adMapper.deleteAdByAdId(adId);
+        return adMapper.deleteAdByAdvertId(advertId);
+    }
+
+    /**
+     * 修改广告状态
+     *
+     * @param ad 广告管理
+     * @return 结果
+     */
+    @Override
+    public int updateAdStatus(Ad ad)
+    {
+        ad.setUpdateBy(SecurityUtils.getUsername());
+        return adMapper.updateAdStatus(ad);
     }
 }

@@ -13,10 +13,10 @@ public interface AdMapper
     /**
      * 查询广告管理
      *
-     * @param adId 广告管理主键
+     * @param advertId 广告管理主键
      * @return 广告管理
      */
-    public Ad selectAdByAdId(Long adId);
+    public Ad selectAdByAdvertId(Long advertId);
 
     /**
      * 查询广告管理列表
@@ -45,16 +45,24 @@ public interface AdMapper
     /**
      * 删除广告管理
      *
-     * @param adId 广告管理主键
+     * @param advertId 广告管理主键
      * @return 结果
      */
-    public int deleteAdByAdId(Long adId);
+    public int deleteAdByAdvertId(Long advertId);
 
     /**
      * 批量删除广告管理
      *
-     * @param adIds 需要删除的数据主键集合
+     * @param advertIds 需要删除的数据主键集合
      * @return 结果
      */
-    public int deleteAdByAdIds(Long[] adIds);
+    public int deleteAdByAdvertIds(Long[] advertIds);
+
+    /**
+     * 修改广告状态
+     *
+     * @param ad 广告管理
+     * @return 结果
+     */
+    public int updateAdStatus(Ad ad);
 }

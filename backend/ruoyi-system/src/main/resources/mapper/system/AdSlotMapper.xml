@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.AdSlotMapper">
+
+    <resultMap id="AdSlotResult" type="com.ruoyi.system.domain.AdSlot">
+        <id     property="slotCode"         column="slot_code"            />
+        <result property="slotName"          column="slot_name"            />
+        <result property="slotType"          column="slot_type"            />
+        <result property="target"            column="target"               />
+        <result property="ruleDesc"          column="rule_desc"            />
+        <result property="rule"              column="rule"                />
+        <result property="status"            column="status"               />
+        <result property="createBy"          column="create_by"            />
+        <result property="createTime"       column="create_time"          />
+        <result property="updateBy"          column="update_by"            />
+        <result property="updateTime"       column="update_time"          />
+        <result property="remark"            column="remark"              />
+    </resultMap>
+
+    <sql id="selectAdSlotVo">
+        select slot_code, slot_name, slot_type, target, rule_desc, rule, status, create_by, create_time, update_by, update_time, remark from t_ad_slot
+    </sql>
+
+    <select id="selectAdSlotList" parameterType="com.ruoyi.system.domain.AdSlot" resultMap="AdSlotResult">
+        <include refid="selectAdSlotVo"/>
+        <where>
+            <if test="slotName != null and slotName != ''"> and slot_name like concat('%', #{slotName}, '%')</if>
+            <if test="slotType != null and slotType != ''"> and slot_type = #{slotType}</if>
+            <if test="target != null and target != ''"> and target = #{target}</if>
+            <if test="status != null and status != ''"> and status = #{status}</if>
+        </where>
+        order by slot_code asc
+    </select>
+
+    <select id="selectAdSlotBySlotCode" parameterType="String" resultMap="AdSlotResult">
+        <include refid="selectAdSlotVo"/>
+        where slot_code = #{slotCode}
+    </select>
+
+    <insert id="insertAdSlot" parameterType="com.ruoyi.system.domain.AdSlot">
+        insert into t_ad_slot
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="slotCode != null and slotCode != ''">slot_code,</if>
+            <if test="slotName != null and slotName != ''">slot_name,</if>
+            <if test="slotType != null and slotType != ''">slot_type,</if>
+            <if test="target != null and target != ''">target,</if>
+            <if test="ruleDesc != null and ruleDesc != ''">rule_desc,</if>
+            <if test="rule != null and rule != ''">rule,</if>
+            <if test="status != null and status != ''">status,</if>
+            <if test="createBy != null and createBy != ''">create_by,</if>
+            <if test="remark != null and remark != ''">remark,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="slotCode != null and slotCode != ''">#{slotCode},</if>
+            <if test="slotName != null and slotName != ''">#{slotName},</if>
+            <if test="slotType != null and slotType != ''">#{slotType},</if>
+            <if test="target != null and target != ''">#{target},</if>
+            <if test="ruleDesc != null and ruleDesc != ''">#{ruleDesc},</if>
+            <if test="rule != null and rule != ''">#{rule},</if>
+            <if test="status != null and status != ''">#{status},</if>
+            <if test="createBy != null and createBy != ''">#{createBy},</if>
+            <if test="remark != null and remark != ''">#{remark},</if>
+        </trim>
+    </insert>
+
+    <update id="updateAdSlot" parameterType="com.ruoyi.system.domain.AdSlot">
+        update t_ad_slot
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="slotName != null and slotName != ''">slot_name = #{slotName},</if>
+            <if test="slotType != null and slotType != ''">slot_type = #{slotType},</if>
+            <if test="target != null and target != ''">target = #{target},</if>
+            <if test="ruleDesc != null and ruleDesc != ''">rule_desc = #{ruleDesc},</if>
+            <if test="rule != null and rule != ''">rule = #{rule},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            <if test="remark != null">remark = #{remark},</if>
+        </trim>
+        where slot_code = #{slotCode}
+    </update>
+
+    <delete id="deleteAdSlotBySlotCode" parameterType="String">
+        delete from t_ad_slot where slot_code = #{slotCode}
+    </delete>
+
+    <delete id="deleteAdSlotBySlotCodes" parameterType="String">
+        delete from t_ad_slot where slot_code in #{slotCodes}
+    </delete>
+
+    <update id="updateAdSlotStatus" parameterType="com.ruoyi.system.domain.AdSlot">
+        update t_ad_slot
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+        </trim>
+        where slot_code = #{slotCode}
+    </update>
+
+</mapper>
