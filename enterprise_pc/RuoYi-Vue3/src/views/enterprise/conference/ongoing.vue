@@ -7,10 +7,10 @@ import {
   CircleX, Pencil, ArrowUpRight, AlertTriangle, Lightbulb
 } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { getCurrentSession, getSessionContext, getProgress, listCaptions, heartbeat, handleCopilot, finishSession, joinInterviewer, transferPrimary } from '@/api/system/conference'
-import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, requestMedia, requestMediaWithFallback, savePreferredDevice } from '@/utils/media'
-import { createConferenceRtc } from '@/utils/webrtc'
-import { createMeetingRecorder } from '@/utils/recorder'
+import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
+import { getCurrentSession, getSessionContext, getProgress, listCaptions, listCopilot, heartbeat, handleCopilot, finishSession, joinInterviewer, transferPrimary, getLiveKitToken, startRecording, stopRecording } from '@/api/system/conference'
+import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, savePreferredDevice } from '@/utils/media'
+import { Room, RoomEvent, Track } from 'livekit-client'
 import useUserStore from '@/store/modules/user'
 
 const router = useRouter()
@@ -31,8 +31,6 @@ const toast = ref('')
 const peerStreams = ref({})
 // 参与者列表（候选人 + 其他面试官），主画面可切换
 const participants = ref([])
-// 主画面当前选中的参与者用户ID
-const selectedUserId = ref(null)
 // 本人用户ID / 场次主面试官ID / 面试模式 / 本人在场次中的角色
 const myUserId = ref(Number(userStore.id) || null)
 const primaryInterviewerId = ref(null)
@@ -65,28 +63,11 @@ const netLevel = computed(() => {
   return v < 400 ? 'warn' : 'bad'
 })
 
-const progress = ref({ done: 3, total: 10, remain: '32:15' })
-
-const tips = ref([
-  { id: 1, text: '请说明你负责的系统中，分布式事务是如何选型与落地的？', adopted: false }
-])
-
-const captions = ref([
-  { who: 'HR', text: '我们接着上一个项目聊，你在订单中心里为什么最终选择了 TCC 而不是 XA？' },
-  { who: '候选人', text: 'XA 在跨库场景下锁持有时间过长，高峰期会出现连接池打满，所以选了 TCC。' },
-  { who: 'AI', text: '已识别关键词：分布式事务 / TCC / 连接池；建议追问补偿与幂等设计。' }
-])
-const captionPool = [
-  { who: '候选人', text: '我们把每个分支事务都做成幂等的，靠业务唯一号去重。' },
-  { who: 'HR', text: '那如果补偿阶段也失败了，你们怎么保证最终一致？' },
-  { who: 'AI', text: '建议关注点：补偿重试策略、悬挂与空回滚的处理。' }
-]
-
-const acceptedPoints = [
-  '说明 TCC 的 Try / Confirm / Cancel 三阶段职责边界',
-  '结合业务唯一号说明幂等与防悬挂的实现方式',
-  '给出线上踩坑案例并量化影响范围'
-]
+// 面试进度 / 实时提词 / 评分要点 / 实时字幕：全部来自后端真实数据，无数据时展示空态
+const progress = ref({ done: 0, total: 0, remain: '--:--' })
+const tips = ref([])
+const answerPoints = ref([])
+const captions = ref([])
 
 // 面试模式展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
 const modeLabel = computed(() => {
@@ -105,24 +86,47 @@ const showJoinButton = computed(() => sessionRole.value === 'HR' && !joined.valu
 const isSelfPrimary = computed(() => String(myUserId.value) === String(primaryInterviewerId.value))
 
 let timerId = null
-let captionId = null
-let captionIndex = 0
 let heartbeatId = null
 let rttId = null
-let stream = null
-let videoTrack = null
-let audioTrack = null
-let localVideoStream = null
-let rtc = null
-// 会议录制器（canvas 合成画面 + 多路音频混音 + 分片上传）
-let recorder = null
+// LiveKit 房间连接（媒体层：发布本地轨道 + 订阅远端轨道）
+let room = null
+const lkConnected = ref(false)
+// 远端轨道缓存：userId -> { video?: MediaStreamTrack, audio?: MediaStreamTrack }
+const remoteTracks = {}
 let joinRecorded = false
 
-// 当前进行中的面试场次（无后端数据时为 null，页面继续用 mock 演示）
+// 当前进行中的面试场次（未取到时为 null）
 const sessionId = ref(null)
-// 候选人信息与面试官姓名：进入场次后由接口回填，未取到时保留演示值
-const candidate = ref({ name: '王芳', position: '高级前端工程师' })
-const interviewerName = ref('林晓雯')
+// 候选人信息与面试官姓名 / 面试轮次：进入场次后由接口回填，未取到时展示空态
+const candidate = ref({ name: '', position: '' })
+const interviewerName = ref('')
+const roundNo = ref(null)
+const totalRounds = ref(0)
+
+// 面试详情真实数据：候选人头像 / 当前流程状态 / 岗位 JD 与技能标签 / 候选人流程记录
+const candidateAvatar = ref('')
+const candidateStatus = ref(null)
+const positionJd = ref(null)
+const positionSkills = ref([])
+const flowHistory = ref([])
+
+// 候选人流程状态文案（与 t_tal.tal_status 取值一致）
+const CANDIDATE_STATUS_LABEL = {
+  0: '新入库', 1: '初筛通过', 2: '面试中', 3: '已淘汰', 4: '已录用',
+  5: '待笔试', 6: '笔试中', 7: '笔试通过', 8: '笔试未通过', 9: '笔试缺考'
+}
+// 当前阶段：候选人的真实流程状态，未取到时展示占位
+const stageLabel = computed(() => {
+  const v = candidateStatus.value
+  return v == null ? '—' : (CANDIDATE_STATUS_LABEL[v] || '—')
+})
+// 岗位摘要：取 JD 画像中的岗位职责，无数据时为空（前端展示空态）
+const positionSummary = computed(() => {
+  const jd = positionJd.value
+  if (!jd || typeof jd !== 'object') return ''
+  const resp = jd.responsibilities
+  return Array.isArray(resp) && resp.length ? resp.join('；') : ''
+})
 
 // 宫格统一画面数据：所有远端参与者 + 本人，宫格/聚焦共用同一组 DOM
 const tiles = computed(() => {
@@ -135,14 +139,12 @@ const tiles = computed(() => {
     self: false,
     stream: peerStreams.value[String(p.userId)] || null
   }))
-  list.push({ key: SELF_KEY, name: `我 · ${interviewerName.value}`, roleLabel: '', candidate: false, primary: false, self: true, stream: localStreamRef.value })
+  // 观察者不发布本地流，宫格中不出现本人 tile
+  if (sessionRole.value !== 'OBSERVER') {
+    list.push({ key: SELF_KEY, name: interviewerName.value ? `我 · ${interviewerName.value}` : '我', roleLabel: '', candidate: false, primary: false, self: true, stream: localStreamRef.value })
+  }
   return list
 })
-// 录制主画面元素：最近一次被放大的远端参与者（selectedUserId）
-function mainRecordEl() {
-  if (selectedUserId.value == null) return null
-  return tileEls[String(selectedUserId.value)] || null
-}
 // tile <video> 元素注册回调：挂载即绑定流，卸载即移除
 function setTileEl(key, el) {
   if (el) {
@@ -160,14 +162,13 @@ watch(tiles, () => {
     if (el && el.srcObject !== t.stream) el.srcObject = t.stream
   })
 }, { flush: 'post' })
-// 点击 tile：放大 / 还原（微信视频风格）；放大远端画面时同步切换录制主画面
+// 点击 tile：放大 / 还原（微信视频风格）
 function toggleEnlarge(t) {
   if (enlargedKey.value === t.key) {
     enlargedKey.value = null
     return
   }
   enlargedKey.value = t.key
-  if (!t.self) selectedUserId.value = Number(t.key)
 }
 
 function notify(msg) {
@@ -182,42 +183,115 @@ function fmtClock(total) {
   return `${m}:${s}`
 }
 
-// 接入本机摄像头与麦克风：本人画面以宫格 tile 呈现
-// 摄像头与麦克风分开申请，任一失败不影响另一项；失败原因写入 mediaError 供 UI 展示
-async function openMedia() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    releaseMedia()
-    CAM_ON.value = false
-    MIC_ON.value = false
-    mediaError.value = '当前浏览器不支持摄像头访问，请改用 localhost:10081 或 127.0.0.1:10081 打开'
-    notify(mediaError.value)
+// 连接 LiveKit 房间：向后端换取入会令牌后直连信令服务器，远端轨道到达即回填宫格
+async function connectLiveKit() {
+  if (!sessionId.value || room) return
+  let info = null
+  try {
+    const res = await getLiveKitToken(sessionId.value)
+    info = res.data
+  } catch (e) {
+    notify('获取视频会议令牌失败，请刷新重试')
     return
   }
-  // 重试前先释放上一轮残留，避免同一设备仍被自己占用导致再次失败
-  releaseMedia()
+  if (!info || !info.url || !info.token) return
+  room = new Room()
+  room.on(RoomEvent.TrackSubscribed, onRemoteTrack)
+  room.on(RoomEvent.TrackUnsubscribed, offRemoteTrack)
+  room.on(RoomEvent.ParticipantDisconnected, onPeerLeft)
+  room.on(RoomEvent.Disconnected, () => { lkConnected.value = false })
+  try {
+    await room.connect(info.url, info.token)
+    lkConnected.value = true
+    // 已加入的发布者（主面试官 / 已手动加入的 HR）立即采集并发布本地音视频
+    if (joined.value && sessionRole.value !== 'OBSERVER') await openMedia()
+  } catch (e) {
+    room = null
+    notify('视频会议连接失败，请检查网络后刷新重试')
+  }
+}
 
-  // 优先使用上次选定的设备（如外接摄像头），不可用时回退系统默认
-  const [camResult, micResult] = await Promise.all([
-    requestMediaWithFallback('video', getPreferredDevice('video')),
-    requestMediaWithFallback('audio', getPreferredDevice('audio'))
-  ])
+// 令牌 identity 形如 u{userId}，据此把远端参与者映射到宫格 tile
+function userIdFromIdentity(identity) {
+  const m = /^u(\d+)$/.exec(identity || '')
+  return m ? Number(m[1]) : null
+}
 
-  videoTrack = camResult.error ? null : (camResult.stream.getVideoTracks()[0] || null)
-  audioTrack = micResult.error ? null : (micResult.stream.getAudioTracks()[0] || null)
-  localVideoStream = videoTrack ? new MediaStream([videoTrack]) : null
-  const tracks = [...(videoTrack ? [videoTrack] : []), ...(audioTrack ? [audioTrack] : [])]
-  stream = tracks.length ? new MediaStream(tracks) : null
+function onRemoteTrack(track, publication, participant) {
+  const uid = userIdFromIdentity(participant.identity)
+  if (!uid || String(uid) === String(myUserId.value)) return
+  const kind = track.kind === Track.Kind.Video ? 'video' : track.kind === Track.Kind.Audio ? 'audio' : null
+  if (!kind) return
+  const bag = remoteTracks[uid] || (remoteTracks[uid] = {})
+  bag[kind] = track.mediaStreamTrack
+  setPeerStream(uid, bag)
+}
 
+function offRemoteTrack(track, publication, participant) {
+  const uid = userIdFromIdentity(participant.identity)
+  if (!uid || !remoteTracks[uid]) return
+  const kind = track.kind === Track.Kind.Video ? 'video' : track.kind === Track.Kind.Audio ? 'audio' : null
+  if (kind && remoteTracks[uid][kind] === track.mediaStreamTrack) delete remoteTracks[uid][kind]
+  setPeerStream(uid, remoteTracks[uid])
+}
+
+function onPeerLeft(participant) {
+  const uid = userIdFromIdentity(participant.identity)
+  if (!uid) return
+  delete remoteTracks[uid]
+  const next = { ...peerStreams.value }
+  delete next[String(uid)]
+  peerStreams.value = next
+}
+
+// 同一参与者的音视频轨合并为一条 MediaStream 写入 peerStreams
+function setPeerStream(uid, bag) {
+  const tracks = [bag.video, bag.audio].filter(Boolean)
+  const next = { ...peerStreams.value }
+  if (tracks.length) next[String(uid)] = new MediaStream(tracks)
+  else delete next[String(uid)]
+  peerStreams.value = next
+}
+
+// 开启一路本地轨道：优先使用偏好设备，不可用时回退系统默认；返回错误（null 表示成功）
+async function enableTrack(setter, kind) {
+  const deviceId = getPreferredDevice(kind)
+  if (deviceId) {
+    try {
+      await setter(true, { deviceId: { exact: deviceId } })
+      return null
+    } catch (e) {
+      // 偏好设备失效，回退默认设备
+    }
+  }
+  try {
+    await setter(true)
+    return null
+  } catch (e) {
+    return e
+  }
+}
+
+// 本地摄像头画面回填到本人 tile 预览
+function syncLocalPreview() {
+  const track = room?.localParticipant.getTrackPublication(Track.Source.Camera)?.track
+  localStreamRef.value = track ? new MediaStream([track.mediaStreamTrack]) : null
+}
+
+// 采集并发布本地音视频到 LiveKit 房间：观察者不发布
+// 摄像头与麦克风分头开启，任一失败不影响另一项；失败原因写入 mediaError 供 UI 展示
+async function openMedia() {
+  if (!room || !lkConnected.value) return
+  if (sessionRole.value === 'OBSERVER') return
+  const camErr = await enableTrack((on, opts) => room.localParticipant.setCameraEnabled(on, opts), 'video')
+  const micErr = await enableTrack((on, opts) => room.localParticipant.setMicrophoneEnabled(on, opts), 'audio')
+  syncLocalPreview()
   // 开关状态与真实轨道保持一致，避免「显示已开启但没有画面/没有声音」
-  CAM_ON.value = !!videoTrack
-  MIC_ON.value = !!audioTrack
-  if (audioTrack) audioTrack.enabled = true
-  localStreamRef.value = localVideoStream
-
-  // 汇总提示：两者都失败时只弹一条，避免前一条被覆盖
+  CAM_ON.value = !camErr
+  MIC_ON.value = !micErr
   const failures = []
-  if (camResult.error) failures.push({ error: camResult.error, kind: 'camera' })
-  if (micResult.error) failures.push({ error: micResult.error, kind: 'microphone' })
+  if (camErr) failures.push({ error: camErr, kind: 'camera' })
+  if (micErr) failures.push({ error: micErr, kind: 'microphone' })
   if (failures.length === 1) {
     mediaError.value = await describeMediaNotice(failures[0].error, failures[0].kind)
   } else if (failures.length === 2) {
@@ -226,7 +300,6 @@ async function openMedia() {
     mediaError.value = ''
   }
   if (mediaError.value) notify(mediaError.value)
-  if (joined.value) rtc?.attachLocalTracks(videoTrack, audioTrack)
 }
 
 // 会议设置：真实切换摄像头/麦克风（外接设备即在此选择）
@@ -239,98 +312,72 @@ const setMicId = ref('')
 async function openSettings() {
   cameraDevices.value = await listMediaDevices('video')
   microphoneDevices.value = await listMediaDevices('audio')
-  setCamId.value = (videoTrack && videoTrack.getSettings().deviceId) || getPreferredDevice('video')
-  setMicId.value = (audioTrack && audioTrack.getSettings().deviceId) || getPreferredDevice('audio')
+  const camTrack = room?.localParticipant.getTrackPublication(Track.Source.Camera)?.track
+  const micTrack = room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+  setCamId.value = (camTrack && camTrack.mediaStreamTrack.getSettings().deviceId) || getPreferredDevice('video')
+  setMicId.value = (micTrack && micTrack.mediaStreamTrack.getSettings().deviceId) || getPreferredDevice('audio')
   showSettings.value = true
 }
 
-// 切换设备：先采集新设备、成功后再停旧轨道。
-// 下拉切换的一定是另一台物理设备，两者可短暂共存；而「先停旧轨道再开新设备」
-// 在 Windows 上常因硬件尚未完全释放而失败，且失败后连原画面都会一起丢掉。
+// 切换设备：通过 LiveKit restartTrack 换采集设备，成功后画面与发布同步更新
 async function applyDevice(kind) {
   const isVideo = kind === 'video'
   const deviceId = isVideo ? setCamId.value : setMicId.value
-  const oldTrack = isVideo ? videoTrack : audioTrack
-  if (!oldTrack) {
+  const source = isVideo ? Track.Source.Camera : Track.Source.Microphone
+  const track = room?.localParticipant.getTrackPublication(source)?.track
+  if (!track) {
     // 采集未开启时只记录偏好，下次开启时生效
     if (deviceId) savePreferredDevice(kind, deviceId)
     else clearPreferredDevice(kind)
     notify('已保存设备偏好，下次开启时生效')
     return
   }
-  const res = await requestMedia({ [kind]: deviceId ? { deviceId: { exact: deviceId } } : true })
-    .then((stream) => ({ stream }))
-    .catch((error) => ({ error }))
-  const newTrack = res.stream ? (isVideo ? res.stream.getVideoTracks()[0] : res.stream.getAudioTracks()[0]) : null
-  if (!newTrack) {
-    // 采集失败：保留原设备与画面，只提示原因
-    notify(await describeMediaNotice(res.error, isVideo ? 'camera' : 'microphone'))
+  try {
+    await track.restartTrack(deviceId ? { deviceId: { exact: deviceId } } : {})
+  } catch (error) {
+    // 切换失败：保留原设备与画面，只提示原因
+    notify(await describeMediaNotice(error, isVideo ? 'camera' : 'microphone'))
     return
   }
-  // 新设备就绪后再写偏好并释放旧轨道
   if (deviceId) savePreferredDevice(kind, deviceId)
   else clearPreferredDevice(kind)
-  oldTrack.stop()
   if (isVideo) {
-    videoTrack = newTrack
-    videoTrack.enabled = CAM_ON.value
-    localVideoStream = new MediaStream([videoTrack])
-    localStreamRef.value = localVideoStream
-    setCamId.value = videoTrack.getSettings().deviceId || deviceId
+    setCamId.value = track.mediaStreamTrack.getSettings().deviceId || deviceId
+    syncLocalPreview()
   } else {
-    audioTrack = newTrack
-    audioTrack.enabled = MIC_ON.value
-    // 录制中换麦克风：新轨道补接入混音总线
-    recorder && recorder.addStream(new MediaStream([audioTrack]))
-    setMicId.value = audioTrack.getSettings().deviceId || deviceId
+    setMicId.value = track.mediaStreamTrack.getSettings().deviceId || deviceId
   }
-  // 同步重建合并流，确保 releaseMedia 能停止新轨道（旧轨道已 stop，重复 stop 无副作用）
-  stream = rebuildLocalStream()
-
-  if (joined.value) rtc?.attachLocalTracks(videoTrack, audioTrack)
   notify('已切换设备')
 }
 
-// 合并当前启用的轨道为一条本地流，供 releaseMedia 统一释放
-function rebuildLocalStream() {
-  const tracks = [...(videoTrack ? [videoTrack] : []), ...(audioTrack ? [audioTrack] : [])]
-  return tracks.length ? new MediaStream(tracks) : null
-}
-
-// WebRTC 网状信令连接：拿到场次后建立，各远端流按 userId 分别缓存，主画面按选中项渲染
-function startRtc() {
-  if (rtc || !sessionId.value) return
-  rtc = createConferenceRtc({
-    sessionId: sessionId.value,
-    onPeerStream: (userId, stream) => {
-      peerStreams.value = { ...peerStreams.value, [String(userId)]: stream }
-      // 录制中新加入的参与者补接入音频混音
-      recorder && recorder.addStream(stream)
-    },
-    onPeerLeft: (userId) => {
-      const next = { ...peerStreams.value }
-      delete next[String(userId)]
-      peerStreams.value = next
-    },
-    // 对端连接建立后，若正在录制则把当前录制状态补发给它（覆盖对端刷新/后加入的场景）
-    onPeerState: (userId, state) => {
-      if (state === 'connected' && RECORDING.value) rtc?.sendControl('recording', { on: true }, userId)
-    }
-  })
-  rtc.start()
-  // 媒体采集先于信令就绪时补挂本地轨道（仅已加入时发布）
-  if (joined.value && (videoTrack || audioTrack)) rtc.attachLocalTracks(videoTrack, audioTrack)
-}
-
 // 宫格 tile 的 srcObject 由 watch(tiles) 统一维护，无需单独绑定主画面
+
+// 岗位 JD（pos_jd_json）兼容字符串 / 对象两种形态，解析失败按无数据处理
+function parseJd(raw) {
+  if (!raw) return null
+  if (typeof raw === 'object') return raw
+  try {
+    return JSON.parse(raw)
+  } catch (e) {
+    return null
+  }
+}
 
 // 应用场次上下文：回填信息、面试官列表、模式与本人在场次中的角色
 function applySessionContext(ctx) {
   if (!ctx) return
   if (ctx.candidateName) candidate.value.name = ctx.candidateName
   if (ctx.positionTitle) candidate.value.position = ctx.positionTitle
+  if (ctx.roundNo != null) roundNo.value = Number(ctx.roundNo)
+  if (ctx.totalRounds != null) totalRounds.value = Number(ctx.totalRounds)
+  // 候选人头像为后端相对路径，拼接接口基址后交由 MiniAvatar 渲染（为空则降级首字母）
+  candidateAvatar.value = ctx.candidateAvatar ? import.meta.env.VITE_APP_BASE_API + ctx.candidateAvatar : ''
+  candidateStatus.value = ctx.candidateStatus != null ? Number(ctx.candidateStatus) : null
+  positionJd.value = parseJd(ctx.positionJd)
+  positionSkills.value = Array.isArray(ctx.positionSkills) ? ctx.positionSkills : []
+  flowHistory.value = Array.isArray(ctx.flowHistory) ? ctx.flowHistory : []
   // 小窗标注的是「我」，优先展示当前登录面试官本人姓名
-  interviewerName.value = userStore.nickName || userStore.name || ctx.interviewerName || interviewerName.value
+  interviewerName.value = userStore.nickName || userStore.name || ctx.interviewerName || ''
   if (ctx.mode) interviewMode.value = Number(ctx.mode)
   sessionRole.value = ctx.role || null
   primaryInterviewerId.value = ctx.primaryInterviewerId != null ? Number(ctx.primaryInterviewerId) : null
@@ -353,7 +400,6 @@ function applySessionContext(ctx) {
     })
   })
   participants.value = list
-  if (selectedUserId.value == null && list.length) selectedUserId.value = list[0].userId
 
   // 加入状态：主面试官自动加入；其他面试官按服务端记录，未加入需手动点「加入本次面试」；
   // 观察者只观看不发布
@@ -368,7 +414,6 @@ function applySessionContext(ctx) {
       joined.value = !!selfMeta && Number(selfMeta.joinStatus) === 1
     }
   }
-  if (joined.value && (videoTrack || audioTrack)) rtc?.attachLocalTracks(videoTrack, audioTrack)
 }
 
 // 加入本次面试：标记加入并开始发布本地音视频
@@ -376,8 +421,8 @@ async function joinNow(silent) {
   if (joined.value) return
   joined.value = true
   if (!silent) notify('已加入本次面试')
-  if (videoTrack || audioTrack) rtc?.attachLocalTracks(videoTrack, audioTrack)
   await recordJoin()
+  await openMedia()
 }
 
 // 向服务端登记「已加入」（仅登记一次，避免刷新上下文时循环调用）
@@ -415,35 +460,43 @@ async function handoverPrimary(item) {
   }
 }
 
-function toggleMic() {
-  // 设备未就绪时，点击按钮即重试申请
-  if (!audioTrack) {
-    openMedia()
-    return
-  }
-  MIC_ON.value = !MIC_ON.value
-  audioTrack.enabled = MIC_ON.value
-  notify(MIC_ON.value ? '麦克风已开启' : '麦克风已静音')
-}
-
-async function toggleCam() {
-  // 设备未就绪时，点击按钮即重试申请
-  if (!videoTrack) {
+async function toggleMic() {
+  if (!room || !lkConnected.value) return
+  // 设备未就绪时，点击按钮即重试采集发布
+  if (!room.localParticipant.getTrackPublication(Track.Source.Microphone)) {
     await openMedia()
     return
   }
-  CAM_ON.value = !CAM_ON.value
-  videoTrack.enabled = CAM_ON.value
-  notify(CAM_ON.value ? '摄像头已开启' : '摄像头已关闭')
+  const on = !MIC_ON.value
+  await room.localParticipant.setMicrophoneEnabled(on)
+  MIC_ON.value = on
+  notify(on ? '麦克风已开启' : '麦克风已静音')
 }
 
-function releaseMedia() {
-  rtc?.detachLocalTracks()
-  stream?.getTracks().forEach((track) => track.stop())
-  stream = null
-  videoTrack = null
-  audioTrack = null
-  localVideoStream = null
+async function toggleCam() {
+  if (!room || !lkConnected.value) return
+  // 设备未就绪时，点击按钮即重试采集发布
+  if (!room.localParticipant.getTrackPublication(Track.Source.Camera)) {
+    await openMedia()
+    return
+  }
+  const on = !CAM_ON.value
+  await room.localParticipant.setCameraEnabled(on)
+  CAM_ON.value = on
+  syncLocalPreview()
+  notify(on ? '摄像头已开启' : '摄像头已关闭')
+}
+
+// 断开 LiveKit 房间并清空画面引用
+function disconnectRoom() {
+  if (room) {
+    room.removeAllListeners()
+    room.disconnect().catch(() => {})
+    room = null
+  }
+  lkConnected.value = false
+  Object.keys(remoteTracks).forEach((k) => delete remoteTracks[k])
+  peerStreams.value = {}
   localStreamRef.value = null
 }
 
@@ -457,61 +510,35 @@ function toggleQuality() {
   }
 }
 
-// 向房间广播录制状态，使候选人端「录制中」标识与真实录制状态保持一致
-function broadcastRecording(on) {
-  rtc?.sendControl('recording', { on: !!on })
-}
-
-// 开始 / 停止真实录制：合成主画面+小窗，混入双方音频，30 秒分片上传
-function toggleRecord() {
-  if (recorder && recorder.isRecording()) {
-    recorder.stop().then(
-      () => notify('录制已停止，文件已保存'),
-      () => notify('录制已停止，但上传未完成')
-    )
-    RECORDING.value = false
-    broadcastRecording(false)
-    return
-  }
-  if (!isSelfPrimary.value) {
-    notify('仅主面试官可操作录制')
-    return
-  }
+// 开始 / 停止录制：服务端 LiveKit Egress 房间合成录制，主面试官独占操作。
+// 录制状态以服务端返回为准，避免「按钮显示录制中但服务端未录」的不一致。
+async function toggleRecord() {
   if (!sessionId.value) {
-    notify('未连接到面试场次，无法录制')
+    notify('尚未进入面试场次，无法录制')
     return
   }
-  if (!recorder) {
-    recorder = createMeetingRecorder({
-      getSessionId: () => sessionId.value,
-      getMainVideo: () => mainRecordEl(),
-      getSelfVideo: () => tileEls[SELF_KEY] || null,
-      getPeerStreams: () => peerStreams.value,
-      getLocalStream: () => stream,
-      onNotify: notify
-    })
-  }
-  if (recorder.start()) {
-    RECORDING.value = true
-    broadcastRecording(true)
+  try {
+    if (RECORDING.value) {
+      await stopRecording(sessionId.value)
+      RECORDING.value = false
+      notify('录制已停止，处理完成后可在录制列表查看')
+    } else {
+      await startRecording(sessionId.value)
+      RECORDING.value = true
+      notify('已开始录制')
+    }
+  } catch (e) {
+    notify(e && e.message ? e.message : '录制操作失败')
   }
 }
 
 // 结束后端场次并离开会议页。
 // 结束接口不阻塞离开：接口异常时若卡在此处，又会变成「退不出去」。
 function endSessionAndLeave() {
-  if (recorder && recorder.isRecording()) {
-    // 录制中结束会议：触发末片上传，不阻塞离开（失败仅提示）
-    recorder.stop().catch(() => notify('录制上传未完成，最后一段可能缺失'))
-    RECORDING.value = false
-    broadcastRecording(false)
-  }
   if (sessionId.value) {
     finishSession(sessionId.value, 'normal').catch(() => {})
   }
-  rtc?.destroy()
-  rtc = null
-  releaseMedia()
+  disconnectRoom()
   router.push('/enterprise/messages')
 }
 
@@ -526,19 +553,19 @@ function confirmLeave() {
   endSessionAndLeave()
 }
 
-function adoptTip() {
-  tips.value[0].adopted = true
+function adoptTip(tip) {
+  if (tip) tip.adopted = true
   notify('建议问题已采纳，将同步至面试官提词器')
-  if (sessionId.value && typeof tips.value[0].id === 'number') {
-    handleCopilot(sessionId.value, tips.value[0].id, { action: 'adopt' }).catch(() => {})
+  if (sessionId.value && tip && typeof tip.id === 'number') {
+    handleCopilot(sessionId.value, tip.id, { action: 'adopt' }).catch(() => {})
   }
 }
 
-function ignoreTip() {
-  tips.value[0].adopted = false
+function ignoreTip(tip) {
+  if (tip) tip.adopted = false
   notify('已忽略该建议问题')
-  if (sessionId.value && typeof tips.value[0].id === 'number') {
-    handleCopilot(sessionId.value, tips.value[0].id, { action: 'ignore' }).catch(() => {})
+  if (sessionId.value && tip && typeof tip.id === 'number') {
+    handleCopilot(sessionId.value, tip.id, { action: 'ignore' }).catch(() => {})
   }
 }
 
@@ -560,23 +587,21 @@ async function refreshRtt() {
   }
 }
 
-// 拉取场次并同步进度、字幕；后端不可用时静默保留 mock
+// 拉取场次并同步进度、字幕、AI 提词；后端未就绪时保持空态
 async function initSession() {
   // 优先使用 URL 携带的 sessionId（等候室跳转时传入），与候选人端保持同一场次；
   // 服务端反查的「当前场次」在多活跃场次环境下可能与对端解析结果不一致，仅作兜底
   const urlSessionId = route.query.sessionId
   if (urlSessionId) {
     sessionId.value = urlSessionId
-    startRtc()
   } else {
     try {
       const s = await getCurrentSession()
       if (s.data && s.data.sessionId) {
         sessionId.value = s.data.sessionId
-        startRtc()
       }
     } catch (e) {
-      // 本地未启动后端时保留 mock 演示
+      // 后端未就绪时保持空态
     }
   }
   if (!sessionId.value) return
@@ -585,57 +610,57 @@ async function initSession() {
   try {
     const p = await getProgress(sessionId.value)
     if (p.data) {
-      progress.value.total = p.data.totalQuestionNo || progress.value.total
-      progress.value.done = p.data.answeredCount ?? progress.value.done
-      if (p.data.remainingSeconds != null) progress.value.remain = fmtClock(p.data.remainingSeconds)
-      if (p.data.question && p.data.question.topic) tips.value[0].text = p.data.question.topic
+      progress.value.total = p.data.totalQuestionNo || 0
+      progress.value.done = p.data.answeredCount ?? 0
+      progress.value.remain = p.data.remainingSeconds != null ? fmtClock(p.data.remainingSeconds) : '--:--'
     }
-
+  } catch (e) {
+    // 后端未就绪时保持空态
+  }
+  try {
     const c = await listCaptions(sessionId.value, { afterSequence: 0, limit: 50 })
-    if (Array.isArray(c.data) && c.data.length > 0) {
+    if (Array.isArray(c.data)) {
       captions.value = c.data.slice(-12).map((item) => ({
         who: item.role === 1 ? 'AI' : item.role === 2 ? 'HR' : '候选人',
         text: item.content
       }))
-      // 已有真实字幕，停掉本地模拟字幕，避免与 mock 混播
-      clearInterval(captionId)
-      captionId = null
     }
-
-    // 心跳保活：仅在确认存在真实场次后才需要
-    heartbeatId = setInterval(() => heartbeat(sessionId.value).catch(() => {}), 15000)
   } catch (e) {
-    // 本地未启动后端 / 无种子数据时保留 mock 演示
+    // 后端未就绪时保持空态
   }
+  try {
+    const r = await listCopilot(sessionId.value, { afterSequence: 0, limit: 20 })
+    if (Array.isArray(r.data)) {
+      tips.value = r.data.map((item) => ({
+        id: item.id,
+        text: item.content,
+        reference: item.reference,
+        adopted: Number(item.status) === 1
+      }))
+      answerPoints.value = r.data.map((item) => item.points).filter((v) => v)
+    }
+  } catch (e) {
+    // 无 AI 建议时展示空态
+  }
+  // 心跳保活：仅在确认存在真实场次后才需要
+  heartbeatId = setInterval(() => heartbeat(sessionId.value).catch(() => {}), 15000)
 }
 
-onMounted(() => {
-  openMedia()
+onMounted(async () => {
   timerId = setInterval(() => (seconds.value += 1), 1000)
-  captionId = setInterval(() => {
-    const next = captionPool[captionIndex % captionPool.length]
-    captionIndex += 1
-    captions.value.push(next)
-    if (captions.value.length > 12) captions.value.shift()
-  }, 7000)
   // 延迟探测与场次无关，独立启动，避免被 initSession 的异常吞掉
   refreshRtt()
   rttId = setInterval(refreshRtt, 2000)
-  initSession()
+  // 先解析场次与角色，再换取 LiveKit 令牌入会（入会成功后按角色发布本地流）
+  await initSession()
+  connectLiveKit()
 })
 
 onBeforeUnmount(() => {
   clearInterval(timerId)
-  clearInterval(captionId)
   clearInterval(heartbeatId)
   clearInterval(rttId)
-  if (recorder) {
-    recorder.destroy()
-    recorder = null
-  }
-  rtc?.destroy()
-  rtc = null
-  releaseMedia()
+  disconnectRoom()
 })
 </script>
 
@@ -649,8 +674,8 @@ onBeforeUnmount(() => {
           <ChevronRight v-else :size="17" />
         </button>
         <div class="tb-title">
-          <strong>高级前端工程师</strong>
-          <span class="chip">第 1 轮 / 共 2 轮</span>
+          <strong>{{ candidate.position || '面试进行中' }}</strong>
+          <span v-if="totalRounds > 0" class="chip">第 {{ roundNo || 1 }} 轮 / 共 {{ totalRounds }} 轮</span>
           <span class="chip mode"><Sparkles v-if="showAiPanel" :size="12" />{{ modeLabel }}</span>
         </div>
       </div>
@@ -670,31 +695,34 @@ onBeforeUnmount(() => {
       <aside v-show="leftOpen" class="left">
         <div class="cand">
           <div class="cand-avatar-wrap">
-            <img class="cand-avatar" src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80" alt="候选人头像" />
+            <MiniAvatar :name="candidate.name || '候选人'" :size="46" color="#4f7cff" :src="candidateAvatar" />
             <i class="cand-online" title="在线" />
           </div>
           <div>
-            <strong>{{ candidate.name }}</strong>
-            <p>{{ candidate.position }}</p>
+            <strong>{{ candidate.name || '候选人' }}</strong>
+            <p>{{ candidate.position || '—' }}</p>
           </div>
         </div>
 
-        <div class="info-row"><span>应聘岗位</span><b>{{ candidate.position }}</b></div>
-        <div class="info-row"><span>当前阶段</span><b>专业技术面</b></div>
+        <div class="info-row"><span>应聘岗位</span><b>{{ candidate.position || '—' }}</b></div>
+        <div class="info-row"><span>当前阶段</span><b>{{ stageLabel }}</b></div>
         <div class="info-row"><span>面试模式</span><b>{{ modeLabel }}</b></div>
 
-        <button class="resume" @click="notify('已打开候选人简历详情')">
+        <button class="resume" @click="notify('候选人简历详情接口尚未接入')">
           <FileText :size="16" />查看候选人简历<ArrowUpRight :size="15" />
         </button>
 
         <h3 class="panel-title">流程时间线</h3>
-        <ol class="timeline">
-          <li class="done"><i /><div><b>简历筛选</b><small>05-28 已通过</small></div></li>
-          <li class="done"><i /><div><b>笔试测评</b><small>06-03 得分 88</small></div></li>
-          <li class="active"><i /><div><b>专业技术面（第 1 轮）</b><small>进行中 · {{ clock }}</small></div></li>
-          <li><i /><div><b>综合面（第 2 轮）</b><small>待安排</small></div></li>
-          <li><i /><div><b>Offer 沟通</b><small>未开始</small></div></li>
+        <ol v-if="flowHistory.length" class="timeline">
+          <li
+            v-for="(item, index) in flowHistory"
+            :key="index"
+            :class="{ done: index < flowHistory.length - 1, active: index === flowHistory.length - 1 }"
+          >
+            <i /><div><b>{{ item.reason || '流程更新' }}</b><small>{{ item.at }}</small></div>
+          </li>
         </ol>
+        <p v-else class="empty">暂无流程记录</p>
       </aside>
 
       <section class="stage">
@@ -717,7 +745,7 @@ onBeforeUnmount(() => {
             <!-- 无流：等待占位 -->
             <div v-if="!t.stream" class="tile-waiting">
               <Video :size="t.self ? 16 : 22" />
-              <span>{{ t.self ? (mediaError ? '设备未就绪' : '摄像头已关闭') : `等待 ${t.name} 画面…` }}</span>
+              <span>{{ t.self ? (mediaError ? '设备未就绪' : (!lkConnected ? '连接中…' : '摄像头已关闭')) : `等待 ${t.name} 画面…` }}</span>
               <button v-if="t.self && mediaError" class="tile-retry" @click.stop="openMedia">重新检测</button>
             </div>
             <!-- 本人摄像头关闭但有流时仍显示占位（流含音频轨） -->
@@ -762,7 +790,7 @@ onBeforeUnmount(() => {
             <span>面试进度</span>
             <b>{{ progress.done }}/{{ progress.total }}</b>
           </div>
-          <div class="bar"><u :style="{ width: progress.done / progress.total * 100 + '%' }" /></div>
+          <div class="bar"><u :style="{ width: (progress.total ? progress.done / progress.total * 100 : 0) + '%' }" /></div>
           <div class="progress-bottom">
             <span>剩余时间</span>
             <b>{{ progress.remain }}</b>
@@ -771,10 +799,11 @@ onBeforeUnmount(() => {
 
         <section class="block">
           <h3>岗位摘要</h3>
-          <p class="summary">负责企业级中后台前端架构设计，主导性能优化与组件体系建设，需具备复杂状态管理与跨端项目经验。</p>
-          <div class="chips">
-            <span>Vue 3</span><span>TypeScript</span><span>性能优化</span><span>组件库</span>
+          <p v-if="positionSummary" class="summary">{{ positionSummary }}</p>
+          <div v-if="positionSkills.length" class="chips">
+            <span v-for="item in positionSkills" :key="item.name">{{ item.name }}</span>
           </div>
+          <p v-if="!positionSummary && !positionSkills.length" class="empty">暂无岗位描述</p>
         </section>
 
         <section class="block">
@@ -782,20 +811,20 @@ onBeforeUnmount(() => {
           <div v-for="tip in tips" :key="tip.id" class="tip" :class="{ adopted: tip.adopted }">
             <p>{{ tip.text }}</p>
             <div class="tip-actions">
-              <button class="ok" @click="adoptTip"><CircleCheck :size="14" />采纳</button>
+              <button class="ok" @click="adoptTip(tip)"><CircleCheck :size="14" />采纳</button>
               <button @click="notify('进入建议问题编辑')"><Pencil :size="13" />编辑</button>
-              <button class="no" @click="ignoreTip"><CircleX :size="14" />忽略</button>
+              <button class="no" @click="ignoreTip(tip)"><CircleX :size="14" />忽略</button>
             </div>
           </div>
+          <p v-if="!tips.length" class="empty">暂无 AI 建议</p>
         </section>
 
         <section class="block">
           <h3><Lightbulb :size="14" />参考答案 / 评分要点</h3>
-          <ol class="points">
-            <li><b>① 分布式事务</b>：能区分 2PC / XA 与柔性事务的适用边界</li>
-            <li><b>② TCC / Saga</b>：说清 Try-Confirm-Cancel 与补偿链路的差异与取舍</li>
-            <li><b>③ 落地踩坑</b>：结合幂等、防悬挂、空回滚给出真实线上案例</li>
+          <ol v-if="answerPoints.length" class="points">
+            <li v-for="(p, i) in answerPoints" :key="i">{{ p }}</li>
           </ol>
+          <p v-else class="empty">暂无评分要点</p>
         </section>
 
         <section class="block captions">
@@ -805,16 +834,18 @@ onBeforeUnmount(() => {
               <span>{{ item.who }}</span>
               <p>{{ item.text }}</p>
             </div>
+            <p v-if="!captions.length" class="empty">暂无字幕</p>
           </div>
         </section>
       </aside>
     </div>
 
     <footer class="controls">
-      <button class="ctl" :class="{ off: !MIC_ON }" @click="toggleMic">
+      <!-- 观察者仅订阅观看，无发布权限，隐藏麦克风/摄像头开关 -->
+      <button v-if="sessionRole !== 'OBSERVER'" class="ctl" :class="{ off: !MIC_ON }" @click="toggleMic">
         <MicOff v-if="!MIC_ON" :size="20" /><Mic v-else :size="20" /><span>麦克风</span>
       </button>
-      <button class="ctl" :class="{ off: !CAM_ON }" @click="toggleCam">
+      <button v-if="sessionRole !== 'OBSERVER'" class="ctl" :class="{ off: !CAM_ON }" @click="toggleCam">
         <Video :size="20" /><span>摄像头</span>
       </button>
       <button class="ctl disabled" title="当前角色无屏幕共享权限" disabled>
@@ -999,7 +1030,6 @@ onBeforeUnmount(() => {
 .cand { display: flex; align-items: center; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
 /* 头像容器用于承载右下角在线点，避免在线标识被挤成独立元素 */
 .cand-avatar-wrap { position: relative; flex: none; }
-.cand-avatar { width: 46px; height: 46px; border-radius: 12px; object-fit: cover; display: block; }
 .cand-online {
   position: absolute; right: -1px; bottom: -1px;
   width: 12px; height: 12px;
@@ -1202,6 +1232,7 @@ onBeforeUnmount(() => {
 .points { margin: 9px 0 0; padding-left: 16px; }
 .points li { font-size: 12px; line-height: 1.7; color: #c3ccdb; }
 .points b { color: #9dbcff; font-weight: 600; }
+.empty { margin: 9px 0 0; font-size: 12px; color: var(--muted); }
 .captions { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .caption-list { margin-top: 9px; overflow: auto; display: grid; gap: 8px; }
 .caption { display: grid; grid-template-columns: 44px 1fr; gap: 7px; font-size: 12px; }

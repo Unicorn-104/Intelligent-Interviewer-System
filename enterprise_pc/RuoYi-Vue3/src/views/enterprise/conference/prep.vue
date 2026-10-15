@@ -208,13 +208,13 @@ const micDenied = ref(false)
 const lastCamDeviceId = ref('')
 const lastMicDeviceId = ref('')
 const userName = ref('面试官')
-// 面试信息：默认文案用于无后端时演示，接口返回后覆盖
+// 面试信息：进入场次后由接口回填，未取到时展示占位
 const interview = ref({
-  positionTitle: '高级前端工程师',
+  positionTitle: '—',
   candidateName: '候选人',
-  time: '待安排',
-  duration: '45 分钟',
-  mode: 'AI + HR 协同面试'
+  time: '—',
+  duration: '—',
+  mode: '—'
 })
 let toastTimer = null
 let stream = null
@@ -478,7 +478,17 @@ function fillInterview(data) {
   if (time) interview.value.time = time
   if (data.interviewerName) userName.value = data.interviewerName
   if (data.durationMinutes) interview.value.duration = `${data.durationMinutes} 分钟`
-  if (data.mode != null) interview.value.mode = Number(data.mode) === 1 ? '纯 AI 面试' : 'AI + HR 协同面试'
+  if (data.mode != null) interview.value.mode = modeLabel(Number(data.mode))
+}
+
+// 面试模式展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
+function modeLabel(mode) {
+  switch (mode) {
+    case 1: return '纯 AI 面试'
+    case 3: return 'AI + 多面试官'
+    case 4: return '无 AI · 纯人工'
+    default: return 'AI + HR 协同面试'
+  }
 }
 
 onMounted(async () => {
@@ -493,7 +503,7 @@ onMounted(async () => {
     const res = await getSessionContext(sessionId.value)
     if (res.data) fillInterview(res.data)
   } catch (error) {
-    // 无后端时保留本地演示
+    // 后端未就绪时保持占位
   }
 })
 

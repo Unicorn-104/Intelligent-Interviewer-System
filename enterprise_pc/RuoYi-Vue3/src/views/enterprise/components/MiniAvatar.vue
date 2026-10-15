@@ -1,12 +1,13 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 const props = defineProps({
   name: { type: String, default: '' },
   size: { type: Number, default: 36 },
   color: { type: String, default: '#2563eb' },
   src: { type: String, default: '' }
 })
-const surname = props.name.slice(0, 1)
+// name 常为异步加载，需保持响应式，否则首字母会停留在初始空值
+const surname = computed(() => (props.name || '').slice(0, 1))
 // 图片加载失败（外链失效/本地文件缺失）时降级为首字母头像
 const failed = ref(false)
 watch(() => props.src, () => { failed.value = false })

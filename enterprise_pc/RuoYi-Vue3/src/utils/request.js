@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { ElNotification , ElMessageBox, ElMessage, ElLoading } from 'element-plus'
-import { getToken, setToken, getRefreshToken, setRefreshToken } from '@/utils/auth'
+import { getToken, setToken, getRefreshToken, setRefreshToken, removeToken, removeRefreshToken } from '@/utils/auth'
 import errorCode from '@/utils/errorCode'
 import { tansParams, blobValidate } from '@/utils/ruoyi'
 import cache from '@/plugins/cache'
@@ -20,7 +20,16 @@ function handleReLogin() {
     isRelogin.show = true;
     ElMessageBox.confirm('登录状态已过期，您可以继续留在该页面，或者重新登录', '系统提示', { confirmButtonText: '重新登录', cancelButtonText: '取消', type: 'warning' }).then(() => {
       isRelogin.show = false;
-      useUserStore().logOut().then(() => {
+      const userStore = useUserStore();
+      // 登出接口同样可能因令牌失效而失败，此时也必须清空本地令牌，
+      // 否则跳转后被路由守卫再次拦回，页面会卡在加载态
+      userStore.logOut().catch(() => {
+        removeToken();
+        removeRefreshToken();
+        userStore.token = '';
+        userStore.roles = [];
+        userStore.permissions = [];
+      }).finally(() => {
         location.href = '/enterprise';
       })
     }).catch(() => {
@@ -132,6 +141,11 @@ service.interceptors.response.use(res => {
       return res.data
     }
     if (code === 401) {
+      // 本地已无访问令牌（会话已被清理或已登出）时不再提示重新登录，
+      // 否则登录页上的任意 401 都会反复弹出「登录状态已过期」
+      if (!getToken()) {
+        return Promise.reject('无效的会话，或者会话已过期，请重新登录。')
+      }
       // 持有刷新令牌且尚未重试过，则静默刷新后重放原请求
       if (!res.config.skipAuthRefresh && getRefreshToken()) {
         return refreshAndRetry(res);
