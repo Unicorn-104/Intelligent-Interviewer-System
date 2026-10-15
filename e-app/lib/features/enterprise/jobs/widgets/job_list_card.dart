@@ -121,23 +121,6 @@ class JobListCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (count != null && count > 0)
-                          const SizedBox(width: 28),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            salary,
-                            style: const TextStyle(
-                              color: AppColors.accentOrange,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
                         const SizedBox(width: 12),
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -156,67 +139,89 @@ class JobListCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      '${text(job['dept'], '部门未填写')} · ${text(job['city'], '城市未填写')}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                    if (tags.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final tag in tags)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.interactiveSoft,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                tag,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                salary,
                                 style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.interactive,
+                                  color: AppColors.accentOrange,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: OutlinedButton(
-                        key: ValueKey('job-status-$id'),
-                        onPressed:
-                            changing ||
-                                id == null ||
-                                !const [0, 1, 2].contains(status)
-                            ? null
-                            : onToggle,
-                        child: Text(
-                          changing
-                              ? '处理中…'
-                              : status == 1
-                              ? '下线'
-                              : '上线',
+                              const SizedBox(height: 8),
+                              Text(
+                                '${text(job['dept'], '部门未填写')} · ${text(job['city'], '城市未填写')}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                              if (tags.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    for (final tag in tags)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.interactiveSoft,
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          tag,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.interactive,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: AppColors.hairline,
+                        const SizedBox(width: 12),
+                        OutlinedButton(
+                          key: ValueKey('job-status-$id'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(64, 44),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                          ),
+                          onPressed:
+                              changing ||
+                                  id == null ||
+                                  !const [0, 1, 2].contains(status)
+                              ? null
+                              : onToggle,
+                          child: Text(
+                            changing
+                                ? '处理中…'
+                                : status == 1
+                                ? '下线'
+                                : '上线',
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

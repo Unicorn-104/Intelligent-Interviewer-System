@@ -49,16 +49,37 @@ void main() {
     var toggled = 0;
     await card(
       tester,
-      {'applicantCount': 120, 'salaryMin': 12500, 'salaryMax': 20000},
+      {
+        'applicantCount': 120,
+        'salaryMin': 12500,
+        'salaryMax': 20000,
+        'education': 3,
+        'experience': '3-5年',
+      },
       onOpen: () => opened++,
       onApplicants: () => applicants++,
       onToggle: () => toggled++,
     );
     expect(find.text('查看详情'), findsNothing);
     expect(find.text('累计投递'), findsNothing);
+    expect(find.byType(Divider), findsNothing);
+    final actionRect = tester.getRect(
+      find.byKey(const ValueKey('job-status-1')),
+    );
+    final statusRect = tester.getRect(find.text('在招'));
+    expect(actionRect.top, greaterThan(statusRect.bottom));
+    expect(actionRect.right, statusRect.right + 8);
     expect(
-      tester.getRect(find.byKey(const ValueKey('job-status-1'))).bottom,
-      lessThan(tester.getRect(find.byType(Divider)).top),
+      statusRect.center.dy,
+      closeTo(tester.getCenter(find.text('示例Java岗位')).dy, 0.01),
+    );
+    expect(
+      actionRect.bottom,
+      closeTo(tester.getRect(find.byType(Wrap)).bottom, 0.01),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('job-list-card-1'))).height,
+      lessThan(160),
     );
     expect(find.text('12.5-20K·月薪'), findsOneWidget);
     expect(find.text('99+'), findsOneWidget);
@@ -202,6 +223,10 @@ void main() {
       expect(find.text('Spring'), findsOneWidget);
       expect(find.text('Dart'), findsOneWidget);
       expect(find.text('Python'), findsNothing);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('job-status-1'))).bottom,
+        closeTo(tester.getRect(find.byType(Wrap)).bottom, 0.01),
+      );
       expect(tester.takeException(), isNull);
     });
   }
