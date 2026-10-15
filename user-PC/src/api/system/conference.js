@@ -1,9 +1,11 @@
 import request from '@/utils/request'
+import { getMockCandidateSchedule } from '@/mock/agentSchedule'
 
 // 纯前端演示模式（.env.development 中 VITE_FRONTEND_ONLY='true'）不依赖后端：
 // 直接返回空结果，由各页面回落到本地演示数据，避免请求后端拿到 401 后
 // 弹出「登录状态已过期」弹窗打断演示。接入后端时把该开关改为 'false' 即可恢复真实请求。
 const FRONTEND_ONLY = import.meta.env.VITE_FRONTEND_ONLY === 'true'
+const SCHEDULE_MOCK = import.meta.env.VITE_AGENT_SCHEDULE_MOCK === 'true'
 const call = (config) => (FRONTEND_ONLY ? Promise.resolve({ data: null }) : request(config))
 
 // ============================ 会议场次 ============================
@@ -13,6 +15,18 @@ export function getCurrentSession() {
   return call({
     url: '/system/conference/session/current',
     method: 'get'
+  })
+}
+
+// 当前求职者在日期范围内的真实面试安排
+export function listCandidateSchedule(params) {
+  if (SCHEDULE_MOCK) {
+    return Promise.resolve({ data: getMockCandidateSchedule(params), mocked: true })
+  }
+  return call({
+    url: '/system/conference/schedule',
+    method: 'get',
+    params: params
   })
 }
 

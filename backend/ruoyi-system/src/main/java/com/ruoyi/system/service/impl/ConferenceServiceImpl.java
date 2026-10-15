@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.time.DateTimeException;
+import java.time.LocalDate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -87,6 +89,27 @@ public class ConferenceServiceImpl implements IConferenceService
         conferenceMapper.ensureMeetingState(toLong(ctx.get("sessionId")));
         decorateInterviewers(ctx, toLong(ctx.get("sessionId")));
         return ctx;
+    }
+
+    @Override
+    public List<Map<String, Object>> listCandidateSchedule(Long userId, String from, String to)
+    {
+        LocalDate startDate = parseScheduleDate(from, LocalDate.now().withDayOfMonth(1));
+        LocalDate endDate = parseScheduleDate(to, startDate.plusMonths(1));
+        if (!startDate.isBefore(endDate))
+        {
+            throw new ServiceException("面试日程日期范围无效");
+        }
+        if (startDate.plusMonths(3).isBefore(endDate))
+        {
+            throw new ServiceException("面试日程查询范围不能超过 3 个月");
+        }
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("userId", userId);
+        params.put("from", startDate + " 00:00:00");
+        params.put("to", endDate + " 00:00:00");
+        return conferenceMapper.selectCandidateSchedule(params);
     }
 
     @Override
@@ -1321,6 +1344,22 @@ public class ConferenceServiceImpl implements IConferenceService
     {
         Long companyId = conferenceMapper.selectCompanyIdByUser(userId);
         return companyId == null ? 1L : companyId;
+    }
+
+    private LocalDate parseScheduleDate(String value, LocalDate fallback)
+    {
+        if (StringUtils.isEmpty(value))
+        {
+            return fallback;
+        }
+        try
+        {
+            return LocalDate.parse(value);
+        }
+        catch (DateTimeException ex)
+        {
+            throw new ServiceException("面试日程日期格式应为 yyyy-MM-dd");
+        }
     }
 
     /**

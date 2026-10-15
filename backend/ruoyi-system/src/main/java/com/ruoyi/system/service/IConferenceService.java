@@ -16,6 +16,11 @@ public interface IConferenceService
     public Map<String, Object> getCurrentSession(Long userId);
 
     /**
+     * 查询候选人在指定日期范围内的面试日程
+     */
+    public List<Map<String, Object>> listCandidateSchedule(Long userId, String from, String to);
+
+    /**
      * 指定场次的会议上下文（含角色：HR / CANDIDATE）
      */
     public Map<String, Object> getSessionContext(Long userId, Long sessionId);
@@ -197,7 +202,6 @@ public interface IConferenceService
      * 保存录制存储策略
      */
     public Map<String, Object> saveStoragePolicy(Long userId, Integer keepDays, Integer maxStorageGb);
-
     /**
      * 开始录制（LiveKit Egress 服务端合成录制，主面试官独占；同一场次同时只允许一个录制任务）
      */

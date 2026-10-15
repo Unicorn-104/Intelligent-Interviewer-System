@@ -67,6 +67,36 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         limit 1
     </select>
 
+    <select id="selectCandidateSchedule" resultType="java.util.LinkedHashMap">
+        select a.apt_id as appointmentId,
+               s.ses_id as sessionId,
+               p.pos_id as positionId,
+               p.pos_title as positionTitle,
+               c.cmp_name as companyName,
+               date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as startAt,
+               date_format(a.apt_end_time, '%Y-%m-%d %H:%i') as endAt,
+               a.apt_status as appointmentStatus,
+               s.ses_status as sessionStatus,
+               s.ses_mode as mode,
+               s.ses_room_token as roomToken,
+               case
+                   when s.ses_status = 1 then '进行中'
+                   when s.ses_status = 2 then '已结束'
+                   when a.apt_start_time >= now() then '待面试'
+                   else '待确认'
+               end as statusText
+        from t_sch_appointment a
+        join t_tal t on t.tal_id = a.apt_candidate_id
+        join t_pos p on p.pos_id = a.apt_position_id
+        left join t_cmp c on c.cmp_id = p.pos_company_id
+        left join t_int_session s on s.ses_appointment_id = a.apt_id
+        where t.tal_user_id = #{userId}
+          and a.apt_start_time &gt;= #{from}
+          and a.apt_start_time &lt; #{to}
+          and a.apt_status in (0, 1)
+        order by a.apt_start_time asc, a.apt_id asc
+    </select>
+
     <select id="selectSessionContext" resultType="java.util.LinkedHashMap">
         select <include refid="sessionContextColumns"/>
         <include refid="sessionContextJoins"/>

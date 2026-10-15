@@ -14,5 +14,17 @@ public interface AgentJobMapper
 
     List<String> selectJobCategories();
 
+    List<String> selectJobCities();
+
+    List<Integer> selectJobTypes();
+
+    List<String> selectJobExperiences();
+
+    List<Integer> selectJobEducations();
+
+    List<String> selectJobIndustries();
+
+    List<String> selectJobCompanySizes();
+
     AgentJob selectJobById(@Param("jobId") Long jobId, @Param("userId") Long userId);
 }

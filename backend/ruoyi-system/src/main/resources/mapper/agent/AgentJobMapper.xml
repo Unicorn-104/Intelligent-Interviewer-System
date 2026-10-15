@@ -118,13 +118,29 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         </if>
         <if test="query.employmentType != null and query.employmentType != ''">
             AND (
-                (#{query.employmentType} = 'FULL_TIME' AND pos.pos_job_type = 1)
-                OR (#{query.employmentType} = 'PART_TIME' AND pos.pos_job_type = 2)
-                OR (#{query.employmentType} = 'INTERNSHIP' AND pos.pos_job_type = 3)
+                CAST(pos.pos_job_type AS CHAR) = #{query.employmentType}
+                OR (#{query.employmentType} = 'FULL_TIME' AND pos.pos_job_type = 1)
+                OR (#{query.employmentType} = 'INTERNSHIP' AND pos.pos_job_type = 2)
+                OR (#{query.employmentType} = 'PART_TIME' AND pos.pos_job_type = 3)
             )
         </if>
+        <if test="query.salaryMin != null">
+            AND (pos.pos_salary_max IS NULL OR pos.pos_salary_max &gt;= #{query.salaryMin})
+        </if>
+        <if test="query.salaryMax != null">
+            AND (pos.pos_salary_min IS NULL OR pos.pos_salary_min &lt;= #{query.salaryMax})
+        </if>
+        <if test="query.experienceMin != null and query.experienceMin != ''">
+            AND pos.pos_experience_required = #{query.experienceMin}
+        </if>
         <if test="query.education != null">
-            AND pos.pos_education_required &gt;= #{query.education}
+            AND pos.pos_education_required = #{query.education}
+        </if>
+        <if test="query.industry != null and query.industry != ''">
+            AND cmp.cmp_industry LIKE CONCAT('%', #{query.industry}, '%')
+        </if>
+        <if test="query.companySize != null and query.companySize != ''">
+            AND cmp.cmp_size = #{query.companySize}
         </if>
         <choose>
             <when test="query.sort == 'salary'">ORDER BY pos.pos_salary_max DESC, pos.pos_created_at DESC</when>
@@ -142,6 +158,70 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           AND pos.pos_department IS NOT NULL
           AND pos.pos_department != ''
         ORDER BY pos.pos_department
+    </select>
+
+    <select id="selectJobCities" resultType="java.lang.String">
+        SELECT DISTINCT pos.pos_work_city
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        WHERE pos.pos_status = 1
+          AND cmp.cmp_status = 1
+          AND pos.pos_work_city IS NOT NULL
+          AND pos.pos_work_city != ''
+        ORDER BY pos.pos_work_city
+    </select>
+
+    <select id="selectJobTypes" resultType="java.lang.Integer">
+        SELECT DISTINCT pos.pos_job_type
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        WHERE pos.pos_status = 1
+          AND cmp.cmp_status = 1
+          AND pos.pos_job_type IS NOT NULL
+        ORDER BY pos.pos_job_type
+    </select>
+
+    <select id="selectJobExperiences" resultType="java.lang.String">
+        SELECT DISTINCT pos.pos_experience_required
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        WHERE pos.pos_status = 1
+          AND cmp.cmp_status = 1
+          AND pos.pos_experience_required IS NOT NULL
+          AND pos.pos_experience_required != ''
+        ORDER BY pos.pos_experience_required
+    </select>
+
+    <select id="selectJobEducations" resultType="java.lang.Integer">
+        SELECT DISTINCT pos.pos_education_required
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        WHERE pos.pos_status = 1
+          AND cmp.cmp_status = 1
+          AND pos.pos_education_required IS NOT NULL
+        ORDER BY pos.pos_education_required
+    </select>
+
+    <select id="selectJobIndustries" resultType="java.lang.String">
+        SELECT DISTINCT cmp.cmp_industry
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        WHERE pos.pos_status = 1
+          AND cmp.cmp_status = 1
+          AND cmp.cmp_industry IS NOT NULL
+          AND cmp.cmp_industry != ''
+        ORDER BY cmp.cmp_industry
+    </select>
+
+    <select id="selectJobCompanySizes" resultType="java.lang.String">
+        SELECT DISTINCT cmp.cmp_size
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        WHERE pos.pos_status = 1
+          AND cmp.cmp_status = 1
+          AND cmp.cmp_size IS NOT NULL
+          AND cmp.cmp_size != ''
+        ORDER BY cmp.cmp_size
     </select>
 
     <select id="selectJobById" resultMap="AgentJobResult">
