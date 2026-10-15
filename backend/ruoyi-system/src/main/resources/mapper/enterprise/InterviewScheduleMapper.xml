@@ -14,8 +14,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                date_format(a.apt_end_time, '%Y-%m-%d %H:%i') as endTime,
                a.apt_meeting_url as meetingUrl, a.apt_room_id as roomId,
                u.nick_name as candidateName, pos.pos_title as positionTitle,
-               iu.nick_name as interviewerName
+               iu.nick_name as interviewerName,
+               s.ses_id AS sessionId
         from t_sch_appointment a
+        LEFT JOIN t_int_session s ON s.ses_appointment_id = a.apt_id
         left join t_tal t on t.tal_id = a.apt_candidate_id
         left join sys_user u on u.user_id = t.tal_user_id
         left join t_pos pos on pos.pos_id = a.apt_position_id
@@ -40,8 +42,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as startTime,
                date_format(a.apt_end_time, '%Y-%m-%d %H:%i') as endTime,
                a.apt_meeting_url as meetingUrl,
-               t.tal_user_id as candidateUserId, pos.pos_title as positionTitle
+               t.tal_user_id as candidateUserId, pos.pos_title as positionTitle,
+               s.ses_id AS sessionId
         from t_sch_appointment a
+        LEFT JOIN t_int_session s ON s.ses_appointment_id = a.apt_id
         left join t_tal t on t.tal_id = a.apt_candidate_id
         left join t_pos pos on pos.pos_id = a.apt_position_id
         where a.apt_id = #{appointmentId}
