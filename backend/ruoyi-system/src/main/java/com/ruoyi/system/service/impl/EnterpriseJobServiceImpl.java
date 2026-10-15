@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,7 @@ import com.ruoyi.common.constant.ErrorCode;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.enterprise.mapper.EnterpriseJdMapper;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 import com.ruoyi.system.service.IEnterpriseJobService;
@@ -30,6 +32,9 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
 
     @Autowired
     private DashboardMapper dashboardMapper;
+
+    @Autowired
+    private EnterpriseJdMapper jdMapper;
 
     @Override
     public Long resolveCompanyId(Long userId)
@@ -100,6 +105,7 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
             throw new ServiceException("请填写岗位信息", ErrorCode.BAD_REQUEST);
         }
         Map<String, Object> company = publishingCompany(userId);
+        List<PositionSkill> skills = positionSkills(form.get("skills"));
         Map<String, Object> job = new LinkedHashMap<>();
         job.put("companyId", company.get("id"));
         job.put("publisherId", userId);
@@ -128,11 +134,66 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         {
             throw new ServiceException("岗位发布失败，请稍后重试");
         }
+        Long positionId = ((Number) job.get("posId")).longValue();
+        for (PositionSkill skill : skills)
+        {
+            if (jdMapper.insertPositionSkill(positionId, skill.name(), skill.required()) != 1)
+            {
+                throw new ServiceException("岗位技能保存失败，请稍后重试");
+            }
+        }
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("posId", job.get("posId"));
+        result.put("posId", positionId);
         result.put("title", job.get("title"));
         result.put("status", job.get("status"));
         return result;
+    }
+
+    private record PositionSkill(String name, Integer required) { }
+
+    private List<PositionSkill> positionSkills(Object value)
+    {
+        if (value == null)
+        {
+            return List.of();
+        }
+        if (!(value instanceof List<?> source))
+        {
+            throw new ServiceException("技能标签须为数组", ErrorCode.BAD_REQUEST);
+        }
+        Map<String, PositionSkill> skills = new LinkedHashMap<>();
+        for (Object item : source)
+        {
+            String name;
+            Integer required;
+            if (item instanceof String text)
+            {
+                name = requiredText(text, "技能名称", 50);
+                required = 1;
+            }
+            else if (item instanceof Map<?, ?> entry)
+            {
+                name = requiredText(entry.get("name"), "技能名称", 50);
+                required = entry.containsKey("required")
+                        ? choice(entry.get("required"), null, 0, 1, "技能必备标识") : Integer.valueOf(1);
+            }
+            else
+            {
+                throw new ServiceException("技能标签须为名称字符串或包含name的对象", ErrorCode.BAD_REQUEST);
+            }
+            String key = name.toLowerCase(Locale.ROOT);
+            PositionSkill previous = skills.get(key);
+            if (previous == null)
+            {
+                skills.put(key, new PositionSkill(name, required));
+            }
+            else if (Integer.valueOf(1).equals(required)
+                    || previous.required() == null && required != null)
+            {
+                skills.put(key, new PositionSkill(previous.name(), required));
+            }
+        }
+        return new ArrayList<>(skills.values());
     }
 
     private String requiredText(Object value, String label, int maxLength)

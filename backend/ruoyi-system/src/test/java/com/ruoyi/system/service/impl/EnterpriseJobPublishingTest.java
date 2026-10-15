@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.enterprise.mapper.EnterpriseJdMapper;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +26,7 @@ class EnterpriseJobPublishingTest
 {
     @Mock private EnterpriseJobMapper jobMapper;
     @Mock private DashboardMapper dashboardMapper;
+    @Mock private EnterpriseJdMapper jdMapper;
     @InjectMocks private EnterpriseJobServiceImpl service;
 
     @BeforeEach
@@ -65,6 +67,7 @@ class EnterpriseJobPublishingTest
         Map<String, Object> result = service.createJob(100L, form);
         assertEquals(42L, result.get("posId"));
         assertEquals(1, result.get("status"));
+        verifyNoInteractions(jdMapper);
         ArgumentCaptor<Map<String, Object>> capture = ArgumentCaptor.forClass(Map.class);
         verify(jobMapper).insertJob(capture.capture());
         Map<String, Object> saved = capture.getValue();
@@ -143,4 +146,95 @@ class EnterpriseJobPublishingTest
         assertEquals(403, assertThrows(ServiceException.class, () -> service.createJob(100L, form())).getCode());
         verify(jobMapper, never()).insertJob(anyMap());
     }
+    private void generatedId()
+    {
+        when(jobMapper.insertJob(anyMap())).thenAnswer(call -> {
+            Map<String, Object> job = call.getArgument(0);
+            job.put("posId", 42L);
+            return 1;
+        });
+    }
+
+    @Test
+    void savesObjectSkillsAfterJobInsertWithGeneratedId()
+    {
+        generatedId();
+        when(jdMapper.insertPositionSkill(anyLong(), anyString(), any())).thenReturn(1);
+        Map<String, Object> form = form();
+        form.put("skills", List.of(Map.of("name", " Java ", "required", 1), Map.of("name", "Spring", "required", 0)));
+        assertEquals(42L, service.createJob(100L, form).get("posId"));
+        var order = inOrder(jobMapper, jdMapper);
+        order.verify(jobMapper).insertJob(anyMap());
+        order.verify(jdMapper).insertPositionSkill(42L, "Java", 1);
+        order.verify(jdMapper).insertPositionSkill(42L, "Spring", 0);
+        verify(jdMapper, never()).deletePositionSkills(anyLong());
+    }
+
+    @Test
+    void savesStringSkillsAndDeduplicatesNames()
+    {
+        generatedId();
+        when(jdMapper.insertPositionSkill(anyLong(), anyString(), any())).thenReturn(1);
+        Map<String, Object> form = form();
+        form.put("skills", List.of("Java", " java ", "Spring"));
+        service.createJob(100L, form);
+        verify(jdMapper).insertPositionSkill(42L, "Java", 1);
+        verify(jdMapper).insertPositionSkill(42L, "Spring", 1);
+        verifyNoMoreInteractions(jdMapper);
+    }
+
+    @Test
+    void acceptsEmptySkillsWithoutWritingSkillRows()
+    {
+        generatedId();
+        Map<String, Object> form = form(); form.put("skills", List.of());
+        assertEquals(42L, service.createJob(100L, form).get("posId"));
+        verifyNoInteractions(jdMapper);
+    }
+
+    @Test
+    void acceptsExplicitNullSkillsWithoutWritingSkillRows()
+    {
+        generatedId();
+        Map<String, Object> form = form(); form.put("skills", null);
+        service.createJob(100L, form);
+        verifyNoInteractions(jdMapper);
+    }
+
+    @Test
+    void preservesUnknownRequiredFlagAndPrioritizesExplicitRequiredDuplicates()
+    {
+        generatedId();
+        when(jdMapper.insertPositionSkill(anyLong(), anyString(), any())).thenReturn(1);
+        Map<String, Object> unknown = new LinkedHashMap<>(); unknown.put("name", "SQL"); unknown.put("required", null);
+        Map<String, Object> form = form();
+        form.put("skills", List.of(unknown, Map.of("name", "Java", "required", 0), Map.of("name", "java", "required", 1)));
+        service.createJob(100L, form);
+        verify(jdMapper).insertPositionSkill(42L, "SQL", null);
+        verify(jdMapper).insertPositionSkill(42L, "Java", 1);
+        verifyNoMoreInteractions(jdMapper);
+    }
+
+    @Test
+    void rejectsInvalidSkillsBeforeInsertingJob()
+    {
+        for (Object skills : List.of("Java", List.of(123), List.of(" "), List.of("x".repeat(51)),
+                List.of(Map.of("name", "Java", "required", 2)), List.of(Map.of("name", "Java", "required", 0.5))))
+        {
+            Map<String, Object> form = form(); form.put("skills", skills);
+            assertEquals(400, assertThrows(ServiceException.class, () -> service.createJob(100L, form)).getCode());
+        }
+        verify(jobMapper, never()).insertJob(anyMap());
+        verifyNoInteractions(jdMapper);
+    }
+
+    @Test
+    void skillWriteFailureIsNotReportedAsSuccessfulPublication()
+    {
+        generatedId();
+        when(jdMapper.insertPositionSkill(42L, "Java", 1)).thenReturn(0);
+        Map<String, Object> form = form(); form.put("skills", List.of("Java"));
+        assertThrows(ServiceException.class, () -> service.createJob(100L, form));
+    }
+
 }

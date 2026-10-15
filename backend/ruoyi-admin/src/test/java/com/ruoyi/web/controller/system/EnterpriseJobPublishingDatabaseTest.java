@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.enterprise.mapper.EnterpriseJdMapper;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 import com.ruoyi.system.service.impl.EnterpriseJobServiceImpl;
@@ -41,13 +42,16 @@ class EnterpriseJobPublishingDatabaseTest
         SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
         factory.setDataSource(source);
         factory.setMapperLocations(new ClassPathResource("mapper/system/EnterpriseJobMapper.xml"),
-                new ClassPathResource("mapper/system/DashboardMapper.xml"));
+                new ClassPathResource("mapper/system/DashboardMapper.xml"),
+                new ClassPathResource("mapper/enterprise/EnterpriseJdMapper.xml"));
         SqlSessionTemplate session = new SqlSessionTemplate(Objects.requireNonNull(factory.getObject()));
         EnterpriseJobServiceImpl service = new EnterpriseJobServiceImpl();
         ReflectionTestUtils.setField(service, "jobMapper", session.getMapper(EnterpriseJobMapper.class));
         ReflectionTestUtils.setField(service, "dashboardMapper", session.getMapper(DashboardMapper.class));
+        ReflectionTestUtils.setField(service, "jdMapper", session.getMapper(EnterpriseJdMapper.class));
         String title = "JOB_PUBLISH_ROLLBACK_" + System.nanoTime();
         Long before = jdbc.queryForObject("select count(*) from t_pos", Long.class);
+        Long skillsBefore = jdbc.queryForObject("select count(*) from t_pos_skill", Long.class);
         TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(source));
         transaction.executeWithoutResult(status -> {
             try
@@ -60,8 +64,10 @@ class EnterpriseJobPublishingDatabaseTest
                 form.put("education", 3); form.put("jobType", 1); form.put("experience", "3-5 years");
                 form.put("responsibilities", List.of("Build mobile applications"));
                 form.put("requirements", List.of("Flutter experience"));
+                form.put("skills", List.of(Map.of("name", "Flutter", "required", 1), Map.of("name", "Dart", "required", 0)));
                 Map<String, Object> result = service.createJob(userId, form);
                 Long positionId = ((Number) result.get("posId")).longValue();
+                assertEquals(2, jdbc.queryForObject("select count(*) from t_pos_skill where psk_position_id = ?", Integer.class, positionId));
                 Map<String, Object> details = service.jobDetail(userId, positionId);
                 @SuppressWarnings("unchecked")
                 Map<String, Object> job = (Map<String, Object>) details.get("job");
@@ -80,5 +86,6 @@ class EnterpriseJobPublishingDatabaseTest
         });
         assertEquals(0, jdbc.queryForObject("select count(*) from t_pos where pos_title = ?", Integer.class, title));
         assertEquals(before, jdbc.queryForObject("select count(*) from t_pos", Long.class));
+        assertEquals(skillsBefore, jdbc.queryForObject("select count(*) from t_pos_skill", Long.class));
     }
 }
