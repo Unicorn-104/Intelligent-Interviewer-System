@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.ExamMapper">
+
+    <!-- ============ 在线笔试：题库/试卷组卷/考试安排（UC 笔试配置） ============ -->
+
+    <select id="countPosition" resultType="int">
+        select count(1) from t_pos
+        where pos_id = #{positionId} and pos_company_id = #{companyId}
+    </select>
+
+    <select id="selectPositionBrief" resultType="java.util.LinkedHashMap">
+        select pos_id as positionId, pos_title as positionTitle
+        from t_pos
+        where pos_id = #{positionId} and pos_company_id = #{companyId}
+    </select>
+
+    <!-- 题库（平台共享，无企业隔离列） -->
+    <sql id="questionColumns">
+        select eqs_id as questionId, eqs_type as type, eqs_content as content,
+               eqs_options_json as optionsJson, eqs_answer as answer,
+               eqs_score as score, eqs_difficulty as difficulty,
+               eqs_skill_tag as skillTag,
+               date_format(eqs_created_at, '%Y-%m-%d %H:%i') as createdAt
+        from t_exam_question
+    </sql>
+
+    <select id="selectQuestionList" resultType="java.util.LinkedHashMap">
+        <include refid="questionColumns"/>
+        where 1 = 1
+        <if test="type != null">
+            and eqs_type = #{type}
+        </if>
+        <if test="difficulty != null">
+            and eqs_difficulty = #{difficulty}
+        </if>
+        <if test="skillTag != null and skillTag != ''">
+            and eqs_skill_tag like concat('%', #{skillTag}, '%')
+        </if>
+        <if test="keyword != null and keyword != ''">
+            and eqs_content like concat('%', #{keyword}, '%')
+        </if>
+        order by eqs_id desc
+    </select>
+
+    <select id="selectQuestionById" resultType="java.util.LinkedHashMap">
+        <include refid="questionColumns"/>
+        where eqs_id = #{id}
+    </select>
+
+    <insert id="insertQuestion">
+        insert into t_exam_question
+            (eqs_type, eqs_content, eqs_options_json, eqs_answer, eqs_score, eqs_difficulty, eqs_skill_tag)
+        values
+            (#{type}, #{content}, #{optionsJson}, #{answer}, #{score}, #{difficulty}, #{skillTag})
+    </insert>
+
+    <select id="selectLastQuestionId" resultType="int">
+        select coalesce(max(eqs_id), 0) from t_exam_question
+    </select>
+
+    <update id="updateQuestion">
+        update t_exam_question
+        set eqs_type = #{type}, eqs_content = #{content}, eqs_options_json = #{optionsJson},
+            eqs_answer = #{answer}, eqs_score = #{score}, eqs_difficulty = #{difficulty},
+            eqs_skill_tag = #{skillTag}, eqs_updated_at = now()
+        where eqs_id = #{id}
+    </update>
+
+    <delete id="deleteQuestion">
+        delete from t_exam_question where eqs_id = #{id}
+    </delete>
+
+    <select id="drawQuestions" resultType="java.util.LinkedHashMap">
+        <include refid="questionColumns"/>
+        where 1 = 1
+        <if test="type != null">
+            and eqs_type = #{type}
+        </if>
+        <if test="difficulty != null">
+            and eqs_difficulty = #{difficulty}
+        </if>
+        <if test="skillTag != null and skillTag != ''">
+            and eqs_skill_tag like concat('%', #{skillTag}, '%')
+        </if>
+        <if test="excludeIds != null and excludeIds.size() > 0">
+            and eqs_id not in
+            <foreach collection="excludeIds" item="exId" open="(" separator="," close=")">
+                #{exId}
+            </foreach>
+        </if>
+        order by rand()
+        limit #{limit}
+    </select>
+
+    <select id="countDrawQuestions" resultType="int">
+        select count(1) from t_exam_question
+        where 1 = 1
+        <if test="type != null">
+            and eqs_type = #{type}
+        </if>
+        <if test="difficulty != null">
+            and eqs_difficulty = #{difficulty}
+        </if>
+        <if test="skillTag != null and skillTag != ''">
+            and eqs_skill_tag like concat('%', #{skillTag}, '%')
+        </if>
+    </select>
+
+    <!-- 试卷（企业隔离：经 t_pos.pos_company_id） -->
+    <select id="selectPaperList" resultType="java.util.LinkedHashMap">
+        select p.epa_id as paperId, p.epa_name as name, p.epa_position_id as positionId,
+               pos.pos_title as positionTitle, p.epa_total_score as totalScore,
+               p.epa_duration_min as durationMin, p.epa_rule_json as ruleJson,
+               p.epa_status as status,
+               date_format(p.epa_created_at, '%Y-%m-%d %H:%i') as createdAt,
+               (select count(1) from t_exam_paper_question q where q.epq_paper_id = p.epa_id) as questionCount
+        from t_exam_paper p
+        join t_pos pos on pos.pos_id = p.epa_position_id
+        where pos.pos_company_id = #{companyId}
+        <if test="positionId != null">
+            and p.epa_position_id = #{positionId}
+        </if>
+        order by p.epa_id desc
+    </select>
+
+    <select id="selectPaperById" resultType="java.util.LinkedHashMap">
+        select p.epa_id as paperId, p.epa_name as name, p.epa_position_id as positionId,
+               pos.pos_title as positionTitle, p.epa_total_score as totalScore,
+               p.epa_duration_min as durationMin, p.epa_rule_json as ruleJson,
+               p.epa_status as status
+        from t_exam_paper p
+        join t_pos pos on pos.pos_id = p.epa_position_id
+        where p.epa_id = #{paperId} and pos.pos_company_id = #{companyId}
+    </select>
+
+    <select id="selectPaperQuestions" resultType="java.util.LinkedHashMap">
+        select q.epq_id as relId, q.epq_question_id as questionId, q.epq_score as score,
+               q.epq_sort_order as sortOrder,
+               t.eqs_type as type, t.eqs_content as content, t.eqs_options_json as optionsJson,
+               t.eqs_answer as answer, t.eqs_difficulty as difficulty, t.eqs_skill_tag as skillTag
+        from t_exam_paper_question q
+        join t_exam_question t on t.eqs_id = q.epq_question_id
+        where q.epq_paper_id = #{paperId}
+        order by q.epq_sort_order, q.epq_id
+    </select>
+
+    <insert id="insertPaper">
+        insert into t_exam_paper
+            (epa_name, epa_position_id, epa_total_score, epa_duration_min, epa_rule_json, epa_status)
+        values
+            (#{name}, #{positionId}, #{totalScore}, #{durationMin}, #{ruleJson}, 1)
+    </insert>
+
+    <select id="selectLastPaperId" resultType="int">
+        select max(epa_id) from t_exam_paper
+    </select>
+
+    <update id="updatePaper">
+        update t_exam_paper
+        set epa_name = #{name}, epa_total_score = #{totalScore}, epa_duration_min = #{durationMin},
+            epa_rule_json = #{ruleJson}, epa_status = #{status}, epa_updated_at = now()
+        where epa_id = #{id}
+    </update>
+
+    <delete id="deletePaper">
+        delete p from t_exam_paper p
+        join t_pos pos on pos.pos_id = p.epa_position_id
+        where p.epa_id = #{paperId} and pos.pos_company_id = #{companyId}
+    </delete>
+
+    <delete id="deletePaperQuestions">
+        delete from t_exam_paper_question where epq_paper_id = #{paperId}
+    </delete>
+
+    <insert id="insertPaperQuestion">
+        insert into t_exam_paper_question (epq_paper_id, epq_question_id, epq_score, epq_sort_order)
+        values (#{paperId}, #{questionId}, #{score}, #{sortOrder})
+    </insert>
+
+    <!-- 考试安排（企业隔离：经 t_pos.pos_company_id） -->
+    <select id="selectScheduleList" resultType="java.util.LinkedHashMap">
+        select s.esd_id as scheduleId, s.esd_position_id as positionId, pos.pos_title as positionTitle,
+               s.esd_paper_id as paperId, p.epa_name as paperName, p.epa_duration_min as durationMin,
+               p.epa_total_score as totalScore,
+               date_format(s.esd_start_at, '%Y-%m-%d %H:%i') as startAt,
+               date_format(s.esd_end_at, '%Y-%m-%d %H:%i') as endAt,
+               s.esd_max_attempts as maxAttempts, s.esd_pass_threshold as passThreshold,
+               s.esd_force_dual_camera as forceDualCamera,
+               s.esd_dual_camera_config_json as dualCameraConfig, s.esd_submit_rule_json as submitRule,
+               s.esd_notify_config_json as notifyConfig, s.esd_auto_flow_json as autoFlow,
+               s.esd_status as status,
+               date_format(s.esd_created_at, '%Y-%m-%d %H:%i') as createdAt
+        from t_exam_schedule s
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        where pos.pos_company_id = #{companyId}
+        <if test="positionId != null">
+            and s.esd_position_id = #{positionId}
+        </if>
+        <if test="status != null">
+            and s.esd_status = #{status}
+        </if>
+        order by s.esd_start_at desc, s.esd_id desc
+    </select>
+
+    <select id="selectScheduleById" resultType="java.util.LinkedHashMap">
+        select s.esd_id as scheduleId, s.esd_position_id as positionId, pos.pos_title as positionTitle,
+               s.esd_paper_id as paperId, p.epa_name as paperName, p.epa_duration_min as durationMin,
+               p.epa_total_score as totalScore,
+               date_format(s.esd_start_at, '%Y-%m-%d %H:%i') as startAt,
+               date_format(s.esd_end_at, '%Y-%m-%d %H:%i') as endAt,
+               s.esd_max_attempts as maxAttempts, s.esd_pass_threshold as passThreshold,
+               s.esd_force_dual_camera as forceDualCamera,
+               s.esd_dual_camera_config_json as dualCameraConfig, s.esd_submit_rule_json as submitRule,
+               s.esd_notify_config_json as notifyConfig, s.esd_auto_flow_json as autoFlow,
+               s.esd_status as status
+        from t_exam_schedule s
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        where s.esd_id = #{scheduleId} and pos.pos_company_id = #{companyId}
+    </select>
+
+    <insert id="insertSchedule">
+        insert into t_exam_schedule
+            (esd_position_id, esd_paper_id, esd_start_at, esd_end_at, esd_max_attempts,
+             esd_pass_threshold, esd_force_dual_camera, esd_dual_camera_config_json,
+             esd_submit_rule_json, esd_auto_flow_json, esd_status)
+        values
+            (#{positionId}, #{paperId}, #{startAt}, #{endAt}, #{maxAttempts},
+             #{passThreshold}, #{forceDualCamera}, #{dualCameraConfig},
+             #{submitRule}, #{autoFlow}, 0)
+    </insert>
+
+    <select id="selectLastScheduleId" resultType="int">
+        select max(esd_id) from t_exam_schedule
+    </select>
+
+    <update id="updateSchedule">
+        update t_exam_schedule
+        set esd_paper_id = #{paperId}, esd_start_at = #{startAt}, esd_end_at = #{endAt},
+            esd_max_attempts = #{maxAttempts}, esd_pass_threshold = #{passThreshold},
+            esd_force_dual_camera = #{forceDualCamera}, esd_dual_camera_config_json = #{dualCameraConfig},
+            esd_submit_rule_json = #{submitRule}, esd_auto_flow_json = #{autoFlow}, esd_updated_at = now()
+        where esd_id = #{id}
+    </update>
+
+    <update id="updateScheduleStatus">
+        update t_exam_schedule
+        set esd_status = #{status}, esd_updated_at = now()
+        where esd_id = #{scheduleId}
+    </update>
+
+    <update id="syncScheduleStatuses">
+        update t_exam_schedule
+        set esd_status = case when now() &gt; esd_end_at then 2 else 1 end, esd_updated_at = now()
+        where (esd_status = 0 and now() &gt;= esd_start_at)
+           or (esd_status in (0, 1) and now() &gt; esd_end_at)
+    </update>
+
+    <select id="countActiveSchedulesByPaper" resultType="int">
+        select count(1) from t_exam_schedule
+        where esd_paper_id = #{paperId} and esd_status in (0, 1)
+    </select>
+
+    <!-- ============ 笔试通知（UC 通知配置与发送） ============ -->
+
+    <update id="updateScheduleNotifyConfig">
+        update t_exam_schedule
+        set esd_notify_config_json = #{configJson}, esd_updated_at = now()
+        where esd_id = #{scheduleId}
+    </update>
+
+    <select id="selectNotifyTargets" resultType="java.util.LinkedHashMap">
+        select t.tal_id as talId, u.user_id as userId, u.nick_name as name,
+               u.email as email, u.phonenumber as phone,
+               date_format(a.app_created_at, '%Y-%m-%d %H:%i') as appliedAt
+        from t_exam_schedule s
+        join t_app_record a on a.app_position_id = s.esd_position_id
+        join t_tal t on t.tal_id = a.app_candidate_id and t.tal_company_id = #{companyId}
+        join sys_user u on u.user_id = t.tal_user_id
+        where s.esd_id = #{scheduleId}
+        order by a.app_id
+    </select>
+
+    <insert id="insertExamNotifyMessage">
+        insert into t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content, msg_is_read)
+        values (#{receiverId}, 0, 5, #{title}, #{content}, 0)
+    </insert>
+
+</mapper>
