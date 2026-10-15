@@ -24,6 +24,14 @@ export function getSessionContext(sessionId) {
   })
 }
 
+// 换取 LiveKit 入会令牌（返回 { url, token, room, identity }，前端凭此直连 LiveKit Server）
+export function getLiveKitToken(sessionId) {
+  return call({
+    url: '/system/conference/livekit-token/' + sessionId,
+    method: 'get'
+  })
+}
+
 // 会前环境检测结果上报（摄像头/麦克风/网络/扬声器 + 弱网风险标记）
 export function reportEnvironmentCheck(sessionId, data) {
   return call({
@@ -85,31 +93,6 @@ export function reportParticipantState(sessionId, data) {
     method: 'put',
     data: data
   })
-}
-
-// ============================ WebRTC 信令 ============================
-
-// 签发一次性信令票据（登录后换取）
-export function signalTicket(sessionId) {
-  return call({
-    url: '/system/conference/session/' + sessionId + '/signal/ticket',
-    method: 'post'
-  })
-}
-
-// 向同场次对端转发信令（offer / answer / ice / ready / bye）
-export function signalSend(ticket, data) {
-  return call({
-    url: '/system/conference/signal/send',
-    method: 'post',
-    params: { ticket: ticket },
-    data: data
-  })
-}
-
-// SSE 信令通道地址（EventSource 直连，匿名 + 票据自校验）
-export function signalStreamUrl(ticket) {
-  return import.meta.env.VITE_APP_BASE_API + '/system/conference/signal/stream?ticket=' + encodeURIComponent(ticket)
 }
 
 // ============================ 进行中 ============================

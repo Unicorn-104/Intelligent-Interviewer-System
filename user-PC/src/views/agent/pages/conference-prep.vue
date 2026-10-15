@@ -3,7 +3,7 @@
     <header class="cp-topbar">
       <div class="cp-bar">
         <a class="cp-brand" href="/agent/index"><span class="cp-mark">智</span>智聘 AI</a>
-        <span class="cp-user">求职者 · 王芳</span>
+        <span class="cp-user">求职者 · {{ userName }}</span>
         <button class="cp-quit" @click="quit">退出</button>
       </div>
     </header>
@@ -31,9 +31,6 @@
         <section class="cp-card">
           <div class="cp-card-head">
             <h2>设备检测</h2>
-            <button class="cp-weak" :class="{ on: simWeak }" title="演示用：切换至弱网状态查看风险提示" @click="toggleWeak">
-              弱网模拟
-            </button>
           </div>
 
           <div class="cp-preview" :class="{ off: cam !== 'ok' }">
@@ -211,6 +208,7 @@ import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'v
 import { useRoute, useRouter } from 'vue-router'
 import { getCurrentSession, getSessionContext, reportParticipantState, submitConsent } from '@/api/system/conference'
 import { describeMediaNotice, queryMediaPermission, requestMedia, savePreferredDevice } from '@/utils/media'
+import useUserStore from '@/store/modules/user'
 
 const PATHS = {
   camera: ['M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z', 'M12 13m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0'],
@@ -244,13 +242,14 @@ const netInfo = ref({ rtt: null, bandwidth: null })
 const checking = ref(false)
 const agreed = ref(false)
 const risk = ref(false)
-const simWeak = ref(false)
 const showConsent = ref(false)
 const showNotice = ref(false)
 const toast = ref('')
 const sessionId = ref(null)
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
+const userName = computed(() => userStore.nickName || userStore.name || '求职者')
 // 本机设备：预览视频与设备选择
 const previewVideo = ref(null)
 const cameraDevices = ref([])
@@ -265,14 +264,14 @@ const micDenied = ref(false)
 // 记录最近一次可用的设备，切换失败时用于回退
 const lastCamDeviceId = ref('')
 const lastMicDeviceId = ref('')
-// 面试信息：默认文案用于无后端时演示，接口返回后覆盖
+// 面试信息：进入场次后由接口回填，未取到时展示占位
 const interview = ref({
-  positionTitle: '高级前端工程师',
-  time: '06月18日 14:30 - 15:15',
-  interviewer: '林晓雯（HR）· 张伟（技术）',
-  duration: '45 分钟',
-  mode: 'AI + HR 协同面试',
-  round: '第 1 轮 / 共 2 轮'
+  positionTitle: '—',
+  time: '—',
+  interviewer: '—',
+  duration: '—',
+  mode: '—',
+  round: '—'
 })
 let toastTimer = null
 let stream = null
@@ -448,11 +447,6 @@ async function switchDevice() {
 }
 
 async function detectNetwork() {
-  if (simWeak.value) {
-    netInfo.value = { rtt: 618, bandwidth: 420 }
-    net.value = 'risk'
-    return
-  }
   const started = performance.now()
   let rtt = null
   try {
@@ -508,12 +502,6 @@ async function runCheck() {
   const error = camError || micError
   notify(error ? await describeMediaNotice(error, camError ? 'camera' : 'microphone') : '检测完成')
   reportEnv()
-}
-
-function toggleWeak() {
-  simWeak.value = !simWeak.value
-  detectNetwork().then(() => reportEnv())
-  notify(simWeak.value ? '已切换至弱网状态，用于查看风险提示' : '已恢复网络检测')
 }
 
 function openConsent() {
@@ -578,9 +566,19 @@ function fillInterview(data) {
   if (time) interview.value.time = time
   if (data.interviewerName) interview.value.interviewer = data.interviewerName
   if (data.durationMinutes) interview.value.duration = `${data.durationMinutes} 分钟`
-  if (data.mode != null) interview.value.mode = Number(data.mode) === 2 ? 'AI + HR 协同面试' : '纯 AI 面试'
+  if (data.mode != null) interview.value.mode = modeLabel(Number(data.mode))
   if (data.roundNo || data.totalRounds) {
     interview.value.round = `第 ${data.roundNo || 1} 轮 / 共 ${data.totalRounds || 1} 轮`
+  }
+}
+
+// 面试模式展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
+function modeLabel(mode) {
+  switch (mode) {
+    case 1: return '纯 AI 面试'
+    case 3: return 'AI + 多面试官'
+    case 4: return '无 AI · 纯人工'
+    default: return 'AI + HR 协同面试'
   }
 }
 
@@ -598,7 +596,7 @@ onMounted(async () => {
       reportEnv()
     }
   } catch (error) {
-    // 无后端时保留本地演示
+    // 后端未就绪时保持占位
   }
 })
 
@@ -652,8 +650,6 @@ onBeforeUnmount(() => {
 .cp-card { padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: 0 6px 20px rgba(26, 60, 110, .05); }
 .cp-card h2 { font-size: 16px; color: var(--p); }
 .cp-card-head { display: flex; align-items: center; justify-content: space-between; }
-.cp-weak { height: 26px; padding: 0 10px; border: 1px dashed var(--line); border-radius: 7px; background: #fff; color: var(--muted); font-size: 11px; }
-.cp-weak.on { color: var(--b); border-color: var(--b); background: var(--soft); }
 
 .cp-info { margin-top: 14px; }
 .cp-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px dashed var(--line); }

@@ -38,7 +38,6 @@ import { clearCandidateSession } from '@/utils/agentSession'
 import { removeToken } from '@/utils/auth'
 import useUserStore from '@/store/modules/user'
 import { getNoticeUnreadCount } from '@/api/system/notice'
-import { getImUnreadCount } from '@/api/system/im'
 
 defineProps({
   active: {
@@ -64,13 +63,11 @@ const navItems = computed(() => baseNavItems.map(item => ({
   badge: item.key === 'messages' && unreadCount.value ? String(unreadCount.value) : ''
 })))
 
+// 候选人端不调用企业端专属的 /system/im/**（求职者角色会被 403），仅统计系统通知未读
 async function loadUnreadCount() {
   try {
-    const [noticeResponse, imResponse] = await Promise.all([
-      getNoticeUnreadCount(),
-      getImUnreadCount()
-    ])
-    unreadCount.value = Number(noticeResponse.data || 0) + Number(imResponse.count || 0)
+    const noticeResponse = await getNoticeUnreadCount()
+    unreadCount.value = Number(noticeResponse.data || 0)
   } catch {
     unreadCount.value = 0
   }

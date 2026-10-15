@@ -1,0 +1,17 @@
+# =====================================================================
+# LiveKit Egress（服务端录制）配置模板（Linux 服务器 · host 网络模式）
+# api_key/api_secret 必须与 livekit.yaml 的 keys 及后端 livekit.* 配置一致
+# 注意：本文件含密钥，服务器上请 chmod 600，不要提交仓库
+# =====================================================================
+log_level: info
+
+api_key: REPLACE_WITH_API_KEY
+api_secret: REPLACE_WITH_API_SECRET
+
+# host 网络模式下直连本机 livekit-server 信令端口（ws 明文需 insecure: true）
+ws_url: ws://localhost:7880
+insecure: true
+
+# Egress 依赖 Redis 保存录制任务状态，须与 livekit.yaml 使用同一实例
+redis:
+  address: localhost:6379
