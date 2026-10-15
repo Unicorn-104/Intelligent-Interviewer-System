@@ -22,6 +22,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.ruoyi.common.constant.ErrorCode;
@@ -33,6 +35,7 @@ import com.ruoyi.system.config.JdAiProperties;
 @Service
 public class JdAiStructurer
 {
+    private static final Logger log = LoggerFactory.getLogger(JdAiStructurer.class);
     private static final int MAX_TOKENS = 4096;
     private static final int MAX_RESPONSE_CHARS = 1_000_000;
     private static final Set<String> FIELDS = Set.of("title", "dept", "city", "salaryMin", "salaryMax",
@@ -130,24 +133,30 @@ public class JdAiStructurer
             }
             if (response.body() == null || response.body().length() > MAX_RESPONSE_CHARS)
             {
-                throw invalidResult();
+                throw invalidResult("response.body", "响应为空或长度超过" + MAX_RESPONSE_CHARS);
             }
             JsonNode envelope = mapper.readTree(response.body());
             if (envelope == null || !envelope.isObject() || envelope.has("error"))
             {
-                throw invalidResult();
+                throw invalidResult("response", "响应根节点不是对象或包含error字段");
             }
             String stopReason = envelope.path("stop_reason").asText();
             if (!("end_turn".equals(stopReason) || "stop_sequence".equals(stopReason)))
             {
                 throw new ServiceException("模型未完整输出 JD，请精简文档后重试");
             }
-            JsonNode first = envelope.path("content").path(0);
-            if (!"text".equals(first.path("type").asText()) || !first.path("text").isTextual())
+            JsonNode content = envelope.path("content");
+            if (content.isArray())
             {
-                throw invalidResult();
+                for (JsonNode block : content)
+                {
+                    if ("text".equals(block.path("type").asText()) && block.path("text").isTextual())
+                    {
+                        return decode(block.path("text").asText());
+                    }
+                }
             }
-            return decode(first.path("text").asText());
+            throw new ServiceException("模型响应缺少文本内容块");
         }
         catch (ServiceException error)
         {
@@ -219,34 +228,38 @@ public class JdAiStructurer
         JsonNode node = mapper.readTree(json);
         if (node == null || !node.isObject())
         {
-            throw invalidResult();
+            throw invalidResult("draft", "JSON根节点不是对象");
         }
         Set<String> names = new HashSet<>();
         node.fieldNames().forEachRemaining(names::add);
         if (!names.equals(FIELDS))
         {
-            throw invalidResult();
+            Set<String> missing = new HashSet<>(FIELDS);
+            missing.removeAll(names);
+            Set<String> unexpected = new HashSet<>(names);
+            unexpected.removeAll(FIELDS);
+            throw invalidResult("draft.fields", "缺少字段=" + missing + ", 额外字段=" + unexpected);
         }
         JdDocumentDraft draft = new JdDocumentDraft();
-        draft.setTitle(text(node.get("title"), 100));
-        draft.setDept(text(node.get("dept"), 50));
-        draft.setCity(text(node.get("city"), 50));
-        draft.setExperience(text(node.get("experience"), 20));
-        draft.setEducation(integer(node.get("education"), 1, 5));
-        draft.setJobType(integer(node.get("jobType"), 1, 3));
-        draft.setSalaryMin(money(node.get("salaryMin")));
-        draft.setSalaryMax(money(node.get("salaryMax")));
+        draft.setTitle(text(node.get("title"), 100, "title"));
+        draft.setDept(text(node.get("dept"), 50, "dept"));
+        draft.setCity(text(node.get("city"), 50, "city"));
+        draft.setExperience(text(node.get("experience"), 20, "experience"));
+        draft.setEducation(integer(node.get("education"), 1, 5, "education"));
+        draft.setJobType(integer(node.get("jobType"), 1, 3, "jobType"));
+        draft.setSalaryMin(money(node.get("salaryMin"), "salaryMin"));
+        draft.setSalaryMax(money(node.get("salaryMax"), "salaryMax"));
         if (draft.getSalaryMin() != null && draft.getSalaryMax() != null
                 && draft.getSalaryMin().compareTo(draft.getSalaryMax()) > 0)
         {
-            throw invalidResult();
+            throw invalidResult("salaryMin/salaryMax", "最低薪资大于最高薪资");
         }
-        draft.setResponsibilities(lines(node.get("responsibilities"), 1000, 10000));
-        draft.setRequirements(lines(node.get("requirements"), 1000, 10000));
-        draft.setSummary(text(node.get("summary"), 200));
-        draft.setSoftRequirements(lines(node.get("softRequirements"), 1000, 10000));
+        draft.setResponsibilities(lines(node.get("responsibilities"), 1000, 10000, "responsibilities"));
+        draft.setRequirements(lines(node.get("requirements"), 1000, 10000, "requirements"));
+        draft.setSummary(text(node.get("summary"), 200, "summary"));
+        draft.setSoftRequirements(lines(node.get("softRequirements"), 1000, 10000, "softRequirements"));
         draft.setSkills(skills(node.get("skills")));
-        draft.setWarnings(lines(node.get("warnings"), 500, 15000));
+        draft.setWarnings(lines(node.get("warnings"), 500, 15000, "warnings"));
         if (draft.getTitle() == null && draft.getSummary() == null && draft.getResponsibilities().isEmpty()
                 && draft.getRequirements().isEmpty() && draft.getSkills().isEmpty())
         {
@@ -264,45 +277,47 @@ public class JdAiStructurer
         return draft;
     }
 
-    private String text(JsonNode node, int max)
+    private String text(JsonNode node, int max, String field)
     {
         if (node.isNull()) return null;
-        if (!node.isTextual()) throw invalidResult();
+        if (!node.isTextual()) throw invalidResult(field, "预期字符串，实际类型=" + node.getNodeType());
         String value = node.asText().trim();
-        if (value.length() > max) throw invalidResult();
+        if (value.length() > max) throw invalidResult(field, "字符串长度=" + value.length() + "，上限=" + max);
         return value.isEmpty() ? null : value;
     }
 
-    private Integer integer(JsonNode node, int min, int max)
+    private Integer integer(JsonNode node, int min, int max, String field)
     {
         if (node.isNull()) return null;
-        if (!node.isIntegralNumber() || !node.canConvertToInt()) throw invalidResult();
+        if (!node.isIntegralNumber() || !node.canConvertToInt()) throw invalidResult(field, "预期可表示的整数，实际类型=" + node.getNodeType());
         int value = node.intValue();
-        if (value < min || value > max) throw invalidResult();
+        if (value < min || value > max) throw invalidResult(field, "数值=" + value + "，允许范围=" + min + "-" + max);
         return value;
     }
 
-    private BigDecimal money(JsonNode node)
+    private BigDecimal money(JsonNode node, String field)
     {
         if (node.isNull()) return null;
-        if (!node.isNumber()) throw invalidResult();
+        if (!node.isNumber()) throw invalidResult(field, "预期数值，实际类型=" + node.getNodeType());
         BigDecimal value = node.decimalValue();
         if (value.signum() <= 0 || value.compareTo(new BigDecimal("100000000")) >= 0
-                || value.stripTrailingZeros().scale() > 2) throw invalidResult();
+                || value.stripTrailingZeros().scale() > 2) throw invalidResult(field, "金额=" + value.toPlainString()
+                        + "，要求大于0、小于100000000且最多两位小数");
         return value;
     }
 
-    private List<String> lines(JsonNode node, int itemMax, int totalMax)
+    private List<String> lines(JsonNode node, int itemMax, int totalMax, String field)
     {
-        if (!node.isArray() || node.size() > 30) throw invalidResult();
+        if (!node.isArray() || node.size() > 30) throw invalidResult(field, "预期最多30项的数组，实际类型="
+                + node.getNodeType() + ", size=" + node.size());
         List<String> values = new ArrayList<>();
         int length = 0;
         for (JsonNode item : node)
         {
-            String value = text(item, itemMax);
-            if (value == null) throw invalidResult();
+            String value = text(item, itemMax, field + "[" + values.size() + "]");
+            if (value == null) throw invalidResult(field + "[" + values.size() + "]", "数组条目为null或空白");
             length += value.length() + 1;
-            if (length > totalMax) throw invalidResult();
+            if (length > totalMax) throw invalidResult(field, "数组累计长度=" + length + "，上限=" + totalMax);
             values.add(value);
         }
         return values;
@@ -310,14 +325,18 @@ public class JdAiStructurer
 
     private List<JdDocumentDraft.Skill> skills(JsonNode node)
     {
-        if (!node.isArray() || node.size() > 30) throw invalidResult();
+        if (!node.isArray() || node.size() > 30) throw invalidResult("skills", "预期最多30项的数组，实际类型="
+                + node.getNodeType() + ", size=" + node.size());
         Map<String, JdDocumentDraft.Skill> values = new LinkedHashMap<>();
+        int skillIndex = 0;
         for (JsonNode item : node)
         {
-            if (!item.isObject() || item.size() != 2 || !item.has("name") || !item.has("required")) throw invalidResult();
-            String name = text(item.get("name"), 50);
-            if (name == null) throw invalidResult();
-            Integer required = integer(item.get("required"), 0, 1);
+            String field = "skills[" + skillIndex++ + "]";
+            if (!item.isObject() || item.size() != 2 || !item.has("name") || !item.has("required"))
+                throw invalidResult(field, "技能必须为仅包含name和required的对象，实际类型=" + item.getNodeType() + ", size=" + item.size());
+            String name = text(item.get("name"), 50, field + ".name");
+            if (name == null) throw invalidResult(field + ".name", "技能名称为null或空白");
+            Integer required = integer(item.get("required"), 0, 1, field + ".required");
             String key = name.toLowerCase(Locale.ROOT);
             JdDocumentDraft.Skill previous = values.get(key);
             if (previous == null || Integer.valueOf(1).equals(required)
@@ -329,8 +348,28 @@ public class JdAiStructurer
         return new ArrayList<>(values.values());
     }
 
-    private ServiceException invalidResult()
+    private String safeValidationDetail(String response)
     {
+        String safe = response;
+        String key = properties.getApiKey();
+        if (key != null && !key.isBlank())
+        {
+            safe = safe.replace(key, "[REDACTED_KEY]");
+            safe = safe.replace(key.trim(), "[REDACTED_KEY]");
+        }
+        safe = safe.replaceAll("(?i)sk-[A-Za-z0-9_-]{8,}", "[REDACTED_KEY]");
+        safe = safe.replaceAll("(?i)Bearer [A-Za-z0-9_.-]+", "Bearer [REDACTED]");
+        safe = safe.replaceAll("[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}", "[REDACTED_TOKEN]");
+        safe = safe.replaceAll("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[REDACTED_EMAIL]");
+        safe = safe.replaceAll("(?<![0-9])1[3-9][0-9]{9}(?![0-9])", "[REDACTED_PHONE]");
+        safe = safe.replaceAll("(?<![0-9])[0-9]{17}[0-9Xx](?![0-9])", "[REDACTED_ID]");
+        safe = safe.replace('\n', ' ').replace('\r', ' ');
+        return safe.substring(0, Math.min(1000, safe.length()));
+    }
+
+    private ServiceException invalidResult(String field, String reason)
+    {
+        log.warn("JD validation failed field={} reason={}", safeValidationDetail(field), safeValidationDetail(reason));
         return new ServiceException("模型返回的 JD 字段不符合岗位约束，请重新解析或手动填写");
     }
 }

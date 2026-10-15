@@ -108,6 +108,48 @@ class JdAiStructurerTest
     }
 
     @Test
+    void skipsThinkingAndReadsFollowingTextBlock() throws Exception
+    {
+        var root = mapper.createObjectNode();
+        root.put("type", "message"); root.put("stop_reason", "end_turn");
+        var content = root.putArray("content");
+        content.addObject().put("type", "thinking").put("thinking", "Synthetic reasoning placeholder");
+        content.addObject().put("type", "text").put("text", RESULT);
+        response(200, mapper.writeValueAsString(root));
+        JdDocumentDraft draft = structurer.structure("Synthetic JD: Flutter and Dart");
+        assertEquals("Mobile Engineer", draft.getTitle());
+        assertEquals(0, new BigDecimal("15000.50").compareTo(draft.getSalaryMin()));
+        assertEquals(2, draft.getSkills().size());
+        assertNull(draft.getSkills().get(1).required());
+    }
+
+    @Test
+    void missingTextBlockHasExplicitFailure() throws Exception
+    {
+        var root = mapper.createObjectNode();
+        root.put("type", "message"); root.put("stop_reason", "end_turn");
+        var content = root.putArray("content");
+        content.addObject().put("type", "thinking").put("thinking", "Synthetic reasoning placeholder");
+        content.addObject().put("type", "text").put("text", 123);
+        response(200, mapper.writeValueAsString(root));
+        assertEquals("模型响应缺少文本内容块", assertThrows(ServiceException.class,
+                () -> structurer.structure("Synthetic JD")).getMessage());
+    }
+
+    @Test
+    void ignoresInvalidTextBlocksAndUsesFirstValidTextBlock() throws Exception
+    {
+        var root = mapper.createObjectNode();
+        root.put("type", "message"); root.put("stop_reason", "end_turn");
+        var content = root.putArray("content");
+        content.addObject().put("type", "text").put("text", 123);
+        content.addObject().put("type", "text").put("text", RESULT);
+        content.addObject().put("type", "text").put("text", "{}");
+        response(200, mapper.writeValueAsString(root));
+        assertEquals("Mobile Engineer", structurer.structure("Synthetic JD").getTitle());
+    }
+
+    @Test
     void rejectsOpenAiEnvelopeAndTruncatedResponse() throws Exception
     {
         response(200, "{\"choices\":[{\"message\":{\"content\":\"wrong protocol\"}}]}");
