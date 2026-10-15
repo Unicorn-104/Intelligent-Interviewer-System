@@ -21,7 +21,7 @@
         </div>
         <div class="ce-stat">
           <span>面试轮次</span>
-          <b>第 {{ stats.round }} 轮<span class="ce-unit">共 {{ stats.totalRounds }} 轮</span></b>
+          <b>{{ stats.round ? `第 ${stats.round} 轮` : '—' }}<span v-if="stats.totalRounds" class="ce-unit">共 {{ stats.totalRounds }} 轮</span></b>
         </div>
       </div>
 
@@ -54,17 +54,16 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { getCurrentSession, getSessionResult } from '@/api/system/conference'
 
 const reportState = ref('generating')
-const reportPercent = ref(24)
+// 报告生成进度由后端结果驱动：未生成 0%，已生成 100%
+const reportPercent = ref(0)
 const sessionId = ref(null)
-// 完成情况与基本信息：默认文案用于无后端时演示，接口返回后覆盖
-const stats = ref({ duration: '42分18秒', answered: 10, total: 10, round: 1, totalRounds: 2 })
-const meta = ref({ positionTitle: '高级前端工程师', mode: 'AI + HR 协同面试' })
-let stateTimer = null
-let progressTimer = null
+// 完成情况与基本信息：全部来自后端真实数据，未取到时展示占位
+const stats = ref({ duration: '—', answered: 0, total: 0, round: null, totalRounds: 0 })
+const meta = ref({ positionTitle: '—', mode: '—' })
 
 function formatDuration(seconds) {
   const v = Math.max(0, Math.floor(Number(seconds) || 0))
@@ -79,9 +78,19 @@ function fillStats(data) {
 
 function fillMeta(data) {
   if (data.positionTitle) meta.value.positionTitle = data.positionTitle
-  if (data.mode != null) meta.value.mode = Number(data.mode) === 2 ? 'AI + HR 协同面试' : '纯 AI 面试'
+  if (data.mode != null) meta.value.mode = modeLabel(Number(data.mode))
   if (data.roundNo) stats.value.round = data.roundNo
   if (data.totalRounds) stats.value.totalRounds = data.totalRounds
+}
+
+// 面试模式展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
+function modeLabel(mode) {
+  switch (mode) {
+    case 1: return '纯 AI 面试'
+    case 3: return 'AI + 多面试官'
+    case 4: return '无 AI · 纯人工'
+    default: return 'AI + HR 协同面试'
+  }
 }
 
 function go(path) {
@@ -89,13 +98,6 @@ function go(path) {
 }
 
 onMounted(async () => {
-  progressTimer = setInterval(() => {
-    if (reportPercent.value < 100) reportPercent.value += 6
-  }, 300)
-  stateTimer = setTimeout(() => {
-    reportState.value = 'ready'
-    reportPercent.value = 100
-  }, 4200)
   try {
     const res = await getCurrentSession()
     if (res.data && res.data.sessionId) {
@@ -103,7 +105,7 @@ onMounted(async () => {
       fillMeta(res.data)
     }
   } catch (error) {
-    // 无后端时保留本地演示
+    // 后端未就绪时保持占位
   }
   if (!sessionId.value) return
   try {
@@ -117,13 +119,8 @@ onMounted(async () => {
       }
     }
   } catch (error) {
-    // 拉取结果失败保留进度动画
+    // 后端未就绪时保持「生成中」状态
   }
-})
-
-onBeforeUnmount(() => {
-  clearTimeout(stateTimer)
-  clearInterval(progressTimer)
 })
 </script>
 

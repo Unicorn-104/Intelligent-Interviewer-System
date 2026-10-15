@@ -30,6 +30,7 @@
     "js-beautify": "1.15.4",
     "js-cookie": "3.0.5",
     "jsencrypt": "3.3.2",
+    "livekit-client": "^2.22.4",
     "nprogress": "0.2.0",
     "pinia": "3.0.4",
     "vue": "3.5.26",
