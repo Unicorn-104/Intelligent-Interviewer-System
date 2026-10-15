@@ -36,7 +36,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where pos_id = #{posId} and pos_company_id = #{companyId}
     </update>
 
-    <insert id="insertJob">
+    <insert id="insertJob" useGeneratedKeys="true" keyProperty="posId" keyColumn="pos_id">
         insert into t_pos (pos_company_id, pos_publisher_id, pos_title, pos_department, pos_work_city,
                            pos_salary_min, pos_salary_max, pos_experience_required, pos_education_required,
                            pos_job_type, pos_jd_json, pos_status)
@@ -44,6 +44,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 #{salaryMin}, #{salaryMax}, #{experience}, #{education},
                 #{jobType}, #{jdJson}, #{status})
     </insert>
+
+    <select id="selectPublishingCompany" resultType="java.util.LinkedHashMap">
+        select cmp_id as id, cmp_name as name, cmp_city as city
+        from t_cmp where cmp_id = #{companyId} and cmp_status = 1
+    </select>
 
     <select id="selectJobById" resultType="java.util.LinkedHashMap">
         select pos_id as posId, pos_title as title, pos_department as dept, pos_work_city as city,

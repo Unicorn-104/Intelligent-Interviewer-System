@@ -128,18 +128,18 @@ public class AgentJobServiceImpl implements IAgentJobService
         }
         if (min == null)
         {
-            return number(max) + "K以上";
+            return number(max) + "K以下";
         }
         if (max == null)
         {
-            return number(min) + "K以下";
+            return number(min) + "K以上";
         }
         return number(min) + "-" + number(max) + "K";
     }
 
     private String number(BigDecimal value)
     {
-        return value.stripTrailingZeros().toPlainString();
+        return value.movePointLeft(3).stripTrailingZeros().toPlainString();
     }
 
     private String educationText(Integer code)
@@ -150,7 +150,7 @@ public class AgentJobServiceImpl implements IAgentJobService
         }
         return switch (code)
         {
-            case 1 -> "学历不限";
+            case 1 -> "中专";
             case 2 -> "大专";
             case 3 -> "本科";
             case 4 -> "硕士";
