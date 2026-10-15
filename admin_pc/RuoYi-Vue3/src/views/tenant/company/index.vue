@@ -34,7 +34,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="提交时间" align="center" prop="createTime" width="130" />
+        <el-table-column label="提交时间" align="center" width="160">
+          <template #default="scope">{{ formatTime(scope.row.createTime) }}</template>
+        </el-table-column>
         <el-table-column label="操作" align="center" width="150" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
@@ -132,6 +134,12 @@ function verifyStatusLabel(val) {
 function verifyStatusTag(val) {
   const map = { 0: 'warning', 1: 'success', 2: 'danger' }
   return map[val] || 'info'
+}
+
+/** 格式化时间 */
+function formatTime(time) {
+  if (!time) return ''
+  return time.replace('T', ' ').substring(0, 19)
 }
 
 getList()
