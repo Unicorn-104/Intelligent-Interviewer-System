@@ -1,14 +1,7 @@
 package com.ruoyi.system.service.impl;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -16,13 +9,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 import com.alibaba.fastjson2.JSON;
-import com.ruoyi.common.config.RuoYiConfig;
 import com.ruoyi.common.constant.Constants;
 import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
@@ -30,6 +20,7 @@ import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.mapper.ConferenceMapper;
 import com.ruoyi.system.service.IConferenceService;
+import com.ruoyi.system.service.ILiveKitEgressService;
 
 /**
  * 视频会议（面试链路）服务层实现
@@ -68,17 +59,21 @@ public class ConferenceServiceImpl implements IConferenceService
 
     /** 录制码率估算值（Kbps），用于把录制时长换算成存储占用 */
     private static final int RECORDING_BITRATE_KBPS = 1500;
-    /** 录制分片临时目录名（java.io.tmpdir 下，按场次分子目录） */
-    private static final String RECORDING_CHUNK_DIR = "recruit-recording";
     /** 默认保留天数 / 存储上限（GB） */
     private static final int DEFAULT_KEEP_DAYS = 90;
     private static final int DEFAULT_MAX_STORAGE_GB = 500;
+
+    /** Egress 录制文件在容器内的输出根目录（对应宿主 D:/ruoyi/uploadPath/upload/recording） */
+    private static final String EGRESS_OUTPUT_ROOT = "/out";
 
     @Autowired
     private ConferenceMapper conferenceMapper;
 
     @Autowired
     private RedisCache redisCache;
+
+    @Autowired
+    private ILiveKitEgressService liveKitEgressService;
 
     @Override
     public Map<String, Object> getCurrentSession(Long userId)
@@ -166,75 +161,56 @@ public class ConferenceServiceImpl implements IConferenceService
         validateInterviewerCount(interviewMode, selected.size());
         validateInterviewerScope(userId, selected);
 
-        Map<String, Object> query = new HashMap<>();
-        query.put("candidateId", candidateId);
-        Map<String, Object> active = conferenceMapper.selectActiveSessionByCandidate(query);
+        // 每次发起都新建场次并签发新的随机链接：先把该候选人此前尚未结束的场次置为异常终止，
+        // 保证同一候选人同一时间只有一个活跃场次，避免重复点击时复用同一个旧链接
+        conferenceMapper.abortActiveSessionsByCandidate(candidateId);
 
-        Long sessionId;
-        String roomId;
-        String roomToken;
-        if (active != null && !active.isEmpty())
+        if (positionId == null)
         {
-            // 已有未结束场次：复用，仅在缺少令牌时补写
-            sessionId = toLong(active.get("sessionId"));
-            roomId = str(active.get("roomId"));
-            roomToken = str(active.get("roomToken"));
-            if (StringUtils.isEmpty(roomToken))
-            {
-                roomId = StringUtils.isEmpty(roomId) ? "INTERVIEW-" + sessionId : roomId;
-                roomToken = randomToken();
-                saveRoomToken(sessionId, roomId, roomToken);
-            }
+            throw new ServiceException("请选择面试岗位");
         }
-        else
+        int duration = durationMinutes == null || durationMinutes <= 0 ? DEFAULT_INTERVIEW_MINUTES : durationMinutes;
+        // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
+        // 纯AI 无面试官时，预约面试官回落到发起人，满足非空约束
+        Long sessionInterviewerId = selected.isEmpty() ? userId : selected.get(0);
+        Map<String, Object> appointment = new HashMap<>();
+        appointment.put("candidateId", candidateId);
+        appointment.put("positionId", positionId);
+        appointment.put("interviewerId", sessionInterviewerId);
+        appointment.put("durationMinutes", duration);
+        conferenceMapper.insertAppointment(appointment);
+
+        Map<String, Object> session = new HashMap<>();
+        session.put("appointmentId", toLong(appointment.get("appointmentId")));
+        session.put("candidateId", candidateId);
+        session.put("positionId", positionId);
+        session.put("interviewerId", sessionInterviewerId);
+        session.put("mode", interviewMode);
+        conferenceMapper.insertSession(session);
+
+        Long sessionId = toLong(session.get("sessionId"));
+        String roomId = "INTERVIEW-" + sessionId;
+        String roomToken = randomToken();
+        saveRoomToken(sessionId, roomId, roomToken);
+
+        // 每位被指派面试官：写入关联（首位为主面试官）+ 各自一条面试行程
+        for (int i = 0; i < selected.size(); i++)
         {
-            if (positionId == null)
+            Long interviewerId = selected.get(i);
+            if (i > 0)
             {
-                throw new ServiceException("请选择面试岗位");
+                Map<String, Object> extra = new HashMap<>();
+                extra.put("candidateId", candidateId);
+                extra.put("positionId", positionId);
+                extra.put("interviewerId", interviewerId);
+                extra.put("durationMinutes", duration);
+                conferenceMapper.insertAppointment(extra);
             }
-            int duration = durationMinutes == null || durationMinutes <= 0 ? DEFAULT_INTERVIEW_MINUTES : durationMinutes;
-            // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
-            // 纯AI 无面试官时，预约面试官回落到发起人，满足非空约束
-            Long sessionInterviewerId = selected.isEmpty() ? userId : selected.get(0);
-            Map<String, Object> appointment = new HashMap<>();
-            appointment.put("candidateId", candidateId);
-            appointment.put("positionId", positionId);
-            appointment.put("interviewerId", sessionInterviewerId);
-            appointment.put("durationMinutes", duration);
-            conferenceMapper.insertAppointment(appointment);
-
-            Map<String, Object> session = new HashMap<>();
-            session.put("appointmentId", toLong(appointment.get("appointmentId")));
-            session.put("candidateId", candidateId);
-            session.put("positionId", positionId);
-            session.put("interviewerId", sessionInterviewerId);
-            session.put("mode", interviewMode);
-            conferenceMapper.insertSession(session);
-
-            sessionId = toLong(session.get("sessionId"));
-            roomId = "INTERVIEW-" + sessionId;
-            roomToken = randomToken();
-            saveRoomToken(sessionId, roomId, roomToken);
-
-            // 每位被指派面试官：写入关联（首位为主面试官）+ 各自一条面试行程
-            for (int i = 0; i < selected.size(); i++)
-            {
-                Long interviewerId = selected.get(i);
-                if (i > 0)
-                {
-                    Map<String, Object> extra = new HashMap<>();
-                    extra.put("candidateId", candidateId);
-                    extra.put("positionId", positionId);
-                    extra.put("interviewerId", interviewerId);
-                    extra.put("durationMinutes", duration);
-                    conferenceMapper.insertAppointment(extra);
-                }
-                Map<String, Object> link = new HashMap<>();
-                link.put("sessionId", sessionId);
-                link.put("userId", interviewerId);
-                link.put("isPrimary", i == 0 ? 1 : 0);
-                conferenceMapper.insertSessionInterviewer(link);
-            }
+            Map<String, Object> link = new HashMap<>();
+            link.put("sessionId", sessionId);
+            link.put("userId", interviewerId);
+            link.put("isPrimary", i == 0 ? 1 : 0);
+            conferenceMapper.insertSessionInterviewer(link);
         }
 
         Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);
@@ -732,6 +708,8 @@ public class ConferenceServiceImpl implements IConferenceService
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
         params.put("status", 2);
+        // 会议结束时收敛仍在进行的录制（停止 Egress 并回填状态），避免录制记录永远停在「录制中」
+        settleActiveRecording(ctx, sessionId, false);
         conferenceMapper.finishSession(params);
         Map<String, Object> result = buildSessionResult(sessionId);
         result.put("endReason", StringUtils.isEmpty(endReason) ? "normal" : endReason);
@@ -743,6 +721,8 @@ public class ConferenceServiceImpl implements IConferenceService
     public Map<String, Object> abortSession(Long userId, Long sessionId, String reason)
     {
         requireParticipant(userId, sessionId, false);
+        Map<String, Object> abortCtx = conferenceMapper.selectSessionContext(sessionId);
+        settleActiveRecording(abortCtx, sessionId, true);
         conferenceMapper.abortSession(sessionId);
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
@@ -771,7 +751,10 @@ public class ConferenceServiceImpl implements IConferenceService
         Long companyId = resolveCompanyId(userId);
         Map<String, Object> params = new HashMap<>();
         params.put("companyId", companyId);
+        params.put("recordingId", query.get("recordingId") == null ? null : toLong(query.get("recordingId")));
         params.put("sessionId", query.get("sessionId") == null ? null : toLong(query.get("sessionId")));
+        params.put("candidateId", query.get("candidateId") == null ? null : toLong(query.get("candidateId")));
+        params.put("candidateUserId", query.get("candidateUserId") == null ? null : toLong(query.get("candidateUserId")));
         params.put("candidate", str(query.get("candidate")));
         params.put("from", str(query.get("from")));
         params.put("to", str(query.get("to")));
@@ -787,30 +770,35 @@ public class ConferenceServiceImpl implements IConferenceService
         Map<String, Object> totals = conferenceMapper.selectRecordingStorageTotal(companyId);
         long seconds = toLong(totals == null ? null : totals.get("totalSeconds"));
         long bytes = toLong(totals == null ? null : totals.get("totalBytes"));
-        // 优先按真实文件大小统计；历史数据无字节数时回落到按码率估算
-        double usedGb = bytes > 0 ? bytes / 1024.0 / 1024 / 1024
-                : seconds * (double) RECORDING_BITRATE_KBPS * 1000 / 8 / 1024 / 1024 / 1024;
-        double used = Math.round(usedGb * 100) / 100.0;
+        long estSeconds = toLong(totals == null ? null : totals.get("estSeconds"));
+        // 逐场次统计：有真实字节数的按字节算，仅有历史时长的按码率估算，避免只认一种口径导致整体失真
+        double usedGb = bytes / 1024.0 / 1024 / 1024
+                + estSeconds * (double) RECORDING_BITRATE_KBPS * 1000 / 8 / 1024 / 1024 / 1024;
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("usedGb", used);
+        result.put("usedGb", Math.round(usedGb * 10000) / 10000.0);
         result.put("maxGb", maxGb);
         result.put("usedSeconds", seconds);
         result.put("usedBytes", bytes);
         result.put("keepDays", policy.get("keepDays"));
-        result.put("percent", maxGb > 0 ? Math.round(used * 1000 / maxGb) / 10.0 : 0);
+        result.put("percent", maxGb > 0 ? Math.round(usedGb * 1000 / maxGb) / 10.0 : 0);
         return result;
     }
 
     @Override
-    public Map<String, Object> getRecordingDetail(Long userId, Long sessionId)
+    public Map<String, Object> getRecordingDetail(Long userId, Long recordingId)
     {
-        requireRecordingAccess(userId, sessionId);
-        Map<String, Object> detail = conferenceMapper.selectRecordingDetail(sessionId);
+        requireRecordingAccess(userId, recordingId);
+        Map<String, Object> detail = conferenceMapper.selectRecordingDetail(recordingId);
         if (detail == null || detail.isEmpty())
         {
-            throw new ServiceException("面试场次不存在");
+            throw new ServiceException("录制记录不存在");
         }
-        List<Map<String, Object>> timeline = conferenceMapper.selectRecordingTimeline(sessionId);
+        Long sessionId = toLong(detail.get("sessionId"));
+        // 时间轴以本条录制的起点为基准，避免一场面试多次录制时时间点相互错位
+        Map<String, Object> timelineParams = new HashMap<>();
+        timelineParams.put("sessionId", sessionId);
+        timelineParams.put("startAt", str(detail.get("startAt")));
+        List<Map<String, Object>> timeline = conferenceMapper.selectRecordingTimeline(timelineParams);
         List<Map<String, Object>> chapters = new ArrayList<>();
         List<Map<String, Object>> qa = new ArrayList<>();
         for (Map<String, Object> item : timeline)
@@ -845,9 +833,9 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     @Override
-    public Map<String, Object> updateRecordingAccess(Long userId, Long sessionId, Integer validDays, Integer level)
+    public Map<String, Object> updateRecordingAccess(Long userId, Long recordingId, Integer validDays, Integer level)
     {
-        requireRecordingAccess(userId, sessionId);
+        requireRecordingAccess(userId, recordingId);
         if (validDays == null || validDays <= 0)
         {
             throw new ServiceException("访问有效期必须大于 0 天");
@@ -857,27 +845,27 @@ public class ConferenceServiceImpl implements IConferenceService
             throw new ServiceException("权限级别仅支持 1-仅HR/面试官，2-含管理员，3-候选人可见");
         }
         Map<String, Object> params = new HashMap<>();
-        params.put("sessionId", sessionId);
+        params.put("recordingId", recordingId);
         params.put("validDays", validDays);
         params.put("level", level);
         conferenceMapper.updateRecordingAccess(params);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("sessionId", sessionId);
+        result.put("recordingId", recordingId);
         result.put("validDays", validDays);
         result.put("level", level);
         return result;
     }
 
     @Override
-    public Map<String, Object> sendDownloadCode(Long userId, Long sessionId)
+    public Map<String, Object> sendDownloadCode(Long userId, Long recordingId)
     {
-        Map<String, Object> ctx = requireRecordingAccess(userId, sessionId);
+        Map<String, Object> ctx = requireRecordingAccess(userId, recordingId);
         if (StringUtils.isEmpty(str(ctx.get("recUrl"))))
         {
-            throw new ServiceException("该场次暂无录制文件，无法下载");
+            throw new ServiceException("该录制暂无文件，无法下载");
         }
         String code = String.valueOf((int) ((Math.random() * 9 + 1) * 100000));
-        redisCache.setCacheObject(downloadCodeKey(userId, sessionId), code, DOWNLOAD_CODE_TTL, TimeUnit.SECONDS);
+        redisCache.setCacheObject(downloadCodeKey(userId, recordingId), code, DOWNLOAD_CODE_TTL, TimeUnit.SECONDS);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("expiresInSeconds", DOWNLOAD_CODE_TTL);
         // TODO 接入短信通道后移除 devCode（当前无短信服务，仅便于本地联调）
@@ -886,10 +874,10 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     @Override
-    public Map<String, Object> verifyDownloadCode(Long userId, Long sessionId, String code)
+    public Map<String, Object> verifyDownloadCode(Long userId, Long recordingId, String code)
     {
-        Map<String, Object> ctx = requireRecordingAccess(userId, sessionId);
-        String cacheKey = downloadCodeKey(userId, sessionId);
+        Map<String, Object> ctx = requireRecordingAccess(userId, recordingId);
+        String cacheKey = downloadCodeKey(userId, recordingId);
         Object cached = redisCache.getCacheObject(cacheKey);
         if (cached == null)
         {
@@ -933,139 +921,206 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     @Override
-    public Map<String, Object> uploadRecordingChunk(Long userId, Long sessionId,
-            MultipartFile file, int index, boolean last, Integer durationSec)
+    public Map<String, Object> startRecording(Long userId, Long sessionId)
     {
         Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
         if ("HR".equals(ctx.get("role")))
         {
             // 录制为主面试官独占操作；非主面试官沿用预约时间 5 分钟宽限兜底规则
-            assertPrimaryOrGrace(ctx, userId, sessionId, "上传录制");
+            assertPrimaryOrGrace(ctx, userId, sessionId, "开始录制");
         }
-        if (file == null || file.isEmpty() || index < 0)
+        if (toInt(ctx.get("status")) != 1)
         {
-            throw new ServiceException("录制分片无效");
+            throw new ServiceException("面试尚未开始，无法录制");
         }
-        Path chunkDir = recordingChunkDir(sessionId);
-        Path chunkFile = chunkDir.resolve("chunk_" + index + ".webm");
+        // 同一场次同时只允许一个录制任务：重复点击直接复用进行中的录制
+        Map<String, Object> active = conferenceMapper.selectActiveRecording(sessionId);
+        if (active != null && !active.isEmpty())
+        {
+            return active;
+        }
+        String room = StringUtils.isEmpty(str(ctx.get("roomId"))) ? "INTERVIEW-" + sessionId : str(ctx.get("roomId"));
+        int seq = toInt(conferenceMapper.selectNextRecordingSeq(sessionId));
+        // 编号格式：REC-<yyyyMMdd>-<场次ID补3位>-<场次内序号2位>，每次录制都是新的编号与文件
+        String code = "REC-" + DateUtils.dateTime() + "-" + String.format("%03d", sessionId)
+                + "-" + String.format("%02d", seq);
+        String fileName = code + ".mp4";
+        String datePath = DateUtils.datePath();
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("sessionId", sessionId);
+        params.put("code", code);
+        params.put("seq", seq);
+        params.put("url", Constants.RESOURCE_PREFIX + "/upload/recording/" + datePath + "/" + fileName);
+        params.put("accessLevel", 1);
+        conferenceMapper.insertRecording(params);
+        Long recordingId = toLong(params.get("recordingId"));
+
+        String egressId;
         try
         {
-            Files.createDirectories(chunkDir);
-            file.transferTo(chunkFile.toFile());
+            egressId = liveKitEgressService.startRoomRecording(room,
+                    EGRESS_OUTPUT_ROOT + "/" + datePath + "/" + fileName);
         }
-        catch (Exception e)
+        catch (RuntimeException e)
         {
-            throw new ServiceException("录制分片暂存失败：" + e.getMessage());
+            // 起录失败时把刚落库的录制记录标记为异常终止，避免留下永远「录制中」的脏记录
+            conferenceMapper.abortRecordingBySession(sessionId);
+            throw e;
         }
+        Map<String, Object> egressParams = new HashMap<>();
+        egressParams.put("recordingId", recordingId);
+        egressParams.put("egressId", egressId);
+        conferenceMapper.updateRecordingEgressId(egressParams);
+
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("sessionId", sessionId);
-        result.put("index", index);
-        if (!last)
-        {
-            result.put("status", "chunked");
-            return result;
-        }
-        // 末片到达：按序号拼接为完整文件并落盘到上传目录
-        String recUrl = finalizeRecording(sessionId, chunkDir, durationSec, toLong(ctx.get("companyId")));
-        result.put("status", "finalized");
-        result.put("recUrl", recUrl);
+        result.put("recordingId", recordingId);
+        result.put("code", code);
+        result.put("seq", seq);
+        result.put("status", 0);
+        result.put("egressId", egressId);
         return result;
     }
 
-    /**
-     * 分片临时目录（位于 profile 目录之外，避免未完成的分片被 /profile/** 匿名下载）
-     */
-    private Path recordingChunkDir(Long sessionId)
+    @Override
+    public Map<String, Object> stopRecording(Long userId, Long sessionId)
     {
-        return Paths.get(System.getProperty("java.io.tmpdir"), RECORDING_CHUNK_DIR, String.valueOf(sessionId));
-    }
-
-    /**
-     * 按分片序号顺序拼接落盘，回写场次录制元数据，并清理临时分片与旧录制文件
-     */
-    private String finalizeRecording(Long sessionId, Path chunkDir, Integer durationSec, Long companyId)
-    {
-        List<Path> chunks = new ArrayList<>();
-        try (Stream<Path> files = Files.list(chunkDir))
+        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        if ("HR".equals(ctx.get("role")))
         {
-            files.filter(p -> p.getFileName().toString().startsWith("chunk_")
-                            && p.getFileName().toString().endsWith(".webm"))
-                    .sorted(Comparator.comparingInt(p -> parseChunkIndex(p.getFileName().toString())))
-                    .forEach(chunks::add);
+            assertPrimaryOrGrace(ctx, userId, sessionId, "停止录制");
         }
-        catch (Exception e)
+        Map<String, Object> active = conferenceMapper.selectActiveRecording(sessionId);
+        if (active == null || active.isEmpty())
         {
-            throw new ServiceException("读取录制分片失败：" + e.getMessage());
+            throw new ServiceException("当前没有进行中的录制");
         }
-        if (chunks.isEmpty())
+        String egressId = str(active.get("egressId"));
+        if (StringUtils.isNotEmpty(egressId))
         {
-            throw new ServiceException("未找到录制分片");
+            liveKitEgressService.stopEgress(egressId);
         }
-        String datePath = DateUtils.datePath();
-        String fileName = UUID.randomUUID().toString().replace("-", "") + ".webm";
-        File target = new File(RuoYiConfig.getUploadPath() + File.separator + "recording"
-                + File.separator + datePath, fileName);
-        if (!target.getParentFile().exists() && !target.getParentFile().mkdirs())
-        {
-            throw new ServiceException("创建录制目录失败");
-        }
-        long totalBytes = 0;
-        try (OutputStream out = new FileOutputStream(target))
-        {
-            for (Path chunk : chunks)
-            {
-                Files.copy(chunk, out);
-                totalBytes += Files.size(chunk);
-            }
-        }
-        catch (Exception e)
-        {
-            throw new ServiceException("录制文件写入失败：" + e.getMessage());
-        }
-        // 重复录制时删除旧文件，避免孤儿文件占空间
-        Map<String, Object> detail = conferenceMapper.selectRecordingDetail(sessionId);
-        String oldUrl = detail == null ? null : str(detail.get("recUrl"));
-        if (StringUtils.isNotEmpty(oldUrl))
-        {
-            File old = new File(RuoYiConfig.getProfile() + StringUtils.substringAfter(oldUrl, Constants.RESOURCE_PREFIX));
-            if (old.exists() && !old.equals(target))
-            {
-                old.delete();
-            }
-        }
-        int keepDays = toInt(storagePolicy(companyId).get("keepDays"));
+        // 先按录制起止墙钟时间回落为已完成，Egress 结束回调到达后再用真实时长 / 字节数覆盖
         Map<String, Object> params = new HashMap<>();
-        params.put("sessionId", sessionId);
-        params.put("recUrl", Constants.RESOURCE_PREFIX + "/upload/recording/" + datePath + "/" + fileName);
-        params.put("durationSec", durationSec == null || durationSec < 0 ? 0 : durationSec);
-        params.put("sizeBytes", totalBytes);
-        params.put("keepDays", keepDays);
-        conferenceMapper.updateRecordingFile(params);
-        try
-        {
-            for (Path chunk : chunks)
-            {
-                Files.deleteIfExists(chunk);
-            }
-            Files.deleteIfExists(chunkDir);
-        }
-        catch (Exception e)
-        {
-            // 临时分片清理失败不影响录制结果
-        }
-        return (String) params.get("recUrl");
+        params.put("recordingId", toLong(active.get("recordingId")));
+        params.put("keepDays", toInt(storagePolicy(toLong(ctx.get("companyId"))).get("keepDays")));
+        conferenceMapper.finishRecordingByRecordingId(params);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("recordingId", params.get("recordingId"));
+        result.put("code", active.get("code"));
+        result.put("status", 1);
+        return result;
     }
 
-    private static int parseChunkIndex(String fileName)
+    @Override
+    public void handleLiveKitWebhook(Map<String, Object> payload)
     {
-        try
+        if (payload == null || !"egress_ended".equals(str(payload.get("event"))))
         {
-            return Integer.parseInt(fileName.substring("chunk_".length(), fileName.length() - ".webm".length()));
+            return;
         }
-        catch (NumberFormatException e)
+        Object rawInfo = payload.get("egressInfo") != null ? payload.get("egressInfo") : payload.get("egress_info");
+        Map<String, Object> info = valueAsMap(rawInfo);
+        if (info == null)
         {
-            return Integer.MAX_VALUE;
+            return;
         }
+        String egressId = str(info.get("egressId") != null ? info.get("egressId") : info.get("egress_id"));
+        if (StringUtils.isEmpty(egressId))
+        {
+            return;
+        }
+        String status = str(info.get("status"));
+        Map<String, Object> params = new HashMap<>();
+        params.put("egressId", egressId);
+        params.put("status", "EGRESS_FAILED".equals(status) || "EGRESS_ABORTED".equals(status) ? 2 : 1);
+        Map<String, Object> file = resolveEgressFile(info);
+        if (file != null)
+        {
+            Long sizeBytes = toLong(file.get("size"));
+            Long durationNanos = toLong(file.get("duration"));
+            params.put("sizeBytes", sizeBytes != null && sizeBytes > 0 ? sizeBytes : null);
+            params.put("durationSec", durationNanos != null && durationNanos > 0
+                    ? Integer.valueOf((int) (durationNanos / 1_000_000_000L)) : null);
+            params.put("recUrl", resolveEgressUrl(str(file.get("filename"))));
+        }
+        params.put("keepDays", DEFAULT_KEEP_DAYS);
+        conferenceMapper.finishRecordingByEgressId(params);
+    }
+
+    /**
+     * 从 EgressInfo 中取出真正承载文件信息的对象：新版为 file_results[0].file，旧版为 file
+     */
+    private static Map<String, Object> resolveEgressFile(Map<String, Object> info)
+    {
+        Map<String, Object> direct = valueAsMap(info.get("file"));
+        if (direct != null && (direct.containsKey("size") || direct.containsKey("filename")))
+        {
+            return direct;
+        }
+        Object results = info.get("fileResults") != null ? info.get("fileResults") : info.get("file_results");
+        if (results instanceof List && !((List<?>) results).isEmpty())
+        {
+            Map<String, Object> item = valueAsMap(((List<?>) results).get(0));
+            if (item != null)
+            {
+                Map<String, Object> nested = valueAsMap(item.get("file"));
+                return nested == null ? item : nested;
+            }
+        }
+        return direct;
+    }
+
+    /**
+     * Egress 容器内输出路径（/out/...）映射为可被浏览器访问的静态资源地址
+     */
+    private static String resolveEgressUrl(String filename)
+    {
+        if (StringUtils.isEmpty(filename) || !filename.startsWith(EGRESS_OUTPUT_ROOT + "/"))
+        {
+            return null;
+        }
+        return Constants.RESOURCE_PREFIX + "/upload/recording" + filename.substring(EGRESS_OUTPUT_ROOT.length());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> valueAsMap(Object value)
+    {
+        return value instanceof Map ? (Map<String, Object>) value : null;
+    }
+
+    /**
+     * 场次结束时收敛仍在进行的录制：先停 Egress，再按正常 / 异常回填录制状态
+     */
+    private void settleActiveRecording(Map<String, Object> ctx, Long sessionId, boolean aborted)
+    {
+        Map<String, Object> active = conferenceMapper.selectActiveRecording(sessionId);
+        if (active == null || active.isEmpty())
+        {
+            return;
+        }
+        String egressId = str(active.get("egressId"));
+        if (StringUtils.isNotEmpty(egressId))
+        {
+            try
+            {
+                liveKitEgressService.stopEgress(egressId);
+            }
+            catch (Exception e)
+            {
+                // Egress 停止失败不阻断会议结束流程，录制状态仍按墙钟时长收敛
+            }
+        }
+        if (aborted)
+        {
+            conferenceMapper.abortRecordingBySession(sessionId);
+            return;
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("recordingId", toLong(active.get("recordingId")));
+        params.put("keepDays", toInt(storagePolicy(ctx == null ? null : toLong(ctx.get("companyId"))).get("keepDays")));
+        conferenceMapper.finishRecordingByRecordingId(params);
     }
 
     /**
@@ -1115,6 +1170,9 @@ public class ConferenceServiceImpl implements IConferenceService
         ctx.put("role", role);
         conferenceMapper.ensureMeetingState(sessionId);
         decorateInterviewers(ctx, sessionId);
+        // 面试详情左栏：岗位技能标签与候选人真实流程记录，无数据时返回空列表由前端展示空态
+        ctx.put("positionSkills", conferenceMapper.selectPositionSkills(toLong(ctx.get("positionId"))));
+        ctx.put("flowHistory", conferenceMapper.selectCandidateFlowHistory(toLong(ctx.get("candidateId"))));
         return ctx;
     }
 
@@ -1205,17 +1263,17 @@ public class ConferenceServiceImpl implements IConferenceService
     /**
      * 录制访问校验：同企业、面试官，或候选人且访问级别为 3
      */
-    private Map<String, Object> requireRecordingAccess(Long userId, Long sessionId)
+    private Map<String, Object> requireRecordingAccess(Long userId, Long recordingId)
     {
-        Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);
+        Map<String, Object> ctx = recordingId == null ? null : conferenceMapper.selectRecordingAccessContext(recordingId);
         if (ctx == null || ctx.isEmpty())
         {
-            throw new ServiceException("面试场次不存在");
+            throw new ServiceException("录制记录不存在");
         }
         Long userCompanyId = resolveCompanyId(userId);
         boolean allowed = userId.equals(toLong(ctx.get("interviewerId")))
                 || userCompanyId.equals(toLong(ctx.get("companyId")))
-                || (userId.equals(toLong(ctx.get("candidateUserId"))) && toInt(ctx.get("recAccessLevel")) == 3);
+                || (userId.equals(toLong(ctx.get("candidateUserId"))) && toInt(ctx.get("accessLevel")) == 3);
         if (!allowed)
         {
             throw new ServiceException("无权访问该录制文件");
@@ -1285,9 +1343,9 @@ public class ConferenceServiceImpl implements IConferenceService
         return policy;
     }
 
-    private String downloadCodeKey(Long userId, Long sessionId)
+    private String downloadCodeKey(Long userId, Long recordingId)
     {
-        return DOWNLOAD_CODE_KEY + sessionId + ":" + userId;
+        return DOWNLOAD_CODE_KEY + recordingId + ":" + userId;
     }
 
     /**
