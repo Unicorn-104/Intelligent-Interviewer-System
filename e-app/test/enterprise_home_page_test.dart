@@ -68,6 +68,26 @@ void main() {
       expect(find.text('示例企业'), findsOneWidget);
       expect(inHome(find.byType(HomeInterviewRow)), findsNWidgets(3));
       expect(inHome(find.byType(HomeApplicationRow)), findsNWidgets(3));
+      final applications = inHome(find.widgetWithText(HomeSection, '岗位投递概览'));
+      expect(
+        find.descendant(of: applications, matching: find.byType(Card)),
+        findsNWidgets(3),
+      );
+      for (final row in tester.widgetList<HomeApplicationRow>(
+        inHome(find.byType(HomeApplicationRow)),
+      )) {
+        expect(row.companyName, '示例企业');
+      }
+      for (final title in ['近期面试', '快捷统计']) {
+        expect(
+          tester
+              .widget<HomeSection>(
+                inHome(find.widgetWithText(HomeSection, title)),
+              )
+              .wrapInCard,
+          isTrue,
+        );
+      }
       final badge = tester.widget<Badge>(
         find.byKey(const ValueKey('home-notice-badge')),
       );
@@ -102,6 +122,20 @@ void main() {
     expect(inHome(find.byType(HomeInterviewRow)), findsNWidgets(3));
     await more(tester, '岗位投递概览');
     expect(find.byType(HomeApplicationsPage), findsOneWidget);
+    expect(
+      tester
+          .widget<HomeApplicationsPage>(find.byType(HomeApplicationsPage))
+          .companyName,
+      '示例企业',
+    );
+    for (final row in tester.widgetList<HomeApplicationRow>(
+      find.descendant(
+        of: find.byType(HomeApplicationsPage),
+        matching: find.byType(HomeApplicationRow),
+      ),
+    )) {
+      expect(row.companyName, '示例企业');
+    }
     expect(
       find.descendant(
         of: find.byType(HomeApplicationsPage),

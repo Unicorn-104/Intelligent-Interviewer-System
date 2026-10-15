@@ -150,6 +150,7 @@ class _HomePageState extends State<HomePage> {
           source: _source,
           onOpen: _openApplication,
           onJobs: widget.onJobs,
+          companyName: _identity.data?.company,
         ),
       ),
     );
@@ -165,10 +166,17 @@ class _HomePageState extends State<HomePage> {
     required String empty,
     required Widget Function(T) content,
     VoidCallback? onMore,
+    bool wrapInCard = true,
   }) => HomeSection(
     title: title,
     subtitle: subtitle,
     onMore: onMore,
+    wrapInCard:
+        wrapInCard ||
+        state.loading ||
+        state.error != null ||
+        state.data == null ||
+        isEmpty(state.data as T),
     child: state.loading
         ? const HomeSkeleton()
         : state.error != null
@@ -320,14 +328,19 @@ class _HomePageState extends State<HomePage> {
                   isEmpty: (data) => data.items.isEmpty,
                   empty: '暂无岗位投递数据',
                   onMore: _moreApplications,
+                  wrapInCard: false,
                   content: (data) => Column(
-                    children: _rows(
-                      data.items.take(3),
-                      (item) => HomeApplicationRow(
-                        application: item,
-                        onOpen: () => _openApplication(item),
-                      ),
-                    ),
+                    children: [
+                      for (final (index, item)
+                          in data.items.take(3).indexed) ...[
+                        if (index > 0) const SizedBox(height: 12),
+                        HomeApplicationRow(
+                          application: item,
+                          companyName: identity?.company,
+                          onOpen: () => _openApplication(item),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 const SizedBox(height: 24),

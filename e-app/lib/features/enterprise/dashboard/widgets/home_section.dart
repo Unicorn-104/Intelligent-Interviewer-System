@@ -8,11 +8,13 @@ class HomeSection extends StatelessWidget {
     required this.child,
     this.onMore,
     this.subtitle,
+    this.wrapInCard = true,
   });
   final String title;
   final String? subtitle;
   final Widget child;
   final VoidCallback? onMore;
+  final bool wrapInCard;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -44,9 +46,12 @@ class HomeSection extends StatelessWidget {
         ),
       ],
       const SizedBox(height: 12),
-      Card(
-        child: Padding(padding: const EdgeInsets.all(16), child: child),
-      ),
+      if (wrapInCard)
+        Card(
+          child: Padding(padding: const EdgeInsets.all(16), child: child),
+        )
+      else
+        child,
     ],
   );
 }

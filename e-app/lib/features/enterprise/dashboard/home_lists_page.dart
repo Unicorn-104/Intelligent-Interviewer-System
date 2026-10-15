@@ -49,10 +49,12 @@ class HomeApplicationsPage extends StatelessWidget {
     required this.source,
     required this.onOpen,
     this.onJobs,
+    this.companyName,
   });
   final HomeDataSource source;
   final Future<void> Function(HomeApplication) onOpen;
   final VoidCallback? onJobs;
+  final String? companyName;
   @override
   Widget build(BuildContext context) => _HomePagedList<HomeApplication>(
     title: '岗位投递概览',
@@ -60,10 +62,12 @@ class HomeApplicationsPage extends StatelessWidget {
     empty: '暂无岗位投递数据',
     onAll: onJobs,
     allLabel: '全部岗位',
+    wrapItemsInCard: false,
     load: (page) => source.loadApplications(page: page),
     identity: (item) => '${item.positionId ?? item.title}',
     itemBuilder: (item, reload) => HomeApplicationRow(
       application: item,
+      companyName: companyName,
       onOpen: () async {
         await onOpen(item);
         reload();
@@ -82,6 +86,7 @@ class _HomePagedList<T> extends StatefulWidget {
     required this.itemBuilder,
     this.onAll,
     required this.allLabel,
+    this.wrapItemsInCard = true,
   });
   final String title;
   final String description;
@@ -91,6 +96,7 @@ class _HomePagedList<T> extends StatefulWidget {
   final Widget Function(T, VoidCallback) itemBuilder;
   final VoidCallback? onAll;
   final String allLabel;
+  final bool wrapItemsInCard;
   @override
   State<_HomePagedList<T>> createState() => _HomePagedListState<T>();
 }
@@ -183,14 +189,19 @@ class _HomePagedListState<T> extends State<_HomePagedList<T>> {
               )
             else ...[
               for (final item in _items) ...[
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: widget.itemBuilder(item, () {
-                      if (mounted) unawaited(_load(reset: true));
-                    }),
-                  ),
-                ),
+                if (widget.wrapItemsInCard)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: widget.itemBuilder(item, () {
+                        if (mounted) unawaited(_load(reset: true));
+                      }),
+                    ),
+                  )
+                else
+                  widget.itemBuilder(item, () {
+                    if (mounted) unawaited(_load(reset: true));
+                  }),
                 const SizedBox(height: 12),
               ],
               if (_loading)
