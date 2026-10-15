@@ -193,41 +193,30 @@ class JobListCard extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 16),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton(
+                        key: ValueKey('job-status-$id'),
+                        onPressed:
+                            changing ||
+                                id == null ||
+                                !const [0, 1, 2].contains(status)
+                            ? null
+                            : onToggle,
+                        child: Text(
+                          changing
+                              ? '处理中…'
+                              : status == 1
+                              ? '下线'
+                              : '上线',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     const Divider(
                       height: 1,
                       thickness: 1,
                       color: AppColors.hairline,
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            '累计投递',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        OutlinedButton(
-                          key: ValueKey('job-status-$id'),
-                          onPressed:
-                              changing ||
-                                  id == null ||
-                                  !const [0, 1, 2].contains(status)
-                              ? null
-                              : onToggle,
-                          child: Text(
-                            changing
-                                ? '处理中…'
-                                : status == 1
-                                ? '下线'
-                                : '上线',
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ),

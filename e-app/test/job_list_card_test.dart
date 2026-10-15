@@ -55,6 +55,11 @@ void main() {
       onToggle: () => toggled++,
     );
     expect(find.text('查看详情'), findsNothing);
+    expect(find.text('累计投递'), findsNothing);
+    expect(
+      tester.getRect(find.byKey(const ValueKey('job-status-1'))).bottom,
+      lessThan(tester.getRect(find.byType(Divider)).top),
+    );
     expect(find.text('12.5-20K·月薪'), findsOneWidget);
     expect(find.text('99+'), findsOneWidget);
     final badge = find.byKey(const ValueKey('job-applicants-1'));
