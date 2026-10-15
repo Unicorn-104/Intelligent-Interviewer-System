@@ -123,6 +123,18 @@ export const constantRoutes = [
         meta: { title: '候选人流程' }
       },
       {
+        path: 'exam',
+        component: () => import('@/views/enterprise/exam/index.vue'),
+        name: 'EnterpriseExam',
+        meta: { title: '在线笔试' }
+      },
+      {
+        path: 'exam/proctor',
+        component: () => import('@/views/enterprise/exam/proctor.vue'),
+        name: 'EnterpriseExamProctor',
+        meta: { title: '双机位监考' }
+      },
+      {
         path: 'interviews',
         component: () => import('@/views/enterprise/interviews/index.vue'),
         name: 'EnterpriseInterviews',

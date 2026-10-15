@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.ExamMonitorMapper">
+
+    <!-- ============ 在线笔试：双机位监考 ============ -->
+
+    <select id="selectRecordOwned" resultType="java.util.LinkedHashMap">
+        select r.erc_id as recordId, r.erc_schedule_id as scheduleId,
+               r.erc_candidate_id as talId, r.erc_status as status,
+               r.erc_sub_camera_token as subToken,
+               date_format(r.erc_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
+               s.esd_paper_id as paperId, s.esd_position_id as positionId,
+               s.esd_end_at as endAtRaw, s.esd_force_dual_camera as forceDualCamera,
+               p.epa_name as paperName, p.epa_duration_min as durationMin,
+               pos.pos_title as positionTitle, pos.pos_company_id as companyId,
+               u.nick_name as candidateName
+        from t_exam_record r
+        join t_exam_schedule s on s.esd_id = r.erc_schedule_id
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        join t_tal t on t.tal_id = r.erc_candidate_id and t.tal_user_id = #{userId}
+        join sys_user u on u.user_id = t.tal_user_id
+        where r.erc_id = #{recordId}
+    </select>
+
+    <select id="selectRecordForMonitor" resultType="java.util.LinkedHashMap">
+        select r.erc_id as recordId, r.erc_schedule_id as scheduleId,
+               r.erc_candidate_id as talId, r.erc_status as status,
+               r.erc_sub_camera_token as subToken,
+               date_format(r.erc_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
+               p.epa_name as paperName, p.epa_duration_min as durationMin,
+               pos.pos_title as positionTitle, pos.pos_company_id as companyId,
+               u.nick_name as candidateName
+        from t_exam_record r
+        join t_exam_schedule s on s.esd_id = r.erc_schedule_id
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        join t_tal t on t.tal_id = r.erc_candidate_id
+        join sys_user u on u.user_id = t.tal_user_id
+        where r.erc_id = #{recordId}
+    </select>
+
+    <update id="updateSubCamera">
+        update t_exam_record
+        set erc_sub_camera_token = #{token}, erc_sub_camera_url = #{url}, erc_updated_at = now()
+        where erc_id = #{recordId}
+    </update>
+
+    <insert id="insertMonitorIfAbsent">
+        insert into t_exam_monitor (emt_record_id)
+        select #{recordId} from dual
+        where not exists (select 1 from t_exam_monitor where emt_record_id = #{recordId})
+    </insert>
+
+    <select id="selectMonitor" resultType="java.util.LinkedHashMap">
+        select emt_sub_status as subStatus,
+               date_format(emt_sub_join_at, '%Y-%m-%d %H:%i:%s') as subJoinAt,
+               date_format(emt_last_heartbeat_at, '%Y-%m-%d %H:%i:%s') as lastHeartbeatAt
+        from t_exam_monitor
+        where emt_record_id = #{recordId}
+        limit 1
+    </select>
+
+    <update id="updateSubJoin">
+        update t_exam_monitor
+        set emt_sub_status = 1, emt_sub_join_at = coalesce(emt_sub_join_at, now()),
+            emt_last_heartbeat_at = now()
+        where emt_record_id = #{recordId}
+    </update>
+
+    <update id="updateSubHeartbeat">
+        update t_exam_monitor
+        set emt_sub_status = 1, emt_last_heartbeat_at = now()
+        where emt_record_id = #{recordId}
+    </update>
+
+    <update id="updateSubLeave">
+        update t_exam_monitor
+        set emt_sub_status = 2, emt_last_heartbeat_at = now()
+        where emt_record_id = #{recordId}
+    </update>
+
+    <select id="selectOngoingRecords" resultType="java.util.LinkedHashMap">
+        select r.erc_id as recordId, r.erc_schedule_id as scheduleId,
+               u.nick_name as candidateName, pos.pos_title as positionTitle,
+               p.epa_name as paperName,
+               date_format(r.erc_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
+               date_format(least(date_add(r.erc_start_at, interval p.epa_duration_min minute),
+                   s.esd_end_at), '%Y-%m-%d %H:%i:%s') as deadlineAt,
+               s.esd_force_dual_camera as forceDualCamera,
+               m.emt_sub_status as subStatus,
+               date_format(m.emt_last_heartbeat_at, '%Y-%m-%d %H:%i:%s') as subHeartbeatAt
+        from t_exam_record r
+        join t_exam_schedule s on s.esd_id = r.erc_schedule_id
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        join t_tal t on t.tal_id = r.erc_candidate_id
+        join sys_user u on u.user_id = t.tal_user_id
+        left join t_exam_monitor m on m.emt_record_id = r.erc_id
+        where r.erc_status = 1 and pos.pos_company_id = #{companyId}
+        order by r.erc_start_at desc
+    </select>
+
+</mapper>

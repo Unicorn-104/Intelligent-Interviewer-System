@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.ExamGradeMapper">
+
+    <!-- ============ 判分上下文 ============ -->
+
+    <sql id="gradeContext">
+        select r.erc_id as recordId, r.erc_status as status, r.erc_pass_status as passStatus,
+               r.erc_total_score as totalScore, r.erc_candidate_id as talId,
+               t.tal_user_id as candidateUserId,
+               s.esd_id as scheduleId, s.esd_position_id as positionId,
+               s.esd_paper_id as paperId, s.esd_pass_threshold as passThreshold,
+               s.esd_auto_flow_json as autoFlow,
+               p.epa_name as paperName, p.epa_total_score as paperTotalScore,
+               pos.pos_title as positionTitle, pos.pos_company_id as companyId,
+               date_format(r.erc_submit_at, '%Y-%m-%d %H:%i:%s') as submitAt,
+               res.ers_objective_score as objectiveScore,
+               res.ers_subjective_score as subjectiveScore, res.ers_comment as comment
+        from t_exam_record r
+        join t_exam_schedule s on s.esd_id = r.erc_schedule_id
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        join t_tal t on t.tal_id = r.erc_candidate_id
+        left join t_exam_result res on res.ers_record_id = r.erc_id
+        where r.erc_id = #{recordId}
+    </sql>
+
+    <select id="selectRecordForGrade" resultType="java.util.LinkedHashMap">
+        <include refid="gradeContext"/>
+    </select>
+
+    <select id="selectRecordForCompany" resultType="java.util.LinkedHashMap">
+        <include refid="gradeContext"/>
+          and pos.pos_company_id = #{companyId}
+    </select>
+
+    <select id="selectGradingAnswers" resultType="java.util.LinkedHashMap">
+        select a.ean_id as eanId, a.ean_question_id as questionId, q.eqs_type as type,
+               a.ean_content as content, q.eqs_answer as stdAnswer,
+               a.ean_max_score as maxScore, a.ean_score as score
+        from t_exam_answer a
+        join t_exam_question q on q.eqs_id = a.ean_question_id
+        where a.ean_record_id = #{recordId}
+        order by a.ean_id
+    </select>
+
+    <update id="updateAnswerGrade">
+        update t_exam_answer
+        set ean_is_correct = #{isCorrect}, ean_score = #{score}, ean_updated_at = now()
+        where ean_id = #{eanId}
+    </update>
+
+    <update id="updateAnswerScore">
+        update t_exam_answer
+        set ean_score = #{score}, ean_updated_at = now()
+        where ean_id = #{eanId}
+    </update>
+
+    <update id="updateRecordScored">
+        update t_exam_record
+        set erc_status = #{status}, erc_total_score = #{totalScore}, erc_pass_status = #{passStatus},
+            erc_updated_at = now()
+        where erc_id = #{recordId}
+    </update>
+
+    <insert id="upsertResult">
+        insert into t_exam_result
+            (ers_record_id, ers_objective_score, ers_subjective_score,
+             ers_total_score, ers_pass_status, ers_comment)
+        values
+            (#{recordId}, #{objectiveScore}, #{subjectiveScore},
+             #{totalScore}, #{passStatus}, #{comment})
+        on duplicate key update
+            ers_objective_score = values(ers_objective_score),
+            ers_subjective_score = values(ers_subjective_score),
+            ers_total_score = values(ers_total_score),
+            ers_pass_status = values(ers_pass_status),
+            ers_comment = values(ers_comment),
+            ers_updated_at = now()
+    </insert>
+
+    <update id="updateTalStatus">
+        update t_tal
+        set tal_status = #{status}, tal_exam_record_id = #{recordId}, tal_updated_at = now()
+        where tal_id = #{talId}
+    </update>
+
+    <!-- ============ 成绩报告 ============ -->
+
+    <select id="selectResultList" resultType="java.util.LinkedHashMap">
+        select r.erc_id as recordId, ifnull(u.real_name, u.nick_name) as candidateName,
+               pos.pos_title as positionTitle, p.epa_name as paperName,
+               s.esd_pass_threshold as passThreshold, p.epa_total_score as paperTotalScore,
+               date_format(r.erc_submit_at, '%Y-%m-%d %H:%i') as submitAt,
+               r.erc_status as status, r.erc_pass_status as passStatus,
+               r.erc_total_score as totalScore,
+               res.ers_objective_score as objectiveScore,
+               res.ers_subjective_score as subjectiveScore,
+               res.ers_comment as comment
+        from t_exam_record r
+        join t_exam_schedule s on s.esd_id = r.erc_schedule_id
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        join t_tal t on t.tal_id = r.erc_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_exam_result res on res.ers_record_id = r.erc_id
+        where pos.pos_company_id = #{companyId}
+          and r.erc_status in (2, 4)
+        <if test="positionId != null">
+            and s.esd_position_id = #{positionId}
+        </if>
+        <if test="passStatus != null">
+            and r.erc_pass_status = #{passStatus}
+        </if>
+        order by r.erc_submit_at desc, r.erc_id desc
+    </select>
+
+    <select id="selectResultAnswers" resultType="java.util.LinkedHashMap">
+        select a.ean_id as eanId, q.eqs_id as questionId, q.eqs_type as type,
+               q.eqs_content as content, q.eqs_options_json as optionsJson,
+               q.eqs_answer as stdAnswer, a.ean_content as answer,
+               a.ean_max_score as maxScore, a.ean_is_correct as isCorrect, a.ean_score as score
+        from t_exam_answer a
+        join t_exam_question q on q.eqs_id = a.ean_question_id
+        where a.ean_record_id = #{recordId}
+        order by a.ean_id
+    </select>
+
+</mapper>
