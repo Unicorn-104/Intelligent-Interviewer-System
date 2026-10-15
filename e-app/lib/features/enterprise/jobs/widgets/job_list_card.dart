@@ -1,0 +1,265 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import '../../../../theme/app_theme.dart';
+
+class JobListCard extends StatelessWidget {
+  const JobListCard({
+    super.key,
+    required this.job,
+    required this.onOpen,
+    required this.onApplicants,
+    required this.onToggle,
+    this.changing = false,
+  });
+
+  final Map<String, dynamic> job;
+  final VoidCallback onOpen;
+  final VoidCallback onApplicants;
+  final VoidCallback onToggle;
+  final bool changing;
+
+  int? get id => int.tryParse('${job['posId']}');
+  int? get status => int.tryParse('${job['status']}');
+  String text(Object? value, String fallback) =>
+      value?.toString().trim().isNotEmpty == true
+      ? value.toString().trim()
+      : fallback;
+  int? get applicants {
+    final value = int.tryParse('${job['applicantCount']}');
+    return value != null && value >= 0 ? value : null;
+  }
+
+  String get salary {
+    num? amount(Object? raw) {
+      final value = num.tryParse('$raw');
+      return value != null && value.isFinite && value > 0 ? value : null;
+    }
+
+    String k(num value) =>
+        (value / 1000).toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
+    final low = amount(job['salaryMin']);
+    final high = amount(job['salaryMax']);
+    if (low == null && high == null) return '面议';
+    if (high == null) return '${k(low!)}K起·月薪';
+    if (low == null) return '${k(high)}K以内·月薪';
+    return '${k(low)}-${k(high)}K·月薪';
+  }
+
+  List<String> get tags {
+    const education = {1: '中专', 2: '大专', 3: '本科', 4: '硕士', 5: '博士'};
+    Object? jd = job['jdJson'];
+    if (jd is String) {
+      try {
+        jd = jsonDecode(jd);
+      } on FormatException {
+        jd = null;
+      }
+    }
+    final skills = <String>{};
+    if (jd is Map && jd['skills'] is List) {
+      for (final item in jd['skills'] as List) {
+        if (item is String && item.trim().isNotEmpty) {
+          skills.add(item.trim());
+        }
+      }
+    }
+    return [
+      ?education[int.tryParse('${job['education']}')],
+      if (text(job['experience'], '').isNotEmpty) text(job['experience'], ''),
+      ...skills.take(2),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, background) = switch (status) {
+      1 => ('在招', AppColors.success, AppColors.interactiveSoft),
+      0 => ('已下线', AppColors.textMuted, AppColors.background),
+      2 => ('暂停', AppColors.warning, AppColors.warningSoft),
+      _ => ('状态未知', AppColors.textMuted, AppColors.background),
+    };
+    final count = applicants;
+    return Card(
+      key: ValueKey('job-list-card-$id'),
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: AppColors.canvas,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: AppColors.hairline),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        key: ValueKey('job-open-$id'),
+        onTap: id == null ? null : onOpen,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      text(job['title'], '未命名岗位'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Semantics(
+                    label: '累计投递 ${count ?? '—'} 人，查看求职者',
+                    button: true,
+                    excludeSemantics: true,
+                    child: InkWell(
+                      key: ValueKey('job-applicants-$id'),
+                      onTap: id == null ? null : onApplicants,
+                      borderRadius: BorderRadius.circular(4),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minWidth: 44,
+                          minHeight: 44,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.error,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              count == null
+                                  ? '—'
+                                  : count > 99
+                                  ? '99+'
+                                  : '$count',
+                              style: const TextStyle(
+                                color: AppColors.error,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      salary,
+                      style: const TextStyle(
+                        color: AppColors.accentOrange,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: background,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      label,
+                      style: TextStyle(color: color, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${text(job['dept'], '部门未填写')} · ${text(job['city'], '城市未填写')}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              if (tags.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final tag in tags)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.interactiveSoft,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          tag,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.interactive,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 16),
+              const Divider(height: 1, thickness: 1, color: AppColors.hairline),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '累计投递',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton(
+                    key: ValueKey('job-status-$id'),
+                    onPressed:
+                        changing ||
+                            id == null ||
+                            !const [0, 1, 2].contains(status)
+                        ? null
+                        : onToggle,
+                    child: Text(
+                      changing
+                          ? '处理中…'
+                          : status == 1
+                          ? '下线'
+                          : '上线',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
