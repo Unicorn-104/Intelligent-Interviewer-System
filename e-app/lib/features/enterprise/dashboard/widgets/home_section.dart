@@ -7,8 +7,10 @@ class HomeSection extends StatelessWidget {
     required this.title,
     required this.child,
     this.onMore,
+    this.subtitle,
   });
   final String title;
+  final String? subtitle;
   final Widget child;
   final VoidCallback? onMore;
 
@@ -34,6 +36,13 @@ class HomeSection extends StatelessWidget {
             ),
         ],
       ),
+      if (subtitle != null) ...[
+        const SizedBox(height: 4),
+        Text(
+          subtitle!,
+          style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+        ),
+      ],
       const SizedBox(height: 12),
       Card(
         child: Padding(padding: const EdgeInsets.all(16), child: child),
@@ -49,7 +58,7 @@ class HomeSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: '更多信息正在接入',
+    label: '正在加载…',
     child: ExcludeSemantics(
       child: Column(
         children: [
@@ -78,7 +87,7 @@ class HomeSkeleton extends StatelessWidget {
           const SizedBox(height: 16),
           const Align(
             alignment: Alignment.centerLeft,
-            child: Text('更多信息正在接入', style: TextStyle(color: AppColors.muted)),
+            child: Text('正在加载…', style: TextStyle(color: AppColors.muted)),
           ),
         ],
       ),

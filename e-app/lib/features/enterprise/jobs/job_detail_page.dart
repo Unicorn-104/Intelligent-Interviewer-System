@@ -18,9 +18,11 @@ import '../talent/talent_detail_page.dart';
 /// 数据来源：真实接口（lib/api/jd_api.dart，P8 接入）；
 /// 加载中（骨架屏）/ 失败（可重试）/ 未生成（可解析）三态处理。
 class JobDetailPage extends StatefulWidget {
-  const JobDetailPage({super.key, required this.job});
+  const JobDetailPage({super.key, required this.job, this.initialTab = 0})
+    : assert(initialTab >= 0 && initialTab < 3);
 
   final Map<String, dynamic> job;
+  final int initialTab;
 
   @override
   State<JobDetailPage> createState() => _JobDetailPageState();
@@ -52,7 +54,11 @@ class _JobDetailPageState extends State<JobDetailPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(
+      length: 3,
+      initialIndex: widget.initialTab,
+      vsync: this,
+    );
     _loadProfile();
     _loadCandidates();
     _loadInterviews();

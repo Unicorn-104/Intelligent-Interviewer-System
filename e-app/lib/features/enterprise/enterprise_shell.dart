@@ -322,6 +322,12 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
     );
   }
 
+  Future<void> _openHomeNotices() async {
+    await _navigatorKeys[0].currentState?.push<void>(
+      MaterialPageRoute(builder: (_) => const NoticePage()),
+    );
+  }
+
   Widget _root(BuildContext context, int index) {
     if (widget.tabBuilders case final builders?) {
       return builders[index](context);
@@ -329,6 +335,7 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
     return switch (index) {
       0 => HomePage(
         onNotifications: _openNotifications,
+        onOpenNotices: _openHomeNotices,
         onFeatures: _openMore,
         onInterviews: () => _openFeature(_interviews),
         onJobs: () => _selectTab(1),
