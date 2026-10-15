@@ -3,6 +3,7 @@ package com.ruoyi.web.controller.ad;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -47,10 +48,10 @@ public class AdController extends BaseController
      * 获取广告管理详细信息
      */
     @PreAuthorize("@ss.hasPermi('ad:advert:query')")
-    @GetMapping(value = "/{adId}")
-    public AjaxResult getInfo(@PathVariable("adId") Long adId)
+    @GetMapping(value = "/{advertId}")
+    public AjaxResult getInfo(@PathVariable("advertId") Long advertId)
     {
-        return success(adService.selectAdByAdId(adId));
+        return success(adService.selectAdByAdvertId(advertId));
     }
 
     /**
@@ -59,7 +60,7 @@ public class AdController extends BaseController
     @PreAuthorize("@ss.hasPermi('ad:advert:add')")
     @Log(title = "广告管理", businessType = BusinessType.INSERT)
     @PostMapping
-    public AjaxResult add(@RequestBody Ad ad)
+    public AjaxResult add(@Validated @RequestBody Ad ad)
     {
         return toAjax(adService.insertAd(ad));
     }
@@ -70,7 +71,7 @@ public class AdController extends BaseController
     @PreAuthorize("@ss.hasPermi('ad:advert:edit')")
     @Log(title = "广告管理", businessType = BusinessType.UPDATE)
     @PutMapping
-    public AjaxResult edit(@RequestBody Ad ad)
+    public AjaxResult edit(@Validated @RequestBody Ad ad)
     {
         return toAjax(adService.updateAd(ad));
     }
@@ -80,9 +81,31 @@ public class AdController extends BaseController
      */
     @PreAuthorize("@ss.hasPermi('ad:advert:remove')")
     @Log(title = "广告管理", businessType = BusinessType.DELETE)
-    @DeleteMapping("/{adIds}")
-    public AjaxResult remove(@PathVariable Long[] adIds)
+    @DeleteMapping("/{advertIds}")
+    public AjaxResult remove(@PathVariable Long[] advertIds)
     {
-        return toAjax(adService.deleteAdByAdIds(adIds));
+        return toAjax(adService.deleteAdByAdvertIds(advertIds));
+    }
+
+    /**
+     * 修改广告状态
+     */
+    @PreAuthorize("@ss.hasPermi('ad:advert:edit')")
+    @Log(title = "广告管理", businessType = BusinessType.UPDATE)
+    @PutMapping("/changeStatus")
+    public AjaxResult changeStatus(@RequestBody Ad ad)
+    {
+        return toAjax(adService.updateAdStatus(ad));
+    }
+
+    /**
+     * 获取广告统计数据
+     */
+    @PreAuthorize("@ss.hasPermi('ad:advert:query')")
+    @GetMapping("/stats/{advertId}")
+    public AjaxResult stats(@PathVariable("advertId") Long advertId)
+    {
+        Ad ad = adService.selectAdByAdvertId(advertId);
+        return success(ad);
     }
 }
