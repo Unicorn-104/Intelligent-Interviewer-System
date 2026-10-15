@@ -87,9 +87,7 @@ class HomeDataSource {
     DateTime? from,
   }) async {
     final boundary = from ?? _clock();
-    final formatted =
-        '${boundary.year}-${boundary.month.toString().padLeft(2, '0')}-${boundary.day.toString().padLeft(2, '0')} '
-        '${boundary.hour.toString().padLeft(2, '0')}:${boundary.minute.toString().padLeft(2, '0')}:${boundary.second.toString().padLeft(2, '0')}';
+    final formatted = HomeInterview.formatServerTime(boundary);
     final items = <String, HomeInterview>{};
     var current = page;
     int? next;

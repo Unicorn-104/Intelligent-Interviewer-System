@@ -37,7 +37,7 @@ void main() {
 
   test('面试传递 from，下界/取消/完成过滤后跨页补足预览，时间升序', () async {
     final pages = <int>[];
-    final boundary = DateTime(2030, 1, 2, 9);
+    final boundary = DateTime.utc(2030, 1, 2, 1);
     final source = HomeDataSource(
       clock: () => boundary,
       interviewsLoader:
@@ -90,6 +90,92 @@ void main() {
     expect(pages, [1, 2]);
     expect(result.items.map((row) => row.id), ['31', '30']);
     expect(result.nextPage, isNull);
+  });
+
+  for (final sample in <(DateTime, String)>[
+    (DateTime.utc(2026, 10, 15, 14, 32, 26), '2026-10-15 22:32:26'),
+    (DateTime.utc(2026, 10, 15, 20, 5, 9), '2026-10-16 04:05:09'),
+    (DateTime.utc(2026, 12, 31, 20), '2027-01-01 04:00:00'),
+    (DateTime.parse('2026-10-15T22:32:26+08:00'), '2026-10-15 22:32:26'),
+  ]) {
+    test('已知 UTC 时刻与本地表示发送相同 UTC+8 下界 ${sample.$2}', () async {
+      final sent = <String?>[];
+      final source = HomeDataSource(
+        clock: () => sample.$1,
+        interviewsLoader:
+            ({
+              int? status,
+              String? from,
+              String? to,
+              required int pageNum,
+              required int pageSize,
+            }) async {
+              sent.add(from);
+              return [];
+            },
+      );
+      await source.loadInterviews();
+      await source.loadInterviews(from: sample.$1.toLocal());
+      expect(sent, [sample.$2, sample.$2]);
+    });
+  }
+
+  test('UTC+8 响应按真实时刻筛选并排序，过去八小时内记录不会误显示', () async {
+    final source = HomeDataSource(
+      clock: () => DateTime.utc(2026, 10, 15, 14, 32, 26),
+      interviewsLoader:
+          ({
+            int? status,
+            String? from,
+            String? to,
+            required int pageNum,
+            required int pageSize,
+          }) async {
+            expect(from, '2026-10-15 22:32:26');
+            return [
+              {
+                'appointmentId': 1,
+                'status': 1,
+                'startTime': '2026-10-15 18:00',
+              },
+              {
+                'appointmentId': 2,
+                'status': 0,
+                'startTime': '2026-10-16 09:00',
+              },
+              {
+                'appointmentId': 3,
+                'status': 1,
+                'startTime': '2026-10-15 23:00',
+              },
+            ];
+          },
+    );
+    final result = await source.loadInterviews();
+    expect(result.items.map((row) => row.id), ['3', '2']);
+    expect(result.items.first.startTime, DateTime.utc(2026, 10, 15, 15));
+    expect(result.items.first.timeLabel, '10-15 23:00');
+    expect(result.items.last.timeLabel, '10-16 09:00');
+  });
+
+  test('带时区与不带时区的同一预约解析结果一致', () {
+    final boundary = DateTime.utc(2026, 10, 15, 14);
+    final results =
+        [
+          '2026-10-15 23:00',
+          '2026-10-15T23:00:00+08:00',
+          '2026-10-15T15:00:00Z',
+        ].map(
+          (time) => HomeInterview.upcoming({
+            'appointmentId': 1,
+            'status': 1,
+            'startTime': time,
+          }, boundary)!,
+        );
+    for (final result in results) {
+      expect(result.startTime, DateTime.utc(2026, 10, 15, 15));
+      expect(result.timeLabel, '10-15 23:00');
+    }
   });
 
   test('重复分页响应有界失败，不把第一页反复当成新数据', () async {

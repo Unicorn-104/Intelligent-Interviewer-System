@@ -59,15 +59,28 @@ class HomeInterview {
   String get position => homeText(raw['positionTitle'], '岗位信息未提供');
   String get id =>
       '${raw['appointmentId'] ?? '${startTime.toIso8601String()}-$candidate-$position'}';
-  String get timeLabel =>
-      '${startTime.month.toString().padLeft(2, '0')}-${startTime.day.toString().padLeft(2, '0')} '
-      '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
+  // The current backend exchanges timezone-less UTC+8 database timestamps.
+  static DateTime _utc8WallTime(DateTime instant) =>
+      instant.toUtc().add(const Duration(hours: 8));
+
+  static String formatServerTime(DateTime instant) {
+    final time = _utc8WallTime(instant);
+    return '${time.year}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
+  }
+
+  String get timeLabel {
+    final time = _utc8WallTime(startTime);
+    return '${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
   String get statusLabel => status == 0 ? '待确认' : '已确认';
 
   static HomeInterview? upcoming(Map<String, dynamic> row, DateTime from) {
-    final date = DateTime.tryParse(
-      '${row['startTime']}'.replaceFirst(' ', 'T'),
-    );
+    final text = homeText(row['startTime'], '').replaceFirst(' ', 'T');
+    final hasOffset = RegExp(r'(?:[zZ]|[+-]\d{2}:?\d{2})$').hasMatch(text);
+    final date = DateTime.tryParse(hasOffset ? text : '$text+08:00');
     final status = int.tryParse('${row['status']}');
     if (date == null || date.isBefore(from) || (status != 0 && status != 1)) {
       return null;
