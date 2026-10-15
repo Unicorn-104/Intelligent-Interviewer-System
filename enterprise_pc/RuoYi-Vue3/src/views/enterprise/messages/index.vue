@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, nextTick, onMounted } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Video, Play, Zap, Smile, Paperclip, Send, Settings2, FileText, Bell, Copy } from '@/views/enterprise/components/icons'
@@ -19,6 +19,7 @@ const inputEl = ref()
 const fileInput = ref()
 const emojiOpen = ref(false)
 const loading = ref(false)
+let refreshTimer
 
 const conversations = ref([])
 const messages = ref([])
@@ -315,6 +316,21 @@ async function markRead() {
   refreshUnread()
 }
 
+async function refreshMessages() {
+  try {
+    await loadConversations()
+    if (activeId.value != null && activeId.value !== SYSTEM_NOTICE_ID) {
+      await loadMessages(activeId.value)
+      await readSession(activeId.value)
+    } else {
+      await loadNotices()
+    }
+    refreshUnread()
+  } catch {
+    // Background refresh must not interrupt the current conversation.
+  }
+}
+
 // 跳转录制回放页，按当前会话对方（候选人）查看其全部面试录制
 function openRecordings() {
   const peer = peerUserId.value
@@ -470,6 +486,11 @@ onMounted(async () => {
     openConv(noticeConv.value)
   }
   refreshUnread()
+  refreshTimer = window.setInterval(refreshMessages, 5000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) window.clearInterval(refreshTimer)
 })
 </script>
 

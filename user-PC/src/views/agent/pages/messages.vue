@@ -189,7 +189,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
 import { listImMessages, listImSessions, markImSessionRead, sendImMessage } from '@/api/system/im'
@@ -213,6 +213,7 @@ const messagesContainer = ref(null)
 const toastText = ref('')
 const toastVisible = ref(false)
 let toastTimer
+let refreshTimer
 
 const selectedSession = computed(() => sessions.value.find(item => item.sessionId === selectedSessionId.value) || null)
 const filteredSessions = computed(() => {
@@ -393,9 +394,34 @@ async function markAllNoticesRead() {
   }
 }
 
+async function refreshMessages() {
+  try {
+    const response = await listImSessions()
+    sessions.value = Array.isArray(response.data) ? response.data : []
+    if (activeView.value === 'chat' && selectedSessionId.value) {
+      const current = sessions.value.find(item => item.sessionId === selectedSessionId.value)
+      if (current) current.unread = 0
+      await Promise.all([
+        loadMessages(selectedSessionId.value),
+        markImSessionRead(selectedSessionId.value)
+      ])
+    } else {
+      await loadNotices()
+    }
+  } catch {
+    // Background refresh must not interrupt the current conversation.
+  }
+}
+
 onMounted(() => {
   loadNotices()
   loadSessions()
+  refreshTimer = window.setInterval(refreshMessages, 5000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) window.clearInterval(refreshTimer)
+  clearTimeout(toastTimer)
 })
 </script>
 
