@@ -1,6 +1,7 @@
 package com.ruoyi.system.domain;
 
 import java.math.BigDecimal;
+import java.util.List;
 import com.ruoyi.common.core.domain.BaseEntity;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -56,7 +57,7 @@ public class Ad extends BaseEntity
     private Integer totalLimit;
 
     /** 目标套餐 */
-    private String packageTarget;
+    private List<String> packageTarget;
 
     /** 曝光次数 */
     private Long exposure;
@@ -109,8 +110,8 @@ public class Ad extends BaseEntity
     public Integer getTotalLimit() { return totalLimit; }
     public void setTotalLimit(Integer totalLimit) { this.totalLimit = totalLimit; }
 
-    public String getPackageTarget() { return packageTarget; }
-    public void setPackageTarget(String packageTarget) { this.packageTarget = packageTarget; }
+    public List<String> getPackageTarget() { return packageTarget; }
+    public void setPackageTarget(List<String> packageTarget) { this.packageTarget = packageTarget; }
 
     public Long getExposure() { return exposure; }
     public void setExposure(Long exposure) { this.exposure = exposure; }
