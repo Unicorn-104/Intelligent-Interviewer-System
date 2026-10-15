@@ -18,6 +18,14 @@ export function getSessionContext(sessionId) {
   })
 }
 
+// 换取 LiveKit 入会令牌（返回 { url, token, room, identity }，前端凭此直连 LiveKit Server）
+export function getLiveKitToken(sessionId) {
+  return request({
+    url: '/system/conference/livekit-token/' + sessionId,
+    method: 'get'
+  })
+}
+
 // 会前环境检测结果上报（摄像头/麦克风/网络/扬声器 + 弱网风险标记）
 export function reportEnvironmentCheck(sessionId, data) {
   return request({
@@ -164,36 +172,52 @@ export function getStorageUsage() {
 }
 
 // 回放详情（含时间轴 / 章节打点）
-export function getPlayback(sessionId) {
+export function getPlayback(recordingId) {
   return request({
-    url: '/system/conference/recordings/' + sessionId,
+    url: '/system/conference/recordings/' + recordingId,
     method: 'get'
   })
 }
 
 // 更新录制访问授权
-export function updateRecordingAccess(sessionId, data) {
+export function updateRecordingAccess(recordingId, data) {
   return request({
-    url: '/system/conference/recordings/' + sessionId + '/access',
+    url: '/system/conference/recordings/' + recordingId + '/access',
     method: 'post',
     data: data
   })
 }
 
 // 发送下载验证码
-export function sendDownloadCode(sessionId) {
+export function sendDownloadCode(recordingId) {
   return request({
-    url: '/system/conference/recordings/' + sessionId + '/download-code',
+    url: '/system/conference/recordings/' + recordingId + '/download-code',
     method: 'post'
   })
 }
 
 // 校验下载验证码并返回录制地址
-export function verifyDownloadCode(sessionId, code) {
+export function verifyDownloadCode(recordingId, code) {
   return request({
-    url: '/system/conference/recordings/' + sessionId + '/download',
+    url: '/system/conference/recordings/' + recordingId + '/download',
     method: 'post',
     data: { code: code }
+  })
+}
+
+// 开始录制（LiveKit Egress 服务端合成录制，仅主面试官可操作）
+export function startRecording(sessionId) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/recording/start',
+    method: 'post'
+  })
+}
+
+// 停止录制
+export function stopRecording(sessionId) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/recording/stop',
+    method: 'post'
   })
 }
 
@@ -211,17 +235,6 @@ export function saveStoragePolicy(data) {
     url: '/system/conference/storage-policy',
     method: 'put',
     data: data
-  })
-}
-
-// 上传录制分片（FormData 二进制，关闭防重复提交、放宽超时以容纳大分片）
-export function uploadRecordingChunk(sessionId, formData) {
-  return request({
-    url: '/system/conference/recordings/' + sessionId + '/chunk',
-    method: 'post',
-    data: formData,
-    headers: { repeatSubmit: false },
-    timeout: 60000
   })
 }
 
@@ -320,29 +333,4 @@ export function reportParticipantState(sessionId, data) {
     method: 'put',
     data: data
   })
-}
-
-// ============================ WebRTC 信令 ============================
-
-// 签发一次性信令票据（登录后换取）
-export function signalTicket(sessionId) {
-  return request({
-    url: '/system/conference/session/' + sessionId + '/signal/ticket',
-    method: 'post'
-  })
-}
-
-// 向同场次对端转发信令（offer / answer / ice / ready / bye）
-export function signalSend(ticket, data) {
-  return request({
-    url: '/system/conference/signal/send',
-    method: 'post',
-    params: { ticket: ticket },
-    data: data
-  })
-}
-
-// SSE 信令通道地址（EventSource 直连，匿名 + 票据自校验）
-export function signalStreamUrl(ticket) {
-  return import.meta.env.VITE_APP_BASE_API + '/system/conference/signal/stream?ticket=' + encodeURIComponent(ticket)
 }

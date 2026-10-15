@@ -78,11 +78,11 @@ const room = ref(null)
 const starting = ref(false)
 const toast = ref('')
 const interview = ref({
-  positionTitle: '高级前端工程师',
+  positionTitle: '—',
   candidateName: '候选人',
   interviewerName: '面试官',
-  time: '待安排',
-  duration: '45 分钟'
+  time: '—',
+  duration: '—'
 })
 let pollId = null
 let toastTimer = null
@@ -189,7 +189,7 @@ onMounted(async () => {
       if (d.durationMinutes) interview.value.duration = `${d.durationMinutes} 分钟`
     }
   } catch (error) {
-    // 无后端时保留本地演示
+    // 后端未就绪时保持占位
   }
   await poll()
   pollId = setInterval(poll, 3000)

@@ -37,6 +37,16 @@ public interface ConferenceMapper
     public Map<String, Object> selectSessionByRoomToken(@Param("roomToken") String roomToken);
 
     /**
+     * 查询岗位技能标签（用于面试详情展示岗位要求）
+     */
+    public List<Map<String, Object>> selectPositionSkills(@Param("positionId") Long positionId);
+
+    /**
+     * 查询候选人的真实流程记录（用于面试详情展示流程时间线）
+     */
+    public List<Map<String, Object>> selectCandidateFlowHistory(@Param("candidateId") Long candidateId);
+
+    /**
      * 按用户ID查询候选人档案（用于把聊天对象解析为候选人）
      */
     public Map<String, Object> selectTalentByUserId(@Param("userId") Long userId);
@@ -132,9 +142,9 @@ public interface ConferenceMapper
     public int updateSessionRoomToken(Map<String, Object> params);
 
     /**
-     * 查询候选人 + 面试官尚未结束的场次（用于复用而非重复建场次）
+     * 把候选人此前尚未结束的场次置为异常终止（每次发起面试都新建场次前调用）
      */
-    public Map<String, Object> selectActiveSessionByCandidate(Map<String, Object> params);
+    public int abortActiveSessionsByCandidate(@Param("candidateId") Long candidateId);
 
     /**
      * 候选人准备就绪，进入面试
@@ -157,7 +167,7 @@ public interface ConferenceMapper
     public Map<String, Object> selectSessionResult(@Param("sessionId") Long sessionId);
 
     /**
-     * 录制文件列表（企业范围内）
+     * 录制文件列表（企业范围内，一场面试可多次录制各为一条）
      */
     public List<Map<String, Object>> selectRecordingList(Map<String, Object> params);
 
@@ -167,22 +177,57 @@ public interface ConferenceMapper
     public Map<String, Object> selectRecordingStorageTotal(@Param("companyId") Long companyId);
 
     /**
-     * 录制落盘后回写文件地址 / 时长 / 字节数 / 访问有效期
+     * 查询场次当前进行中的录制记录（用于重复点击时的复用判断）
      */
-    public int updateRecordingFile(Map<String, Object> params);
+    public Map<String, Object> selectActiveRecording(@Param("sessionId") Long sessionId);
 
     /**
-     * 回放详情
+     * 查询场次下一次录制序号（场次内第几次录制）
      */
-    public Map<String, Object> selectRecordingDetail(@Param("sessionId") Long sessionId);
+    public Integer selectNextRecordingSeq(@Param("sessionId") Long sessionId);
+
+    /**
+     * 新增录制记录，回填 recordingId
+     */
+    public int insertRecording(Map<String, Object> params);
+
+    /**
+     * 回写录制任务ID（LiveKit Egress）
+     */
+    public int updateRecordingEgressId(Map<String, Object> params);
+
+    /**
+     * 停止录制时的兜底回写：状态置为已完成，时长按录制起止墙钟时间计算
+     */
+    public int finishRecordingByRecordingId(Map<String, Object> params);
+
+    /**
+     * Egress 结束后按任务ID回写状态 / 时长 / 字节数 / 文件地址
+     */
+    public int finishRecordingByEgressId(Map<String, Object> params);
+
+    /**
+     * 场次异常终止时，把仍在进行的录制标记为异常终止
+     */
+    public int abortRecordingBySession(@Param("sessionId") Long sessionId);
+
+    /**
+     * 录制访问校验所需上下文（企业、候选人、面试官、访问级别、文件地址）
+     */
+    public Map<String, Object> selectRecordingAccessContext(@Param("recordingId") Long recordingId);
+
+    /**
+     * 回放详情（按录制记录ID）
+     */
+    public Map<String, Object> selectRecordingDetail(@Param("recordingId") Long recordingId);
 
     /**
      * 回放时间轴（面试对话记录，含相对录制起点的秒数，用于章节打点与问答记录）
      */
-    public List<Map<String, Object>> selectRecordingTimeline(@Param("sessionId") Long sessionId);
+    public List<Map<String, Object>> selectRecordingTimeline(Map<String, Object> params);
 
     /**
-     * 更新录制访问授权
+     * 更新录制访问授权（按录制记录ID）
      */
     public int updateRecordingAccess(Map<String, Object> params);
 

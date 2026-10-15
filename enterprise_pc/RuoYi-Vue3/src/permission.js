@@ -2,7 +2,7 @@ import router from './router'
 import { ElMessage } from 'element-plus'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
-import { getToken, removeToken } from '@/utils/auth'
+import { getToken, removeToken, removeRefreshToken } from '@/utils/auth'
 import { isHttp } from '@/utils/validate'
 import { isRelogin } from '@/utils/request'
 import useUserStore from '@/store/modules/user'
@@ -68,10 +68,17 @@ router.beforeEach((to, from, next) => {
             next({ ...to, replace: true }) // hack方法 确保addRoutes已完成
           })
         }).catch(err => {
-          useUserStore().logOut().then(() => {
-            ElMessage.error(err)
-            next({ path: '/' })
-          })
+          // 会话已失效：后端登出无意义，且其自身 401 会再次触发「登录状态已过期」弹窗，
+          // 这里直接清空本地访问令牌 + 刷新令牌并回到登录页，避免刷新令牌残留导致反复提示
+          const userStore = useUserStore()
+          removeToken()
+          removeRefreshToken()
+          userStore.token = ''
+          userStore.roles = []
+          userStore.permissions = []
+          ElMessage.error(err)
+          next({ path: '/login', replace: true })
+          NProgress.done()
         })
       } else {
         next()

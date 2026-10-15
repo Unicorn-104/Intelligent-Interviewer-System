@@ -2,7 +2,6 @@ package com.ruoyi.system.service;
 
 import java.util.List;
 import java.util.Map;
-import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 视频会议（面试链路）服务层
@@ -174,23 +173,25 @@ public interface IConferenceService
 
     /**
      * 回放详情（含时间轴）
+     *
+     * @param recordingId 录制记录ID（t_int_recording.rcd_id）
      */
-    public Map<String, Object> getRecordingDetail(Long userId, Long sessionId);
+    public Map<String, Object> getRecordingDetail(Long userId, Long recordingId);
 
     /**
      * 更新录制访问授权
      */
-    public Map<String, Object> updateRecordingAccess(Long userId, Long sessionId, Integer validDays, Integer level);
+    public Map<String, Object> updateRecordingAccess(Long userId, Long recordingId, Integer validDays, Integer level);
 
     /**
      * 发送下载验证码
      */
-    public Map<String, Object> sendDownloadCode(Long userId, Long sessionId);
+    public Map<String, Object> sendDownloadCode(Long userId, Long recordingId);
 
     /**
      * 校验下载验证码并返回录制地址
      */
-    public Map<String, Object> verifyDownloadCode(Long userId, Long sessionId, String code);
+    public Map<String, Object> verifyDownloadCode(Long userId, Long recordingId, String code);
 
     /**
      * 查询录制存储策略
@@ -202,14 +203,17 @@ public interface IConferenceService
      */
     public Map<String, Object> saveStoragePolicy(Long userId, Integer keepDays, Integer maxStorageGb);
     /**
-     * 接收录制分片并顺序暂存；last=true 时按序拼接落盘为完整录制文件，
-     * 回写场次的录制 URL / 时长 / 字节数 / 访问有效期。仅主面试官（或宽限期后）可上传。
-     *
-     * @param file       分片二进制
-     * @param index      分片序号（从 0 开始，严格递增）
-     * @param last       是否最后一片
-     * @param durationSec 录制总时长（秒，仅末片携带）
+     * 开始录制（LiveKit Egress 服务端合成录制，主面试官独占；同一场次同时只允许一个录制任务）
      */
-    public Map<String, Object> uploadRecordingChunk(Long userId, Long sessionId,
-            MultipartFile file, int index, boolean last, Integer durationSec);
+    public Map<String, Object> startRecording(Long userId, Long sessionId);
+
+    /**
+     * 停止录制（停止 Egress 任务，文件落盘后由 Webhook 回填真实时长与字节数）
+     */
+    public Map<String, Object> stopRecording(Long userId, Long sessionId);
+
+    /**
+     * 处理 LiveKit Webhook 事件（当前仅处理 egress_ended，回填录制状态 / 时长 / 字节数 / 文件地址）
+     */
+    public void handleLiveKitWebhook(Map<String, Object> payload);
 }
