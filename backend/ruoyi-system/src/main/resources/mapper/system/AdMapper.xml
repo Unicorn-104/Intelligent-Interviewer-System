@@ -17,7 +17,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="endTime"            column="end_time"            />
         <result property="dailyLimit"        column="daily_limit"         />
         <result property="totalLimit"        column="total_limit"          />
-        <result property="packageTarget"     column="package_target"       />
         <result property="exposure"           column="exposure"           />
         <result property="clicks"             column="clicks"             />
         <result property="ctr"                column="ctr"                />
@@ -43,7 +42,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                a.ad_end_at as end_time, 
                a.ad_freq_daily as daily_limit, 
                0 as total_limit,
-               '' as package_target,
                0 as exposure,
                0 as clicks,
                '' as ctr,
@@ -79,7 +77,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="title != null and title != ''">ad_title,</if>
             <if test="slotId != null and slotId != ''">ad_slot_code,</if>
             <if test="adType != null and adType != ''">ad_type,</if>
-            <if test="mediaUrl != null and mediaUrl != ''">ad_media_url,</if>
+            ad_media_url,
             <if test="jumpUrl != null and jumpUrl != ''">ad_jump_url,</if>
             <if test="startTime != null and startTime != ''">ad_start_at,</if>
             <if test="endTime != null and endTime != ''">ad_end_at,</if>
@@ -90,7 +88,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="title != null and title != ''">#{title},</if>
             <if test="slotId != null and slotId != ''">#{slotId},</if>
             <if test="adType != null and adType != ''">#{adType},</if>
-            <if test="mediaUrl != null and mediaUrl != ''">#{mediaUrl},</if>
+            <choose>
+                <when test="mediaUrl != null and mediaUrl != ''">#{mediaUrl},</when>
+                <otherwise>'',</otherwise>
+            </choose>
             <if test="jumpUrl != null and jumpUrl != ''">#{jumpUrl},</if>
             <if test="startTime != null and startTime != ''">#{startTime},</if>
             <if test="endTime != null and endTime != ''">#{endTime},</if>
@@ -127,8 +128,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         delete from t_ad where ad_id = #{advertId}
     </delete>
 
-    <delete id="deleteAdByAdvertIds" parameterType="String">
-        delete from t_ad where ad_id in #{advertIds}
+    <delete id="deleteAdByAdvertIds" parameterType="Long">
+        delete from t_ad where ad_id in
+        <foreach item="advertId" collection="array" open="(" separator="," close=")">
+            #{advertId}
+        </foreach>
     </delete>
 
 </mapper>

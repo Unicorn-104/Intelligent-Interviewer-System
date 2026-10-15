@@ -85,7 +85,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </delete>
 
     <delete id="deleteAdSlotBySlotCodes" parameterType="String">
-        delete from t_ad_slot where slot_code in #{slotCodes}
+        delete from t_ad_slot where slot_code in
+        <foreach item="slotCode" collection="array" open="(" separator="," close=")">
+            #{slotCode}
+        </foreach>
     </delete>
 
     <update id="updateAdSlotStatus" parameterType="com.ruoyi.system.domain.AdSlot">
