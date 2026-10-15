@@ -59,7 +59,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select <include refid="sessionContextColumns"/>
         <include refid="sessionContextJoins"/>
         where s.ses_status in (0, 1)
-          and (t.tal_user_id = #{userId} or s.ses_interviewer_id = #{userId})
+          and (t.tal_user_id = #{userId}
+               or s.ses_interviewer_id = #{userId}
+               or exists (select 1 from t_int_session_interviewer si
+                          where si.isi_session_id = s.ses_id and si.isi_user_id = #{userId}))
         order by (s.ses_status = 1) desc, a.apt_start_time asc
         limit 1
     </select>
@@ -95,8 +98,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                s.ses_status     as status
         from t_int_session s
         where s.ses_candidate_id = #{candidateId}
-          and s.ses_interviewer_id = #{interviewerId}
           and s.ses_status in (0, 1)
+        <if test="interviewerId != null">
+          and s.ses_interviewer_id = #{interviewerId}
+        </if>
         order by s.ses_id desc
         limit 1
     </select>
@@ -397,6 +402,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                p.pos_title as positionTitle,
                date_format(s.ses_end_at, '%Y-%m-%d') as interviewDate,
                ifnull(s.ses_rec_duration_sec, 0) as durationSec,
+               s.ses_rec_size_bytes as recSizeBytes,
                s.ses_status as status,
                s.ses_mode as mode,
                s.ses_rec_url as recUrl,
@@ -422,8 +428,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by s.ses_end_at desc, s.ses_id desc
     </select>
 
-    <select id="selectRecordingSecondsTotal" parameterType="Long" resultType="java.lang.Long">
-        select ifnull(sum(s.ses_rec_duration_sec), 0)
+    <select id="selectRecordingStorageTotal" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select ifnull(sum(s.ses_rec_duration_sec), 0) as totalSeconds,
+               ifnull(sum(s.ses_rec_size_bytes), 0)    as totalBytes
         from t_int_session s
         join t_pos p on p.pos_id = s.ses_position_id
         where p.pos_company_id = #{companyId}
@@ -433,15 +440,19 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select s.ses_id as sessionId,
                s.ses_rec_url as recUrl,
                ifnull(s.ses_rec_duration_sec, 0) as durationSec,
+               s.ses_rec_size_bytes as recSizeBytes,
                ifnull(u.nick_name, u.user_name) as candidateName,
                p.pos_title as positionTitle,
-               date_format(s.ses_end_at, '%Y-%m-%d') as interviewDate,
+               date_format(ifnull(s.ses_end_at, s.ses_start_at), '%Y-%m-%d') as interviewDate,
+               s.ses_mode as mode,
                s.ses_rec_access_level as recAccessLevel,
-               date_format(s.ses_rec_expires_at, '%Y-%m-%d') as recExpiresAt
+               date_format(s.ses_rec_expires_at, '%Y-%m-%d') as recExpiresAt,
+               ifnull(iu.nick_name, iu.user_name) as primaryInterviewerName
         from t_int_session s
         join t_pos p on p.pos_id = s.ses_position_id
         join t_tal t on t.tal_id = s.ses_candidate_id
         join sys_user u on u.user_id = t.tal_user_id
+        left join sys_user iu on iu.user_id = s.ses_interviewer_id
         where s.ses_id = #{sessionId}
     </select>
 
@@ -460,6 +471,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_int_session
         set ses_rec_access_level = #{level},
             ses_rec_expires_at = date_add(sysdate(), interval #{validDays} day),
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId}
+    </update>
+
+    <update id="updateRecordingFile">
+        update t_int_session
+        set ses_rec_url = #{recUrl},
+            ses_rec_duration_sec = #{durationSec},
+            ses_rec_size_bytes = #{sizeBytes},
+            ses_rec_expires_at = date_add(sysdate(), interval #{keepDays} day),
             ses_updated_at = sysdate()
         where ses_id = #{sessionId}
     </update>
@@ -484,5 +505,97 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                                 rcp_max_storage_gb = #{maxStorageGb},
                                 rcp_updated_at = sysdate()
     </insert>
+
+    <insert id="insertSessionInterviewer">
+        insert into t_int_session_interviewer
+            (isi_session_id, isi_user_id, isi_is_primary, isi_join_status, isi_created_at, isi_updated_at)
+        values
+            (#{sessionId}, #{userId}, #{isPrimary}, 0, sysdate(), sysdate())
+        on duplicate key update
+            isi_is_primary = #{isPrimary},
+            isi_updated_at = sysdate()
+    </insert>
+
+    <select id="selectSessionInterviewers" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select si.isi_user_id     as userId,
+               si.isi_is_primary  as isPrimary,
+               si.isi_join_status as joinStatus,
+               si.isi_muted_av    as mutedAv,
+               date_format(si.isi_joined_at, '%H:%i:%s') as joinedAt,
+               ifnull(u.nick_name, u.user_name) as userName
+        from t_int_session_interviewer si
+        left join sys_user u on u.user_id = si.isi_user_id
+        where si.isi_session_id = #{sessionId}
+        order by si.isi_is_primary desc, si.isi_id asc
+    </select>
+
+    <select id="selectInterviewerNotices" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select si.isi_session_id as sessionId,
+               si.isi_is_primary as isPrimary,
+               si.isi_accept_status as acceptStatus,
+               s.ses_status as status,
+               s.ses_mode as mode,
+               p.pos_title as positionTitle,
+               ifnull(u.nick_name, u.user_name) as candidateName,
+               date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as appointmentStartAt,
+               date_format(a.apt_end_time, '%Y-%m-%d %H:%i') as appointmentEndAt,
+               date_format(si.isi_created_at, '%Y-%m-%d %H:%i') as noticeAt
+        from t_int_session_interviewer si
+        join t_int_session s on s.ses_id = si.isi_session_id
+        left join t_sch_appointment a on a.apt_id = s.ses_appointment_id
+        left join t_pos p on p.pos_id = s.ses_position_id
+        left join t_tal t on t.tal_id = s.ses_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        where si.isi_user_id = #{userId}
+          and s.ses_status &lt;= 1
+        order by s.ses_start_at desc, si.isi_id desc
+    </select>
+
+    <update id="updateInterviewerAcceptStatus">
+        update t_int_session_interviewer
+        set isi_accept_status = #{acceptStatus}, isi_updated_at = sysdate()
+        where isi_session_id = #{sessionId} and isi_user_id = #{userId}
+    </update>
+
+    <select id="selectPrimaryInterviewerId" parameterType="Long" resultType="java.lang.Long">
+        select isi_user_id
+        from t_int_session_interviewer
+        where isi_session_id = #{sessionId}
+        order by isi_is_primary desc, isi_id asc
+        limit 1
+    </select>
+
+    <update id="clearSessionInterviewerPrimary">
+        update t_int_session_interviewer
+        set isi_is_primary = 0, isi_updated_at = sysdate()
+        where isi_session_id = #{sessionId}
+    </update>
+
+    <update id="markSessionInterviewerJoined">
+        update t_int_session_interviewer
+        set isi_join_status = 1,
+            isi_joined_at = ifnull(isi_joined_at, sysdate()),
+            isi_muted_av = #{mutedAv},
+            isi_updated_at = sysdate()
+        where isi_session_id = #{sessionId} and isi_user_id = #{userId}
+    </update>
+
+    <update id="updateSessionPrimaryInterviewer">
+        update t_int_session
+        set ses_interviewer_id = #{userId}, ses_updated_at = sysdate()
+        where ses_id = #{sessionId}
+    </update>
+
+    <select id="selectCompanyEmployees" resultType="java.util.LinkedHashMap">
+        select u.user_id                             as userId,
+               ifnull(u.nick_name, u.user_name)      as userName,
+               b.bnd_job_title                       as jobTitle,
+               b.bnd_department                      as department
+        from sys_user u
+        left join t_cmp_binding b on b.bnd_user_id = u.user_id
+        where (b.bnd_company_id = #{companyId} and b.bnd_status = 1)
+           or u.user_id = #{userId}
+        order by u.user_id asc
+    </select>
 
 </mapper>

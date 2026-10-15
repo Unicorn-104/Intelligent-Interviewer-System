@@ -9,6 +9,7 @@ public interface AppResumeMapper
 {
     List<AppResume> selectResumeList(@Param("userId") Long userId);
     AppResume selectResume(@Param("resumeId") Long resumeId, @Param("userId") Long userId);
+    AppResume selectResumeForUpdate(@Param("resumeId") Long resumeId, @Param("userId") Long userId);
     List<AppResume.Education> selectEducations(Long resumeId);
     List<AppResume.Work> selectWorks(Long resumeId);
     List<AppResume.Project> selectProjects(Long resumeId);

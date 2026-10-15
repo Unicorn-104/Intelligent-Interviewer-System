@@ -99,8 +99,8 @@ public class SecurityConfig
             // 注解标记允许匿名访问的url
             .authorizeHttpRequests((requests) -> {
                 permitAllUrl.getUrls().forEach(url -> requests.requestMatchers(url).permitAll());
-                // 对于登录、注册、图形验证码和短信验证码允许匿名访问
-                requests.requestMatchers("/login", "/register", "/captchaImage", "/sms/code").permitAll()
+                // 对于登录、注册、图形验证码、短信验证码和刷新令牌允许匿名访问
+                requests.requestMatchers("/login", "/register", "/captchaImage", "/sms/code", "/auth/refresh").permitAll()
                     // 静态资源，可匿名访问
                     .requestMatchers(HttpMethod.GET, "/", "/*.html", "/**.html", "/**.css", "/**.js", "/profile/**").permitAll()
                     .requestMatchers(

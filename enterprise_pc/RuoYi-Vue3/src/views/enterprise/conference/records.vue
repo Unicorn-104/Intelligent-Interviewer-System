@@ -55,8 +55,14 @@ function fmtDuration(sec) {
   return `${m}:${s}`
 }
 
-// 按 1500 Kbps 码率由时长估算录制体积
-function fmtSize(sec) {
+// 真实字节数格式化；无字节数（历史数据）时按 1500 Kbps 码率由时长估算
+function fmtSize(sec, bytes) {
+  if (bytes > 0) {
+    const gb = bytes / 1024 ** 3
+    if (gb >= 1) return `${gb.toFixed(1)} GB`
+    const mb = bytes / 1024 ** 2
+    return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`
+  }
   if (!sec) return '—'
   const gb = (sec * 1500 * 1000 / 8) / 1024 ** 3
   return `${gb.toFixed(1)} GB`
@@ -72,7 +78,7 @@ function mapRecord(item) {
     position: item.positionTitle,
     date,
     duration: fmtDuration(item.durationSec),
-    size: fmtSize(item.durationSec),
+    size: fmtSize(item.durationSec, item.recSizeBytes),
     status: STATUS_TEXT[item.status] || '已完成',
     mode: item.mode === 2 ? 'AI + HR 协同' : '纯 AI 面试'
   }

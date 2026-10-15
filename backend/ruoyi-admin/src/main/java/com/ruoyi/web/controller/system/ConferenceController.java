@@ -72,7 +72,54 @@ public class ConferenceController extends BaseController
     public AjaxResult createLink(@RequestBody Map<String, Object> body)
     {
         return success(conferenceService.createRoomLink(getUserId(), longOf(body, "peerUserId"),
-                longOf(body, "positionId"), intOf(body, "durationMinutes"), intOf(body, "mode")));
+                longOf(body, "positionId"), intOf(body, "durationMinutes"), intOf(body, "mode"),
+                longListOf(body, "interviewerIds")));
+    }
+
+    /**
+     * 当前用户收到的面试邀约通知（消息中心「面试预约通知」系统会话）
+     */
+    @GetMapping("/interviewer/notices")
+    public AjaxResult interviewerNotices()
+    {
+        return success(conferenceService.listInterviewerNotices(getUserId()));
+    }
+
+    /**
+     * 面试官回应邀约：接受或拒绝被指派
+     */
+    @PostMapping("/interviewer/notices/{sessionId}/respond")
+    public AjaxResult respondInterviewNotice(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.respondInterviewNotice(getUserId(), sessionId,
+                Boolean.TRUE.equals(body.get("accept"))));
+    }
+
+    /**
+     * 本企业全体在职用户（HR 发起面试时选择面试官）
+     */
+    @GetMapping("/interviewers")
+    public AjaxResult interviewers()
+    {
+        return success(conferenceService.listInterviewers(getUserId()));
+    }
+
+    /**
+     * 面试官加入会议（后到面试官点击「加入本次面试」）
+     */
+    @PostMapping("/session/{sessionId}/interviewer/join")
+    public AjaxResult interviewerJoin(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.joinInterviewer(getUserId(), sessionId));
+    }
+
+    /**
+     * 移交主面试官
+     */
+    @PostMapping("/session/{sessionId}/interviewer/transfer")
+    public AjaxResult interviewerTransfer(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.transferPrimary(getUserId(), sessionId, longOf(body, "targetUserId")));
     }
 
     /**
@@ -317,6 +364,19 @@ public class ConferenceController extends BaseController
                 intOf(body, "keepDays"), intOf(body, "maxStorageGb")));
     }
 
+    /**
+     * 上传录制分片（浏览器端 MediaRecorder 切片，末片 last=true 触发服务端拼接落盘）
+     */
+    @PostMapping("/recordings/{sessionId}/chunk")
+    public AjaxResult recordingChunk(@PathVariable Long sessionId,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam("index") int index,
+            @RequestParam(value = "last", required = false, defaultValue = "false") boolean last,
+            @RequestParam(value = "durationSec", required = false) Integer durationSec)
+    {
+        return success(conferenceService.uploadRecordingChunk(getUserId(), sessionId, file, index, last, durationSec));
+    }
+
     private static Integer intOf(Map<String, Object> body, String key)
     {
         Object value = body.get(key);
@@ -341,5 +401,24 @@ public class ConferenceController extends BaseController
             return null;
         }
         return value instanceof Number ? ((Number) value).longValue() : Long.valueOf(value.toString());
+    }
+
+    private static java.util.List<Long> longListOf(Map<String, Object> body, String key)
+    {
+        Object value = body.get(key);
+        if (!(value instanceof java.util.Collection))
+        {
+            return null;
+        }
+        java.util.List<Long> result = new java.util.ArrayList<>();
+        for (Object item : (java.util.Collection<?>) value)
+        {
+            if (item == null)
+            {
+                continue;
+            }
+            result.add(item instanceof Number ? ((Number) item).longValue() : Long.valueOf(item.toString()));
+        }
+        return result;
     }
 }

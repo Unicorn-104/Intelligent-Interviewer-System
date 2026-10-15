@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.ScreeningMapper">
+
+    <!-- ============ AI 初筛与智能匹配（UC-04/05/06） ============ -->
+
+    <select id="selectPositionSkills" resultType="string">
+        select psk_name
+        from t_pos_skill
+        where psk_position_id = #{positionId} and psk_required = 1
+        order by psk_id
+    </select>
+
+    <select id="selectCandidatesByPosition" resultType="java.util.LinkedHashMap">
+        select t.tal_id as talentId, t.tal_status as status, t.tal_resume_id as resumeId,
+               u.nick_name as name, u.phonenumber as phone
+        from t_process_instance p
+        join t_tal t on t.tal_process_instance_id = p.pin_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        where p.pin_position_id = #{positionId}
+        order by t.tal_id
+    </select>
+
+    <select id="selectCandidateSkills" resultType="string">
+        select skl_name
+        from t_res_skill
+        where skl_resume_id = (select tal_resume_id from t_tal where tal_id = #{talId})
+        order by skl_level desc, skl_id
+    </select>
+
+    <update id="updateMatchedScore">
+        update t_tal
+        set tal_matched_score = #{score}, tal_updated_at = now()
+        where tal_id = #{talId}
+    </update>
+
+    <select id="selectTaskList" resultType="java.util.LinkedHashMap">
+        select p.pin_position_id as taskId, pos.pos_title as positionName,
+               count(distinct p.pin_id) as candidateCount,
+               sum(case when t.tal_status = 1 then 1 else 0 end) as passedCount
+        from t_process_instance p
+        join t_pos pos on pos.pos_id = p.pin_position_id
+        left join t_tal t on t.tal_process_instance_id = p.pin_id
+        group by p.pin_position_id, pos.pos_title
+        order by p.pin_position_id desc
+    </select>
+
+    <select id="selectResultsByPosition" resultType="java.util.LinkedHashMap">
+        select t.tal_id as resultId, t.tal_matched_score as totalScore, t.tal_status as status,
+               u.nick_name as name, u.phonenumber as phone,
+               (select group_concat(skl_name separator ',')
+                from t_res_skill s where s.skl_resume_id = t.tal_resume_id) as skills,
+               (select group_concat(tg_name separator ',')
+                from t_tal_tag g where g.tg_candidate_id = t.tal_id) as tags
+        from t_process_instance p
+        join t_tal t on t.tal_process_instance_id = p.pin_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        where p.pin_position_id = #{positionId}
+        order by t.tal_matched_score desc, t.tal_id
+    </select>
+
+    <select id="selectGreetingByCandidate" resultType="java.util.LinkedHashMap">
+        select cast(grt_match_points as char) as matchPoints, grt_content as content,
+               grt_status as status, grt_sent_at as sentAt
+        from t_greeting_record
+        where grt_candidate_id = #{talId}
+        order by grt_id desc
+        limit 1
+    </select>
+
+    <update id="updateTalStatus">
+        update t_tal
+        set tal_status = #{status}, tal_updated_at = now()
+        where tal_id = #{talId}
+    </update>
+
+</mapper>

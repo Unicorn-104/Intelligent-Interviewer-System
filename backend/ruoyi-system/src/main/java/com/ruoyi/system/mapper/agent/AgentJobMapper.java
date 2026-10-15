@@ -12,5 +12,7 @@ public interface AgentJobMapper
 {
     List<AgentJob> selectJobList(@Param("query") AgentJobQuery query, @Param("userId") Long userId);
 
+    List<String> selectJobCategories();
+
     AgentJob selectJobById(@Param("jobId") Long jobId, @Param("userId") Long userId);
 }

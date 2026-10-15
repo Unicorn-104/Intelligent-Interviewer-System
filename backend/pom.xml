@@ -27,7 +27,8 @@
         <oshi.version>7.4.4</oshi.version>
         <commons.io.version>2.22.0</commons.io.version>
         <poi.version>5.5.1</poi.version>
-        <tess4j.version>5.20.0</tess4j.version>
+        <!-- Windows native initialization regression in 5.20.0: tess4j issue #286. -->
+        <tess4j.version>5.19.0</tess4j.version>
         <velocity.version>2.3</velocity.version>
         <jwt.version>0.9.1</jwt.version>
         <jaxb-api.version>2.3.1</jaxb-api.version>

@@ -2,6 +2,7 @@ package com.ruoyi.system.service;
 
 import java.util.List;
 import java.util.Map;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 视频会议（面试链路）服务层
@@ -32,8 +33,36 @@ public interface IConferenceService
 
     /**
      * HR 生成 / 复用会议链接（内部按需创建预约与场次）
+     *
+     * @param interviewerIds 被指派的面试官用户ID（按面试模式校验人数，纯AI 可为空）
      */
-    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes, Integer mode);
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes,
+            Integer mode, List<Long> interviewerIds);
+
+    /**
+     * 本企业全体在职用户（HR 发起面试时选择面试官）
+     */
+    public List<Map<String, Object>> listInterviewers(Long userId);
+
+    /**
+     * 面试官加入会议（后到面试官点击「加入本次面试」，记录已加入状态）
+     */
+    public Map<String, Object> joinInterviewer(Long userId, Long sessionId);
+
+    /**
+     * 移交主面试官（仅现任主面试官可操作，接收人须为本场次面试官）
+     */
+    public Map<String, Object> transferPrimary(Long userId, Long sessionId, Long targetUserId);
+
+    /**
+     * 当前用户收到的面试邀约通知（消息中心「面试预约通知」系统会话）
+     */
+    public List<Map<String, Object>> listInterviewerNotices(Long userId);
+
+    /**
+     * 面试官回应邀约：接受或拒绝被指派（仅本人可操作，须为本场次面试官）
+     */
+    public Map<String, Object> respondInterviewNotice(Long userId, Long sessionId, boolean accept);
 
     /**
      * 候选人在本企业投递过的岗位（HR 发起面试时选择岗位）
@@ -167,4 +196,16 @@ public interface IConferenceService
      * 保存录制存储策略
      */
     public Map<String, Object> saveStoragePolicy(Long userId, Integer keepDays, Integer maxStorageGb);
+
+    /**
+     * 接收录制分片并顺序暂存；last=true 时按序拼接落盘为完整录制文件，
+     * 回写场次的录制 URL / 时长 / 字节数 / 访问有效期。仅主面试官（或宽限期后）可上传。
+     *
+     * @param file       分片二进制
+     * @param index      分片序号（从 0 开始，严格递增）
+     * @param last       是否最后一片
+     * @param durationSec 录制总时长（秒，仅末片携带）
+     */
+    public Map<String, Object> uploadRecordingChunk(Long userId, Long sessionId,
+            MultipartFile file, int index, boolean last, Integer durationSec);
 }

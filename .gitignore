@@ -1,10 +1,12 @@
-# 仅跟踪 backend、c-app 与 admin_pc；忽略根目录下的其他内容
+# 仅跟踪项目源码目录；忽略根目录下的其他内容
 /*
 !/.gitignore
 !/AGENTS.md
 !/backend/
 !/c-app/
 !/admin_pc/
+!/deploy/
+!/user-PC/
 
 ######################################################################
 # 操作系统
@@ -94,7 +96,11 @@ application-local.properties
 ######################################################################
 upload/
 uploadPath/
+resume-pdf/
 data/
+# Flutter API source directories are not runtime data.
+!/c-app/lib/features/*/data/
+!/c-app/lib/features/*/data/*.dart
 run/
 																																	
 ######################################################################

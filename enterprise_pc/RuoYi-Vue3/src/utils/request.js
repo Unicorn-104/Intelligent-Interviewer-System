@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { ElNotification , ElMessageBox, ElMessage, ElLoading } from 'element-plus'
-import { getToken } from '@/utils/auth'
+import { getToken, setToken, getRefreshToken, setRefreshToken } from '@/utils/auth'
 import errorCode from '@/utils/errorCode'
 import { tansParams, blobValidate } from '@/utils/ruoyi'
 import cache from '@/plugins/cache'
@@ -10,6 +10,56 @@ import useUserStore from '@/store/modules/user'
 let downloadLoadingInstance;
 // 是否显示重新登录
 export let isRelogin = { show: false };
+
+// 静默刷新令牌的进行中请求，用于并发 401 时共用同一次刷新
+let refreshing = null;
+
+// 弹出重新登录提示
+function handleReLogin() {
+  if (!isRelogin.show) {
+    isRelogin.show = true;
+    ElMessageBox.confirm('登录状态已过期，您可以继续留在该页面，或者重新登录', '系统提示', { confirmButtonText: '重新登录', cancelButtonText: '取消', type: 'warning' }).then(() => {
+      isRelogin.show = false;
+      useUserStore().logOut().then(() => {
+        location.href = '/enterprise';
+      })
+    }).catch(() => {
+      isRelogin.show = false;
+    });
+  }
+}
+
+// 使用刷新令牌换取新的访问令牌，成功后重放原请求，失败则提示重新登录
+function refreshAndRetry(res) {
+  const config = res.config;
+  if (!refreshing) {
+    refreshing = axios.post(import.meta.env.VITE_APP_BASE_API + '/auth/refresh',
+      { refreshToken: getRefreshToken() },
+      { timeout: 10000 }).then(response => {
+        const data = response.data || {};
+        if ((data.code || 200) !== 200 || !data.token) {
+          return Promise.reject(new Error('刷新令牌无效或已过期'));
+        }
+        setToken(data.token);
+        if (data.refreshToken) {
+          setRefreshToken(data.refreshToken);
+        }
+        return data.token;
+      }).finally(() => {
+        refreshing = null;
+      });
+  }
+  return refreshing.then(() => {
+    // 标记该请求已重试过一次，避免二次 401 时反复刷新
+    config.skipAuthRefresh = true;
+    // 重复提交校验会拦截重放的相同请求，重放时跳过
+    config.headers.repeatSubmit = false;
+    return service(config);
+  }).catch(() => {
+    handleReLogin();
+    return Promise.reject('无效的会话，或者会话已过期，请重新登录。');
+  });
+}
 
 axios.defaults.headers['Content-Type'] = 'application/json;charset=utf-8'
 // 创建axios实例
@@ -82,17 +132,11 @@ service.interceptors.response.use(res => {
       return res.data
     }
     if (code === 401) {
-      if (!isRelogin.show) {
-        isRelogin.show = true;
-        ElMessageBox.confirm('登录状态已过期，您可以继续留在该页面，或者重新登录', '系统提示', { confirmButtonText: '重新登录', cancelButtonText: '取消', type: 'warning' }).then(() => {
-          isRelogin.show = false;
-          useUserStore().logOut().then(() => {
-            location.href = '/enterprise';
-          })
-      }).catch(() => {
-        isRelogin.show = false;
-      });
-    }
+      // 持有刷新令牌且尚未重试过，则静默刷新后重放原请求
+      if (!res.config.skipAuthRefresh && getRefreshToken()) {
+        return refreshAndRetry(res);
+      }
+      handleReLogin();
       return Promise.reject('无效的会话，或者会话已过期，请重新登录。')
     } else if (code === 500) {
       ElMessage({ message: msg, type: 'error' })

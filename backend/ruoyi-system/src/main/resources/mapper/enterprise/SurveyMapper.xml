@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.SurveyMapper">
+
+    <!-- ============ 满意度调研（UC-17） ============ -->
+
+    <select id="selectSummary" resultType="java.util.LinkedHashMap">
+        select count(*) as total, avg(svr_satisfaction_score) as avgScore
+        from t_survey_response
+        where 1 = 1
+        <if test="templateId != null">
+            and svr_template_id = #{templateId}
+        </if>
+        <if test="from != null and from != ''">
+            and svr_submitted_at &gt;= #{from}
+        </if>
+        <if test="to != null and to != ''">
+            and svr_submitted_at &lt;= #{to}
+        </if>
+    </select>
+
+    <select id="selectDistribution" resultType="java.util.LinkedHashMap">
+        select round(svr_satisfaction_score / 10) as bucket, count(*) as count
+        from t_survey_response
+        where 1 = 1
+        <if test="templateId != null">
+            and svr_template_id = #{templateId}
+        </if>
+        <if test="from != null and from != ''">
+            and svr_submitted_at &gt;= #{from}
+        </if>
+        <if test="to != null and to != ''">
+            and svr_submitted_at &lt;= #{to}
+        </if>
+        group by round(svr_satisfaction_score / 10)
+        order by bucket
+    </select>
+
+    <select id="selectResponses" resultType="java.util.LinkedHashMap">
+        select r.svr_id as responseId, r.svr_candidate_id as candidateId,
+               r.svr_satisfaction_score as satisfactionScore,
+               cast(r.svr_answers as char) as answers,
+               date_format(r.svr_submitted_at, '%Y-%m-%d %H:%i') as submittedAt,
+               u.nick_name as candidateName, svt.svt_name as templateName
+        from t_survey_response r
+        left join t_tal t on t.tal_id = r.svr_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_survey_template svt on svt.svt_id = r.svr_template_id
+        where 1 = 1
+        <if test="templateId != null">
+            and r.svr_template_id = #{templateId}
+        </if>
+        <if test="from != null and from != ''">
+            and r.svr_submitted_at &gt;= #{from}
+        </if>
+        <if test="to != null and to != ''">
+            and r.svr_submitted_at &lt;= #{to}
+        </if>
+        order by r.svr_submitted_at desc
+    </select>
+
+    <select id="selectTemplates" resultType="java.util.LinkedHashMap">
+        select svt_id as templateId, svt_name as name, svt_trigger_scene as triggerScene,
+               cast(svt_questions as char) as questions, svt_status as status
+        from t_survey_template
+        where svt_status = 1
+        order by svt_id
+    </select>
+
+</mapper>

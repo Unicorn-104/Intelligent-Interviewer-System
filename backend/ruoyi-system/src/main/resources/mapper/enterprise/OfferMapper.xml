@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.OfferMapper">
+
+    <!-- ============ Offer 管理（UC-12 步骤9） ============ -->
+
+    <select id="selectSessionBase" resultType="java.util.LinkedHashMap">
+        select ses_id as sessionId, ses_candidate_id as candidateId, ses_position_id as positionId
+        from t_int_session
+        where ses_id = #{sessionId}
+    </select>
+
+    <select id="selectOfferBySession" resultType="java.util.LinkedHashMap">
+        select ofr_id as offerId
+        from t_off_offer
+        where ofr_candidate_id = #{candidateId} and ofr_position_id = #{positionId}
+        limit 1
+    </select>
+
+    <insert id="insertOffer">
+        insert into t_off_offer
+            (ofr_candidate_id, ofr_position_id, ofr_salary_offer, ofr_onboard_date, ofr_deadline, ofr_status)
+        values
+            (#{candidateId}, #{positionId}, #{salaryOffer}, #{onboardDate}, #{deadline}, 0)
+    </insert>
+
+    <select id="selectLastOffer" resultType="long">
+        select ofr_id
+        from t_off_offer
+        where ofr_candidate_id = #{candidateId}
+        order by ofr_id desc
+        limit 1
+    </select>
+
+    <insert id="insertApprovalNode">
+        insert into t_offer_approval (oap_offer_id, oap_node_name, oap_node_order, oap_status)
+        values (#{offerId}, #{nodeName}, #{nodeOrder}, #{status})
+    </insert>
+
+    <select id="selectOfferList" resultType="java.util.LinkedHashMap">
+        select o.ofr_id as offerId, o.ofr_candidate_id as candidateId,
+               o.ofr_position_id as positionId, o.ofr_salary_offer as salaryOffer,
+               date_format(o.ofr_onboard_date, '%Y-%m-%d') as onboardDate,
+               date_format(o.ofr_deadline, '%Y-%m-%d %H:%i') as deadline,
+               o.ofr_status as status, o.ofr_offer_url as offerUrl,
+               date_format(o.ofr_created_at, '%Y-%m-%d %H:%i') as sentAt,
+               u.nick_name as candidateName, pos.pos_title as positionTitle
+        from t_off_offer o
+        left join t_tal t on t.tal_id = o.ofr_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_pos pos on pos.pos_id = o.ofr_position_id
+        <where>
+            <if test="status != null">
+                o.ofr_status = #{status}
+            </if>
+        </where>
+        order by o.ofr_id desc
+    </select>
+
+    <select id="selectOfferById" resultType="java.util.LinkedHashMap">
+        select o.ofr_id as offerId, o.ofr_candidate_id as candidateId,
+               o.ofr_position_id as positionId, o.ofr_salary_offer as salaryOffer,
+               o.ofr_benefits as benefits,
+               date_format(o.ofr_onboard_date, '%Y-%m-%d') as onboardDate,
+               date_format(o.ofr_deadline, '%Y-%m-%d %H:%i') as deadline,
+               o.ofr_job_grade as jobGrade, o.ofr_approval_status as approvalStatus,
+               o.ofr_status as status, o.ofr_offer_url as offerUrl,
+               o.ofr_withdraw_reason as withdrawReason,
+               u.nick_name as candidateName, pos.pos_title as positionTitle
+        from t_off_offer o
+        left join t_tal t on t.tal_id = o.ofr_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_pos pos on pos.pos_id = o.ofr_position_id
+        where o.ofr_id = #{offerId}
+    </select>
+
+    <select id="selectApprovals" resultType="java.util.LinkedHashMap">
+        select oap_id as approvalId, oap_node_name as nodeName, oap_node_order as nodeOrder,
+               oap_status as status, oap_comment as comment,
+               date_format(oap_approved_at, '%Y-%m-%d %H:%i') as approvedAt,
+               su.nick_name as approverName
+        from t_offer_approval a
+        left join sys_user su on su.user_id = a.oap_approver_id
+        where a.oap_offer_id = #{offerId}
+        order by a.oap_node_order
+    </select>
+
+</mapper>

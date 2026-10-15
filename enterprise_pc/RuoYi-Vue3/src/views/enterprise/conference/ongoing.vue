@@ -1,30 +1,45 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, FileText, Sparkles, Timer, Mic, MicOff,
   Video, MonitorUp, Copy, MessageSquareText, Settings, PhoneOff, CircleCheck,
-  CircleX, Pencil, ArrowUpRight, AlertTriangle, GripVertical, Lightbulb, X
+  CircleX, Pencil, ArrowUpRight, AlertTriangle, Lightbulb
 } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { getCurrentSession, getProgress, listCaptions, heartbeat, handleCopilot, finishSession } from '@/api/system/conference'
+import { getCurrentSession, getSessionContext, getProgress, listCaptions, heartbeat, handleCopilot, finishSession, joinInterviewer, transferPrimary } from '@/api/system/conference'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, requestMedia, requestMediaWithFallback, savePreferredDevice } from '@/utils/media'
 import { createConferenceRtc } from '@/utils/webrtc'
+import { createMeetingRecorder } from '@/utils/recorder'
+import useUserStore from '@/store/modules/user'
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
 
 const leftOpen = ref(true)
 const rightOpen = ref(true)
-const selfVisible = ref(true)
-const selfRef = ref(null)
-const selfVideo = ref(null)
-const peerVideo = ref(null)
-const frameRef = ref(null)
-const selfPos = ref({ x: null, y: null })
+// 宫格布局：null=宫格（所有画面并排，微信视频风格），非空=聚焦（该 key 的画面放大，其余为缩略条）
+const enlargedKey = ref(null)
+// 本人摄像头流（响应式，供宫格 tile 绑定 srcObject）
+const localStreamRef = ref(null)
+// 宫格中每个 tile 的 <video> 元素：key -> element
+const tileEls = {}
+const SELF_KEY = 'self'
 const toast = ref('')
-// 候选人远端音视频流（WebRTC 到达后渲染到主画面）
-const peerStream = ref(null)
+// 远端音视频流：userId -> MediaStream（多面试官时每人一路）
+const peerStreams = ref({})
+// 参与者列表（候选人 + 其他面试官），主画面可切换
+const participants = ref([])
+// 主画面当前选中的参与者用户ID
+const selectedUserId = ref(null)
+// 本人用户ID / 场次主面试官ID / 面试模式 / 本人在场次中的角色
+const myUserId = ref(Number(userStore.id) || null)
+const primaryInterviewerId = ref(null)
+const interviewMode = ref(2)
+const sessionRole = ref(null)
+// 本人是否已加入本次面试（未加入时不发布本地音视频）
+const joined = ref(true)
 // 设备申请失败的原因；非空时小窗展示「重新检测」入口
 const mediaError = ref('')
 // 结束会议二次确认
@@ -33,8 +48,7 @@ const showExitConfirm = ref(false)
 const MIC_ON = ref(true)
 const CAM_ON = ref(true)
 const SHARING = ref(false)
-const RECORDING = ref(true)
-const PIP = ref(false)
+const RECORDING = ref(false)
 const CAPTION_ON = ref(true)
 const quality = ref('hd') // hd | smooth
 
@@ -74,11 +88,21 @@ const acceptedPoints = [
   '给出线上踩坑案例并量化影响范围'
 ]
 
-const selfStyle = computed(() =>
-  selfPos.value.x === null
-    ? { right: '14px', bottom: '14px' }
-    : { left: `${selfPos.value.x}px`, top: `${selfPos.value.y}px` }
-)
+// 面试模式展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
+const modeLabel = computed(() => {
+  switch (interviewMode.value) {
+    case 1: return '纯 AI 面试'
+    case 3: return 'AI + 多面试官'
+    case 4: return '无 AI · 纯人工'
+    default: return 'AI + HR 协同'
+  }
+})
+// 无AI纯人工模式不展示 AI 协同面板
+const showAiPanel = computed(() => interviewMode.value !== 4)
+// 后到的面试官需手动加入本次面试；观察者只观看、不发布
+const showJoinButton = computed(() => sessionRole.value === 'HR' && !joined.value)
+// 本人是否为主面试官
+const isSelfPrimary = computed(() => String(myUserId.value) === String(primaryInterviewerId.value))
 
 let timerId = null
 let captionId = null
@@ -90,12 +114,61 @@ let videoTrack = null
 let audioTrack = null
 let localVideoStream = null
 let rtc = null
+// 会议录制器（canvas 合成画面 + 多路音频混音 + 分片上传）
+let recorder = null
+let joinRecorded = false
 
 // 当前进行中的面试场次（无后端数据时为 null，页面继续用 mock 演示）
 const sessionId = ref(null)
 // 候选人信息与面试官姓名：进入场次后由接口回填，未取到时保留演示值
 const candidate = ref({ name: '王芳', position: '高级前端工程师' })
 const interviewerName = ref('林晓雯')
+
+// 宫格统一画面数据：所有远端参与者 + 本人，宫格/聚焦共用同一组 DOM
+const tiles = computed(() => {
+  const list = participants.value.map((p) => ({
+    key: String(p.userId),
+    name: p.name,
+    roleLabel: p.roleLabel,
+    candidate: !!p.candidate,
+    primary: !!p.primary,
+    self: false,
+    stream: peerStreams.value[String(p.userId)] || null
+  }))
+  list.push({ key: SELF_KEY, name: `我 · ${interviewerName.value}`, roleLabel: '', candidate: false, primary: false, self: true, stream: localStreamRef.value })
+  return list
+})
+// 录制主画面元素：最近一次被放大的远端参与者（selectedUserId）
+function mainRecordEl() {
+  if (selectedUserId.value == null) return null
+  return tileEls[String(selectedUserId.value)] || null
+}
+// tile <video> 元素注册回调：挂载即绑定流，卸载即移除
+function setTileEl(key, el) {
+  if (el) {
+    tileEls[key] = el
+    const t = tiles.value.find((x) => x.key === key)
+    if (el.srcObject !== (t && t.stream)) el.srcObject = t ? t.stream : null
+  } else {
+    delete tileEls[key]
+  }
+}
+// 流变化后同步各 tile 的 srcObject
+watch(tiles, () => {
+  tiles.value.forEach((t) => {
+    const el = tileEls[t.key]
+    if (el && el.srcObject !== t.stream) el.srcObject = t.stream
+  })
+}, { flush: 'post' })
+// 点击 tile：放大 / 还原（微信视频风格）；放大远端画面时同步切换录制主画面
+function toggleEnlarge(t) {
+  if (enlargedKey.value === t.key) {
+    enlargedKey.value = null
+    return
+  }
+  enlargedKey.value = t.key
+  if (!t.self) selectedUserId.value = Number(t.key)
+}
 
 function notify(msg) {
   toast.value = msg
@@ -109,30 +182,7 @@ function fmtClock(total) {
   return `${m}:${s}`
 }
 
-function startDrag(event) {
-  const frame = frameRef.value?.getBoundingClientRect()
-  const box = selfRef.value?.getBoundingClientRect()
-  if (!frame || !box) return
-  const offX = event.clientX - box.left
-  const offY = event.clientY - box.top
-  const move = (ev) => {
-    const nx = ev.clientX - frame.left - offX
-    const ny = ev.clientY - frame.top - offY
-    // 边距与未拖拽时的 right/bottom 14px 保持一致，避免拖前拖后边距不等
-    selfPos.value = {
-      x: Math.max(14, Math.min(frame.width - box.width - 14, nx)),
-      y: Math.max(14, Math.min(frame.height - box.height - 14, ny))
-    }
-  }
-  const up = () => {
-    document.removeEventListener('mousemove', move)
-    document.removeEventListener('mouseup', up)
-  }
-  document.addEventListener('mousemove', move)
-  document.addEventListener('mouseup', up)
-}
-
-// 接入本机摄像头与麦克风：HR 自己的小窗绑定真实画面
+// 接入本机摄像头与麦克风：本人画面以宫格 tile 呈现
 // 摄像头与麦克风分开申请，任一失败不影响另一项；失败原因写入 mediaError 供 UI 展示
 async function openMedia() {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -162,7 +212,7 @@ async function openMedia() {
   CAM_ON.value = !!videoTrack
   MIC_ON.value = !!audioTrack
   if (audioTrack) audioTrack.enabled = true
-  if (selfVideo.value) selfVideo.value.srcObject = localVideoStream
+  localStreamRef.value = localVideoStream
 
   // 汇总提示：两者都失败时只弹一条，避免前一条被覆盖
   const failures = []
@@ -176,7 +226,7 @@ async function openMedia() {
     mediaError.value = ''
   }
   if (mediaError.value) notify(mediaError.value)
-  rtc?.attachLocalTracks(videoTrack, audioTrack)
+  if (joined.value) rtc?.attachLocalTracks(videoTrack, audioTrack)
 }
 
 // 会议设置：真实切换摄像头/麦克风（外接设备即在此选择）
@@ -225,17 +275,19 @@ async function applyDevice(kind) {
     videoTrack = newTrack
     videoTrack.enabled = CAM_ON.value
     localVideoStream = new MediaStream([videoTrack])
-    if (selfVideo.value) selfVideo.value.srcObject = localVideoStream
+    localStreamRef.value = localVideoStream
     setCamId.value = videoTrack.getSettings().deviceId || deviceId
   } else {
     audioTrack = newTrack
     audioTrack.enabled = MIC_ON.value
+    // 录制中换麦克风：新轨道补接入混音总线
+    recorder && recorder.addStream(new MediaStream([audioTrack]))
     setMicId.value = audioTrack.getSettings().deviceId || deviceId
   }
   // 同步重建合并流，确保 releaseMedia 能停止新轨道（旧轨道已 stop，重复 stop 无副作用）
   stream = rebuildLocalStream()
 
-  rtc?.attachLocalTracks(videoTrack, audioTrack)
+  if (joined.value) rtc?.attachLocalTracks(videoTrack, audioTrack)
   notify('已切换设备')
 }
 
@@ -245,25 +297,122 @@ function rebuildLocalStream() {
   return tracks.length ? new MediaStream(tracks) : null
 }
 
-// WebRTC 信令连接：拿到场次后建立，候选人远端流到达后渲染到主画面
+// WebRTC 网状信令连接：拿到场次后建立，各远端流按 userId 分别缓存，主画面按选中项渲染
 function startRtc() {
   if (rtc || !sessionId.value) return
   rtc = createConferenceRtc({
     sessionId: sessionId.value,
-    onPeerStream: (s) => {
-      peerStream.value = s
-      nextTick(() => {
-        if (peerVideo.value) peerVideo.value.srcObject = s
-      })
+    onPeerStream: (userId, stream) => {
+      peerStreams.value = { ...peerStreams.value, [String(userId)]: stream }
+      // 录制中新加入的参与者补接入音频混音
+      recorder && recorder.addStream(stream)
     },
-    onPeerLeft: () => {
-      peerStream.value = null
-      if (peerVideo.value) peerVideo.value.srcObject = null
+    onPeerLeft: (userId) => {
+      const next = { ...peerStreams.value }
+      delete next[String(userId)]
+      peerStreams.value = next
+    },
+    // 对端连接建立后，若正在录制则把当前录制状态补发给它（覆盖对端刷新/后加入的场景）
+    onPeerState: (userId, state) => {
+      if (state === 'connected' && RECORDING.value) rtc?.sendControl('recording', { on: true }, userId)
     }
   })
   rtc.start()
-  // 媒体采集先于信令就绪时补挂本地轨道
-  if (videoTrack || audioTrack) rtc.attachLocalTracks(videoTrack, audioTrack)
+  // 媒体采集先于信令就绪时补挂本地轨道（仅已加入时发布）
+  if (joined.value && (videoTrack || audioTrack)) rtc.attachLocalTracks(videoTrack, audioTrack)
+}
+
+// 宫格 tile 的 srcObject 由 watch(tiles) 统一维护，无需单独绑定主画面
+
+// 应用场次上下文：回填信息、面试官列表、模式与本人在场次中的角色
+function applySessionContext(ctx) {
+  if (!ctx) return
+  if (ctx.candidateName) candidate.value.name = ctx.candidateName
+  if (ctx.positionTitle) candidate.value.position = ctx.positionTitle
+  // 小窗标注的是「我」，优先展示当前登录面试官本人姓名
+  interviewerName.value = userStore.nickName || userStore.name || ctx.interviewerName || interviewerName.value
+  if (ctx.mode) interviewMode.value = Number(ctx.mode)
+  sessionRole.value = ctx.role || null
+  primaryInterviewerId.value = ctx.primaryInterviewerId != null ? Number(ctx.primaryInterviewerId) : null
+
+  const list = []
+  if (ctx.candidateUserId != null) {
+    list.push({ userId: Number(ctx.candidateUserId), name: ctx.candidateName || '候选人', roleLabel: '候选人', candidate: true, primary: false })
+  }
+  const interviewers = ctx.interviewers || []
+  interviewers.forEach((it) => {
+    const uid = Number(it.userId)
+    // 本人的画面用本地小窗呈现，不重复放入可切换列表
+    if (String(uid) === String(myUserId.value)) return
+    list.push({
+      userId: uid,
+      name: it.userName || '面试官',
+      roleLabel: Number(it.isPrimary) === 1 ? '主面试官' : '面试官',
+      candidate: false,
+      primary: Number(it.isPrimary) === 1
+    })
+  })
+  participants.value = list
+  if (selectedUserId.value == null && list.length) selectedUserId.value = list[0].userId
+
+  // 加入状态：主面试官自动加入；其他面试官按服务端记录，未加入需手动点「加入本次面试」；
+  // 观察者只观看不发布
+  if (sessionRole.value === 'OBSERVER') {
+    joined.value = false
+  } else if (sessionRole.value === 'HR') {
+    if (isSelfPrimary.value) {
+      joined.value = true
+      recordJoin()
+    } else {
+      const selfMeta = interviewers.find((x) => String(x.userId) === String(myUserId.value))
+      joined.value = !!selfMeta && Number(selfMeta.joinStatus) === 1
+    }
+  }
+  if (joined.value && (videoTrack || audioTrack)) rtc?.attachLocalTracks(videoTrack, audioTrack)
+}
+
+// 加入本次面试：标记加入并开始发布本地音视频
+async function joinNow(silent) {
+  if (joined.value) return
+  joined.value = true
+  if (!silent) notify('已加入本次面试')
+  if (videoTrack || audioTrack) rtc?.attachLocalTracks(videoTrack, audioTrack)
+  await recordJoin()
+}
+
+// 向服务端登记「已加入」（仅登记一次，避免刷新上下文时循环调用）
+async function recordJoin() {
+  if (joinRecorded || !sessionId.value) return
+  joinRecorded = true
+  try {
+    await joinInterviewer(sessionId.value)
+    await refreshContext()
+  } catch (e) {
+    // 网络异常时保持已加入的本地状态
+  }
+}
+
+// 重新拉取场次上下文（面试官列表 / 主面试官可能已变化）
+async function refreshContext() {
+  if (!sessionId.value) return
+  try {
+    const res = await getSessionContext(sessionId.value)
+    applySessionContext(res.data)
+  } catch (e) {
+    // 忽略
+  }
+}
+
+// 移交主持人给其他面试官
+async function handoverPrimary(item) {
+  if (!sessionId.value) return
+  try {
+    await transferPrimary(sessionId.value, item.userId)
+    notify(`已将主持人移交给 ${item.name}`)
+    await refreshContext()
+  } catch (e) {
+    notify('移交失败，请重试')
+  }
 }
 
 function toggleMic() {
@@ -295,13 +444,8 @@ function releaseMedia() {
   videoTrack = null
   audioTrack = null
   localVideoStream = null
-  if (selfVideo.value) selfVideo.value.srcObject = null
+  localStreamRef.value = null
 }
-
-// 小窗隐藏后重新显示时 video 元素会被重建，需重新绑定画面
-watch(selfVisible, (visible) => {
-  if (visible && selfVideo.value) selfVideo.value.srcObject = localVideoStream
-}, { flush: 'post' })
 
 function toggleQuality() {
   if (quality.value === 'hd') {
@@ -313,14 +457,55 @@ function toggleQuality() {
   }
 }
 
+// 向房间广播录制状态，使候选人端「录制中」标识与真实录制状态保持一致
+function broadcastRecording(on) {
+  rtc?.sendControl('recording', { on: !!on })
+}
+
+// 开始 / 停止真实录制：合成主画面+小窗，混入双方音频，30 秒分片上传
 function toggleRecord() {
-  RECORDING.value = !RECORDING.value
-  notify(RECORDING.value ? '已开始录制' : '已暂停录制')
+  if (recorder && recorder.isRecording()) {
+    recorder.stop().then(
+      () => notify('录制已停止，文件已保存'),
+      () => notify('录制已停止，但上传未完成')
+    )
+    RECORDING.value = false
+    broadcastRecording(false)
+    return
+  }
+  if (!isSelfPrimary.value) {
+    notify('仅主面试官可操作录制')
+    return
+  }
+  if (!sessionId.value) {
+    notify('未连接到面试场次，无法录制')
+    return
+  }
+  if (!recorder) {
+    recorder = createMeetingRecorder({
+      getSessionId: () => sessionId.value,
+      getMainVideo: () => mainRecordEl(),
+      getSelfVideo: () => tileEls[SELF_KEY] || null,
+      getPeerStreams: () => peerStreams.value,
+      getLocalStream: () => stream,
+      onNotify: notify
+    })
+  }
+  if (recorder.start()) {
+    RECORDING.value = true
+    broadcastRecording(true)
+  }
 }
 
 // 结束后端场次并离开会议页。
 // 结束接口不阻塞离开：接口异常时若卡在此处，又会变成「退不出去」。
 function endSessionAndLeave() {
+  if (recorder && recorder.isRecording()) {
+    // 录制中结束会议：触发末片上传，不阻塞离开（失败仅提示）
+    recorder.stop().catch(() => notify('录制上传未完成，最后一段可能缺失'))
+    RECORDING.value = false
+    broadcastRecording(false)
+  }
   if (sessionId.value) {
     finishSession(sessionId.value, 'normal').catch(() => {})
   }
@@ -383,25 +568,20 @@ async function initSession() {
   if (urlSessionId) {
     sessionId.value = urlSessionId
     startRtc()
-  }
-  try {
-    const s = await getCurrentSession()
-    if (s.data && s.data.sessionId) {
-      if (!sessionId.value) {
+  } else {
+    try {
+      const s = await getCurrentSession()
+      if (s.data && s.data.sessionId) {
         sessionId.value = s.data.sessionId
         startRtc()
       }
-      if (String(s.data.sessionId) === String(sessionId.value)) {
-        // 回填候选人 / 面试官信息，替换页面上的演示值
-        if (s.data.candidateName) candidate.value.name = s.data.candidateName
-        if (s.data.positionTitle) candidate.value.position = s.data.positionTitle
-        if (s.data.interviewerName) interviewerName.value = s.data.interviewerName
-      }
+    } catch (e) {
+      // 本地未启动后端时保留 mock 演示
     }
-  } catch (e) {
-    // 本地未启动后端时保留 mock 演示
   }
   if (!sessionId.value) return
+  // 拉取场次上下文：候选人 / 面试官列表 / 面试模式 / 本人在场次中的角色（主面试官自动加入）
+  await refreshContext()
   try {
     const p = await getProgress(sessionId.value)
     if (p.data) {
@@ -449,6 +629,10 @@ onBeforeUnmount(() => {
   clearInterval(captionId)
   clearInterval(heartbeatId)
   clearInterval(rttId)
+  if (recorder) {
+    recorder.destroy()
+    recorder = null
+  }
   rtc?.destroy()
   rtc = null
   releaseMedia()
@@ -467,11 +651,12 @@ onBeforeUnmount(() => {
         <div class="tb-title">
           <strong>高级前端工程师</strong>
           <span class="chip">第 1 轮 / 共 2 轮</span>
-          <span class="chip mode"><Sparkles :size="12" />AI + HR 协同</span>
+          <span class="chip mode"><Sparkles v-if="showAiPanel" :size="12" />{{ modeLabel }}</span>
         </div>
       </div>
       <div class="tb-right">
-        <button class="tb-icon" :title="rightOpen ? '收起协同面板' : '展开协同面板'" @click="rightOpen = !rightOpen">
+        <button v-if="showJoinButton" class="tb-join" @click="joinNow()">加入本次面试</button>
+        <button v-if="showAiPanel" class="tb-icon" :title="rightOpen ? '收起协同面板' : '展开协同面板'" @click="rightOpen = !rightOpen">
           <ChevronRight v-if="rightOpen" :size="17" />
           <ChevronLeft v-else :size="17" />
         </button>
@@ -496,7 +681,7 @@ onBeforeUnmount(() => {
 
         <div class="info-row"><span>应聘岗位</span><b>{{ candidate.position }}</b></div>
         <div class="info-row"><span>当前阶段</span><b>专业技术面</b></div>
-        <div class="info-row"><span>面试模式</span><b>AI + HR 协同</b></div>
+        <div class="info-row"><span>面试模式</span><b>{{ modeLabel }}</b></div>
 
         <button class="resume" @click="notify('已打开候选人简历详情')">
           <FileText :size="16" />查看候选人简历<ArrowUpRight :size="15" />
@@ -513,43 +698,52 @@ onBeforeUnmount(() => {
       </aside>
 
       <section class="stage">
-        <div ref="frameRef" class="main-video">
-          <video v-show="peerStream" ref="peerVideo" class="peer-video" autoplay playsinline />
-          <div v-if="!peerStream" class="peer-waiting"><Video :size="26" /><span>等待候选人画面…</span></div>
+        <div class="video-stage" :class="[`n${Math.min(tiles.length, 6)}`, { 'is-spot': enlargedKey }]" :style="{ '--spot-rows': Math.max(tiles.length - 1, 1) }">
+          <div
+            v-for="t in tiles"
+            :key="t.key"
+            class="tile"
+            :class="{ big: enlargedKey === t.key }"
+            @click="toggleEnlarge(t)"
+          >
+            <video
+              :ref="(el) => setTileEl(t.key, el)"
+              class="tile-video"
+              :class="{ mirror: t.self }"
+              autoplay
+              playsinline
+              :muted="t.self"
+            />
+            <!-- 无流：等待占位 -->
+            <div v-if="!t.stream" class="tile-waiting">
+              <Video :size="t.self ? 16 : 22" />
+              <span>{{ t.self ? (mediaError ? '设备未就绪' : '摄像头已关闭') : `等待 ${t.name} 画面…` }}</span>
+              <button v-if="t.self && mediaError" class="tile-retry" @click.stop="openMedia">重新检测</button>
+            </div>
+            <!-- 本人摄像头关闭但有流时仍显示占位（流含音频轨） -->
+            <div v-else-if="t.self && !CAM_ON" class="tile-waiting">
+              <Video :size="16" />
+              <span>摄像头已关闭</span>
+            </div>
 
-          <span class="tag-main"><i />候选人 · {{ candidate.name }}</span>
+            <span class="tile-name"><i v-if="t.stream" />{{ t.name }}<small v-if="t.roleLabel"> · {{ t.roleLabel }}</small></span>
+
+            <div class="tile-tools">
+              <button
+                v-if="isSelfPrimary && !t.candidate && !t.self"
+                class="tile-transfer"
+                title="将主持人身份移交给该面试官"
+                @click.stop="handoverPrimary({ userId: Number(t.key), name: t.name })"
+              >移交</button>
+              <span class="tile-zoom">{{ enlargedKey === t.key ? '还原' : '放大' }}</span>
+            </div>
+          </div>
+
           <div class="tag-right">
-            <span class="tag-quality" :class="quality" @click="toggleQuality">
+            <span class="tag-quality" :class="quality" @click.stop="toggleQuality">
               {{ quality === 'hd' ? '高清 1080P' : '流畅 480P' }}
             </span>
             <span v-if="RECORDING" class="tag-rec"><i />录制中</span>
-          </div>
-
-          <div
-            v-if="!selfVisible"
-            class="self-restore"
-            @click="selfVisible = true"
-          >
-            <Video :size="15" />显示我的画面
-          </div>
-
-          <div
-            v-else
-            ref="selfRef"
-            class="self-win"
-            :style="selfStyle"
-            @mousedown.prevent="startDrag"
-          >
-            <video v-show="CAM_ON" ref="selfVideo" autoplay playsinline muted />
-            <div v-if="!CAM_ON" class="self-fallback">
-              <Video :size="16" />
-              <span>{{ mediaError ? '设备未就绪' : '摄像头已关闭' }}</span>
-              <button v-if="mediaError" class="self-retry" @mousedown.stop @click.stop="openMedia">重新检测</button>
-            </div>
-            <span class="self-name"><GripVertical :size="11" />我 · {{ interviewerName }}</span>
-            <button class="self-hide" title="隐藏我的画面" @mousedown.stop @click.stop="selfVisible = false">
-              <X :size="13" />
-            </button>
           </div>
 
           <div v-if="quality === 'smooth'" class="net-warning">
@@ -558,7 +752,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <aside v-show="rightOpen" class="right">
+      <aside v-show="rightOpen && showAiPanel" class="right">
         <div class="right-head">
           <h2>AI 实时协同</h2>
         </div>
@@ -629,8 +823,8 @@ onBeforeUnmount(() => {
       <button class="ctl rec-btn" :class="{ on: RECORDING }" @click="toggleRecord">
         <span class="dot-icon" /><span>录制</span>
       </button>
-      <button class="ctl" :class="{ on: PIP }" @click="PIP = !PIP">
-        <Copy :size="20" /><span>画中画</span>
+      <button class="ctl" :class="{ on: !enlargedKey }" @click="enlargedKey = null">
+        <Copy :size="20" /><span>宫格视图</span>
       </button>
       <button class="ctl" :class="{ on: CAPTION_ON }" @click="CAPTION_ON = !CAPTION_ON">
         <MessageSquareText :size="20" /><span>字幕</span>
@@ -741,6 +935,14 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 .tb-exit:hover { color: var(--text); border-color: var(--line-strong); }
+.tb-join {
+  height: 32px; padding: 0 14px;
+  border: 0; border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px; font-weight: 600;
+}
+.tb-join:hover { background: var(--primary-strong); }
 .tb-title { display: flex; align-items: center; gap: 10px; }
 .tb-title strong { font-size: 16px; letter-spacing: .2px; }
 .chip {
@@ -842,8 +1044,8 @@ onBeforeUnmount(() => {
 .timeline .active i { background: var(--primary); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .timeline .active b { color: #9dbcff; }
 
-/* 主视频区（16:9） */
-.main-video {
+/* 视频宫格区：默认所有画面并排（微信视频风格），点击放大其一（聚焦模式） */
+.video-stage {
   position: relative;
   width: min(100%, calc((100vh - 156px) * 16 / 9));
   aspect-ratio: 16 / 9;
@@ -851,15 +1053,92 @@ onBeforeUnmount(() => {
   overflow: hidden;
   background: #05070c;
   box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  grid-auto-flow: dense;
 }
-.peer-video { width: 100%; height: 100%; object-fit: cover; display: block; background: #05070c; }
-.peer-waiting {
+/* 2 个画面：左右对半；3-4 个：2×2；更多：自动换行 */
+.video-stage.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* n3 采用 2×2 均匀宫格（第 4 格留空）：每格接近 16:9，画面 contain 后黑边最小 */
+.video-stage.n3 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+.video-stage.n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.video-stage.n5, .video-stage.n6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.video-stage.n5 .tile:first-child, .video-stage.n6 .tile:first-child { grid-column: span 2; grid-row: span 2; }
+/* 聚焦模式：放大画面占满左侧，其余缩为右侧竖排小条（微信视频风格） */
+.video-stage.is-spot { grid-template-columns: 1fr 168px; grid-template-rows: repeat(var(--spot-rows, 2), minmax(0, 1fr)); }
+.video-stage.is-spot .tile.big { grid-column: 1; grid-row: 1 / -1; }
+.video-stage.is-spot .tile:not(.big) { grid-column: 2; }
+.video-stage.is-spot .tag-right { right: 184px; }
+
+.tile {
+  position: relative;
+  min-width: 0; min-height: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0b1220;
+  border: 1px solid rgba(255, 255, 255, .06);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.tile:hover { border-color: rgba(255, 255, 255, .3); }
+.tile.big { border-color: var(--primary); }
+/* contain：完整显示画面不裁切（cover 会把摄像头画面放大裁掉边缘） */
+.tile-video { width: 100%; height: 100%; object-fit: contain; display: block; background: #05070c; }
+.tile-video.mirror { transform: scaleX(-1); }
+.tile-waiting {
   position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
-  color: #8b98ad; font-size: 14px;
-  background: radial-gradient(ellipse at center, #0c1424 0%, #05070c 70%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  color: #8b98ad; font-size: 12px;
+  background: radial-gradient(ellipse at center, #0c1424 0%, #05070c 75%);
 }
-.tag-main, .tag-quality, .tag-rec {
+.tile-retry {
+  height: 22px; padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: rgba(9, 14, 24, .6);
+  color: #cfe0ff; font-size: 11px;
+}
+.tile-retry:hover { border-color: var(--primary); color: #fff; }
+.tile-name {
+  position: absolute; left: 8px; bottom: 7px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(9, 14, 24, .62);
+  backdrop-filter: blur(6px);
+  font-size: 11px; color: #fff;
+  pointer-events: none;
+  max-width: calc(100% - 16px);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tile-name i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+.tile-name small { color: #9fb0c8; }
+.tile-tools {
+  position: absolute; right: 8px; top: 8px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tile-transfer {
+  height: 22px; padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: rgba(9, 14, 24, .62);
+  color: #cfe0ff; font-size: 10px;
+}
+.tile-transfer:hover { border-color: var(--primary); color: #fff; }
+.tile-zoom {
+  height: 22px; padding: 0 9px;
+  display: inline-flex; align-items: center;
+  border-radius: 999px;
+  background: rgba(9, 14, 24, .62);
+  backdrop-filter: blur(6px);
+  font-size: 10px; color: #9fb0c8;
+  opacity: 0; transition: opacity .15s;
+}
+.tile:hover .tile-zoom { opacity: 1; }
+.tag-quality, .tag-rec {
   height: 26px; padding: 0 11px;
   display: inline-flex; align-items: center; gap: 6px;
   border-radius: 999px;
@@ -868,11 +1147,9 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(6px);
   color: #fff;
 }
-.tag-main { position: absolute; left: 14px; top: 14px; }
-.tag-main i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 /* 画质与录制角标统一右对齐，避免靠硬编码偏移避让、文字一变宽窄就错位 */
 .tag-right {
-  position: absolute; top: 14px; right: 14px;
+  position: absolute; top: 16px; right: 16px; z-index: 3;
   display: inline-flex; align-items: center; gap: 8px;
 }
 .tag-quality { cursor: pointer; color: #a9bdda; }
@@ -880,7 +1157,7 @@ onBeforeUnmount(() => {
 .tag-rec { color: #ffb3b4; }
 .tag-rec i { width: 7px; height: 7px; border-radius: 50%; background: var(--rec); animation: blink 1.1s infinite; }
 .net-warning {
-  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 3;
   display: inline-flex; align-items: center; gap: 7px;
   padding: 8px 14px;
   border-radius: 9px;
@@ -889,59 +1166,6 @@ onBeforeUnmount(() => {
   color: #ffd591;
   font-size: 12px;
   white-space: nowrap;
-}
-
-/* 自己小窗 */
-.self-win {
-  position: absolute;
-  width: 160px; height: 90px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, .85);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, .45);
-  cursor: move;
-}
-.self-win video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; transform: scaleX(-1); }
-.self-fallback {
-  position: absolute; inset: 0;
-  display: grid; place-content: center; justify-items: center; gap: 5px;
-  background: #1a2230; color: var(--muted); font-size: 10px;
-  pointer-events: none;
-}
-.self-retry {
-  pointer-events: auto;
-  height: 20px; padding: 0 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: rgba(9, 14, 24, .6);
-  color: #cfe0ff;
-  font-size: 10px;
-}
-.self-retry:hover { border-color: var(--primary); color: #fff; }
-.self-name {
-  position: absolute; left: 6px; bottom: 5px;
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 10px; color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, .7);
-  pointer-events: none;
-}
-.self-hide {
-  position: absolute; right: 5px; top: 5px;
-  width: 20px; height: 20px;
-  border: 0; border-radius: 6px;
-  background: rgba(9, 14, 24, .6);
-  color: #fff;
-  display: grid; place-items: center;
-}
-.self-restore {
-  position: absolute; right: 14px; bottom: 14px;
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 7px 12px;
-  border-radius: 9px;
-  background: rgba(9, 14, 24, .7);
-  color: #cfe0ff;
-  font-size: 12px;
-  cursor: pointer;
 }
 
 /* 右侧侧边栏 */
@@ -1068,11 +1292,10 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1280px) { .right { width: 288px; } }
 @media (max-width: 1120px) {
-  .right { display: none; }
   .left { width: 232px; }
 }
 @media (max-width: 860px) {
   .left { display: none; }
-  .main-video { width: 100%; }
+  .video-stage { width: 100%; }
 }
 </style>
