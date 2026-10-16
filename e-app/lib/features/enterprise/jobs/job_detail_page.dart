@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
 import '../talent/talent_detail_page.dart';
+import '../talent/models/talent_detail_view_data.dart';
 import 'data/job_detail_data_source.dart';
 import 'job_interviews_page.dart';
 import 'models/job_detail_view_data.dart';
@@ -258,6 +259,13 @@ class _JobDetailPageState extends State<JobDetailPage>
             widget.candidateBuilder?.call(candidate) ??
             TalentDetailPage(
               talent: {'talentId': id, 'name': candidate['name']},
+              jobContext: TalentJobContext(
+                positionId: _positionId,
+                title: jobValue(
+                  _detail.data?.job['title'] ?? widget.job['title'],
+                ),
+                currentStage: candidate['currentStage']?.toString(),
+              ),
             ),
       ),
     );
