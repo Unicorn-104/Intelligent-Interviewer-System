@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.app.AppCompanyMapper">
+    <resultMap id="PublicCompanyResult" type="com.ruoyi.system.domain.Company">
+        <id property="cmpId" column="cmp_id" />
+        <result property="cmpName" column="cmp_name" />
+        <result property="cmpLogoUrl" column="cmp_logo_url" />
+        <result property="cmpIndustry" column="cmp_industry" />
+        <result property="cmpSize" column="cmp_size" />
+        <result property="cmpCity" column="cmp_city" />
+        <result property="cmpAddress" column="cmp_address" />
+        <result property="cmpWebsite" column="cmp_website" />
+        <result property="cmpIntro" column="cmp_intro" />
+        <result property="cmpVerifyStatus" column="cmp_verify_status" />
+        <result property="cmpStatus" column="cmp_status" />
+    </resultMap>
+
+    <select id="selectPublicCompany" resultMap="PublicCompanyResult">
+        select cmp_id, cmp_name, cmp_logo_url, cmp_industry, cmp_size, cmp_city,
+               cmp_address, cmp_website, cmp_intro, cmp_verify_status, cmp_status
+        from t_cmp where cmp_id = #{companyId}
+    </select>
+
+    <select id="isFollowed" resultType="boolean">
+        select exists(select 1 from t_usr_interest
+            where int_user_id = #{userId} and int_target_type = 2
+              and int_target_id = #{companyId} and int_status = 1)
+    </select>
+
+    <insert id="follow">
+        insert into t_usr_interest (int_user_id, int_target_type, int_target_id, int_status, int_created_at, int_updated_at)
+        values (#{userId}, 2, #{companyId}, 1, now(), now())
+        on duplicate key update int_updated_at = if(int_status = 1, int_updated_at, now()), int_status = 1
+    </insert>
+
+    <update id="unfollow">
+        update t_usr_interest set int_status = 0, int_updated_at = now()
+        where int_user_id = #{userId} and int_target_type = 2 and int_target_id = #{companyId} and int_status = 1
+    </update>
+
+    <select id="selectFavoriteCompanyIds" resultType="long">
+        select i.int_target_id from t_usr_interest i
+        join t_cmp c on c.cmp_id = i.int_target_id and c.cmp_status = 1
+        where i.int_user_id = #{userId} and i.int_target_type = 2 and i.int_status = 1
+        order by i.int_updated_at desc, i.int_id desc
+    </select>
+
+    <update id="markNotificationsRead">
+        update t_msg set msg_is_read = 1, msg_read_at = coalesce(msg_read_at, now())
+        where msg_receiver_id = #{userId} and msg_type = 4 and msg_is_read = 0
+          and msg_target_url like concat('/companies/', #{companyId}, '?positionId=%')
+    </update>
+
+    <select id="selectLastInsertedPositionId" resultType="long">
+        select last_insert_id()
+    </select>
+
+    <select id="lockPositionStatus" resultType="int">
+        select pos_status from t_pos
+        where pos_id = #{positionId} and pos_company_id = #{companyId} for update
+    </select>
+
+    <!-- 与发布岗位处于同一事务。只有发布时仍在收藏的用户收到消息；同一岗位仅提醒一次。 -->
+    <insert id="notifyFollowers">
+        insert into t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content,
+                           msg_is_read, msg_target_url, msg_created_at)
+        select i.int_user_id, 0, 4, concat(c.cmp_name, ' · 企业动态'),
+               concat('发布了新的「', p.pos_title, '」职位。'), 0,
+               concat('/companies/', c.cmp_id, '?positionId=', p.pos_id), now()
+        from t_pos p
+        join t_cmp c on c.cmp_id = p.pos_company_id and c.cmp_status = 1
+        join t_usr_interest i on i.int_target_id = c.cmp_id and i.int_target_type = 2 and i.int_status = 1
+        where p.pos_id = #{positionId} and p.pos_company_id = #{companyId} and p.pos_status = 1
+          and not exists (select 1 from t_msg m where m.msg_receiver_id = i.int_user_id and m.msg_type = 4
+                          and m.msg_target_url = concat('/companies/', c.cmp_id, '?positionId=', p.pos_id))
+    </insert>
+</mapper>

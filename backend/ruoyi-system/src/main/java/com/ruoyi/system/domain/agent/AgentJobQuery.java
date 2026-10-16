@@ -9,6 +9,8 @@ import jakarta.validation.constraints.Min;
  */
 public class AgentJobQuery
 {
+    @Min(1)
+    private Long companyId;
     private String keyword;
     private String category;
     private String city;
@@ -29,6 +31,8 @@ public class AgentJobQuery
     @Max(100)
     private Integer size = 10;
 
+    public Long getCompanyId() { return companyId; }
+    public void setCompanyId(Long companyId) { this.companyId = companyId; }
     public String getKeyword() { return keyword; }
     public void setKeyword(String keyword) { this.keyword = keyword; }
     public String getCategory() { return category; }

@@ -19,24 +19,35 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
   int _messageUnreadCount = 0;
+  int _messageRefreshVersion = 0;
+
+  void _selectTab(int index) => setState(() {
+    _index = index;
+    if (index == 2) _messageRefreshVersion++;
+  });
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomeScreen(
         session: widget.session,
-        onOpenMessages: () => setState(() => _index = 2),
+        onOpenMessages: () => _selectTab(2),
+        unreadCount: _messageUnreadCount,
       ),
       ResumeScreen(session: widget.session),
       MessagesScreen(
         session: widget.session,
+        refreshVersion: _messageRefreshVersion,
         onUnreadChanged: (count) {
           if (_messageUnreadCount != count) {
             setState(() => _messageUnreadCount = count);
           }
         },
       ),
-      ProfileScreen(session: widget.session, onLogout: widget.onLogout),
+      ProfileScreen(
+        session: widget.session,
+        onLogout: widget.onLogout,
+      ),
     ];
     return Scaffold(
       body: SafeArea(
@@ -45,7 +56,7 @@ class _MainShellState extends State<MainShell> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
+        onDestinationSelected: _selectTab,
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.home_outlined),

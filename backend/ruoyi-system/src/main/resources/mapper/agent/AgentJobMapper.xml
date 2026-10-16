@@ -94,6 +94,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <include refid="jobSelect"/>
         WHERE pos.pos_status = 1
           AND cmp.cmp_status = 1
+        <if test="query.companyId != null">
+            AND pos.pos_company_id = #{query.companyId}
+        </if>
         <if test="query.keyword != null and query.keyword != ''">
             AND (
                 pos.pos_title LIKE CONCAT('%', #{query.keyword}, '%')

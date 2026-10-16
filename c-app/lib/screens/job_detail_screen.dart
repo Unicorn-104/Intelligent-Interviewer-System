@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/job.dart';
 import '../features/auth/domain/auth_session.dart';
+import '../features/companies/presentation/company_screen.dart';
 import '../theme/app_theme.dart';
 
 class JobDetailScreen extends StatefulWidget {
@@ -67,14 +68,14 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'AI 匹配度 ${job.match}%',
+                        'AI 匹配度 ${job.matchLabel}',
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           color: AppColors.interactive,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text('简历与岗位要求契合度较高，建议投递。AI 结果仅供参考。'),
+                      Text(job.matchAvailable ? '简历与岗位要求契合度较高，建议投递。AI 结果仅供参考。' : '暂未提供匹配评估，请结合岗位要求判断是否投递。'),
                     ],
                   ),
                 ),
@@ -100,11 +101,21 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           const SizedBox(height: 24),
           Card(
             child: ListTile(
-              contentPadding: const EdgeInsets.all(16),
+              onTap: job.companyId != null && job.companyId! > 0
+                  ? () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CompanyScreen(
+                          session: widget.session,
+                          companyId: job.companyId!,
+                        ),
+                      ),
+                    )
+                  : null,
+                            contentPadding: const EdgeInsets.all(16),
               leading: CircleAvatar(
                 backgroundColor: job.accent,
                 child: Text(
-                  job.company.substring(0, 1),
+                  job.company.isEmpty ? '企' : job.company.substring(0, 1),
                   style: const TextStyle(color: Colors.white),
                 ),
               ),

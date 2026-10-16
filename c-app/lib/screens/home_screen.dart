@@ -23,7 +23,7 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.onOpenMessages,
-    this.unreadCount = 0,
+    required this.unreadCount,
   });
 
   final AuthSession session;
@@ -309,7 +309,7 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.name,
     required this.onOpenMessages,
-    this.unreadCount = 0,
+    required this.unreadCount,
   });
 
   final String name;
