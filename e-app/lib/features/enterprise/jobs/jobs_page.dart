@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
 import '../../../api/jobs_api.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
@@ -8,15 +10,15 @@ import '../../../widgets/skeleton_list.dart';
 import 'job_detail_page.dart';
 import 'job_publish_page.dart';
 import 'widgets/job_list_card.dart';
+import 'widgets/job_sort_sheet.dart';
 
-typedef JobsLoader =
-    Future<List<Map<String, dynamic>>> Function({
-      String? keyword,
-      String? dept,
-      int? status,
-      required int pageNum,
-      required int pageSize,
-    });
+typedef JobsLoader = Future<List<Map<String, dynamic>>> Function({
+  String? keyword,
+  String? dept,
+  int? status,
+  required int pageNum,
+  required int pageSize,
+});
 
 class JobsPage extends StatefulWidget {
   const JobsPage({
@@ -48,6 +50,8 @@ class _JobsPageState extends State<JobsPage> {
   Object? _error;
   Object? _moreError;
   int? _statusFilter;
+  JobSortDimension _sortDimension = JobSortDimension.latestApply;
+  bool _sortAscending = false;
 
   @override
   void initState() {
@@ -177,9 +181,8 @@ class _JobsPageState extends State<JobsPage> {
       if (mounted) await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_friendlyError(error))));
       }
     } finally {
       if (mounted) setState(() => _changing.remove(id));
@@ -219,6 +222,65 @@ class _JobsPageState extends State<JobsPage> {
   void _filter(int? status) {
     setState(() => _statusFilter = status);
     _load();
+  }
+
+  Future<void> _openSort() async {
+    final selection = await showModalBottomSheet<JobSortSelection>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.canvas,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+      ),
+      builder: (_) =>
+          JobSortSheet(dimension: _sortDimension, ascending: _sortAscending),
+    );
+    if (selection == null || !mounted) return;
+    setState(() {
+      _sortDimension = selection.dimension;
+      _sortAscending = selection.ascending;
+    });
+  }
+
+  int? _sortValue(Map<String, dynamic> job) {
+    final raw = job[_sortDimension.field];
+    if (_sortDimension == JobSortDimension.applicants) {
+      final count = int.tryParse('$raw');
+      return count != null && count >= 0 ? count : null;
+    }
+    // Both API timestamps are UTC+8 wall-clock values, formatted to the minute.
+    final text = raw?.toString().trim() ?? '';
+    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$')
+        .firstMatch(text);
+    if (match == null) return null;
+    final parts = [for (var i = 1; i <= 5; i++) int.parse(match.group(i)!)];
+    final date = DateTime.utc(parts[0], parts[1], parts[2], parts[3], parts[4]);
+    if (date.year != parts[0] ||
+        date.month != parts[1] ||
+        date.day != parts[2] ||
+        date.hour != parts[3] ||
+        date.minute != parts[4]) {
+      return null;
+    }
+    return date.millisecondsSinceEpoch;
+  }
+
+  List<Map<String, dynamic>> _sortedJobs() {
+    final rows = [
+      for (final (index, job) in _jobs.indexed)
+        (index: index, job: job, value: _sortValue(job)),
+    ];
+    rows.sort((left, right) {
+      final a = left.value;
+      final b = right.value;
+      if (a == null || b == null) {
+        if (a == b) return left.index.compareTo(right.index);
+        return a == null ? 1 : -1;
+      }
+      final order = _sortAscending ? a.compareTo(b) : b.compareTo(a);
+      return order == 0 ? left.index.compareTo(right.index) : order;
+    });
+    return [for (final row in rows) row.job];
   }
 
   @override
@@ -265,43 +327,92 @@ class _JobsPageState extends State<JobsPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final (label, value) in <(String, int?)>[
-                        ('全部', null),
-                        ('在招', 1),
-                        ('已下线', 0),
-                        ('暂停', 2),
-                      ])
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            key: ValueKey('jobs-filter-$value'),
-                            label: Text(label),
-                            selected: _statusFilter == value,
-                            showCheckmark: false,
-                            selectedColor: AppColors.interactiveSoft,
+                Row(
+                  children: [
+                    Flexible(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final (label, value) in <(String, int?)>[
+                              ('全部', null),
+                              ('在招', 1),
+                              ('已下线', 0),
+                              ('暂停', 2),
+                            ])
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  key: ValueKey('jobs-filter-$value'),
+                                  label: Text(label),
+                                  selected: _statusFilter == value,
+                                  showCheckmark: false,
+                                  selectedColor: AppColors.interactiveSoft,
+                                  backgroundColor: AppColors.canvas,
+                                  side: BorderSide(
+                                    color: _statusFilter == value
+                                        ? AppColors.interactive
+                                        : AppColors.hairline,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  labelStyle: TextStyle(
+                                    color: _statusFilter == value
+                                        ? AppColors.interactive
+                                        : AppColors.textSecondary,
+                                  ),
+                                  onSelected: (_) => _filter(value),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 76,
+                      child: Tooltip(
+                        message:
+                            '${_sortDimension.label} · '
+                            '${_sortDimension.directionLabel(_sortAscending)}',
+                        child: OutlinedButton(
+                          key: const ValueKey('jobs-sort'),
+                          onPressed: _openSort,
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(76, 46),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            foregroundColor: AppColors.interactive,
                             backgroundColor: AppColors.canvas,
-                            side: BorderSide(
-                              color: _statusFilter == value
-                                  ? AppColors.interactive
-                                  : AppColors.hairline,
-                            ),
+                            side: const BorderSide(color: AppColors.hairline),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            labelStyle: TextStyle(
-                              color: _statusFilter == value
-                                  ? AppColors.interactive
-                                  : AppColors.textSecondary,
-                            ),
-                            onSelected: (_) => _filter(value),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _sortAscending
+                                    ? Icons.arrow_upward
+                                    : Icons.arrow_downward,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 4),
+                              const Flexible(
+                                child: Text(
+                                  '排序',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -356,19 +467,21 @@ class _JobsPageState extends State<JobsPage> {
             : null,
       );
     }
+    final sortedJobs = _sortedJobs();
     return RefreshIndicator(
       onRefresh: () => _load(),
       child: ListView.separated(
         key: const ValueKey('jobs-list'),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        itemCount: _jobs.length + 1,
+        itemCount: sortedJobs.length + 1,
         separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
-          if (index < _jobs.length) {
-            final job = _jobs[index];
+          if (index < sortedJobs.length) {
+            final job = sortedJobs[index];
             final id = int.tryParse('${job['posId']}');
             return JobListCard(
+              key: ValueKey('jobs-row-${job['posId']}'),
               job: job,
               changing: _changing.contains(id),
               onOpen: () => _openJob(job),
