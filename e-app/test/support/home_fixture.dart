@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:enterprise_recruiter/core/network/api_exception.dart';
 import 'package:enterprise_recruiter/features/enterprise/dashboard/home_data_source.dart';
 import 'package:enterprise_recruiter/features/enterprise/dashboard/home_models.dart';
@@ -8,6 +9,8 @@ class HomeFixture extends HomeDataSource {
   bool empty = false;
   int unread = 4;
   int interviewCalls = 0;
+  int calendarCalls = 0;
+  final calendarDates = <DateTime>[];
   Completer<HomePageSlice<HomeInterview>>? pendingInterviews;
   @override
   DateTime get now => DateTime(2030, 1, 2, 9);
@@ -60,6 +63,32 @@ class HomeFixture extends HomeDataSource {
               }),
             ),
     );
+  }
+
+  @override
+  Future<List<HomeInterview>> loadInterviewsOn(DateTime day) async {
+    calendarCalls++;
+    calendarDates.add(day);
+    check('interviews');
+    if (pendingInterviews != null) {
+      return (await pendingInterviews!.future).items;
+    }
+    return empty
+        ? []
+        : List.generate(4, (index) {
+            final start = DateTime.utc(day.year, day.month, day.day, index + 2);
+            return HomeInterview(
+              raw: {
+                'appointmentId': index + 1,
+                'candidateName': '示例候选人 ${index + 1}',
+                'positionTitle': '示例面试岗位 ${index + 1}',
+                'startTime': HomeInterview.formatServerTime(start),
+                'status': 1,
+              },
+              startTime: start,
+              status: 1,
+            );
+          });
   }
 
   @override

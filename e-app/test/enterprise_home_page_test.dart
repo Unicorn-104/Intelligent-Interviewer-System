@@ -1,21 +1,26 @@
 import 'dart:async';
+
 import 'package:enterprise_recruiter/features/enterprise/dashboard/home_page.dart';
 import 'package:enterprise_recruiter/features/enterprise/dashboard/home_lists_page.dart';
 import 'package:enterprise_recruiter/features/enterprise/dashboard/home_models.dart';
 import 'package:enterprise_recruiter/features/enterprise/dashboard/widgets/home_section.dart';
 import 'package:enterprise_recruiter/features/enterprise/dashboard/widgets/home_interview_section.dart';
+import 'package:enterprise_recruiter/features/enterprise/dashboard/widgets/home_interview_preview.dart';
 import 'package:enterprise_recruiter/features/enterprise/dashboard/widgets/home_applications_section.dart';
 import 'package:enterprise_recruiter/features/enterprise/jobs/job_detail_page.dart';
 import 'package:enterprise_recruiter/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+
 import 'support/home_fixture.dart';
 
 Future<void> mount(
   WidgetTester tester,
   HomeFixture source, {
   Size size = const Size(420, 900),
+  double textScale = 1,
+  VoidCallback? onJobs,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -28,6 +33,8 @@ Future<void> mount(
       home: MediaQuery(
         data: MediaQueryData(
           size: size,
+          textScaler: TextScaler.linear(textScale),
+          disableAnimations: true,
           padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
         ),
         child: HomePage(
@@ -35,7 +42,7 @@ Future<void> mount(
           onNotifications: () {},
           onFeatures: () {},
           onInterviews: () {},
-          onJobs: () {},
+          onJobs: onJobs ?? () {},
         ),
       ),
     ),
@@ -63,10 +70,10 @@ void main() {
     const Size(900, 420),
     const Size(420, 900),
   ]) {
-    testWidgets('真实首页在 $size 和安全区内显示三条预览且不溢出', (tester) async {
+    testWidgets('真实首页在 $size 和安全区内显示当日面试及三条岗位且不溢出', (tester) async {
       await mount(tester, HomeFixture(), size: size);
       expect(find.text('示例企业'), findsOneWidget);
-      expect(inHome(find.byType(HomeInterviewRow)), findsNWidgets(3));
+      expect(inHome(find.byType(HomeInterviewPreview)), findsNWidgets(4));
       expect(inHome(find.byType(HomeApplicationRow)), findsNWidgets(3));
       final applications = inHome(find.widgetWithText(HomeSection, '岗位投递概览'));
       expect(
@@ -105,8 +112,9 @@ void main() {
     });
   }
 
-  testWidgets('更多分别进入独立面试和累计投递列表，返回仍只有三条', (tester) async {
-    await mount(tester, HomeFixture());
+  testWidgets('面试更多保留原列表，岗位投递更多调用岗位 Tab 入口', (tester) async {
+    var jobsOpened = 0;
+    await mount(tester, HomeFixture(), onJobs: () => jobsOpened++);
     await more(tester, '近期面试');
     expect(find.byType(HomeInterviewsPage), findsOneWidget);
     expect(
@@ -119,36 +127,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(inHome(find.byType(HomeInterviewRow)), findsNWidgets(3));
+    expect(inHome(find.byType(HomeInterviewPreview)), findsNWidgets(4));
     await more(tester, '岗位投递概览');
-    expect(find.byType(HomeApplicationsPage), findsOneWidget);
+    expect(jobsOpened, 1);
+    expect(find.byType(HomeApplicationsPage), findsNothing);
     expect(
-      tester
-          .widget<HomeApplicationsPage>(find.byType(HomeApplicationsPage))
-          .companyName,
-      '示例企业',
-    );
-    for (final row in tester.widgetList<HomeApplicationRow>(
-      find.descendant(
-        of: find.byType(HomeApplicationsPage),
-        matching: find.byType(HomeApplicationRow),
-      ),
-    )) {
-      expect(row.companyName, '示例企业');
-    }
-    expect(
-      find.descendant(
-        of: find.byType(HomeApplicationsPage),
-        matching: find.byType(HomeApplicationRow),
-      ),
-      findsWidgets,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(HomeApplicationsPage),
-        matching: find.text('累计投递 · 按岗位发布时间排序'),
-      ),
-      findsOneWidget,
+      Navigator.of(tester.element(find.byType(HomePage))).canPop(),
+      isFalse,
     );
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -163,8 +148,8 @@ void main() {
     await tester.ensureVisible(retry);
     await tester.tap(retry);
     await tester.pump();
-    expect(inHome(find.byType(HomeInterviewRow)), findsNWidgets(3));
-    expect(source.interviewCalls, 2);
+    expect(inHome(find.byType(HomeInterviewPreview)), findsNWidgets(4));
+    expect(source.calendarCalls, 2);
   });
 
   testWidgets('空态不造假，加载态保留可见骨架', (tester) async {
@@ -172,7 +157,7 @@ void main() {
       ..empty = true
       ..unread = 0;
     await mount(tester, source);
-    expect(find.text('暂无即将进行的面试'), findsOneWidget);
+    expect(find.text('当日无面试，可切换日期查看安排'), findsOneWidget);
     expect(find.text('暂无岗位投递数据'), findsOneWidget);
     expect(find.text('暂无统计数据'), findsOneWidget);
     expect(

@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
 import '../../../../theme/app_theme.dart';
 import '../home_models.dart';
 
@@ -167,7 +169,8 @@ class HomeApplicationRow extends StatelessWidget {
                           text: '${application.applicants ?? '—'}',
                           style: const TextStyle(
                             color: AppColors.interactive,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const TextSpan(text: ' 人'),

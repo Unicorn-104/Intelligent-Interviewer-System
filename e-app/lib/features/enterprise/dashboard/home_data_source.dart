@@ -4,22 +4,20 @@ import '../../../api/schedule_api.dart' as schedule_api;
 import '../../../core/network/api_exception.dart';
 import 'home_models.dart';
 
-typedef HomeJobLoader =
-    Future<List<Map<String, dynamic>>> Function({
-      String? keyword,
-      String? dept,
-      int? status,
-      required int pageNum,
-      required int pageSize,
-    });
-typedef HomeInterviewLoader =
-    Future<List<Map<String, dynamic>>> Function({
-      int? status,
-      String? from,
-      String? to,
-      required int pageNum,
-      required int pageSize,
-    });
+typedef HomeJobLoader = Future<List<Map<String, dynamic>>> Function({
+  String? keyword,
+  String? dept,
+  int? status,
+  required int pageNum,
+  required int pageSize,
+});
+typedef HomeInterviewLoader = Future<List<Map<String, dynamic>>> Function({
+  int? status,
+  String? from,
+  String? to,
+  required int pageNum,
+  required int pageSize,
+});
 
 /// Aggregates existing API functions and maps fields. No HTTP client lives here.
 class HomeDataSource {
@@ -79,6 +77,44 @@ class HomeDataSource {
       rows.map((row) => HomeApplication(Map.unmodifiable(row))).toList(),
       nextPage: rows.length < pageSize ? null : page + 1,
     );
+  }
+
+  /// Loads the entire selected day, including earlier and completed records.
+  Future<List<HomeInterview>> loadInterviewsOn(DateTime day) async {
+    final date =
+        '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+        '${day.day.toString().padLeft(2, '0')}';
+    final items = <String, HomeInterview>{};
+    final signatures = <String>{};
+    var page = 1;
+    while (true) {
+      final rows = await _interviews(
+        from: '$date 00:00:00',
+        to: '$date 23:59:59',
+        pageNum: page,
+        pageSize: pageSize,
+      );
+      if (rows.length > pageSize) {
+        throw const ApiException('面试日程分页异常，请重试');
+      }
+      final signature = rows
+          .map(
+            (row) =>
+                '${row['appointmentId']}-${row['startTime']}-${row['status']}',
+          )
+          .join('|');
+      if (rows.isNotEmpty && !signatures.add(signature)) {
+        throw const ApiException('面试日程暂时无法继续加载，请重试');
+      }
+      for (final row in rows) {
+        final item = HomeInterview.onDay(row, day);
+        if (item != null) items[item.id] = item;
+      }
+      if (rows.length < pageSize) break;
+      page++;
+    }
+    return items.values.toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
   }
 
   Future<HomePageSlice<HomeInterview>> loadInterviews({

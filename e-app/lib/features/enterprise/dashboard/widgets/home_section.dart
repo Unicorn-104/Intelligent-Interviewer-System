@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../../theme/app_theme.dart';
 
 class HomeSection extends StatelessWidget {
@@ -45,7 +46,7 @@ class HomeSection extends StatelessWidget {
           style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
         ),
       ],
-      const SizedBox(height: 12),
+      const SizedBox(height: 4),
       if (wrapInCard)
         Card(
           child: Padding(padding: const EdgeInsets.all(16), child: child),

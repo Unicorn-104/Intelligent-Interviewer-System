@@ -77,6 +77,25 @@ class HomeInterview {
 
   String get statusLabel => status == 0 ? '待确认' : '已确认';
 
+  /// Calendar dates are wall-clock days in the server's UTC+8 timezone.
+  static HomeInterview? onDay(Map<String, dynamic> row, DateTime day) {
+    final text = homeText(row['startTime'], '').replaceFirst(' ', 'T');
+    final hasOffset = RegExp(r'(?:[zZ]|[+-]\d{2}:?\d{2})$').hasMatch(text);
+    final date = DateTime.tryParse(hasOffset ? text : '$text+08:00');
+    if (date == null) return null;
+    final local = _utc8WallTime(date);
+    if (local.year != day.year ||
+        local.month != day.month ||
+        local.day != day.day) {
+      return null;
+    }
+    return HomeInterview(
+      raw: Map.unmodifiable(row),
+      startTime: date,
+      status: int.tryParse('${row['status']}') ?? -1,
+    );
+  }
+
   static HomeInterview? upcoming(Map<String, dynamic> row, DateTime from) {
     final text = homeText(row['startTime'], '').replaceFirst(' ', 'T');
     final hasOffset = RegExp(r'(?:[zZ]|[+-]\d{2}:?\d{2})$').hasMatch(text);
