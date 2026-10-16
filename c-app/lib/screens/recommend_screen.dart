@@ -107,7 +107,7 @@ class _RecommendJobsScreenState extends State<RecommendJobsScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) =>
-                    SearchScreen(session: widget.session),
+                    SearchScreen(session: widget.session, openFilters: true),
               ),
             ),
           ),
