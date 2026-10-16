@@ -44,17 +44,19 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                o.ofr_position_id as positionId, o.ofr_salary_offer as salaryOffer,
                date_format(o.ofr_onboard_date, '%Y-%m-%d') as onboardDate,
                date_format(o.ofr_deadline, '%Y-%m-%d %H:%i') as deadline,
-               o.ofr_status as status, o.ofr_offer_url as offerUrl,
+               o.ofr_status as status, o.ofr_approval_status as approvalStatus,
+               o.ofr_offer_url as offerUrl,
                date_format(o.ofr_created_at, '%Y-%m-%d %H:%i') as sentAt,
                u.nick_name as candidateName, pos.pos_title as positionTitle
         from t_off_offer o
         left join t_tal t on t.tal_id = o.ofr_candidate_id
         left join sys_user u on u.user_id = t.tal_user_id
-        left join t_pos pos on pos.pos_id = o.ofr_position_id
+        join t_pos pos on pos.pos_id = o.ofr_position_id
         <where>
             <if test="status != null">
                 o.ofr_status = #{status}
             </if>
+            and pos.pos_company_id = #{companyId}
         </where>
         order by o.ofr_id desc
     </select>
@@ -72,8 +74,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from t_off_offer o
         left join t_tal t on t.tal_id = o.ofr_candidate_id
         left join sys_user u on u.user_id = t.tal_user_id
-        left join t_pos pos on pos.pos_id = o.ofr_position_id
-        where o.ofr_id = #{offerId}
+        join t_pos pos on pos.pos_id = o.ofr_position_id
+        where o.ofr_id = #{offerId} and pos.pos_company_id = #{companyId}
     </select>
 
     <select id="selectApprovals" resultType="java.util.LinkedHashMap">
@@ -86,5 +88,90 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where a.oap_offer_id = #{offerId}
         order by a.oap_node_order
     </select>
+
+    <!-- ============ Offer 创建与发送（企业端 Offer 管理页） ============ -->
+
+    <select id="selectCompanyIdByUser" parameterType="Long" resultType="Long">
+        select bnd_company_id from t_cmp_binding
+        where bnd_user_id = #{userId} and bnd_status = 1
+        limit 1
+    </select>
+
+    <select id="selectPositionBase" resultType="java.util.LinkedHashMap">
+        select pos_id as positionId, pos_title as positionTitle, pos_company_id as companyId
+        from t_pos
+        where pos_id = #{positionId}
+    </select>
+
+    <select id="selectCandidateBase" resultType="java.util.LinkedHashMap">
+        select t.tal_id as candidateId, u.nick_name as candidateName
+        from t_tal t
+        left join sys_user u on u.user_id = t.tal_user_id
+        where t.tal_id = #{candidateId}
+    </select>
+
+    <select id="selectCandidateEmail" resultType="string">
+        select u.email
+        from t_tal t
+        join sys_user u on u.user_id = t.tal_user_id
+        where t.tal_id = #{candidateId}
+    </select>
+
+    <select id="selectCompanyName" parameterType="Long" resultType="string">
+        select cmp_name from t_cmp where cmp_id = #{companyId}
+    </select>
+
+    <insert id="insertOfferDraft">
+        insert into t_off_offer
+            (ofr_candidate_id, ofr_position_id, ofr_salary_offer, ofr_benefits, ofr_job_grade,
+             ofr_onboard_date, ofr_deadline, ofr_status)
+        values
+            (#{candidateId}, #{positionId}, #{salaryOffer}, #{benefits}, #{jobGrade},
+             #{onboardDate}, #{deadline}, 4)
+    </insert>
+
+    <update id="updateOfferSent">
+        update t_off_offer set ofr_status = 0 where ofr_id = #{offerId}
+    </update>
+
+    <insert id="insertSendNode">
+        insert into t_offer_approval
+            (oap_offer_id, oap_node_name, oap_node_order, oap_approver_id, oap_status, oap_approved_at)
+        values
+            (#{offerId}, '发送录用意向书', 1, #{approverId}, 1, now())
+    </insert>
+
+    <select id="selectCandidateOptions" resultType="java.util.LinkedHashMap">
+        select distinct t.tal_id as talentId, u.nick_name as name
+        from t_app_record a
+        join t_pos p on p.pos_id = a.app_position_id and p.pos_company_id = #{companyId}
+        join t_tal t on t.tal_id = a.app_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        order by t.tal_id
+        limit 200
+    </select>
+
+    <!-- ============ 邮箱与发信设置（个人资料 / Offer 发送选路） ============ -->
+
+    <select id="selectCompanyEmail" resultType="string">
+        select cmp_email from t_cmp where cmp_id = #{companyId}
+    </select>
+
+    <select id="selectMailConfig" resultType="java.util.LinkedHashMap">
+        select umc_smtp_host as smtpHost, umc_smtp_port as smtpPort, umc_ssl as `ssl`,
+               umc_username as username, umc_password_enc as passwordEnc
+        from t_off_mail_config
+        where umc_user_id = #{userId}
+    </select>
+
+    <insert id="upsertMailConfig">
+        insert into t_off_mail_config
+            (umc_user_id, umc_smtp_host, umc_smtp_port, umc_ssl, umc_username, umc_password_enc)
+        values
+            (#{userId}, #{smtpHost}, #{smtpPort}, #{ssl}, #{username}, #{passwordEnc})
+        on duplicate key update
+            umc_smtp_host = #{smtpHost}, umc_smtp_port = #{smtpPort},
+            umc_ssl = #{ssl}, umc_username = #{username}, umc_password_enc = #{passwordEnc}
+    </insert>
 
 </mapper>
