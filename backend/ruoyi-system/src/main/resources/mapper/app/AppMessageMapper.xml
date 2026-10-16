@@ -69,6 +69,7 @@
                    end as badge
             from t_msg m
             where m.msg_receiver_id = #{userId}
+              and not (m.msg_type = 4 and coalesce(m.msg_target_url, '') like '/companies/%?positionId=%')
 
             union all
 
@@ -76,6 +77,10 @@
                    'COMPANY' as category,
                    concat(c.cmp_name, ' · 企业动态') as title,
                    coalesce(
+                       (select cm.msg_content from t_msg cm
+                        where cm.msg_receiver_id = #{userId} and cm.msg_type = 4
+                          and cm.msg_target_url like concat('/companies/', c.cmp_id, '?positionId=%')
+                        order by cm.msg_created_at desc, cm.msg_id desc limit 1),
                        (select concat('发布了新的「', p.pos_title, '」职位。')
                         from t_pos p
                         where p.pos_company_id = c.cmp_id and p.pos_status = 1
@@ -91,9 +96,15 @@
                             from t_pos p2
                             where p2.pos_company_id = c.cmp_id and p2.pos_status = 1),
                            i.int_updated_at
-                       )
+                       ),
+                       coalesce((select max(cm.msg_created_at) from t_msg cm
+                                 where cm.msg_receiver_id = #{userId} and cm.msg_type = 4
+                                   and cm.msg_target_url like concat('/companies/', c.cmp_id, '?positionId=%')),
+                                i.int_updated_at)
                    ) as occurred_at,
-                   0 as unread_count,
+                   (select count(*) from t_msg cm
+                    where cm.msg_receiver_id = #{userId} and cm.msg_type = 4 and cm.msg_is_read = 0
+                      and cm.msg_target_url like concat('/companies/', c.cmp_id, '?positionId=%')) as unread_count,
                    c.cmp_logo_url as avatar_url,
                    concat('/companies/', c.cmp_id) as target_url,
                    '关注' as badge
@@ -130,6 +141,15 @@
             msg_read_at = coalesce(msg_read_at, now())
         where msg_receiver_id = #{userId}
           and msg_is_read = 0
+    </update>
+
+    <update id="markCompanyMessagesRead">
+        update t_msg m
+        join t_usr_interest i on i.int_user_id = m.msg_receiver_id and i.int_target_type = 2
+        set m.msg_is_read = 1, m.msg_read_at = coalesce(m.msg_read_at, now())
+        where i.int_id = #{interestId} and i.int_user_id = #{userId} and i.int_status = 1
+          and m.msg_type = 4 and m.msg_is_read = 0
+          and m.msg_target_url like concat('/companies/', i.int_target_id, '?positionId=%')
     </update>
 
     <update id="markAllHrSessionsRead">

@@ -4,10 +4,18 @@ import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
 import '../features/auth/domain/auth_session.dart';
 import '../features/jobs/data/job_api.dart';
+import '../features/applications/presentation/application_screen.dart';
+import '../features/applications/presentation/application_detail_screen.dart';
+import '../features/interviews/data/interview_api.dart';
+import '../features/interviews/domain/interview_schedule.dart';
+import '../features/interviews/presentation/interview_calendar.dart';
+import '../features/interviews/presentation/interview_controller.dart';
+import '../features/interviews/presentation/interview_detail_screen.dart';
 import '../models/job.dart';
 import '../theme/app_theme.dart';
 import '../widgets/job_card.dart';
 import '../widgets/section_header.dart';
+import '../widgets/async_state_card.dart';
 import 'search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -15,10 +23,12 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.onOpenMessages,
+    required this.unreadCount,
   });
 
   final AuthSession session;
   final VoidCallback onOpenMessages;
+  final int unreadCount;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -27,6 +37,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final ApiClient _client;
   late final JobApi _api;
+  late final InterviewController _interviews;
   final _recommendationKey = GlobalKey();
   HomeFeed? _feed;
   String? _error;
@@ -46,11 +57,16 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _client = ApiClient();
     _api = JobApi(_client);
+    _interviews = InterviewController(
+      InterviewApi(_client),
+      widget.session.token,
+    )..load();
     _load();
   }
 
   @override
   void dispose() {
+    _interviews.dispose();
     _client.close();
     super.dispose();
   }
@@ -76,13 +92,49 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _openSearch({String? keyword}) {
+  void _openSearch({String? keyword, bool openFilters = false}) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            SearchScreen(session: widget.session, initialKeyword: keyword),
+        builder: (_) => SearchScreen(
+          session: widget.session,
+          initialKeyword: keyword,
+          openFilters: openFilters,
+        ),
       ),
     );
+  }
+
+  Future<void> _refreshAll() async {
+    await Future.wait([_load(), _interviews.load()]);
+  }
+
+  Future<void> _openApplications() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ApplicationScreen(session: widget.session),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Future<void> _openApplication(int id) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) =>
+            ApplicationDetailScreen(session: widget.session, applicationId: id),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Future<void> _openInterview(InterviewSchedule item) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) =>
+            InterviewDetailScreen(session: widget.session, appointment: item),
+      ),
+    );
+    if (mounted) await _interviews.load();
   }
 
   Future<bool> _apply(Job job) async {
@@ -140,7 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: _refreshAll,
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
@@ -151,6 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _Header(
                   name: widget.session.nickName,
                   onOpenMessages: widget.onOpenMessages,
+                  unreadCount: widget.unreadCount,
                 ),
                 const SizedBox(height: 20),
                 _SearchEntry(onTap: _openSearch),
@@ -165,8 +218,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   key: _recommendationKey,
                   title: 'AI 为你推荐',
                   subtitle: '基于简历、求职意向与岗位匹配结果',
-                  action: '查看全部',
-                  onAction: _openSearch,
+                  action: '筛选全部岗位',
+                  onAction: () => _openSearch(openFilters: true),
                 ),
                 const SizedBox(height: 12),
                 _FilterBar(
@@ -177,18 +230,29 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 12),
                 ..._buildRecommendationContent(),
-                if (_feed?.applications.isNotEmpty == true) ...[
+                ...[
                   const SizedBox(height: 16),
                   SectionHeader(
                     title: '我的投递',
-                    subtitle: '${_feed!.applications.length} 个流程正在进行',
+                    subtitle: '查看岗位投递与企业处理进度',
+                    action: '查看全部',
+                    onAction: _openApplications,
                   ),
                   const SizedBox(height: 12),
-                  for (final application in _feed!.applications) ...[
-                    _ApplicationCard(application: application),
+                  for (final application
+                      in _feed?.applications ?? <ApplicationSummary>[]) ...[
+                    InkWell(
+                      onTap: () => _openApplication(application.applicationId),
+                      child: _ApplicationCard(application: application),
+                    ),
                     const SizedBox(height: 10),
                   ],
                 ],
+                const SizedBox(height: AppSpacing.xxl),
+                InterviewCalendar(
+                  controller: _interviews,
+                  onOpen: _openInterview,
+                ),
               ],
             ),
           ),
@@ -200,12 +264,11 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Widget> _buildRecommendationContent() {
     if (_error != null) {
       return [
-        _MessageCard(
+        AsyncStateCard(
           icon: Icons.wifi_off_rounded,
           title: '首页加载失败',
           message: _error!,
-          action: '重新加载',
-          onAction: _load,
+          onRetry: _load,
         ),
       ];
     }
@@ -219,12 +282,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (_feed!.jobs.isEmpty) {
       return [
-        _MessageCard(
+        AsyncStateCard(
           icon: Icons.work_outline_rounded,
           title: '暂时没有匹配岗位',
           message: '完善简历和求职意向后，AI 会为你推荐更合适的机会。',
-          action: '搜索更多岗位',
-          onAction: _openSearch,
+          actionLabel: '搜索更多岗位',
+          onRetry: _openSearch,
         ),
       ];
     }
@@ -232,6 +295,7 @@ class _HomeScreenState extends State<HomeScreen> {
       for (final job in _feed!.jobs) ...[
         JobCard(
           job: job,
+          session: widget.session,
           onApply: _apply,
           applying: _applyingPositionId == job.positionId,
         ),
@@ -242,10 +306,15 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.name, required this.onOpenMessages});
+  const _Header({
+    required this.name,
+    required this.onOpenMessages,
+    required this.unreadCount,
+  });
 
   final String name;
   final VoidCallback onOpenMessages;
+  final int unreadCount;
 
   @override
   Widget build(BuildContext context) {
@@ -275,9 +344,10 @@ class _Header extends StatelessWidget {
         IconButton.filledTonal(
           tooltip: '消息',
           onPressed: onOpenMessages,
-          icon: const Badge(
+          icon: Badge(
+            isLabelVisible: unreadCount > 0,
             smallSize: 7,
-            child: Icon(Icons.notifications_outlined),
+            child: const Icon(Icons.notifications_outlined),
           ),
         ),
       ],
@@ -482,45 +552,6 @@ class _ApplicationCard extends StatelessWidget {
                 fontWeight: FontWeight.w500,
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MessageCard extends StatelessWidget {
-  const _MessageCard({
-    required this.icon,
-    required this.title,
-    required this.message,
-    required this.action,
-    required this.onAction,
-  });
-  final IconData icon;
-  final String title;
-  final String message;
-  final String action;
-  final VoidCallback onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Icon(icon, size: 36, color: AppColors.muted),
-            const SizedBox(height: 12),
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 10),
-            TextButton(onPressed: onAction, child: Text(action)),
           ],
         ),
       ),

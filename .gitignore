@@ -87,6 +87,10 @@ logs/
 backend/ruoyi-admin/src/main/resources/application-druid.yml
 # 后端主配置（含 JWT token secret / Redis 等）
 backend/ruoyi-admin/src/main/resources/application.yml
+# 本机 AI 私有配置；Spring Boot 从 backend/config/ 自动加载
+backend/config/application.yml
+# 本机启动说明含环境专用内容，不纳入源码交付
+/c-app/启动与重启命令.md
 # 其他本地环境覆盖配置
 application-local.yml
 application-local.properties
@@ -121,3 +125,6 @@ RuoYi-Vue/
 dump.rdb
 backend/dump.rdb
 *.log
+# Python 本地验证缓存
+__pycache__/
+*.py[cod]

@@ -1,5 +1,17 @@
 import 'package:flutter/material.dart';
 
+abstract final class AppSpacing {
+  static const xxs = 2.0;
+  static const xs = 4.0;
+  static const sm = 8.0;
+  static const md = 12.0;
+  static const lg = 16.0;
+  static const xl = 20.0;
+  static const xxl = 24.0;
+  static const xxxl = 32.0;
+  static const minTouch = 44.0;
+}
+
 abstract final class AppColors {
   static const ink = Color(0xFF080808);
   static const brand = Color(0xFF1A3C6E);
@@ -29,6 +41,8 @@ abstract final class AppTheme {
     const scheme = ColorScheme.light(
       primary: AppColors.interactive,
       onPrimary: Colors.white,
+      primaryContainer: AppColors.primarySoft,
+      onPrimaryContainer: AppColors.brand,
       secondary: AppColors.purple,
       onSecondary: Colors.white,
       error: AppColors.red,

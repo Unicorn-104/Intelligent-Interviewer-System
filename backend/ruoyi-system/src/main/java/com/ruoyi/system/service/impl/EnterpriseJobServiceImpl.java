@@ -10,6 +10,7 @@ import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 import com.ruoyi.system.service.IEnterpriseJobService;
+import com.ruoyi.system.mapper.app.AppCompanyMapper;
 
 /**
  * 企业端岗位管理 服务实现
@@ -24,6 +25,9 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
 
     @Autowired
     private DashboardMapper dashboardMapper;
+
+    @Autowired
+    private AppCompanyMapper companyMapper;
 
     @Override
     public Long resolveCompanyId(Long userId)
@@ -45,16 +49,25 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
     }
 
     @Override
+    @Transactional
     public int changeJobStatus(Long userId, Long posId, Integer status)
     {
         if (status == null || status < 0 || status > 2)
         {
             throw new ServiceException("非法岗位状态");
         }
-        return jobMapper.updateJobStatus(posId, resolveCompanyId(userId), status);
+        Long companyId = resolveCompanyId(userId);
+        Integer previous = companyMapper.lockPositionStatus(companyId, posId);
+        int changed = jobMapper.updateJobStatus(posId, companyId, status);
+        if (changed > 0 && status == 1 && previous != null && previous != 1)
+        {
+            companyMapper.notifyFollowers(companyId, posId);
+        }
+        return changed;
     }
 
     @Override
+    @Transactional
     public Map<String, Object> createJob(Long userId, Map<String, Object> form)
     {
         String title = str(form.get("title"));
@@ -66,11 +79,16 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         java.math.BigDecimal max = decimal(form.get("salaryMax"));
         String jdJson = buildJdJson(form);
         int status = form.get("status") == null ? 1 : Integer.parseInt(String.valueOf(form.get("status")));
-        jobMapper.insertJob(resolveCompanyId(userId), userId, title, str(form.get("dept")), str(form.get("city")),
+        Long companyId = resolveCompanyId(userId);
+        jobMapper.insertJob(companyId, userId, title, str(form.get("dept")), str(form.get("city")),
                 min, max, str(form.get("experience")),
                 form.get("education") == null ? 3 : Integer.parseInt(String.valueOf(form.get("education"))),
                 form.get("jobType") == null ? 1 : Integer.parseInt(String.valueOf(form.get("jobType"))),
                 jdJson, status);
+        if (status == 1)
+        {
+            companyMapper.notifyFollowers(companyId, companyMapper.selectLastInsertedPositionId());
+        }
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("title", title);
         return result;

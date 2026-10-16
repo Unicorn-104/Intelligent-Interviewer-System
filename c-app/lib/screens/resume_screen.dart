@@ -9,10 +9,16 @@ import '../features/profile/domain/user_profile.dart';
 import '../features/resume/data/resume_api.dart';
 import '../features/resume/domain/app_resume.dart';
 import '../theme/app_theme.dart';
+import 'recommend_screen.dart';
 
 class ResumeScreen extends StatefulWidget {
-  const ResumeScreen({super.key, required this.session});
+  const ResumeScreen({
+    super.key,
+    required this.session,
+    this.showAppBar = false,
+  });
   final AuthSession session;
+  final bool showAppBar;
 
   @override
   State<ResumeScreen> createState() => _ResumeScreenState();
@@ -28,6 +34,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
   String? _importError;
   String? _pendingPdfPath;
   int? _pendingPdfSize;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -39,22 +46,30 @@ class _ResumeScreenState extends State<ResumeScreen> {
 
   @override
   void dispose() {
+    _loadGeneration++;
     _client.close();
     super.dispose();
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final data = await _api.list(widget.session.token);
-      if (mounted) setState(() => _resumes = data);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _resumes = data);
+      }
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _error = error.message);
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -120,6 +135,19 @@ class _ResumeScreenState extends State<ResumeScreen> {
     }
   }
 
+  void _recommend(AppResume summary) {
+    if (summary.resumeId == null) {
+      _message('简历尚未保存，无法推荐');
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            RecommendJobsScreen(session: widget.session, resume: summary),
+      ),
+    );
+  }
+
   Future<void> _openEditor(AppResume resume) async {
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -136,9 +164,11 @@ class _ResumeScreenState extends State<ResumeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: widget.showAppBar ? AppBar(title: const Text('简历管理')) : null,
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
           children: [
             Text('我的简历', style: Theme.of(context).textTheme.titleLarge),
@@ -236,6 +266,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
                   child: _ResumeCard(
                     resume: resume,
                     onEdit: () => _edit(resume),
+                    onRecommend: () => _recommend(resume),
                   ),
                 ),
               ),
@@ -299,9 +330,14 @@ class _CreateCard extends StatelessWidget {
 }
 
 class _ResumeCard extends StatelessWidget {
-  const _ResumeCard({required this.resume, required this.onEdit});
+  const _ResumeCard({
+    required this.resume,
+    required this.onEdit,
+    required this.onRecommend,
+  });
   final AppResume resume;
   final VoidCallback onEdit;
+  final VoidCallback onRecommend;
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -363,6 +399,11 @@ class _ResumeCard extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                TextButton.icon(
+                  onPressed: onRecommend,
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 17),
+                  label: const Text('AI 推荐'),
+                ),
                 TextButton.icon(
                   onPressed: onEdit,
                   icon: const Icon(Icons.edit_outlined, size: 17),
