@@ -150,7 +150,13 @@ export const constantRoutes = [
         path: 'exam/proctor',
         component: () => import('@/views/enterprise/exam/proctor.vue'),
         name: 'EnterpriseExamProctor',
-        meta: { title: '双机位监考' }
+        meta: { title: '监考监控' }
+      },
+      {
+        path: 'exam/proctor/room',
+        component: () => import('@/views/enterprise/exam/proctor-room.vue'),
+        name: 'EnterpriseExamProctorRoom',
+        meta: { title: '监考房间' }
       },
       {
         path: 'interviews',
