@@ -10,7 +10,7 @@ import '../features/profile/presentation/profile_controller.dart';
 import '../features/profile/presentation/profile_avatar.dart';
 import '../theme/app_theme.dart';
 import 'profile_edit_screen.dart';
-import '../features/companies/presentation/company_favorites_screen.dart';
+import 'favorites_screen.dart';
 import 'resume_screen.dart';
 import 'settings_screen.dart';
 import 'support_screens.dart';
@@ -116,7 +116,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _MenuItem(Icons.description_outlined, '简历管理', '维护求职简历'),
                     _MenuItem(Icons.send_outlined, '我的投递', '查看投递进度'),
                     _MenuItem(Icons.calendar_month_outlined, '面试日程', '管理面试安排'),
-                    _MenuItem(Icons.bookmark_outline, '我的收藏', '收藏的企业'),
+                    _MenuItem(Icons.bookmark_outline, '我的收藏', '收藏的职位与企业'),
                   ],
                   onTap: _openCareer,
                 ),
@@ -189,7 +189,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       '简历管理' => ResumeScreen(session: widget.session, showAppBar: true),
       '我的投递' => ApplicationScreen(session: widget.session),
       '面试日程' => InterviewScreen(session: widget.session),
-      '我的收藏' => CompanyFavoritesScreen(session: widget.session),
+      '我的收藏' => FavoritesScreen(session: widget.session),
       _ => null,
     };
     if (screen == null) {

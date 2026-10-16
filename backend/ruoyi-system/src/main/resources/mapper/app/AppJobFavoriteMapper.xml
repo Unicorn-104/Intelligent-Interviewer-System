@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.app.AppJobFavoriteMapper">
+    <resultMap id="FavoriteJobResult" type="com.ruoyi.system.domain.app.AppJob"
+               extends="com.ruoyi.system.mapper.app.AppJobMapper.AppJobResult">
+        <result property="available" column="available" />
+    </resultMap>
+
+    <select id="isFavorited" resultType="boolean">
+        select exists(select 1 from t_usr_interest
+            where int_user_id = #{userId} and int_target_type = 1
+              and int_target_id = #{positionId} and int_status = 1)
+    </select>
+
+    <select id="lockAvailablePosition" resultType="long">
+        select p.pos_id from t_pos p
+        join t_cmp c on c.cmp_id = p.pos_company_id and c.cmp_status = 1
+        where p.pos_id = #{positionId} and p.pos_status = 1 for update
+    </select>
+
+    <insert id="favorite">
+        insert into t_usr_interest (int_user_id, int_target_type, int_target_id, int_status, int_created_at, int_updated_at)
+        values (#{userId}, 1, #{positionId}, 1, now(), now())
+        on duplicate key update int_updated_at = if(int_status = 1, int_updated_at, now()), int_status = 1
+    </insert>
+
+    <update id="unfavorite">
+        update t_usr_interest set int_status = 0, int_updated_at = now()
+        where int_user_id = #{userId} and int_target_type = 1 and int_target_id = #{positionId} and int_status = 1
+    </update>
+
+    <!-- 下架岗位仍可查看和取消收藏；不对未请求评估的岗位编造匹配分数。 -->
+    <select id="selectFavorites" resultMap="FavoriteJobResult">
+        select p.pos_id as position_id, p.pos_title as title,
+               c.cmp_id as company_id, c.cmp_name as company,
+               c.cmp_logo_url as company_logo, c.cmp_verify_status as company_verified,
+               p.pos_work_city as city, p.pos_salary_min as salary_min, p.pos_salary_max as salary_max,
+               p.pos_experience_required as experience, p.pos_education_required as education,
+               p.pos_job_type as job_type,
+               json_unquote(json_extract(p.pos_jd_json, '$.description')) as description,
+               (select group_concat(distinct ps.psk_name order by ps.psk_required desc separator ',')
+                from t_pos_skill ps where ps.psk_position_id = p.pos_id) as tags_csv,
+               exists(select 1 from t_app_record ar
+                      join t_tal t on t.tal_id = ar.app_candidate_id
+                      where t.tal_user_id = #{userId} and ar.app_position_id = p.pos_id) as applied,
+               (p.pos_status = 1 and c.cmp_status = 1) as available
+        from t_usr_interest i
+        join t_pos p on p.pos_id = i.int_target_id
+        join t_cmp c on c.cmp_id = p.pos_company_id
+        where i.int_user_id = #{userId} and i.int_target_type = 1 and i.int_status = 1
+        order by i.int_updated_at desc, i.int_id desc
+    </select>
+</mapper>
