@@ -129,6 +129,18 @@ export const constantRoutes = [
         meta: { title: 'AI 初筛' }
       },
       {
+        path: 'conference/active',
+        component: () => import('@/views/enterprise/conference/active.vue'),
+        name: 'EnterpriseConferenceActive',
+        meta: { title: '正在进行的面试' }
+      },
+      {
+        path: 'conference/records',
+        component: () => import('@/views/enterprise/conference/records.vue'),
+        name: 'EnterpriseConferenceRecords',
+        meta: { title: '录制回放与存储管理' }
+      },
+      {
         path: 'exam',
         component: () => import('@/views/enterprise/exam/index.vue'),
         name: 'EnterpriseExam',
@@ -209,13 +221,6 @@ export const constantRoutes = [
     name: 'EnterpriseConferenceOngoing',
     hidden: true,
     meta: { title: '协同面试进行中' }
-  },
-  {
-    path: '/enterprise/conference/records',
-    component: () => import('@/views/enterprise/conference/records.vue'),
-    name: 'EnterpriseConferenceRecords',
-    hidden: true,
-    meta: { title: '录制回放与存储管理' }
   },
   {
     path: '/enterprise/conference/playback',
@@ -306,7 +311,9 @@ export const dynamicRoutes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // 路由记录本身以 /enterprise 开头，history base 必须保持 '/'，
+  // 否则深链会被剥掉 /enterprise/ 前缀后匹配不到而落入 404（vite 资源前缀仍为 /enterprise/）
+  history: createWebHistory('/'),
   routes: constantRoutes,
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) {

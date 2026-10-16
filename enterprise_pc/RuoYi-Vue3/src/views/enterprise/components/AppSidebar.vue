@@ -1,34 +1,77 @@
 <script setup>
-import { reactive } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound, Video } from '@/views/enterprise/components/icons'
+import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound, Video, ChevronDown } from '@/views/enterprise/components/icons'
 import AppLogo from './AppLogo.vue'
 import { totalUnread, refreshUnread } from '@/views/enterprise/store/unread'
 
 const route = useRoute()
 onMounted(refreshUnread)
+// 分组导航：父项点击跳转主页面并展开子项（单开手风琴），子项点击直达对应页面
 const menus = reactive([
-  { label: '招聘总览', to: '/enterprise/dashboard', icon: LayoutDashboard, match: 'EnterpriseDashboard' },
-  { label: '岗位管理', to: '/enterprise/jobs', icon: BriefcaseBusiness, match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] },
-  { label: '候选人管理', to: '/enterprise/candidates', icon: UsersRound, match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
-  { label: '面试安排中心', to: '/enterprise/interviews', icon: CalendarDays, match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation'] },
-  { label: '录制回放', to: '/enterprise/conference/records', icon: Video, match: ['EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'] },
-  { label: '消息中心', to: '/enterprise/messages', icon: MessageCircle, match: 'EnterpriseMessages', badge: totalUnread },
-  { label: '系统设置', to: '/enterprise/settings', icon: Settings, match: 'EnterpriseSettings' }
+  { label: '招聘总览', to: '/enterprise/dashboard', icon: LayoutDashboard, match: ['EnterpriseDashboard', 'EnterpriseRootDashboard'] },
+  { label: '岗位管理', to: '/enterprise/jobs', icon: BriefcaseBusiness,
+    match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'],
+    children: [
+      { label: '岗位列表', to: '/enterprise/jobs', match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] }
+    ] },
+  { label: '候选人与初筛', to: '/enterprise/candidates', icon: UsersRound,
+    match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess', 'EnterpriseScreening'],
+    children: [
+      { label: '候选人列表', to: '/enterprise/candidates', match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
+      { label: 'AI 初筛', to: '/enterprise/screening', match: ['EnterpriseScreening'] }
+    ] },
+  { label: '面试与笔试', to: '/enterprise/interviews', icon: CalendarDays,
+    match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation', 'EnterpriseExam', 'EnterpriseExamProctor', 'EnterpriseExamProctorRoom'],
+    children: [
+      { label: '面试安排', to: '/enterprise/interviews', match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation'] },
+      { label: '笔试管理', to: '/enterprise/exam', match: ['EnterpriseExam'] },
+      { label: '监考监控', to: '/enterprise/exam/proctor', match: ['EnterpriseExamProctor', 'EnterpriseExamProctorRoom'] }
+    ] },
+  { label: '视频会议', to: '/enterprise/conference/active', icon: Video,
+    match: ['EnterpriseConferenceActive', 'EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'],
+    children: [
+      { label: '正在进行的面试', to: '/enterprise/conference/active', match: ['EnterpriseConferenceActive'] },
+      { label: '录制回放', to: '/enterprise/conference/records', match: ['EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'] }
+    ] },
+  { label: '消息中心', to: '/enterprise/messages', icon: MessageCircle, match: ['EnterpriseMessages'], badge: totalUnread },
+  { label: '系统设置', to: '/enterprise/settings', icon: Settings,
+    match: ['EnterpriseSettings', 'EnterpriseProfile'],
+    children: [
+      { label: '系统设置', to: '/enterprise/settings', match: ['EnterpriseSettings'] },
+      { label: '个人档案', to: '/enterprise/profile', match: ['EnterpriseProfile'] }
+    ] }
 ])
-const active = (item) => Array.isArray(item.match) ? item.match.includes(route.name) : route.name === item.match
+const openGroup = ref(null)
+const active = (item) => item.match.includes(route.name)
+// 进入任意页面自动展开所在分组（单开：同时只展开一组）
+watch(() => route.name, (name) => {
+  const group = menus.find(m => m.match.includes(name))
+  if (group) openGroup.value = group.label
+}, { immediate: true })
+// 点击父项：已展开且已在本组页面则收起，否则展开并跳转主页面
+function toggle(item) {
+  if (!item.children) return
+  openGroup.value = openGroup.value === item.label ? null : item.label
+}
 </script>
 
 <template>
   <aside class="sidebar">
     <AppLogo />
     <nav>
-      <RouterLink v-for="item in menus" :key="item.label" :to="item.to" :class="{ active: active(item) }">
-        <component :is="item.icon" :size="19" :stroke-width="1.7" />
-        <span>{{ item.label }}</span>
-        <em v-if="item.badge">{{ item.badge }}</em>
-      </RouterLink>
+      <div v-for="item in menus" :key="item.label" class="nav-group">
+        <RouterLink :to="item.to" :class="{ active: active(item) }" @click="toggle(item)">
+          <component :is="item.icon" :size="19" :stroke-width="1.7" />
+          <span>{{ item.label }}</span>
+          <em v-if="item.badge">{{ item.badge }}</em>
+          <ChevronDown v-if="item.children" class="arrow" :class="{ open: openGroup === item.label }" :size="15" />
+        </RouterLink>
+        <div v-show="item.children && openGroup === item.label" class="sub-menu">
+          <RouterLink v-for="c in item.children" :key="c.to" :to="c.to" :class="{ 'sub-active': c.match.includes(route.name) }">{{ c.label }}</RouterLink>
+        </div>
+      </div>
     </nav>
     <div class="support">
       <div class="support-icon">?</div>
@@ -40,18 +83,22 @@ const active = (item) => Array.isArray(item.match) ? item.match.includes(route.n
 
 <style scoped>
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; width: 220px; padding: 20px 16px; background: linear-gradient(180deg, #172554 0%, #172b5f 100%); display: flex; flex-direction: column; box-shadow: 6px 0 24px rgba(15,23,42,.08); }
-.app-logo { margin: 0 7px 30px; }
+.app-logo { margin: 0 7px 24px; }
 nav { display: flex; flex-direction: column; gap: 7px; }
 nav a { height: 46px; border-radius: 10px; display: flex; align-items: center; gap: 13px; padding: 0 13px; color: #9fb0d4; font-size: 14px; position: relative; transition: .18s; }
 nav a:hover { color: white; background: rgba(255,255,255,.07); }
 nav a.active { color: #143988; background: #dce7ff; font-weight: 600; box-shadow: 0 5px 14px rgba(3,10,32,.12); }
 nav em { margin-left: auto; min-width: 20px; height: 20px; padding: 0 5px; font-style: normal; display: grid; place-items: center; border-radius: 10px; background: #ef4444; color: white; font-size: 10px; line-height: 1; }
+.arrow { margin-left: auto; transition: transform .2s; color: #7f95c4; flex: none; }
+a.active .arrow { color: #143988; }
+.arrow.open { transform: rotate(180deg); }
+.sub-menu { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 2px; overflow: hidden; }
+.sub-menu a { height: 34px; font-size: 12px; padding: 0 13px 0 45px; border-radius: 8px; color: #8fa4d0; gap: 0; }
+.sub-menu a:hover { color: white; background: rgba(255,255,255,.06); }
+.sub-menu a.sub-active { color: #dce7ff; background: rgba(220,231,255,.14); font-weight: 600; box-shadow: none; }
 .support { margin-top: auto; display: flex; align-items: center; gap: 9px; color: #dce7ff; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.06); border-radius: 11px; padding: 11px; }
 .support-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: white; background: #2d5bc3; font-weight: 700; }
 .support b { display: block; font-size: 11px; }
 .support small { color: #8fa4d0; font-size: 10px; }
 .version { color: #687da9; text-align: center; font-size: 10px; margin-top: 13px; }
 </style>
-
-
-
