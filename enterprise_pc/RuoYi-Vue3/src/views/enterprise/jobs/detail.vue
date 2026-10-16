@@ -58,7 +58,7 @@ onMounted(load)
     <button class="back" @click="router.back()"><ArrowLeft :size="15"/>返回岗位列表</button>
     <section class="card job-header">
       <div><h1>{{ job.title || '加载中…' }} <span class="pill" :class="job.status === 1 ? 'green' : job.status === 2 ? 'gray' : 'red'"><i class="dot"/>{{ job.status === 1 ? '招聘中' : job.status === 2 ? '已暂停' : '已下线' }}</span></h1><p>岗位编号 JOB-{{ String(job.posId || 0).padStart(4, '0') }} · {{ job.dept || '—' }} · {{ job.city || '—' }} · {{ salary }} · {{ educationMap[job.education] || '不限' }} · {{ job.experience || '经验不限' }}</p></div>
-      <div><button class="btn" @click="notify('编辑岗位功能开发中')"><Pencil :size="15"/>编辑岗位</button><button class="btn" @click="notify('复制岗位功能开发中')"><Copy :size="15"/>复制岗位</button><button class="btn danger-ghost" :disabled="job.status !== 1" @click="closeRecruit"><PauseCircle :size="15"/>关闭招聘</button></div>
+      <div><button class="btn" @click="notify('编辑岗位功能开发中')"><Pencil :size="15"/>编辑岗位</button><button class="btn" @click="notify('复制岗位功能开发中')"><Copy :size="15"/>复制岗位</button><button class="btn" @click="router.push({ path: '/enterprise/screening', query: { taskId: posId } })"><Sparkles :size="15"/>AI 初筛</button><button class="btn danger-ghost" :disabled="job.status !== 1" @click="closeRecruit"><PauseCircle :size="15"/>关闭招聘</button></div>
     </section>
 
     <div class="detail-grid">

@@ -123,6 +123,12 @@ export const constantRoutes = [
         meta: { title: '候选人流程' }
       },
       {
+        path: 'screening',
+        component: () => import('@/views/enterprise/screening/index.vue'),
+        name: 'EnterpriseScreening',
+        meta: { title: 'AI 初筛' }
+      },
+      {
         path: 'exam',
         component: () => import('@/views/enterprise/exam/index.vue'),
         name: 'EnterpriseExam',
