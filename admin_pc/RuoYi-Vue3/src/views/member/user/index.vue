@@ -62,8 +62,12 @@
             <el-tag effect="plain" :type="statusTag(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="注册时间" align="center" prop="registerTime" width="170" />
-        <el-table-column label="最后登录" align="center" prop="lastLoginTime" width="170" />
+        <el-table-column label="注册时间" align="center" width="170">
+          <template #default="scope">{{ formatTime(scope.row.registerTime) }}</template>
+        </el-table-column>
+        <el-table-column label="最后登录" align="center" width="170">
+          <template #default="scope">{{ formatTime(scope.row.lastLoginTime) }}</template>
+        </el-table-column>
         <el-table-column label="操作" align="center" width="220" fixed="right">
           <template #default="scope">
             <el-button link type="primary" icon="View" @click="handleDetail(scope.row)">详情</el-button>
@@ -373,22 +377,28 @@ function submitAudit() {
 
 /** 身份标签 */
 function identityLabel(v) {
-  const o = identityOptions.find((x) => x.value === v)
+  const o = identityOptions.find((x) => x.value === String(v))
   return o ? o.label : v
 }
 function identityTag(v) {
-  const o = identityOptions.find((x) => x.value === v)
+  const o = identityOptions.find((x) => x.value === String(v))
   return o?.tag || 'info'
 }
 
 /** 实名标签 */
 function realLabel(v) {
-  const o = realStatusOptions.find((x) => x.value === v)
+  const o = realStatusOptions.find((x) => x.value === String(v))
   return o ? o.label : v
 }
 function realTag(v) {
-  const o = realStatusOptions.find((x) => x.value === v)
+  const o = realStatusOptions.find((x) => x.value === String(v))
   return o?.tag || 'info'
+}
+
+/** 格式化时间 */
+function formatTime(time) {
+  if (!time) return ''
+  return time.replace('T', ' ').substring(0, 19)
 }
 
 /** 当前在线标签 */
