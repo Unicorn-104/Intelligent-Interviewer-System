@@ -12,8 +12,13 @@ import '../theme/app_theme.dart';
 import 'recommend_screen.dart';
 
 class ResumeScreen extends StatefulWidget {
-  const ResumeScreen({super.key, required this.session});
+  const ResumeScreen({
+    super.key,
+    required this.session,
+    this.showAppBar = false,
+  });
   final AuthSession session;
+  final bool showAppBar;
 
   @override
   State<ResumeScreen> createState() => _ResumeScreenState();
@@ -29,6 +34,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
   String? _importError;
   String? _pendingPdfPath;
   int? _pendingPdfSize;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -40,22 +46,30 @@ class _ResumeScreenState extends State<ResumeScreen> {
 
   @override
   void dispose() {
+    _loadGeneration++;
     _client.close();
     super.dispose();
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final data = await _api.list(widget.session.token);
-      if (mounted) setState(() => _resumes = data);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _resumes = data);
+      }
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _error = error.message);
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -150,9 +164,11 @@ class _ResumeScreenState extends State<ResumeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: widget.showAppBar ? AppBar(title: const Text('简历管理')) : null,
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
           children: [
             Text('我的简历', style: Theme.of(context).textTheme.titleLarge),

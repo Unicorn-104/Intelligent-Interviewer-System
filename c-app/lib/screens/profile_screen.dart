@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../core/network/api_client.dart';
 import '../features/auth/domain/auth_session.dart';
+import '../features/applications/presentation/application_screen.dart';
+import '../features/interviews/presentation/interview_screen.dart';
 import '../features/profile/data/profile_api.dart';
 import '../features/profile/domain/user_profile.dart';
 import '../features/profile/presentation/profile_controller.dart';
 import '../features/profile/presentation/profile_avatar.dart';
 import '../theme/app_theme.dart';
 import 'profile_edit_screen.dart';
+import '../features/companies/presentation/company_favorites_screen.dart';
+import 'resume_screen.dart';
 import 'settings_screen.dart';
 import 'support_screens.dart';
 
@@ -16,10 +20,12 @@ class ProfileScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.onLogout,
+    this.refreshVersion = 0,
   });
 
   final AuthSession session;
   final Future<void> Function() onLogout;
+  final int refreshVersion;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -38,6 +44,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       session: widget.session,
     );
     _controller.load();
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshVersion != widget.refreshVersion) _controller.load();
   }
 
   @override
@@ -91,7 +103,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 14),
                 ],
-                _StatsCard(profile: profile, onSelected: _showComingSoon),
+                _StatsCard(profile: profile, onSelected: _openCareer),
                 const SizedBox(height: 24),
                 const _SectionTitle(title: '求职概况'),
                 const SizedBox(height: 10),
@@ -104,9 +116,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _MenuItem(Icons.description_outlined, '简历管理', '维护求职简历'),
                     _MenuItem(Icons.send_outlined, '我的投递', '查看投递进度'),
                     _MenuItem(Icons.calendar_month_outlined, '面试日程', '管理面试安排'),
-                    _MenuItem(Icons.bookmark_outline, '我的收藏', '职位与企业'),
+                    _MenuItem(Icons.bookmark_outline, '我的收藏', '收藏的企业'),
                   ],
-                  onTap: _showComingSoon,
+                  onTap: _openCareer,
                 ),
                 const SizedBox(height: 22),
                 const _SectionTitle(title: '帮助与服务'),
@@ -170,6 +182,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('$title功能将在对应业务模块中接入')));
+  }
+
+  Future<void> _openCareer(String title) async {
+    final screen = switch (title) {
+      '简历管理' => ResumeScreen(session: widget.session, showAppBar: true),
+      '我的投递' => ApplicationScreen(session: widget.session),
+      '面试日程' => InterviewScreen(session: widget.session),
+      '我的收藏' => CompanyFavoritesScreen(session: widget.session),
+      _ => null,
+    };
+    if (screen == null) {
+      _showComingSoon(title);
+      return;
+    }
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => screen));
+    if (mounted) await _controller.load();
   }
 }
 

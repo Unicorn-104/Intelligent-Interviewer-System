@@ -20,10 +20,12 @@ class _MainShellState extends State<MainShell> {
   int _index = 0;
   int _messageUnreadCount = 0;
   int _messageRefreshVersion = 0;
+  int _profileRefreshVersion = 0;
 
   void _selectTab(int index) => setState(() {
     _index = index;
     if (index == 2) _messageRefreshVersion++;
+    if (index == 3) _profileRefreshVersion++;
   });
 
   @override
@@ -47,6 +49,7 @@ class _MainShellState extends State<MainShell> {
       ProfileScreen(
         session: widget.session,
         onLogout: widget.onLogout,
+        refreshVersion: _profileRefreshVersion,
       ),
     ];
     return Scaffold(
