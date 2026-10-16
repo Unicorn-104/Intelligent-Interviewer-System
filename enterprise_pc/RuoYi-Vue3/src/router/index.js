@@ -165,6 +165,12 @@ export const constantRoutes = [
         meta: { title: '面试安排中心' }
       },
       {
+        path: 'offer',
+        component: () => import('@/views/enterprise/offer/index.vue'),
+        name: 'EnterpriseOffer',
+        meta: { title: 'Offer 管理' }
+      },
+      {
         path: 'interviews/:id/evaluation',
         component: () => import('@/views/enterprise/interviews/evaluation.vue'),
         name: 'EnterpriseInterviewEvaluation',

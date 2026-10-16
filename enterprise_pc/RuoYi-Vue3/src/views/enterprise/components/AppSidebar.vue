@@ -2,7 +2,7 @@
 import { reactive, ref, watch } from 'vue'
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound, Video, ChevronDown } from '@/views/enterprise/components/icons'
+import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound, Video, ChevronDown, FileText } from '@/views/enterprise/components/icons'
 import AppLogo from './AppLogo.vue'
 import { totalUnread, refreshUnread } from '@/views/enterprise/store/unread'
 
@@ -29,6 +29,7 @@ const menus = reactive([
       { label: '笔试管理', to: '/enterprise/exam', match: ['EnterpriseExam'] },
       { label: '监考监控', to: '/enterprise/exam/proctor', match: ['EnterpriseExamProctor', 'EnterpriseExamProctorRoom'] }
     ] },
+  { label: 'Offer 管理', to: '/enterprise/offer', icon: FileText, match: ['EnterpriseOffer'] },
   { label: '视频会议', to: '/enterprise/conference/active', icon: Video,
     match: ['EnterpriseConferenceActive', 'EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'],
     children: [
