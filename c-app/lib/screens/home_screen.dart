@@ -231,7 +231,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return [
       for (final job in _feed!.jobs) ...[
         JobCard(
-          job: job,
+          session: widget.session,
+job: job,
           onApply: _apply,
           applying: _applyingPositionId == job.positionId,
         ),

@@ -231,7 +231,8 @@ class _SearchScreenState extends State<SearchScreen> {
     return [
       for (final job in _jobs!) ...[
         JobCard(
-          job: job,
+          session: widget.session,
+job: job,
           onApply: _apply,
           applying: _applyingPositionId == job.positionId,
         ),

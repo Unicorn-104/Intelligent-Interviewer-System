@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/job.dart';
+import '../features/auth/domain/auth_session.dart';
 import '../screens/job_detail_screen.dart';
 import '../theme/app_theme.dart';
 
@@ -8,11 +9,13 @@ class JobCard extends StatelessWidget {
   const JobCard({
     super.key,
     required this.job,
+    required this.session,
     this.onApply,
     this.applying = false,
   });
 
   final Job job;
+  final AuthSession session;
   final Future<bool> Function(Job job)? onApply;
   final bool applying;
 
@@ -23,7 +26,8 @@ class JobCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => JobDetailScreen(job: job, onApply: onApply),
+            builder: (_) =>
+                JobDetailScreen(job: job, session: session, onApply: onApply),
           ),
         ),
         child: Padding(
@@ -63,7 +67,11 @@ class JobCard extends StatelessWidget {
                 children: job.tags.map((tag) => _Tag(label: tag)).toList(),
               ),
               const SizedBox(height: 14),
-              Row(
+              Wrap(
+                spacing: AppSpacing.md,
+                runSpacing: AppSpacing.sm,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -75,7 +83,7 @@ class JobCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      'AI 匹配 ${job.match}%',
+                      'AI 匹配 ${job.matchLabel}',
                       style: TextStyle(
                         color: job.accent,
                         fontSize: 12,
@@ -83,12 +91,10 @@ class JobCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const Spacer(),
                   Text(
                     '${job.educationLabel} · ${job.experience}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  const SizedBox(width: 12),
                   FilledButton(
                     onPressed: job.applied || applying || onApply == null
                         ? null

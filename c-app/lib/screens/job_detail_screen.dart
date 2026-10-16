@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/job.dart';
+import '../features/auth/domain/auth_session.dart';
 import '../theme/app_theme.dart';
 
 class JobDetailScreen extends StatefulWidget {
-  const JobDetailScreen({super.key, required this.job, this.onApply});
+  const JobDetailScreen({super.key, required this.job, required this.session, this.onApply});
 
   final Job job;
+  final AuthSession session;
   final Future<bool> Function(Job job)? onApply;
 
   @override
