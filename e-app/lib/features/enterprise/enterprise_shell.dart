@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../theme/app_theme.dart';
 import 'interview/interview_workbench_page.dart';
 import 'interview/device_check_page.dart';
@@ -31,11 +32,13 @@ class _FeatureEntry {
     this.icon,
     this.builder, {
     this.isDemo = false,
+    this.alias,
   });
   final String label;
   final IconData icon;
   final WidgetBuilder builder;
   final bool isDemo;
+  final String? alias;
 }
 
 class EnterpriseModuleShell extends StatefulWidget {
@@ -73,7 +76,12 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
           ),
         ),
       ),
-      _FeatureEntry('人才库', Icons.people_outline, (_) => const TalentPage()),
+      _FeatureEntry(
+        '候选人管理',
+        Icons.people_outline,
+        (_) => const TalentPage(),
+        alias: '人才库',
+      ),
       _interviews,
       _FeatureEntry(
         '终审',
@@ -197,9 +205,8 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
       case '/enterprise/meeting/ai':
         _openFeature(_interviews);
       default:
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('该功能请在 Web 端操作')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('该功能请在 Web 端操作')));
     }
   }
 
@@ -272,7 +279,11 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
                   key: ValueKey('feature-${entries[index].label}'),
                   leading: Icon(entries[index].icon, color: AppColors.brand),
                   title: Text(entries[index].label),
-                  subtitle: entries[index].isDemo ? const Text('演示数据') : null,
+                  subtitle: entries[index].isDemo
+                      ? const Text('演示数据')
+                      : entries[index].alias == null
+                      ? null
+                      : Text(entries[index].alias!),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _openFeature(entries[index]),
                 ),

@@ -42,6 +42,12 @@ Future<void> verifyBatch(
         findsOneWidget,
       );
     }
+    if (label == '候选人管理') {
+      expect(
+        find.descendant(of: entry, matching: find.text('人才库')),
+        findsOneWidget,
+      );
+    }
     await tester.tap(entry);
     await pumpFrames(tester);
     if (allDemo) expect(find.textContaining('演示数据'), findsWidgets);
@@ -58,7 +64,7 @@ void main() {
   testWidgets('第一批七个入口可打开并返回', (tester) async {
     await verifyBatch(tester, [
       '招聘概览',
-      '人才库',
+      '候选人管理',
       '面试日程',
       '终审',
       'Offer',
