@@ -9,6 +9,7 @@ import '../features/profile/domain/user_profile.dart';
 import '../features/resume/data/resume_api.dart';
 import '../features/resume/domain/app_resume.dart';
 import '../theme/app_theme.dart';
+import 'recommend_screen.dart';
 
 class ResumeScreen extends StatefulWidget {
   const ResumeScreen({super.key, required this.session});
@@ -118,6 +119,19 @@ class _ResumeScreenState extends State<ResumeScreen> {
     } on ApiException catch (error) {
       if (mounted) _message(error.message);
     }
+  }
+
+  void _recommend(AppResume summary) {
+    if (summary.resumeId == null) {
+      _message('简历尚未保存，无法推荐');
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            RecommendJobsScreen(session: widget.session, resume: summary),
+      ),
+    );
   }
 
   Future<void> _openEditor(AppResume resume) async {
@@ -236,6 +250,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
                   child: _ResumeCard(
                     resume: resume,
                     onEdit: () => _edit(resume),
+                    onRecommend: () => _recommend(resume),
                   ),
                 ),
               ),
@@ -299,9 +314,14 @@ class _CreateCard extends StatelessWidget {
 }
 
 class _ResumeCard extends StatelessWidget {
-  const _ResumeCard({required this.resume, required this.onEdit});
+  const _ResumeCard({
+    required this.resume,
+    required this.onEdit,
+    required this.onRecommend,
+  });
   final AppResume resume;
   final VoidCallback onEdit;
+  final VoidCallback onRecommend;
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -363,6 +383,11 @@ class _ResumeCard extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                TextButton.icon(
+                  onPressed: onRecommend,
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 17),
+                  label: const Text('AI 推荐'),
+                ),
                 TextButton.icon(
                   onPressed: onEdit,
                   icon: const Icon(Icons.edit_outlined, size: 17),

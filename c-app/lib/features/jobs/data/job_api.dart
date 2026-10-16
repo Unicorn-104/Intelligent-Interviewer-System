@@ -1,3 +1,4 @@
+import '../../../config/app_config.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../models/job.dart';
@@ -39,5 +40,30 @@ class JobApi {
 
   Future<void> apply(String token, int positionId) async {
     await _client.post('/app/jobs/$positionId/apply', token: token);
+  }
+
+  Future<List<Job>> recommendJobs(
+    String token, {
+    required int resumeId,
+    String? keyword,
+    String? filter,
+    int? limit,
+  }) async {
+    final body = <String, dynamic>{'resumeId': resumeId};
+    if (keyword?.trim().isNotEmpty == true) body['keyword'] = keyword!.trim();
+    if (filter != null) body['filter'] = filter;
+    if (limit != null) body['limit'] = limit;
+    final json = await _client.post(
+      '/app/recommend',
+      body: body,
+      token: token,
+      timeout: AppConfig.aiRequestTimeout,
+    );
+    final data = json['data'];
+    if (data is! List) throw const ApiException('推荐结果格式不正确');
+    return data
+        .whereType<Map>()
+        .map((item) => Job.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
   }
 }
