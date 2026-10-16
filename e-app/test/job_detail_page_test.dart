@@ -1,0 +1,141 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:enterprise_recruiter/features/enterprise/jobs/job_detail_page.dart';
+import 'package:enterprise_recruiter/features/enterprise/jobs/job_interviews_page.dart';
+import 'package:enterprise_recruiter/features/enterprise/jobs/widgets/job_ai_screening_tab.dart';
+import 'package:enterprise_recruiter/features/enterprise/jobs/widgets/job_basic_info_tab.dart';
+import 'package:enterprise_recruiter/features/enterprise/jobs/widgets/job_candidates_tab.dart';
+import 'package:enterprise_recruiter/theme/app_theme.dart';
+
+import 'support/job_detail_fixture.dart';
+
+Future<void> pumpDetail(
+  WidgetTester tester,
+  DetailFakeSource source, {
+  int initialTab = 0,
+}) async {
+  tester.view.physicalSize = const Size(430, 1000);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: AppTheme.light,
+      home: JobDetailPage(
+        job: {'posId': 1, 'title': 'Java工程师'},
+        source: source,
+        initialTab: initialTab,
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  testWidgets('三个 Tab 映射正确，进入页面不自动触发筛选 POST', (tester) async {
+    final source = DetailFakeSource(
+      scoreResult: [
+        {'resultId': 1, 'totalScore': 88},
+      ],
+    );
+    await pumpDetail(tester, source);
+    expect(find.byType(JobBasicInfoTab), findsOneWidget);
+    expect(find.byType(JobCandidatesTab), findsNothing);
+    expect(find.byType(JobAiScreeningTab), findsNothing);
+    expect(source.screenCalls, 0);
+    await tester.tap(find.text('求职者'));
+    await tester.pumpAndSettle();
+    expect(find.byType(JobCandidatesTab), findsOneWidget);
+    await tester.tap(find.text('AI筛选'));
+    await tester.pumpAndSettle();
+    expect(find.byType(JobAiScreeningTab), findsOneWidget);
+    expect(source.screenCalls, 0);
+    expect(source.scoreCalls, 1);
+  });
+
+  testWidgets('AI 评分失败保留同批候选人并显示重试，不清空名单', (tester) async {
+    final source = DetailFakeSource(scoreFailure: true);
+    await pumpDetail(tester, source, initialTab: 2);
+    expect(find.text('候选人甲'), findsOneWidget);
+    expect(find.text('候选人乙'), findsOneWidget);
+    expect(find.text('加载筛选结果失败，重试'), findsOneWidget);
+    expect(find.text('通用评分，非岗位维度'), findsOneWidget);
+  });
+
+  testWidgets('重新筛选必须用户点击并确认，确认后只调用一次', (tester) async {
+    final source = DetailFakeSource();
+    await pumpDetail(tester, source, initialTab: 2);
+    expect(source.screenCalls, 0);
+    await tester.tap(find.byKey(const Key('job-rescreen')));
+    await tester.pumpAndSettle();
+    expect(find.text('确认重新筛选？'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('job-rescreen-confirm')));
+    await tester.pumpAndSettle();
+    expect(source.screenCalls, 1);
+  });
+
+  testWidgets('JD 与招聘流程折叠状态跨 Tab 保持', (tester) async {
+    final source = DetailFakeSource();
+    await pumpDetail(tester, source);
+    final jd = find.byKey(const PageStorageKey('job-jd-expansion-1'));
+    final flow = find.byKey(const PageStorageKey('job-workflow-expansion-1'));
+    expect(jd, findsOneWidget);
+    final basicScrollable = find
+        .descendant(
+          of: find.byType(JobBasicInfoTab),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      jd,
+      300,
+      scrollable: basicScrollable,
+      maxScrolls: 20,
+    );
+    await tester.ensureVisible(jd);
+    await tester.pumpAndSettle();
+    await tester.tap(jd);
+    await tester.pumpAndSettle();
+    expect(find.text('重新解析'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      flow,
+      400,
+      scrollable: find
+          .descendant(
+            of: find.byType(JobBasicInfoTab),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      maxScrolls: 20,
+    );
+    expect(flow, findsOneWidget);
+    await tester.tap(find.text('求职者'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('基础信息'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('重新解析'),
+      -400,
+      scrollable: find
+          .descendant(
+            of: find.byType(JobBasicInfoTab),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      maxScrolls: 20,
+    );
+    expect(find.text('重新解析'), findsOneWidget);
+  });
+
+  testWidgets('面试入口打开独立页面，initialTab 2 可直接进入 AI', (tester) async {
+    final source = DetailFakeSource();
+    await pumpDetail(tester, source, initialTab: 2);
+    expect(find.byType(JobInterviewsPage), findsNothing);
+    expect(find.byType(JobAiScreeningTab), findsOneWidget);
+    await tester.tap(find.text('基础信息'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('job-interviews-entry')));
+    await tester.pumpAndSettle();
+    expect(find.byType(JobInterviewsPage), findsOneWidget);
+    expect(find.textContaining('面试安排'), findsWidgets);
+  });
+}
