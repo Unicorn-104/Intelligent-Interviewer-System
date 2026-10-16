@@ -10,7 +10,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                pos_experience_required as experience, pos_education_required as education,
                pos_status as status, date_format(pos_created_at, '%m-%d') as date,
                pos_jd_json as jdJson,
-               (select count(*) from t_process_instance pi where pi.pin_position_id = p.pos_id) as applicantCount
+               (select count(*) from t_process_instance pi where pi.pin_position_id = p.pos_id) as applicantCount,
+               date_format(p.pos_created_at, '%Y-%m-%d %H:%i') as publishTime,
+               date_format((select max(a.apt_created_at) from t_sch_appointment a
+                            where a.apt_position_id = p.pos_id), '%Y-%m-%d %H:%i') as latestApplyTime
         from t_pos p
         where p.pos_company_id = #{companyId}
         <if test="keyword != null and keyword != ''">
@@ -22,7 +25,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <if test="status != null">
             and p.pos_status = #{status}
         </if>
-        order by p.pos_created_at desc, p.pos_id desc
+        order by case when latestApplyTime is null then 1 else 0 end,
+                 latestApplyTime desc, p.pos_created_at desc, p.pos_id desc
     </select>
 
     <select id="selectJobDepartments" resultType="java.lang.String">
