@@ -13,7 +13,7 @@ export default defineConfig(({ mode, command }) => {
 
   return {
     // 部署生产环境和开发环境下的URL
-    base: '/',
+    base: '/admin/',
     plugins: [
       ...createVitePlugins(env, isBuild),
       // 仅当 ANALYZE=1 时生成打包分析报告 dist/stats.html
