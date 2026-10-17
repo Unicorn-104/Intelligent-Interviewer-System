@@ -11,6 +11,7 @@ import 'data/jd_document_picker.dart';
 import 'models/jd_import_draft.dart';
 import 'widgets/jd_document_import_card.dart';
 import 'widgets/jd_import_review_sheet.dart';
+import 'widgets/job_publish_workflow.dart';
 
 typedef JdDocumentParser = Future<JdImportDraft> Function(
   JdPickedDocument document, {
@@ -26,12 +27,15 @@ class JobPublishPage extends StatefulWidget {
     this.submitJob,
     this.pickDocument,
     this.parseDocument,
+    this.saveWorkflow,
   });
 
   final Future<Map<String, dynamic>> Function()? loadOptions;
   final Future<Map<String, dynamic>> Function(Map<String, Object?>)? submitJob;
   final Future<JdPickedDocument?> Function()? pickDocument;
   final JdDocumentParser? parseDocument;
+  final Future<void> Function(int positionId, Map<String, Object?> body)?
+  saveWorkflow;
 
   @override
   State<JobPublishPage> createState() => _JobPublishPageState();
@@ -39,6 +43,10 @@ class JobPublishPage extends StatefulWidget {
 
 class _JobPublishPageState extends State<JobPublishPage> {
   final _formKey = GlobalKey<FormState>();
+  final _stages = <JobPublishStageDraft>[];
+  final _allStages = <JobPublishStageDraft>[];
+  int _nextStageId = 0;
+  int? _createdPositionId;
   final _title = TextEditingController();
   final _department = TextEditingController();
   final _city = TextEditingController();
@@ -74,6 +82,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
   int _totalBytes = 0;
   int _formImportRevision = 0;
   bool _reviewOpen = false;
+  bool _stageEditorOpen = false;
   bool _confirmingLeave = false;
   bool _draftApplied = false;
 
@@ -123,6 +132,9 @@ class _JobPublishPageState extends State<JobPublishPage> {
     ]) {
       controller.dispose();
     }
+    for (final stage in _allStages) {
+      stage.dispose();
+    }
     _scroll.dispose();
     super.dispose();
   }
@@ -164,6 +176,33 @@ class _JobPublishPageState extends State<JobPublishPage> {
 
   Future<void> _leave() async {
     if (_saving || _allowPop || _confirmingLeave) return;
+    if (_createdPositionId != null) {
+      _confirmingLeave = true;
+      bool? leave;
+      try {
+        leave = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('招聘流程尚未保存'),
+            content: const Text('岗位已创建，招聘流程尚未保存。可以继续重试保存，或返回岗位列表后在岗位详情中配置流程。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('继续保存'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('返回岗位列表'),
+              ),
+            ],
+          ),
+        );
+      } finally {
+        _confirmingLeave = false;
+      }
+      if (leave == true && mounted) _finishPublish(_createdPositionId!);
+      return;
+    }
     if (_dirty || _importBusy || _importDraft != null) {
       _confirmingLeave = true;
       bool? discard;
@@ -212,7 +251,14 @@ class _JobPublishPageState extends State<JobPublishPage> {
       mounted && !_allowPop && epoch == _importEpoch;
 
   Future<void> _startImport({bool retry = false}) async {
-    if (_importBusy || _saving || _preview || _reviewOpen || _allowPop) return;
+    if (_importBusy ||
+        _saving ||
+        _preview ||
+        _reviewOpen ||
+        _stageEditorOpen ||
+        _allowPop) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     final epoch = ++_importEpoch;
     setState(() {
@@ -299,6 +345,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
     final draft = _importDraft;
     if (draft == null ||
         _reviewOpen ||
+        _stageEditorOpen ||
         _importBusy ||
         _saving ||
         _allowPop ||
@@ -431,9 +478,10 @@ class _JobPublishPageState extends State<JobPublishPage> {
   };
 
   void _showPreview() {
-    if (_importBusy || _reviewOpen || _saving) return;
+    if (_importBusy || _reviewOpen || _stageEditorOpen || _saving) return;
     FocusScope.of(context).unfocus();
-    if (!_formKey.currentState!.validate()) {
+    final jobValid = _formKey.currentState!.validate();
+    if (!jobValid) {
       _scroll.animateTo(
         0,
         duration: const Duration(milliseconds: 250),
@@ -448,6 +496,25 @@ class _JobPublishPageState extends State<JobPublishPage> {
     _scroll.jumpTo(0);
   }
 
+  Map<String, Object?> _workflowPayload() {
+    final title = _title.text.trim();
+    return {
+      'templateName':
+          '${title.length > 96 ? title.substring(0, 96) : title}招聘流程',
+      'stages': [for (final stage in _stages) stage.toJson()],
+    };
+  }
+
+  void _finishPublish(int positionId) {
+    setState(() {
+      _allowPop = true;
+      _dirty = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.pop(context, positionId);
+    });
+  }
+
   Future<void> _publish() async {
     if (_saving || _importBusy || _reviewOpen || _needsListCheck) return;
     setState(() {
@@ -455,35 +522,104 @@ class _JobPublishPageState extends State<JobPublishPage> {
       _error = null;
     });
     try {
-      final result = await (widget.submitJob ?? createJob)(_payload());
-      final positionId = int.tryParse('${result['posId']}');
-      if (!mounted) return;
-      if (positionId == null) {
-        // A successful response may already have created the job. Prevent a
-        // second submission when the response cannot identify it.
-        setState(() {
-          _error = '服务已响应，但未返回岗位编号。请返回岗位列表核对，避免重复发布。';
-          _allowPop = true;
-          _saving = false;
-          _needsListCheck = true;
-        });
-        return;
+      if (_createdPositionId == null) {
+        final result = await (widget.submitJob ?? createJob)(_payload());
+        final positionId = int.tryParse('${result['posId']}');
+        if (!mounted) return;
+        if (positionId == null || positionId <= 0) {
+          setState(() {
+            _error = '服务已响应，但未返回岗位编号。请返回岗位列表核对，避免重复发布。';
+            _allowPop = true;
+            _saving = false;
+            _needsListCheck = true;
+          });
+          return;
+        }
+        _createdPositionId = positionId;
       }
-      setState(() {
-        _allowPop = true;
-        _dirty = false;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.pop(context, positionId);
-      });
+      if (_stages.isNotEmpty) {
+        await (widget.saveWorkflow ?? saveJobWorkflow)(
+          _createdPositionId!,
+          _workflowPayload(),
+        );
+      }
+      if (!mounted) return;
+      _finishPublish(_createdPositionId!);
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = _message(error);
+        _error = _createdPositionId == null
+            ? _message(error)
+            : '岗位已创建，招聘流程保存失败：${_message(error)}。请重试保存流程，避免重复发布。';
       });
     }
   }
+
+  Future<void> _editStage({JobPublishStageDraft? existing}) async {
+    if (_saving || _preview || _reviewOpen || _stageEditorOpen || _allowPop) {
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    final stage = existing == null
+        ? JobPublishStageDraft(_nextStageId++)
+        : JobPublishStageDraft.copy(existing);
+    _allStages.add(stage);
+    setState(() => _stageEditorOpen = true);
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (_) =>
+            JobPublishStageDialog(stage: stage, isNew: existing == null),
+      );
+      if (!mounted || saved != true) return;
+      setState(() {
+        if (existing == null) {
+          _stages.add(stage);
+        } else {
+          _stages[_stages.indexOf(existing)] = stage;
+        }
+        _dirty = true;
+      });
+    } finally {
+      if (mounted) setState(() => _stageEditorOpen = false);
+    }
+  }
+
+  Widget _workflowEditor() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      OutlinedButton.icon(
+        key: const Key('job-publish-add-stage'),
+        onPressed: _saving || _reviewOpen || _stageEditorOpen
+            ? null
+            : () => _editStage(),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(46),
+          foregroundColor: AppColors.interactive,
+          side: const BorderSide(color: AppColors.hairline),
+          backgroundColor: AppColors.canvas,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        ),
+        icon: const Icon(Icons.add, size: 18),
+        label: const Text('新增招聘流程'),
+      ),
+      for (final (index, stage) in _stages.indexed) ...[
+        const SizedBox(height: 12),
+        JobPublishStageCard(
+          key: ValueKey('job-publish-stage-card-${stage.id}'),
+          stage: stage,
+          index: index,
+          enabled: !_saving && !_stageEditorOpen,
+          onEdit: () => _editStage(existing: stage),
+          onRemove: () => setState(() {
+            _stages.remove(stage);
+            _dirty = true;
+          }),
+        ),
+      ],
+    ],
+  );
 
   String? _required(String? value, String label) =>
       value == null || value.trim().isEmpty ? '请填写$label' : null;
@@ -580,49 +716,56 @@ class _JobPublishPageState extends State<JobPublishPage> {
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 760),
-                child: ListView(
+                child: SingleChildScrollView(
                   controller: _scroll,
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                  children: [
-                    _hero(),
-                    const SizedBox(height: 20),
-                    if (_preview)
-                      ..._previewContent()
-                    else ...[
-                      JdDocumentImportCard(
-                        phase: _importPhase,
-                        filename: _importFilename,
-                        error: _importError,
-                        sentBytes: _sentBytes,
-                        totalBytes: _totalBytes,
-                        hasDraft: _importDraft != null,
-                        applied: _draftApplied,
-                        enabled: !_saving && !_reviewOpen,
-                        onImport: _startImport,
-                        onRetry: _retryDocument == null
-                            ? null
-                            : () => _startImport(retry: true),
-                        onReview: _reviewDraft,
-                      ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _hero(),
                       const SizedBox(height: 20),
-                      _form(),
-                    ],
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 16),
-                        child: Semantics(
-                          liveRegion: true,
-                          child: Text(
-                            _error!,
-                            style: const TextStyle(color: AppColors.red),
+                      if (_preview)
+                        ..._previewContent()
+                      else ...[
+                        JdDocumentImportCard(
+                          phase: _importPhase,
+                          filename: _importFilename,
+                          error: _importError,
+                          sentBytes: _sentBytes,
+                          totalBytes: _totalBytes,
+                          hasDraft: _importDraft != null,
+                          applied: _draftApplied,
+                          enabled:
+                              !_saving && !_reviewOpen && !_stageEditorOpen,
+                          onImport: _startImport,
+                          onRetry: _retryDocument == null
+                              ? null
+                              : () => _startImport(retry: true),
+                          onReview: _reviewDraft,
+                        ),
+                        const SizedBox(height: 12),
+                        _workflowEditor(),
+                        const SizedBox(height: 20),
+                        _form(),
+                      ],
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              _error!,
+                              style: const TextStyle(color: AppColors.red),
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-      bottomNavigationBar: _loading || _company == null || _reviewOpen
+      bottomNavigationBar:
+          _loading || _company == null || _reviewOpen || _stageEditorOpen
           ? null
           : _footer(),
     ),
@@ -1028,6 +1171,10 @@ class _JobPublishPageState extends State<JobPublishPage> {
               .toList(),
         ),
       ]),
+    if (_stages.isNotEmpty) ...[
+      JobPublishWorkflowPreview(stages: _stages),
+      const SizedBox(height: 20),
+    ],
     if (_draftApplied) ...[
       const Text(
         'AI 结果仅供参考，请确认导入内容已核对。',
@@ -1124,7 +1271,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
         child: Row(
           children: [
-            if (_preview && !_needsListCheck) ...[
+            if (_preview && !_needsListCheck && _createdPositionId == null) ...[
               OutlinedButton(
                 onPressed: _saving
                     ? null
@@ -1176,9 +1323,9 @@ class _JobPublishPageState extends State<JobPublishPage> {
                   _needsListCheck
                       ? '返回岗位列表'
                       : _saving
-                      ? '正在发布…'
+                      ? (_createdPositionId == null ? '正在发布…' : '正在保存流程…')
                       : _preview
-                      ? '确认发布'
+                      ? (_createdPositionId == null ? '确认发布' : '重试保存流程')
                       : '预览岗位',
                 ),
               ),
