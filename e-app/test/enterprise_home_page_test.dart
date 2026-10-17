@@ -21,6 +21,7 @@ Future<void> mount(
   Size size = const Size(420, 900),
   double textScale = 1,
   VoidCallback? onJobs,
+  Future<void> Function(HomeInterview)? onStartInterview,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -43,6 +44,7 @@ Future<void> mount(
           onFeatures: () {},
           onInterviews: () {},
           onJobs: onJobs ?? () {},
+          onStartInterview: onStartInterview,
         ),
       ),
     ),
@@ -122,8 +124,23 @@ void main() {
         of: find.byType(HomeInterviewsPage),
         matching: find.byType(HomeInterviewRow),
       ),
-      findsNWidgets(4),
+      findsWidgets,
     );
+    final fourth = find.descendant(
+      of: find.byType(HomeInterviewsPage),
+      matching: find.byKey(const ValueKey('home-interview-4')),
+    );
+    await tester.scrollUntilVisible(
+      fourth,
+      240,
+      scrollable: find
+          .descendant(
+            of: find.byType(HomeInterviewsPage),
+            matching: find.byType(Scrollable),
+          )
+          .last,
+    );
+    expect(fourth, findsOneWidget);
     await tester.pumpAndSettle();
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -195,4 +212,39 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
+  for (final fromMore in [false, true]) {
+    testWidgets('${fromMore ? '更多列表' : '首页日历'}点击面试资料卡进入对应岗位基础信息', (
+      tester,
+    ) async {
+      final source = HomeFixture();
+      await mount(tester, source);
+      if (fromMore) await more(tester, '近期面试');
+      final card = find.byKey(const ValueKey('home-interview-job-1'));
+      final title = find.descendant(of: card, matching: find.text('示例面试岗位 1'));
+      await tester.ensureVisible(title);
+      await tester.pumpAndSettle();
+      await tester.tap(title);
+      await tester.pumpAndSettle();
+      final page = find.byType(JobDetailPage);
+      final detail = tester.widget<JobDetailPage>(page);
+      expect(detail.job['posId'], 100);
+      expect(detail.job['title'], '示例面试岗位 1');
+      expect(detail.initialTab, 0);
+      final tabs = tester.widget<TabBar>(
+        find.descendant(of: page, matching: find.byType(TabBar)),
+      );
+      expect(tabs.controller!.index, 0);
+      final calls = source.calendarCalls;
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(JobDetailPage), findsNothing);
+      expect(source.calendarCalls, calls + 1);
+      expect(
+        find.byType(HomeInterviewsPage),
+        fromMore ? findsOneWidget : findsNothing,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+  }
 }

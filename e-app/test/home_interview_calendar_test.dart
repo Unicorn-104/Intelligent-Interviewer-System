@@ -11,6 +11,9 @@ import 'enterprise_home_page_test.dart' show mount, inHome;
 import 'support/home_fixture.dart';
 
 class CalendarFixture extends HomeFixture {
+  DateTime? clock;
+  @override
+  DateTime get now => clock ?? super.now;
   Future<List<HomeInterview>> Function(DateTime)? loader;
 
   @override
@@ -98,9 +101,16 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('刷新保留所选日期，详情入口仍传递原始预约并在返回后刷新', (tester) async {
-    final source = HomeFixture();
-    await mount(tester, source);
+  testWidgets('刷新保留日期，未来面试禁用，开始后直接使用预留会议回调', (tester) async {
+    final source = CalendarFixture();
+    Map<String, dynamic>? started;
+    await mount(
+      tester,
+      source,
+      onStartInterview: (interview) async {
+        started = interview.raw;
+      },
+    );
     await tapCalendar(tester, 'home-calendar-day-2030-01-03');
     final beforeRefresh = source.calendarCalls;
     await tapCalendar(tester, 'home-calendar-refresh');
@@ -109,22 +119,45 @@ void main() {
     final row = tester.widget<HomeInterviewPreview>(
       inHome(find.byType(HomeInterviewPreview)).first,
     );
-    final open = inHome(
+    final start = inHome(
       find.byKey(ValueKey('home-interview-${row.interview.id}')),
     );
-    await tester.ensureVisible(open);
+    expect(tester.widget<OutlinedButton>(start).onPressed, isNull);
+    source.clock = DateTime.utc(2030, 1, 3, 2);
+    await tapCalendar(tester, 'home-calendar-refresh');
+    await tester.ensureVisible(start);
     await tester.pumpAndSettle();
-    await tester.tap(open);
+    expect(tester.widget<OutlinedButton>(start).onPressed, isNotNull);
+    final beforeStart = source.calendarCalls;
+    await tester.tap(start);
     await tester.pumpAndSettle();
-    final detail = tester.widget<InterviewAppointmentDetailPage>(
-      find.byType(InterviewAppointmentDetailPage),
-    );
-    expect(detail.appointment, row.interview.raw);
-    final beforeReturn = source.calendarCalls;
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-    expect(source.calendarCalls, beforeReturn + 1);
+    expect(started, row.interview.raw);
+    expect(find.byType(InterviewAppointmentDetailPage), findsNothing);
+    expect(source.calendarCalls, beforeStart + 1);
     expect(source.calendarDates.last, DateTime(2030, 1, 3));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('未接会议时只提示开发中，不打开详情或演示工作台', (tester) async {
+    final source = CalendarFixture()..clock = DateTime.utc(2030, 1, 2, 2);
+    await mount(tester, source);
+    final row = tester.widget<HomeInterviewPreview>(
+      inHome(find.byType(HomeInterviewPreview)).first,
+    );
+    final start = inHome(
+      find.byKey(ValueKey('home-interview-${row.interview.id}')),
+    );
+    await tester.ensureVisible(start);
+    await tester.pumpAndSettle();
+    await tester.tap(start);
+    await tester.pumpAndSettle();
+    expect(find.text('面试会议功能开发中，会议入口已预留'), findsOneWidget);
+    expect(find.byType(InterviewAppointmentDetailPage), findsNothing);
+    expect(
+      Navigator.of(tester.element(find.byType(HomeInterviewPreview).first))
+          .canPop(),
+      isFalse,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

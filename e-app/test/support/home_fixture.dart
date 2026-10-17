@@ -80,6 +80,7 @@ class HomeFixture extends HomeDataSource {
             return HomeInterview(
               raw: {
                 'appointmentId': index + 1,
+                'positionId': 100 + index,
                 'candidateName': '示例候选人 ${index + 1}',
                 'positionTitle': '示例面试岗位 ${index + 1}',
                 'startTime': HomeInterview.formatServerTime(start),
@@ -108,6 +109,7 @@ class HomeFixture extends HomeDataSource {
               (index) => HomeInterview(
                 raw: {
                   'appointmentId': index + 1,
+                  'positionId': 100 + index,
                   'candidateName': '示例候选人 ${index + 1}',
                   'positionTitle': '示例面试岗位 ${index + 1}',
                   'startTime': '2030-01-02 10:00',

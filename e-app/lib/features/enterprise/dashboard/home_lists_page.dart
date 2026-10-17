@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
 import '../../../theme/app_theme.dart';
 import 'home_data_source.dart';
 import 'home_models.dart';
@@ -15,15 +17,19 @@ class HomeInterviewsPage extends StatelessWidget {
     required this.from,
     required this.onOpen,
     this.onSchedule,
+    this.onViewJob,
+    this.now,
   });
   final HomeDataSource source;
   final DateTime from;
   final Future<void> Function(HomeInterview) onOpen;
   final VoidCallback? onSchedule;
+  final Future<void> Function(HomeInterview)? onViewJob;
+  final DateTime Function()? now;
   @override
   Widget build(BuildContext context) => _HomePagedList<HomeInterview>(
     title: '近期面试',
-    description: '更多信息正在接入',
+    description: '今天起的面试安排 · 到预约时间后可开始',
     empty: '暂无即将进行的面试',
     onAll: onSchedule,
     allLabel: '面试日程',
@@ -35,6 +41,13 @@ class HomeInterviewsPage extends StatelessWidget {
     identity: (item) => item.id,
     itemBuilder: (item, reload) => HomeInterviewRow(
       interview: item,
+      now: now,
+      onViewJob: onViewJob == null || item.positionId == null
+          ? null
+          : () async {
+              await onViewJob!(item);
+              reload();
+            },
       onOpen: () async {
         await onOpen(item);
         reload();

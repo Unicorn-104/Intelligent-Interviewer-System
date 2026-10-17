@@ -55,6 +55,11 @@ class HomeInterview {
   final Map<String, dynamic> raw;
   final DateTime startTime;
   final int status;
+  int? get positionId {
+    final id = int.tryParse('${raw['positionId']}');
+    return id != null && id > 0 ? id : null;
+  }
+
   String get candidate => homeText(raw['candidateName'], '候选人信息未提供');
   String get position => homeText(raw['positionTitle'], '岗位信息未提供');
   String get id =>
@@ -75,7 +80,24 @@ class HomeInterview {
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
-  String get statusLabel => status == 0 ? '待确认' : '已确认';
+  String get statusLabel => status == 0 ? '待面试' : '已确认';
+
+  DateTime? get endTime {
+    final text = homeText(raw['endTime'], '').replaceFirst(' ', 'T');
+    if (text.isEmpty) return null;
+    final offset = RegExp(r'(?:[zZ]|[+-]\d{2}:?\d{2})$').hasMatch(text);
+    return DateTime.tryParse(offset ? text : '$text+08:00');
+  }
+
+  bool isExpiredAt(DateTime now) {
+    final end = endTime;
+    return (status == 0 || status == 1) && end != null && !now.isBefore(end);
+  }
+
+  bool canStartAt(DateTime now) =>
+      (status == 0 || status == 1) &&
+      !now.isBefore(startTime) &&
+      (endTime == null || now.isBefore(endTime!));
 
   /// Calendar dates are wall-clock days in the server's UTC+8 timezone.
   static HomeInterview? onDay(Map<String, dynamic> row, DateTime day) {

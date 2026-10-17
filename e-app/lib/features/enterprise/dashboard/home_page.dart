@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
 import '../jobs/job_detail_page.dart';
-import '../schedule/interview_appointment_detail_page.dart';
 import 'home_data_source.dart';
 import 'home_lists_page.dart';
 import 'home_models.dart';
@@ -25,6 +24,7 @@ class HomePage extends StatefulWidget {
     required this.onJobs,
     this.onOpenNotices,
     this.dataSource,
+    this.onStartInterview,
   });
   final VoidCallback onNotifications;
   final VoidCallback onFeatures;
@@ -32,6 +32,7 @@ class HomePage extends StatefulWidget {
   final VoidCallback onJobs;
   final Future<void> Function()? onOpenNotices;
   final HomeDataSource? dataSource;
+  final Future<void> Function(HomeInterview interview)? onStartInterview;
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -121,17 +122,37 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _openInterview(HomeInterview interview) async {
+    if (!interview.canStartAt(_source.now)) return;
+    if (widget.onStartInterview == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('面试会议功能开发中，会议入口已预留')));
+      return;
+    }
+    await widget.onStartInterview!(interview);
+    if (mounted) {
+      await Future.wait([
+        _load(_interviews, _source.loadInterviews),
+        _loadCalendarInterviews(),
+        _load(_stats, _source.loadStats),
+      ]);
+    }
+  }
+
+  Future<void> _openInterviewJob(HomeInterview interview) async {
+    final positionId = interview.positionId;
+    if (positionId == null) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) =>
-            InterviewAppointmentDetailPage(appointment: Map.of(interview.raw)),
+        builder: (_) => JobDetailPage(
+          job: {'posId': positionId, 'title': interview.position},
+          initialTab: 0,
+        ),
       ),
     );
     if (mounted) {
       await Future.wait([
         _load(_interviews, _source.loadInterviews),
         _loadCalendarInterviews(),
-        _load(_stats, _source.loadStats),
       ]);
     }
   }
@@ -152,13 +173,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _moreInterviews() async {
-    final from = _source.now;
+    final local = _source.now.toUtc().add(const Duration(hours: 8));
+    final from = DateTime.utc(
+      local.year,
+      local.month,
+      local.day,
+    ).subtract(const Duration(hours: 8));
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => HomeInterviewsPage(
           source: _source,
           from: from,
           onOpen: _openInterview,
+          onViewJob: _openInterviewJob,
+          now: () => _source.now,
           onSchedule: widget.onInterviews,
         ),
       ),
@@ -391,7 +419,11 @@ class _HomePageState extends State<HomePage> {
                               _calendarInterviews.data!,
                               (item) => HomeInterviewPreview(
                                 interview: item,
+                                now: () => _source.now,
                                 onOpen: () => _openInterview(item),
+                                onViewJob: item.positionId == null
+                                    ? null
+                                    : () => _openInterviewJob(item),
                               ),
                             ),
                           ),
