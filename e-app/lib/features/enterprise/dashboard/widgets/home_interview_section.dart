@@ -10,11 +10,13 @@ class HomeInterviewRow extends StatelessWidget {
     required this.onOpen,
     this.now,
     this.onViewJob,
+    this.onViewCandidate,
   });
 
   final HomeInterview interview;
   final VoidCallback onOpen;
   final VoidCallback? onViewJob;
+  final VoidCallback? onViewCandidate;
   final DateTime Function()? now;
 
   @override
@@ -23,5 +25,6 @@ class HomeInterviewRow extends StatelessWidget {
     onOpen: onOpen,
     now: now,
     onViewJob: onViewJob,
+    onViewCandidate: onViewCandidate,
   );
 }

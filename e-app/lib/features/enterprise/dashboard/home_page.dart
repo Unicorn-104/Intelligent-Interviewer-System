@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
 import '../jobs/job_detail_page.dart';
+import '../talent/talent_detail_page.dart';
+import '../talent/models/talent_detail_view_data.dart';
 import 'home_data_source.dart';
 import 'home_lists_page.dart';
 import 'home_models.dart';
@@ -138,6 +140,31 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _openInterviewCandidate(HomeInterview interview) async {
+    final candidateId = interview.candidateId;
+    if (candidateId == null) return;
+    final positionId = interview.positionId;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => TalentDetailPage(
+          talent: {'talentId': candidateId, 'name': interview.candidate},
+          jobContext: positionId == null
+              ? null
+              : TalentJobContext(
+                  positionId: positionId,
+                  title: interview.position,
+                ),
+        ),
+      ),
+    );
+    if (mounted) {
+      await Future.wait([
+        _load(_interviews, _source.loadInterviews),
+        _loadCalendarInterviews(),
+      ]);
+    }
+  }
+
   Future<void> _openInterviewJob(HomeInterview interview) async {
     final positionId = interview.positionId;
     if (positionId == null) return;
@@ -186,6 +213,7 @@ class _HomePageState extends State<HomePage> {
           from: from,
           onOpen: _openInterview,
           onViewJob: _openInterviewJob,
+          onViewCandidate: _openInterviewCandidate,
           now: () => _source.now,
           onSchedule: widget.onInterviews,
         ),
@@ -421,6 +449,9 @@ class _HomePageState extends State<HomePage> {
                                 interview: item,
                                 now: () => _source.now,
                                 onOpen: () => _openInterview(item),
+                                onViewCandidate: item.candidateId == null
+                                    ? null
+                                    : () => _openInterviewCandidate(item),
                                 onViewJob: item.positionId == null
                                     ? null
                                     : () => _openInterviewJob(item),

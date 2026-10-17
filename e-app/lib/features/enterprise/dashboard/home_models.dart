@@ -60,6 +60,11 @@ class HomeInterview {
     return id != null && id > 0 ? id : null;
   }
 
+  int? get candidateId {
+    final id = int.tryParse('${raw['candidateId']}');
+    return id != null && id > 0 ? id : null;
+  }
+
   String get candidate => homeText(raw['candidateName'], '候选人信息未提供');
   String get position => homeText(raw['positionTitle'], '岗位信息未提供');
   String get id =>

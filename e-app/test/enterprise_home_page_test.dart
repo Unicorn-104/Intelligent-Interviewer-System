@@ -8,6 +8,7 @@ import 'package:enterprise_recruiter/features/enterprise/dashboard/widgets/home_
 import 'package:enterprise_recruiter/features/enterprise/dashboard/widgets/home_interview_preview.dart';
 import 'package:enterprise_recruiter/features/enterprise/dashboard/widgets/home_applications_section.dart';
 import 'package:enterprise_recruiter/features/enterprise/jobs/job_detail_page.dart';
+import 'package:enterprise_recruiter/features/enterprise/talent/talent_detail_page.dart';
 import 'package:enterprise_recruiter/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -247,4 +248,133 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
     });
   }
+  for (final sample in <(int?, bool)>[
+    (100, false),
+    (null, false),
+    (100, true),
+    (null, true),
+  ]) {
+    final (position, fromMore) = sample;
+    testWidgets(
+      '${fromMore ? '更多列表' : '首页'}头像进入候选人详情，岗位上下文 $position，返回保留原页面',
+      (tester) async {
+        final source = HomeFixture();
+        final interview = HomeInterview(
+          raw: {
+            'appointmentId': 31,
+            'candidateId': 207,
+            'positionId': position,
+            'candidateName': '合成求职者',
+            'positionTitle': '合成岗位',
+            'startTime': '2030-01-02 10:00',
+            'status': 0,
+          },
+          startTime: DateTime.utc(2030, 1, 2, 2),
+          status: 0,
+        );
+        source.pendingInterviews = Completer<HomePageSlice<HomeInterview>>()
+          ..complete(HomePageSlice([interview]));
+        var started = 0;
+        await mount(tester, source, onStartInterview: (_) async => started++);
+        if (fromMore) await more(tester, '近期面试');
+        final avatar = find.byKey(
+          const ValueKey('home-interview-candidate-31'),
+        );
+        await tester.ensureVisible(avatar);
+        await tester.pumpAndSettle();
+        await tester.tap(avatar);
+        await tester.pumpAndSettle();
+        final page = find.byType(TalentDetailPage);
+        final detail = tester.widget<TalentDetailPage>(page);
+        expect(detail.talent['talentId'], 207);
+        expect(detail.talent['name'], '合成求职者');
+        expect(detail.jobContext?.positionId, position);
+        if (position != null) expect(detail.jobContext!.title, '合成岗位');
+        expect(find.byType(JobDetailPage), findsNothing);
+        expect(started, 0);
+        final calls = source.calendarCalls;
+        final interviewCalls = source.interviewCalls;
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.byType(TalentDetailPage), findsNothing);
+        expect(source.calendarCalls, calls + 1);
+        expect(
+          find.byType(HomeInterviewsPage),
+          fromMore ? findsOneWidget : findsNothing,
+        );
+        if (fromMore) {
+          expect(source.interviewCalls, interviewCalls + 2);
+          expect(
+            find.byKey(const ValueKey('home-interview-candidate-31')),
+            findsOneWidget,
+          );
+        } else {
+          expect(find.text('2030-01-02'), findsOneWidget);
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+      },
+    );
+  }
+
+  testWidgets('缺失候选人ID的头像不打开错误详情，也不误触岗位卡片', (tester) async {
+    final source = HomeFixture();
+    source.pendingInterviews = Completer<HomePageSlice<HomeInterview>>()
+      ..complete(
+        HomePageSlice([
+          HomeInterview(
+            raw: {
+              'appointmentId': 32,
+              'positionId': 100,
+              'candidateName': '合成求职者',
+            },
+            startTime: DateTime.utc(2030, 1, 2, 2),
+            status: 0,
+          ),
+        ]),
+      );
+    await mount(tester, source);
+    final avatar = find.byKey(const ValueKey('home-interview-candidate-32'));
+    await tester.ensureVisible(avatar);
+    await tester.pumpAndSettle();
+    await tester.tap(avatar);
+    await tester.pumpAndSettle();
+    expect(find.byType(TalentDetailPage), findsNothing);
+    expect(find.byType(JobDetailPage), findsNothing);
+    expect(
+      Navigator.of(tester.element(find.byType(HomePage))).canPop(),
+      isFalse,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+  testWidgets('更多列表缺失候选人ID时头像不误跳岗位或详情', (tester) async {
+    final source = HomeFixture();
+    source.pendingInterviews = Completer<HomePageSlice<HomeInterview>>()
+      ..complete(
+        HomePageSlice([
+          HomeInterview(
+            raw: {
+              'appointmentId': 33,
+              'positionId': 100,
+              'candidateName': '合成求职者',
+            },
+            startTime: DateTime.utc(2030, 1, 2, 2),
+            status: 0,
+          ),
+        ]),
+      );
+    await mount(tester, source);
+    await more(tester, '近期面试');
+    final avatar = find.byKey(const ValueKey('home-interview-candidate-33'));
+    await tester.ensureVisible(avatar);
+    await tester.pumpAndSettle();
+    final calls = source.interviewCalls;
+    await tester.tap(avatar);
+    await tester.pumpAndSettle();
+    expect(find.byType(TalentDetailPage), findsNothing);
+    expect(find.byType(JobDetailPage), findsNothing);
+    expect(find.byType(HomeInterviewsPage), findsOneWidget);
+    expect(source.interviewCalls, calls);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

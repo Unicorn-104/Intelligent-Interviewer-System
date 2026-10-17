@@ -13,11 +13,13 @@ class HomeInterviewPreview extends StatefulWidget {
     required this.onOpen,
     this.now,
     this.onViewJob,
+    this.onViewCandidate,
   });
 
   final HomeInterview interview;
   final VoidCallback onOpen;
   final VoidCallback? onViewJob;
+  final VoidCallback? onViewCandidate;
   final DateTime Function()? now;
 
   @override
@@ -229,19 +231,42 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: expired
-                          ? AppColors.background
-                          : AppColors.interactiveSoft,
-                      child: Icon(
-                        Icons.person_outline,
-                        color: expired
-                            ? AppColors.textMuted
-                            : AppColors.interactive,
-                        size: 21,
+                    Tooltip(
+                      message: widget.onViewCandidate == null
+                          ? '候选人信息暂不可用'
+                          : '查看候选人详情',
+                      child: Semantics(
+                        button: widget.onViewCandidate != null,
+                        label: '查看${interview.candidate}的详情',
+                        child: GestureDetector(
+                          key: ValueKey(
+                            'home-interview-candidate-${interview.id}',
+                          ),
+                          behavior: HitTestBehavior.opaque,
+                          // Always consume avatar taps; never fall through to the job card.
+                          onTap: () => widget.onViewCandidate?.call(),
+                          child: SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: Center(
+                              child: CircleAvatar(
+                                radius: 18,
+                                backgroundColor: expired
+                                    ? AppColors.background
+                                    : AppColors.interactiveSoft,
+                                child: Icon(
+                                  Icons.person_outline,
+                                  color: expired
+                                      ? AppColors.textMuted
+                                      : AppColors.interactive,
+                                  size: 21,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),

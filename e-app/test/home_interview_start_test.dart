@@ -419,4 +419,69 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
+  test('候选人详情使用真实candidateId，缺失或无效时不以其他ID替代', () {
+    for (final id in [null, '', 'bad', 0, -1]) {
+      expect(
+        HomeInterview(
+          raw: {
+            'candidateId': id,
+            'appointmentId': 21,
+            'positionId': 100,
+            'userId': 999,
+          },
+          startTime: begin,
+          status: 0,
+        ).candidateId,
+        isNull,
+      );
+    }
+    expect(
+      HomeInterview(
+        raw: {'candidateId': '207', 'appointmentId': 21},
+        startTime: begin,
+        status: 0,
+      ).candidateId,
+      207,
+    );
+  });
+
+  for (final minutes in [-10, 0, 60]) {
+    testWidgets('头像、岗位卡片和开始面试分别触发独立入口，时间偏移 $minutes 分钟', (tester) async {
+      var candidateOpened = 0;
+      var jobOpened = 0;
+      var meetingOpened = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: HomeInterviewPreview(
+              interview: appointment(0),
+              now: () => begin.add(Duration(minutes: minutes)),
+              onViewCandidate: () => candidateOpened++,
+              onViewJob: () => jobOpened++,
+              onOpen: () => meetingOpened++,
+            ),
+          ),
+        ),
+      );
+      final avatar = find.byKey(const ValueKey('home-interview-candidate-21'));
+      expect(tester.getSize(avatar), const Size(44, 44));
+      await tester.tap(avatar);
+      await tester.pump();
+      expect(candidateOpened, 1);
+      expect(jobOpened, 0);
+      expect(meetingOpened, 0);
+      await tester.tap(find.text('合成岗位'));
+      await tester.pump();
+      expect(candidateOpened, 1);
+      expect(jobOpened, 1);
+      expect(meetingOpened, 0);
+      await tester.tap(find.byKey(const ValueKey('home-interview-action-21')));
+      await tester.pumpAndSettle();
+      expect(candidateOpened, 1);
+      expect(jobOpened, 1);
+      expect(meetingOpened, minutes == 0 ? 1 : 0);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 }

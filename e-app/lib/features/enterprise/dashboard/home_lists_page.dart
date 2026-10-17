@@ -18,6 +18,7 @@ class HomeInterviewsPage extends StatelessWidget {
     required this.onOpen,
     this.onSchedule,
     this.onViewJob,
+    this.onViewCandidate,
     this.now,
   });
   final HomeDataSource source;
@@ -25,6 +26,7 @@ class HomeInterviewsPage extends StatelessWidget {
   final Future<void> Function(HomeInterview) onOpen;
   final VoidCallback? onSchedule;
   final Future<void> Function(HomeInterview)? onViewJob;
+  final Future<void> Function(HomeInterview)? onViewCandidate;
   final DateTime Function()? now;
   @override
   Widget build(BuildContext context) => _HomePagedList<HomeInterview>(
@@ -42,6 +44,12 @@ class HomeInterviewsPage extends StatelessWidget {
     itemBuilder: (item, reload) => HomeInterviewRow(
       interview: item,
       now: now,
+      onViewCandidate: onViewCandidate == null || item.candidateId == null
+          ? null
+          : () async {
+              await onViewCandidate!(item);
+              reload();
+            },
       onViewJob: onViewJob == null || item.positionId == null
           ? null
           : () async {
