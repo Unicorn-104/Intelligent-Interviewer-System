@@ -1,7 +1,13 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
+import '../../../../core/network/api_exception.dart';
+import '../../../../theme/app_theme.dart';
 import '../data/talent_detail_data_source.dart';
 import '../models/talent_detail_view_data.dart';
+import 'talent_interview_week_calendar.dart';
+import 'talent_interview_time_editor.dart';
 
 class TalentInterviewInviteSheet extends StatefulWidget {
   const TalentInterviewInviteSheet({
@@ -22,33 +28,68 @@ class TalentInterviewInviteSheet extends StatefulWidget {
       _TalentInterviewInviteSheetState();
 }
 
+class _StageDraft {
+  _StageDraft({required this.name, required this.duration, this.stageId});
+  final String name;
+  final int? stageId;
+  int duration;
+  int? interviewerId;
+  DateTime? date;
+  TimeOfDay? time;
+  Map<String, dynamic>? appointment;
+  DateTime? get start => date == null || time == null
+      ? null
+      : TalentUtc8.fromSelection(date!, time!.hour, time!.minute);
+  bool get ready => interviewerId != null && start != null;
+  Map<String, Object?> get payload => {
+    'stageId': stageId,
+    'interviewerId': interviewerId,
+    'startTime': TalentUtc8.serverTime(start!),
+    'durationMin': duration,
+  };
+}
+
 class _TalentInterviewInviteSheetState
     extends State<TalentInterviewInviteSheet> {
-  List<Map<String, dynamic>> _interviewers = [], _jobs = [];
+  List<Map<String, dynamic>> _people = [], _jobs = [], _calendar = [];
+  List<_StageDraft> _stages = [];
+  int? _positionId;
+  int _selected = 0, _jobPage = 0, _workflowRequest = 0, _calendarRequest = 0;
   bool _loadingPeople = true,
       _loadingJobs = false,
+      _loadingWorkflow = false,
+      _loadingCalendar = false,
+      _stageEditorOpen = false,
+      _saving = false,
+      _uncertain = false,
       _moreJobs = false,
-      _checking = false,
-      _submitting = false,
-      _uncertain = false;
-  String? _peopleError, _jobsError, _availabilityError, _submitError;
-  int? _interviewerId, _positionId;
-  int _jobPage = 0, _availabilityRequest = 0;
-  int _duration = 45;
-  DateTime? _date;
-  TimeOfDay? _time;
+      _changed = false;
+  String? _peopleError,
+      _jobsError,
+      _workflowError,
+      _calendarError,
+      _submitError;
   bool? _busy;
+  late DateTime _week;
+  _StageDraft? get _current => _stages.isEmpty ? null : _stages[_selected];
+  bool get _locked => _saving || _uncertain || _stageEditorOpen;
   DateTime _now() => (widget.clock?.call() ?? DateTime.now()).toUtc();
-  DateTime? get _start => _date == null || _time == null
-      ? null
-      : TalentUtc8.fromSelection(_date!, _time!.hour, _time!.minute);
+  DateTime _monday(DateTime day) => DateTime(
+    day.year,
+    day.month,
+    day.day,
+  ).subtract(Duration(days: day.weekday - 1));
+
   @override
   void initState() {
     super.initState();
+    _week = _monday(TalentUtc8.wallTime(_now()));
     _positionId = widget.job?.positionId;
     _loadPeople();
-    if (widget.job == null) {
-      _loadJobs(reset: true);
+    if (_positionId != null) {
+      _loadWorkflow(_positionId!);
+    } else {
+      _loadJobs();
     }
   }
 
@@ -59,149 +100,284 @@ class _TalentInterviewInviteSheetState
     });
     try {
       final rows = await widget.source.loadInterviewers();
-      if (!mounted) {
-        return;
-      }
-      setState(() => _interviewers = rows);
+      if (mounted) setState(() => _people = rows);
     } catch (error) {
-      if (mounted) {
-        setState(() => _peopleError = talentError(error));
-      }
+      if (mounted) setState(() => _peopleError = talentError(error));
     } finally {
-      if (mounted) {
-        setState(() => _loadingPeople = false);
-      }
+      if (mounted) setState(() => _loadingPeople = false);
     }
   }
 
-  Future<void> _loadJobs({bool reset = false}) async {
-    if (_loadingJobs) {
-      return;
-    }
-    final page = reset ? 1 : _jobPage + 1;
+  Future<void> _loadJobs() async {
+    if (_loadingJobs) return;
     setState(() {
       _loadingJobs = true;
       _jobsError = null;
     });
     try {
-      final rows = await widget.source.loadJobs(pageNum: page);
+      final rows = await widget.source.loadJobs(pageNum: _jobPage + 1);
       if (rows.any((row) => talentId(row['posId']) == null)) {
         throw const FormatException('岗位标识无效');
       }
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
-        final all = [if (!reset) ..._jobs, ...rows];
         final seen = <int>{};
-        _jobs = all.where((row) => seen.add(talentId(row['posId'])!)).toList();
-        _jobPage = page;
+        _jobs = [
+          ..._jobs,
+          ...rows,
+        ].where((row) => seen.add(talentId(row['posId'])!)).toList();
+        _jobPage++;
         _moreJobs = rows.length == 20;
       });
     } catch (error) {
-      if (mounted) {
-        setState(() => _jobsError = talentError(error));
-      }
+      if (mounted) setState(() => _jobsError = talentError(error));
     } finally {
-      if (mounted) {
-        setState(() => _loadingJobs = false);
-      }
+      if (mounted) setState(() => _loadingJobs = false);
     }
   }
 
-  Future<void> _chooseDate() async {
-    final today = TalentUtc8.wallTime(_now());
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: _date ?? DateTime(today.year, today.month, today.day),
-      firstDate: DateTime(today.year, today.month, today.day),
-      currentDate: DateTime(today.year, today.month, today.day),
-      lastDate: DateTime(today.year + 2, 12, 31),
-    );
-    if (!mounted || selected == null) {
-      return;
-    }
-    setState(() => _date = selected);
-    await _checkAvailability();
-  }
-
-  Future<void> _chooseTime() async {
-    final wall = TalentUtc8.wallTime(_now().add(const Duration(hours: 1)));
-    final selected = await showTimePicker(
-      context: context,
-      initialTime: _time ?? TimeOfDay(hour: wall.hour, minute: wall.minute),
-    );
-    if (!mounted || selected == null) {
-      return;
-    }
-    setState(() => _time = selected);
-    await _checkAvailability();
-  }
-
-  Future<void> _checkAvailability() async {
-    final request = ++_availabilityRequest;
-    final id = _interviewerId;
-    final start = _start;
+  Future<void> _loadWorkflow(int positionId) async {
+    final request = ++_workflowRequest;
     setState(() {
+      _loadingWorkflow = true;
+      _workflowError = null;
+      _stages = [];
+      _selected = 0;
       _busy = null;
-      _availabilityError = null;
-      _checking = id != null && start != null;
+      _submitError = null;
     });
-    if (id == null || start == null) {
-      return;
-    }
     try {
-      final end = start.add(Duration(minutes: _duration));
-      final rows = await widget.source.loadAvailability(
-        id,
-        to: TalentUtc8.serverTime(end),
-      );
-      final busy = TalentUtc8.isBusy(rows, start, end);
-      if (!mounted || request != _availabilityRequest) {
-        return;
+      final responses = await Future.wait([
+        widget.source.loadWorkflow(positionId),
+        widget.source.loadCandidatePlan(widget.candidateId, positionId),
+      ]);
+      final workflow = responses[0] as Map<String, dynamic>;
+      final existing = responses[1] as List<Map<String, dynamic>>;
+      final stages = <_StageDraft>[];
+      for (final row in talentRows(workflow['stages'], '招聘流程')) {
+        final id = talentId(row['stageId']);
+        if (id == null) throw const FormatException('招聘阶段缺少ID，请刷新流程');
+        final raw = row['configJson'];
+        final config = raw is String && raw.isNotEmpty ? jsonDecode(raw) : raw;
+        final duration = config is Map
+            ? int.tryParse('${config['duration']}') ?? 45
+            : 45;
+        if (duration < 1 || duration > 1440) {
+          throw const FormatException('招聘阶段时长无效');
+        }
+        stages.add(
+          _StageDraft(
+            stageId: id,
+            name: talentText(row['name']),
+            duration: duration,
+          ),
+        );
       }
-      setState(() => _busy = busy);
+      if (stages.isEmpty) {
+        stages.add(
+          _StageDraft(name: widget.job?.currentStage ?? '面试阶段', duration: 45),
+        );
+      }
+      for (final stage in stages) {
+        final matches = existing
+            .where((row) => talentId(row['stageId']) == stage.stageId)
+            .toList();
+        if (matches.isNotEmpty) stage.appointment = matches.last;
+      }
+      if (!mounted || request != _workflowRequest) return;
+      setState(() => _stages = stages);
+      await _loadCalendar();
     } catch (error) {
-      if (mounted && request == _availabilityRequest) {
-        setState(() => _availabilityError = talentError(error));
+      if (mounted && request == _workflowRequest) {
+        setState(() => _workflowError = talentError(error));
       }
     } finally {
-      if (mounted && request == _availabilityRequest) {
-        setState(() => _checking = false);
+      if (mounted && request == _workflowRequest) {
+        setState(() => _loadingWorkflow = false);
       }
     }
   }
+
+  Future<void> _loadCalendar() async {
+    final request = ++_calendarRequest;
+    final week = _week;
+    setState(() {
+      _loadingCalendar = true;
+      _calendarError = null;
+    });
+    try {
+      final collected = <int, Map<String, dynamic>>{};
+      for (var page = 1; ; page++) {
+        final rows = await widget.source.loadInterviews(
+          pageNum: page,
+          pageSize: 100,
+          from: TalentUtc8.serverTime(TalentUtc8.fromSelection(week, 0, 0)),
+          to: TalentUtc8.serverTime(
+            TalentUtc8.fromSelection(week.add(const Duration(days: 7)), 0, 0),
+          ),
+        );
+        if (!mounted || request != _calendarRequest) return;
+        var added = 0;
+        for (final row in rows) {
+          final id = talentId(row['appointmentId']);
+          final start = TalentUtc8.parseServer(row['startTime']);
+          final end = TalentUtc8.parseServer(row['endTime']);
+          if (id == null ||
+              start == null ||
+              end == null ||
+              !end.isAfter(start)) {
+            throw const FormatException('面试日历数据不完整，请刷新');
+          }
+          if (!collected.containsKey(id)) added++;
+          collected[id] = row;
+        }
+        if (rows.length < 100) break;
+        if (added == 0 || page >= 200) {
+          throw const FormatException('日历分页异常，请缩小范围后重试');
+        }
+      }
+      setState(() => _calendar = collected.values.toList());
+    } catch (error) {
+      if (mounted && request == _calendarRequest) {
+        setState(() {
+          _calendar = [];
+          _calendarError = talentError(error);
+        });
+      }
+    } finally {
+      if (mounted && request == _calendarRequest) {
+        setState(() => _loadingCalendar = false);
+      }
+    }
+  }
+
+  Future<void> _editStage(int index, {DateTime? suggestedStart}) async {
+    if (_locked || _loadingPeople || _loadingWorkflow || _people.isEmpty) {
+      return;
+    }
+    final stage = _stages[index];
+    setState(() => _selected = index);
+    if (stage.appointment != null) {
+      await _openAppointment(stage.appointment!);
+      return;
+    }
+    setState(() => _stageEditorOpen = true);
+    try {
+      final selection = await showDialog<InterviewTimeSelection>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => TalentInterviewTimeEditor(
+          draft: true,
+          appointment: {
+            'stageName': stage.name,
+            'candidateName': widget.candidateName,
+            'positionTitle':
+                widget.job?.title ??
+                talentText(
+                  _jobs.firstWhere(
+                    (row) => talentId(row['posId']) == _positionId,
+                  )['title'],
+                ),
+          },
+          people: _people,
+          now: _now(),
+          editable: true,
+          initialStart: suggestedStart ?? stage.start,
+          initialDuration: stage.duration,
+          initialInterviewerId: stage.interviewerId,
+          validateSelection: (value) async {
+            final end = value.start.add(Duration(minutes: value.duration));
+            final slots = await widget.source.loadAvailability(
+              value.interviewerId,
+              to: TalentUtc8.serverTime(end),
+            );
+            if (TalentUtc8.isBusy(slots, value.start, end)) {
+              throw const ApiException('所选时段面试官已被占用');
+            }
+          },
+        ),
+      );
+      if (!mounted || selection == null) return;
+      final wall = TalentUtc8.wallTime(selection.start);
+      setState(() {
+        stage.interviewerId = selection.interviewerId;
+        stage.date = DateTime(wall.year, wall.month, wall.day);
+        stage.time = TimeOfDay(hour: wall.hour, minute: wall.minute);
+        stage.duration = selection.duration;
+        _week = _monday(stage.date!);
+        _busy = false;
+        _submitError = null;
+      });
+      await _loadCalendar();
+    } finally {
+      if (mounted) setState(() => _stageEditorOpen = false);
+    }
+  }
+
+  Future<void> _showConflict([String message = '所选时间与已有面试安排冲突，请调整面试时间']) =>
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('时间冲突'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('调整时间'),
+            ),
+          ],
+        ),
+      );
 
   Future<void> _submit() async {
-    if (_submitting || _uncertain) {
+    if (_locked || _positionId == null || _workflowError != null) return;
+    final pending = _stages
+        .where((stage) => stage.appointment == null)
+        .toList();
+    if (pending.isEmpty) {
+      Navigator.pop(context, _changed);
       return;
     }
-    final position = _positionId;
-    final interviewer = _interviewerId;
-    final start = _start;
-    if (position == null || interviewer == null || start == null) {
-      setState(() => _submitError = '请选择岗位、面试官、日期和时间');
+    if (pending.any((stage) => !stage.ready)) {
+      setState(() => _submitError = '请分别设置每个阶段的面试官、日期和时间');
       return;
     }
-    if (!start.isAfter(_now())) {
-      setState(() => _submitError = '面试时间须晚于当前时间（UTC+8）');
-      return;
+    DateTime? previousEnd;
+    for (final stage in _stages) {
+      final start = stage.appointment == null
+          ? stage.start
+          : TalentUtc8.parseServer(stage.appointment!['startTime']);
+      final end = stage.appointment == null
+          ? start?.add(Duration(minutes: stage.duration))
+          : TalentUtc8.parseServer(stage.appointment!['endTime']);
+      if (start == null || end == null) continue;
+      if (stage.appointment == null && !start.isAfter(_now())) {
+        setState(() => _submitError = '面试时间须晚于当前时间（UTC+8）');
+        return;
+      }
+      if (previousEnd != null && start.isBefore(previousEnd)) {
+        await _showConflict('各阶段须按招聘流程先后安排，后一阶段不能早于前一阶段结束时间');
+        return;
+      }
+      previousEnd = end;
     }
-    final interviewerName = talentText(
-      _interviewers.firstWhere(
-        (row) => talentId(row['userId']) == interviewer,
-      )['userName'],
-    );
     final positionTitle =
         widget.job?.title ??
         talentText(
           _jobs.firstWhere(
-            (row) => talentId(row['posId']) == position,
+            (row) => talentId(row['posId']) == _positionId,
           )['title'],
         );
-    final duration = _duration;
+    final single = pending.length == 1 && pending.first.stageId == null;
+    final stage = pending.first;
+    final person = _people.firstWhere(
+      (row) => talentId(row['userId']) == stage.interviewerId,
+    );
+    final description = single
+        ? '候选人：${widget.candidateName}\n岗位：$positionTitle\n面试官：${talentText(person['userName'])}\n时间：${TalentUtc8.serverTime(stage.start!).substring(0, 16)}（UTC+8）\n时长：${stage.duration} 分钟'
+        : '候选人：${widget.candidateName}\n岗位：$positionTitle\n\n${pending.map((item) => '${item.name}\n${TalentUtc8.serverTime(item.start!).substring(0, 16)} · ${item.duration}分钟').join('\n\n')}';
     setState(() {
-      _submitting = true;
+      _saving = true;
       _submitError = null;
     });
     try {
@@ -209,11 +385,7 @@ class _TalentInterviewInviteSheetState
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('确认发送面试邀约？'),
-          content: SingleChildScrollView(
-            child: Text(
-              '候选人：${widget.candidateName}\n岗位：$positionTitle\n面试官：$interviewerName\n时间：${TalentUtc8.serverTime(start).substring(0, 16)}（UTC+8）\n时长：$duration 分钟',
-            ),
-          ),
+          content: SingleChildScrollView(child: Text(description)),
           actions: [
             TextButton(
               key: const Key('invite-confirm-cancel'),
@@ -228,79 +400,259 @@ class _TalentInterviewInviteSheetState
           ],
         ),
       );
-      if (!mounted || confirmed != true) {
+      if (!mounted || confirmed != true) return;
+      for (final item in pending) {
+        final end = item.start!.add(Duration(minutes: item.duration));
+        final rows = await widget.source.loadAvailability(
+          item.interviewerId!,
+          to: TalentUtc8.serverTime(end),
+        );
+        if (!mounted) return;
+        if (TalentUtc8.isBusy(rows, item.start!, end)) {
+          setState(() {
+            _busy = true;
+            _submitError = '所选时段面试官已被占用，请调整时间';
+          });
+          await _showConflict();
+          return;
+        }
+      }
+      final List<Map<String, dynamic>> results;
+      try {
+        results = single
+            ? [
+                await widget.source.invite(
+                  candidateId: widget.candidateId,
+                  positionId: _positionId!,
+                  interviewerId: stage.interviewerId!,
+                  startTime: TalentUtc8.serverTime(stage.start!),
+                  durationMin: stage.duration,
+                ),
+              ]
+            : await widget.source.inviteStages(
+                candidateId: widget.candidateId,
+                positionId: _positionId!,
+                stages: pending.map((item) => item.payload).toList(),
+              );
+      } on ApiException catch (error) {
+        if (error.code != null ||
+            error.message.contains('冲突') ||
+            error.message.contains('占用')) {
+          rethrow;
+        }
+        if (mounted) {
+          setState(() {
+            _uncertain = true;
+            _submitError = '邀约结果暂时无法确认，请关闭并检查面试安排，避免重复邀约';
+          });
+        }
+        return;
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _uncertain = true;
+            _submitError = '邀约结果暂时无法确认，请关闭并检查面试安排，避免重复邀约';
+          });
+        }
         return;
       }
-      // 提交前重新查询；失败不得当作空闲。服务器仍负责最终冲突校验。
-      final end = start.add(Duration(minutes: _duration));
-      final rows = await widget.source.loadAvailability(
-        interviewer,
-        to: TalentUtc8.serverTime(end),
-      );
-      if (!mounted) {
-        return;
-      }
-      if (TalentUtc8.isBusy(rows, start, end)) {
-        setState(() {
-          _busy = true;
-          _submitError = '所选时段面试官已被占用，请调整时间';
-        });
-        return;
-      }
-      if (!start.isAfter(_now())) {
-        setState(() => _submitError = '面试时间须晚于当前时间（UTC+8）');
-        return;
-      }
-      final result = await widget.source.invite(
-        candidateId: widget.candidateId,
-        positionId: position,
-        interviewerId: interviewer,
-        startTime: TalentUtc8.serverTime(start),
-        durationMin: _duration,
-      );
-      if (!mounted) {
-        return;
-      }
-      if (talentId(result['appointmentId']) == null) {
+      if (!mounted) return;
+      if (results.length != pending.length ||
+          results.any((row) => talentId(row['appointmentId']) == null) ||
+          (!single &&
+              (results.map((row) => talentId(row['stageId'])).toSet().length !=
+                      pending.length ||
+                  results.any(
+                    (row) => !pending.any(
+                      (stage) => stage.stageId == talentId(row['stageId']),
+                    ),
+                  )))) {
         setState(() {
           _uncertain = true;
           _submitError = '服务已响应但未返回预约编号，请关闭并检查面试安排，避免重复邀约';
         });
         return;
       }
-      Navigator.pop(context, true);
-    } catch (error) {
-      if (mounted) {
-        setState(
-          () => _submitError = '${talentError(error)}。若已点击提交，请先检查面试安排再决定是否重试',
+      _changed = true;
+      if (single) {
+        Navigator.pop(context, true);
+        return;
+      }
+      for (final row in results) {
+        final item = pending.firstWhere(
+          (stage) => stage.stageId == talentId(row['stageId']),
         );
+        item.appointment = {
+          ...row,
+          'candidateName': widget.candidateName,
+          'positionTitle': positionTitle,
+        };
+      }
+      setState(() => _submitError = null);
+      await _loadCalendar();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('各阶段面试已安排成功')));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      final message = talentError(error);
+      setState(() => _submitError = message);
+      if (message.contains('冲突') || message.contains('占用')) {
+        await _showConflict(message);
       }
     } finally {
-      if (mounted) {
-        setState(() => _submitting = false);
-      }
+      if (mounted) setState(() => _saving = false);
     }
+  }
+
+  bool _editable(Map<String, dynamic> row) {
+    final status = int.tryParse('${row['status']}');
+    final start = TalentUtc8.parseServer(row['startTime']);
+    return (status == 0 || status == 1) &&
+        start != null &&
+        start.isAfter(_now());
+  }
+
+  Future<void> _openAppointment(Map<String, dynamic> row) async {
+    if (_locked) return;
+    final selection = await showDialog<InterviewTimeSelection>(
+      context: context,
+      builder: (_) => TalentInterviewTimeEditor(
+        appointment: row,
+        people: _people,
+        now: _now(),
+        editable: _editable(row),
+      ),
+    );
+    if (!mounted || selection == null) return;
+    await _update(row, selection);
+  }
+
+  Future<void> _update(
+    Map<String, dynamic> row,
+    InterviewTimeSelection selection,
+  ) async {
+    if (_locked || !_editable(row)) return;
+    if (!selection.start.isAfter(_now())) {
+      setState(() => _submitError = '面试时间须晚于当前时间（UTC+8）');
+      return;
+    }
+    final id = talentId(row['appointmentId']);
+    if (id == null) return;
+    setState(() {
+      _saving = true;
+      _submitError = null;
+    });
+    try {
+      final result = await widget.source.reschedule(
+        id,
+        newStartTime: TalentUtc8.serverTime(selection.start),
+        durationMin: selection.duration,
+        interviewerId: selection.interviewerId,
+      );
+      if (!mounted) return;
+      if (talentId(result['appointmentId']) != id) {
+        throw const FormatException('改期响应不完整，请刷新核对');
+      }
+      _changed = true;
+      for (final stage in _stages) {
+        if (talentId(stage.appointment?['appointmentId']) == id) {
+          stage.appointment = {...row, ...result};
+        }
+      }
+      await _loadCalendar();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('面试安排已更新')));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      final message = talentError(error);
+      setState(() => _submitError = message);
+      if (message.contains('冲突') || message.contains('占用')) {
+        await _showConflict(message);
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _switchWeek(int delta) {
+    if (_locked) return;
+    setState(
+      () => _week = delta == 0
+          ? _monday(TalentUtc8.wallTime(_now()))
+          : _week.add(Duration(days: delta * 7)),
+    );
+    _loadCalendar();
+  }
+
+  String _scheduleLabel(_StageDraft stage) {
+    final row = stage.appointment;
+    if (row != null) {
+      return '${row['startTime']} · ${row['interviewerName'] ?? '已安排'}';
+    }
+    if (!stage.ready) return '待设置面试官及时间';
+    final people = _people.where(
+      (row) => talentId(row['userId']) == stage.interviewerId,
+    );
+    final person = people.isEmpty
+        ? '面试官未填写'
+        : talentText(people.first['userName']);
+    return '${TalentUtc8.serverTime(stage.start!).substring(0, 16)}\n$person · ${stage.duration}分钟';
   }
 
   @override
   Widget build(BuildContext context) {
-    final locked = _submitting || _uncertain;
+    final stage = _current;
+    final allSaved =
+        _stages.isNotEmpty && _stages.every((item) => item.appointment != null);
+    final canSubmit =
+        !_locked &&
+        !_loadingWorkflow &&
+        !_loadingPeople &&
+        _workflowError == null &&
+        _peopleError == null &&
+        _people.isNotEmpty &&
+        _stages.isNotEmpty &&
+        _busy != true &&
+        _stages.every((item) => item.appointment != null || item.ready);
     return PopScope(
-      canPop: !_submitting,
+      canPop: !_saving,
       child: Padding(
         padding: EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          20 + MediaQuery.viewInsetsOf(context).bottom,
+          16,
+          16,
+          16,
+          16 + MediaQuery.viewInsetsOf(context).bottom,
         ),
         child: SingleChildScrollView(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text('邀请面试', style: Theme.of(context).textTheme.titleLarge),
-              const Text('日期和时间均按 UTC+8 展示'),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '邀请面试',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: _saving
+                        ? null
+                        : () => Navigator.pop(context, _changed || _uncertain),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const Text(
+                '日期和时间均按 UTC+8 展示',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
               const SizedBox(height: 12),
               if (widget.job != null)
                 Text('岗位：${widget.job!.title}')
@@ -314,14 +666,18 @@ class _TalentInterviewInviteSheetState
                     items: _jobs
                         .map(
                           (row) => DropdownMenuItem(
-                            value: talentId(row['posId'])!,
+                            value: talentId(row['posId']),
                             child: Text(talentText(row['title'])),
                           ),
                         )
                         .toList(),
-                    onChanged: locked
+                    onChanged: _locked
                         ? null
-                        : (value) => setState(() => _positionId = value),
+                        : (value) {
+                            if (value == null) return;
+                            setState(() => _positionId = value);
+                            _loadWorkflow(value);
+                          },
                   ),
                 if (_loadingJobs) const LinearProgressIndicator(),
                 if (!_loadingJobs && _jobs.isEmpty && _jobsError == null)
@@ -329,15 +685,85 @@ class _TalentInterviewInviteSheetState
                 if (_jobsError != null) Text(_jobsError!),
                 if (_jobsError != null || (!_loadingJobs && _jobs.isEmpty))
                   TextButton(
-                    onPressed: locked
-                        ? null
-                        : () => _loadJobs(reset: _jobPage == 0),
+                    onPressed: _locked ? null : _loadJobs,
                     child: const Text('重试加载岗位'),
                   ),
                 if (_moreJobs && !_loadingJobs)
                   TextButton(
-                    onPressed: locked ? null : _loadJobs,
+                    onPressed: _locked ? null : _loadJobs,
                     child: const Text('加载更多岗位'),
+                  ),
+              ],
+              if (_loadingWorkflow)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: LinearProgressIndicator(),
+                ),
+              if (_workflowError != null) ...[
+                Text(
+                  _workflowError!,
+                  style: const TextStyle(color: AppColors.error),
+                ),
+                TextButton(
+                  onPressed: _locked ? null : () => _loadWorkflow(_positionId!),
+                  child: const Text('重新加载招聘流程'),
+                ),
+              ],
+              if (_stages.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  '招聘流程 · 点击卡片设置面试时间',
+                  style: TextStyle(
+                    color: AppColors.brand,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                for (final (index, item) in _stages.indexed)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Material(
+                      color: index == _selected
+                          ? AppColors.interactiveSoft
+                          : AppColors.canvas,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: index == _selected
+                              ? AppColors.interactive
+                              : AppColors.hairline,
+                        ),
+                      ),
+                      child: ListTile(
+                        key: ValueKey('invite-stage-$index'),
+                        dense: true,
+                        leading: Text(
+                          '${index + 1}',
+                          style: const TextStyle(
+                            color: AppColors.interactive,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        title: Text(item.name),
+                        subtitle: Text(_scheduleLabel(item)),
+                        trailing: IconButton(
+                          key: ValueKey('invite-stage-edit-$index'),
+                          tooltip: item.appointment == null
+                              ? '设置${item.name}'
+                              : '查看或编辑${item.name}',
+                          onPressed: _locked ? null : () => _editStage(index),
+                          icon: Icon(
+                            item.appointment != null
+                                ? Icons.check_circle_outline
+                                : Icons.edit_outlined,
+                            color: item.appointment != null
+                                ? AppColors.success
+                                : AppColors.interactive,
+                            size: 20,
+                          ),
+                        ),
+                        onTap: _locked ? null : () => _editStage(index),
+                      ),
+                    ),
                   ),
               ],
               const SizedBox(height: 12),
@@ -346,126 +772,75 @@ class _TalentInterviewInviteSheetState
               else if (_peopleError != null) ...[
                 Text(_peopleError!),
                 TextButton(
-                  onPressed: locked ? null : _loadPeople,
+                  onPressed: _locked ? null : _loadPeople,
                   child: const Text('重试加载面试官'),
                 ),
-              ] else if (_interviewers.isEmpty) ...[
+              ] else if (_people.isEmpty) ...[
                 const Text('暂无可用面试官'),
                 TextButton(
-                  onPressed: locked ? null : _loadPeople,
+                  onPressed: _locked ? null : _loadPeople,
                   child: const Text('刷新面试官'),
                 ),
-              ] else
-                DropdownButtonFormField<int>(
-                  key: const Key('invite-interviewer'),
-                  initialValue: _interviewerId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: '面试官'),
-                  items: _interviewers
-                      .map(
-                        (row) => DropdownMenuItem(
-                          value: talentId(row['userId'])!,
-                          child: Text(
-                            [
-                              talentText(row['userName']),
-                              talentText(row['department'], ''),
-                              talentText(row['jobTitle'], ''),
-                            ].where((part) => part.isNotEmpty).join(' · '),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: locked
-                      ? null
-                      : (value) {
-                          setState(() => _interviewerId = value);
-                          _checkAvailability();
-                        },
-                ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton(
-                    key: const Key('invite-date'),
-                    onPressed: locked ? null : _chooseDate,
-                    child: Text(
-                      _date == null ? '选择日期' : TalentUtc8.dateLabel(_date!),
-                    ),
-                  ),
-                  OutlinedButton(
-                    key: const Key('invite-time'),
-                    onPressed: locked ? null : _chooseTime,
-                    child: Text(
-                      _time == null
-                          ? '选择时间'
-                          : '${_time!.hour.toString().padLeft(2, '0')}:${_time!.minute.toString().padLeft(2, '0')}',
-                    ),
-                  ),
-                ],
-              ),
-              DropdownButtonFormField<int>(
-                key: const Key('invite-duration'),
-                initialValue: _duration,
-                decoration: const InputDecoration(labelText: '时长'),
-                items: [
-                  for (final minutes in [30, 45, 60, 90, 120])
-                    DropdownMenuItem(
-                      value: minutes,
-                      child: Text('$minutes 分钟'),
-                    ),
-                ],
-                onChanged: locked
-                    ? null
-                    : (value) {
-                        if (value != null) {
-                          setState(() => _duration = value);
-                          _checkAvailability();
-                        }
-                      },
-              ),
-              const SizedBox(height: 12),
-              if (_checking)
-                const Text('正在检查面试官忙闲')
-              else if (_availabilityError != null) ...[
-                Text(_availabilityError!),
-                TextButton(
-                  onPressed: locked ? null : _checkAvailability,
-                  child: const Text('重试查询忙闲'),
-                ),
-              ] else if (_busy == true)
-                const Text('所选时段面试官已被占用')
-              else if (_busy == false)
-                const Text('当前查询未发现占用，提交时将再次核验'),
+              ],
               if (_submitError != null)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(_submitError!),
+                  child: Text(
+                    _submitError!,
+                    style: const TextStyle(color: AppColors.error),
+                  ),
                 ),
+              const SizedBox(height: 12),
               FilledButton(
                 key: const Key('invite-submit'),
-                onPressed:
-                    locked ||
-                        _loadingPeople ||
-                        _loadingJobs ||
-                        _checking ||
-                        _peopleError != null ||
-                        _jobsError != null ||
-                        _availabilityError != null ||
-                        _busy != false ||
-                        _positionId == null ||
-                        _interviewerId == null ||
-                        _start == null
-                    ? null
-                    : _submit,
-                child: Text(_submitting ? '正在提交' : '确认邀请'),
+                onPressed: canSubmit ? _submit : null,
+                child: Text(
+                  _saving
+                      ? '正在提交'
+                      : allSaved
+                      ? '完成'
+                      : _stages.length > 1
+                      ? '确认邀请全部阶段'
+                      : '确认邀请',
+                ),
               ),
               TextButton(
-                onPressed: _submitting
+                onPressed: _saving
                     ? null
-                    : () => Navigator.pop(context, _uncertain),
+                    : () => Navigator.pop(context, _changed || _uncertain),
                 child: Text(_uncertain ? '关闭并查看面试安排' : '取消'),
+              ),
+              const SizedBox(height: 8),
+              TalentInterviewWeekCalendar(
+                weekStart: _week,
+                appointments: _calendar,
+                loading: _loadingCalendar,
+                error: _calendarError,
+                enabled: !_locked,
+                today: TalentUtc8.wallTime(_now()),
+                selectedDay: stage?.date,
+                onPrevious: () => _switchWeek(-1),
+                onNext: () => _switchWeek(1),
+                onToday: () => _switchWeek(0),
+                onRefresh: _loadCalendar,
+                onChooseDay: (_) {},
+                onChooseTime: (day, hour, minute) {
+                  if (stage == null || stage.appointment != null) return;
+                  _editStage(
+                    _selected,
+                    suggestedStart: TalentUtc8.fromSelection(day, hour, minute),
+                  );
+                },
+                canEdit: _editable,
+                onOpen: _openAppointment,
+                onMove: (row, start, duration) => _update(
+                  row,
+                  InterviewTimeSelection(
+                    start: start,
+                    duration: duration,
+                    interviewerId: talentId(row['interviewerId'])!,
+                  ),
+                ),
               ),
             ],
           ),

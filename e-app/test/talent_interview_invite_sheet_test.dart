@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:enterprise_recruiter/features/enterprise/talent/widgets/talent_interview_invite_sheet.dart';
+import 'package:enterprise_recruiter/features/enterprise/talent/widgets/talent_interview_time_editor.dart';
+import 'package:enterprise_recruiter/features/enterprise/talent/widgets/talent_interview_week_calendar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -38,6 +40,87 @@ Future<void> openInvite(
 }
 
 void main() {
+  testWidgets('主面板只有卡片，设置弹窗保存后更新，取消及关闭保留原内容', (tester) async {
+    final source = TalentFakeSource();
+    await openInvite(tester, source);
+    expect(find.byKey(const Key('invite-stage-0')), findsOneWidget);
+    expect(find.byKey(const Key('invite-date')), findsNothing);
+    expect(find.byKey(const Key('invite-interviewer')), findsNothing);
+    await fillTalentInvite(tester, save: false);
+    expect(find.byType(TalentInterviewTimeEditor), findsOneWidget);
+    expect(source.availabilityQueries, isEmpty);
+    await tester.tap(find.byKey(const Key('invite-stage-cancel')));
+    await tester.pumpAndSettle();
+    expect(find.text('待设置面试官及时间'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('invite-submit')))
+          .onPressed,
+      isNull,
+    );
+    await fillTalentInvite(tester);
+    expect(source.availabilityQueries, hasLength(1));
+    expect(source.invites, isEmpty);
+    expect(find.byType(TalentInterviewTimeEditor), findsNothing);
+    expect(find.byKey(const Key('invite-date')), findsNothing);
+    expect(find.textContaining('2027-01-02 09:30'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('invite-stage-edit-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('2027-01-02'), findsOneWidget);
+    expect(find.text('09:30'), findsOneWidget);
+    await fillTalentInvite(tester, hour: 10, save: false);
+    await tester.tap(find.byKey(const Key('invite-stage-close')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2027-01-02 09:30'), findsOneWidget);
+    expect(find.textContaining('2027-01-02 10:30'), findsNothing);
+    expect(source.availabilityQueries, hasLength(1));
+  });
+
+  testWidgets('日历选日期只浏览，点时间段打开弹窗，取消不会覆盖阶段时间', (tester) async {
+    final source = TalentFakeSource();
+    await openInvite(tester, source);
+    await fillTalentInvite(tester);
+    final dateTile = find.byKey(const ValueKey('interview-calendar-day-6'));
+    await tester.ensureVisible(dateTile);
+    await tester.pumpAndSettle();
+    await tester.tap(dateTile);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2027-01-02 09:30'), findsOneWidget);
+    final calendar = tester.widget<TalentInterviewWeekCalendar>(
+      find.byType(TalentInterviewWeekCalendar),
+    );
+    calendar.onChooseTime(DateTime(2027, 1, 3), 11, 15);
+    await tester.pumpAndSettle();
+    expect(find.byType(TalentInterviewTimeEditor), findsOneWidget);
+    expect(find.text('2027-01-03'), findsOneWidget);
+    expect(find.text('11:15'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('invite-stage-cancel')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2027-01-02 09:30'), findsOneWidget);
+    expect(source.invites, isEmpty);
+  });
+
+  for (final size in [const Size(320, 700), const Size(900, 420)]) {
+    testWidgets('阶段时间设置弹窗在 $size 和键盘场景下无溢出', (tester) async {
+      await openInvite(tester, TalentFakeSource());
+      tester.view.physicalSize = size;
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('invite-stage-edit-0')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TalentInterviewTimeEditor), findsOneWidget);
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: size.height < 500 ? 120 : 260,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('invite-stage-cancel')));
+      await tester.pumpAndSettle();
+    });
+  }
+
   testWidgets('取消二次确认不发任何新请求，保留选择并可重新确认', (tester) async {
     final source = TalentFakeSource();
     await openInvite(tester, source);
@@ -54,8 +137,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.byType(TalentInterviewInviteSheet), findsOneWidget);
-    expect(find.text('2027-01-02'), findsOneWidget);
-    expect(find.text('09:30'), findsOneWidget);
+    expect(find.textContaining('2027-01-02 09:30'), findsOneWidget);
+    expect(find.byKey(const Key('invite-date')), findsNothing);
     expect(source.availabilityQueries.length, queries);
     expect(source.peopleCalls, peopleCalls);
     expect(source.detailCalls, detailCalls);
@@ -100,7 +183,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('合成测试岗位').last);
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('invite-interviewer')), findsOneWidget);
+    expect(find.byKey(const Key('invite-stage-0')), findsOneWidget);
+    expect(find.byKey(const Key('invite-interviewer')), findsNothing);
   });
   testWidgets('忙闲失败不得视为空闲，重试后冲突时仍禁止提交', (tester) async {
     final source = TalentFakeSource()..availabilityFails = true;
@@ -124,6 +208,9 @@ void main() {
     ];
     await tester.tap(find.text('重试查询忙闲'));
     await tester.pumpAndSettle();
+    expect(find.text('时间冲突'), findsOneWidget);
+    await tester.tap(find.text('调整时间'));
+    await tester.pumpAndSettle();
     expect(find.text('所选时段面试官已被占用'), findsOneWidget);
     expect(
       tester
@@ -137,7 +224,8 @@ void main() {
       ..invitePending = Completer<Map<String, dynamic>>();
     await openInvite(tester, source);
     await fillTalentInvite(tester);
-    expect(find.text('当前查询未发现占用，提交时将再次核验'), findsOneWidget);
+    expect(find.textContaining('2027-01-02 09:30'), findsOneWidget);
+    expect(find.byType(TalentInterviewTimeEditor), findsNothing);
     final submit = find.byKey(const Key('invite-submit'));
     await tester.tap(submit);
     await tester.pumpAndSettle();
@@ -189,7 +277,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(source.invites, isEmpty);
     expect(find.text('所选时段面试官已被占用，请调整时间'), findsOneWidget);
-    await tester.tap(find.text('取消'));
+    await tester.tap(find.text('调整时间'));
+    await tester.pumpAndSettle();
+    final close = find.text('取消').last;
+    await tester.ensureVisible(close);
+    await tester.tap(close);
     await tester.pumpAndSettle();
     source.slots = [];
     source.inviteResult = {};
@@ -209,5 +301,40 @@ void main() {
           .onPressed,
       isNull,
     );
+  });
+
+  testWidgets('按招聘流程阶段分别排期并向预约接口发送阶段ID', (tester) async {
+    final source = TalentFakeSource()
+      ..workflow = {
+        'template': {'name': '多阶段流程'},
+        'stages': [
+          {
+            'stageId': 31,
+            'name': '在线笔试',
+            'type': 1,
+            'configJson': '{"duration":30}',
+          },
+          {
+            'stageId': 32,
+            'name': 'HR 综合面试',
+            'type': 3,
+            'configJson': '{"duration":45}',
+          },
+        ],
+      };
+    await openInvite(tester, source);
+    await fillTalentInvite(tester);
+    await tester.tap(find.byKey(const Key('invite-stage-1')));
+    await tester.pumpAndSettle();
+    await fillTalentInvite(tester, hour: 10);
+    await tester.tap(find.byKey(const Key('invite-submit')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('invite-confirm-send')));
+    await tester.pumpAndSettle();
+    expect(source.stageInvites, hasLength(1));
+    expect(source.stageInvites.single.map((row) => row['stageId']), [31, 32]);
+    expect(source.invites, isEmpty);
+    expect(find.byType(TalentInterviewInviteSheet), findsOneWidget);
+    expect(find.text('完成'), findsOneWidget);
   });
 }

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:enterprise_recruiter/core/network/api_exception.dart';
+
 import 'package:enterprise_recruiter/features/enterprise/talent/data/talent_detail_data_source.dart';
 import 'package:enterprise_recruiter/features/enterprise/talent/models/talent_detail_view_data.dart';
 import 'package:enterprise_recruiter/theme/app_theme.dart';
@@ -75,6 +77,10 @@ class TalentFakeSource extends TalentDetailDataSource {
     {'posId': 7, 'title': '合成测试岗位'},
   ];
   List<Map<String, dynamic>> slots = [];
+  Map<String, dynamic> workflow = {
+    'template': {'name': '合成流程'},
+    'stages': <Map<String, dynamic>>[],
+  };
   List<List<Map<String, dynamic>>> interviewPages = [[]];
   Map<String, dynamic> inviteResult = {'appointmentId': 101};
   Completer<Map<String, dynamic>>? resumePending, invitePending;
@@ -146,6 +152,12 @@ class TalentFakeSource extends TalentDetailDataSource {
   Future<List<Map<String, dynamic>>> loadJobs({int pageNum = 1}) async =>
       pageNum == 1 ? jobs : [];
   @override
+  Future<Map<String, dynamic>> loadWorkflow(int positionId) async {
+    if (workflowFails) throw StateError('workflow');
+    return workflow;
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> loadAvailability(
     int id, {
     String? to,
@@ -164,6 +176,7 @@ class TalentFakeSource extends TalentDetailDataSource {
   Future<Map<String, dynamic>> invite({
     required int candidateId,
     required int positionId,
+    int? stageId,
     required int interviewerId,
     required String startTime,
     required int durationMin,
@@ -171,6 +184,7 @@ class TalentFakeSource extends TalentDetailDataSource {
     invites.add({
       'candidateId': candidateId,
       'positionId': positionId,
+      ...?stageId == null ? null : {'stageId': stageId},
       'interviewerId': interviewerId,
       'startTime': startTime,
       'durationMin': durationMin,
@@ -179,6 +193,72 @@ class TalentFakeSource extends TalentDetailDataSource {
       return invitePending!.future;
     }
     return inviteResult;
+  }
+
+  List<Map<String, dynamic>> plan = [];
+  bool planFails = false, workflowFails = false, rescheduleFails = false;
+  final stageInvites = <List<Map<String, Object?>>>[];
+  final reschedules = <Map<String, Object?>>[];
+  @override
+  Future<List<Map<String, dynamic>>> loadCandidatePlan(
+    int candidateId,
+    int positionId,
+  ) async {
+    if (planFails) throw StateError('plan');
+    return plan;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> inviteStages({
+    required int candidateId,
+    required int positionId,
+    required List<Map<String, Object?>> stages,
+  }) async {
+    stageInvites.add(stages);
+    final results = [
+      for (final (index, stage) in stages.indexed)
+        <String, dynamic>{
+          ...stage,
+          'candidateId': candidateId,
+          'positionId': positionId,
+          'appointmentId': 101 + index,
+          'status': 0,
+          'endTime': TalentUtc8.serverTime(
+            TalentUtc8.parseServer(stage['startTime'])!
+                .add(Duration(minutes: stage['durationMin'] as int)),
+          ),
+        },
+    ];
+    plan.addAll(results);
+    return results;
+  }
+
+  @override
+  Future<Map<String, dynamic>> reschedule(
+    int appointmentId, {
+    required String newStartTime,
+    int? durationMin,
+    int? interviewerId,
+  }) async {
+    if (rescheduleFails) throw const ApiException('时间冲突');
+    reschedules.add({
+      'appointmentId': appointmentId,
+      'newStartTime': newStartTime,
+      'durationMin': durationMin,
+      'interviewerId': interviewerId,
+    });
+    final old = plan.where((row) => row['appointmentId'] == appointmentId);
+    return {
+      'appointmentId': appointmentId,
+      'startTime': newStartTime,
+      'endTime': TalentUtc8.serverTime(
+        TalentUtc8.parseServer(newStartTime)!
+            .add(Duration(minutes: durationMin ?? 45)),
+      ),
+      'status': 0,
+      'interviewerId':
+          interviewerId ?? (old.isEmpty ? 19 : old.first['interviewerId']),
+    };
   }
 
   @override
@@ -227,7 +307,16 @@ Future<void> scrollTalentTo(
   await tester.pumpAndSettle();
 }
 
-Future<void> fillTalentInvite(WidgetTester tester) async {
+Future<void> fillTalentInvite(
+  WidgetTester tester, {
+  int hour = 9,
+  int minute = 30,
+  bool save = true,
+}) async {
+  if (find.byKey(const Key('invite-interviewer')).evaluate().isEmpty) {
+    await tester.tap(find.byKey(const Key('invite-stage-edit-0')));
+    await tester.pumpAndSettle();
+  }
   await tester.tap(find.byKey(const Key('invite-interviewer')));
   await tester.pumpAndSettle();
   await tester.tap(find.text('合成面试官 · 技术部').last);
@@ -245,8 +334,12 @@ Future<void> fillTalentInvite(WidgetTester tester) async {
     of: find.byType(TimePickerDialog),
     matching: find.byType(TextField),
   );
-  await tester.enterText(fields.at(0), '9');
-  await tester.enterText(fields.at(1), '30');
+  await tester.enterText(fields.at(0), '$hour');
+  await tester.enterText(fields.at(1), '$minute');
   await tester.tap(find.text('OK'));
   await tester.pumpAndSettle();
+  if (save) {
+    await tester.tap(find.byKey(const Key('invite-stage-save')));
+    await tester.pumpAndSettle();
+  }
 }

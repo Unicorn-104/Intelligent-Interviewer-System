@@ -80,17 +80,48 @@ class TalentDetailDataSource {
 
   Future<List<Map<String, dynamic>>> loadJobs({int pageNum = 1}) =>
       jobs.listJobs(status: 1, pageNum: pageNum, pageSize: 20);
+  Future<Map<String, dynamic>> loadWorkflow(int positionId) =>
+      jobs.getJobWorkflow(positionId);
   Future<List<Map<String, dynamic>>> loadAvailability(int id, {String? to}) =>
       schedule.getInterviewerAvailability(id, to: to);
+  Future<Map<String, dynamic>> reschedule(
+    int appointmentId, {
+    required String newStartTime,
+    int? durationMin,
+    int? interviewerId,
+  }) => schedule.rescheduleInterview(
+    appointmentId,
+    newStartTime: newStartTime,
+    durationMin: durationMin,
+    interviewerId: interviewerId,
+  );
+  Future<List<Map<String, dynamic>>> loadCandidatePlan(
+    int candidateId,
+    int positionId,
+  ) => schedule.getCandidateInterviewPlan(
+    candidateId: candidateId,
+    positionId: positionId,
+  );
+  Future<List<Map<String, dynamic>>> inviteStages({
+    required int candidateId,
+    required int positionId,
+    required List<Map<String, Object?>> stages,
+  }) => schedule.sendStageInterviewInvites(
+    candidateId: candidateId,
+    positionId: positionId,
+    stages: stages,
+  );
   Future<Map<String, dynamic>> invite({
     required int candidateId,
     required int positionId,
+    int? stageId,
     required int interviewerId,
     required String startTime,
     required int durationMin,
   }) => schedule.sendInterviewInvite(
     candidateId: candidateId,
     positionId: positionId,
+    stageId: stageId,
     interviewerId: interviewerId,
     startTime: startTime,
     durationMin: durationMin,
