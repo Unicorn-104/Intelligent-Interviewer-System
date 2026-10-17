@@ -94,7 +94,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectJobStages" resultType="java.util.LinkedHashMap">
-        select s.psg_name as name, s.psg_type as type, s.psg_sort_order as sortOrder
+        select s.psg_id as stageId, s.psg_name as name, s.psg_type as type, s.psg_sort_order as sortOrder
         from t_pos p
         join t_process_stage s on s.psg_template_id = p.pos_process_template_id
         where p.pos_id = #{posId}
@@ -109,7 +109,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectStagesByTemplate" resultType="java.util.LinkedHashMap">
-        select psg_name as name, psg_type as type, psg_sort_order as sortOrder,
+        select psg_id as stageId, psg_name as name, psg_type as type, psg_sort_order as sortOrder,
                psg_is_required as required, psg_pass_threshold as threshold,
                psg_interviewer_config_json as configJson
         from t_process_stage

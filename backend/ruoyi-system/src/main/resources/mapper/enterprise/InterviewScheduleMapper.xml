@@ -1,138 +1,114 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<!DOCTYPE mapper
-PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.enterprise.mapper.InterviewScheduleMapper">
-
-    <!-- ============ 智能预约调度（UC-07/08/09） ============ -->
-
-    <select id="selectAppointments" resultType="java.util.LinkedHashMap">
-        select a.apt_id as appointmentId, a.apt_candidate_id as candidateId,
-               a.apt_position_id as positionId, a.apt_interviewer_id as interviewerId,
-               a.apt_slot_id as slotId, a.apt_status as status,
-               date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as startTime,
-               date_format(a.apt_end_time, '%Y-%m-%d %H:%i') as endTime,
-               a.apt_meeting_url as meetingUrl, a.apt_room_id as roomId,
-               u.nick_name as candidateName, pos.pos_title as positionTitle,
-               iu.nick_name as interviewerName,
-               s.ses_id AS sessionId
+    <sql id="appointmentColumns">
+        a.apt_id as appointmentId, a.apt_candidate_id as candidateId,
+        a.apt_position_id as positionId, a.apt_stage_id as stageId,
+        coalesce(a.apt_stage_name, psg.psg_name) as stageName,
+        coalesce(a.apt_stage_type, psg.psg_type) as stageType,
+        a.apt_stage_order as stageOrder, a.apt_interviewer_id as interviewerId,
+        a.apt_slot_id as slotId, a.apt_status as status,
+        date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as startTime,
+        date_format(a.apt_end_time, '%Y-%m-%d %H:%i') as endTime,
+        a.apt_meeting_url as meetingUrl, a.apt_room_id as roomId,
+        u.nick_name as candidateName, t.tal_user_id as candidateUserId,
+        pos.pos_title as positionTitle, pos.pos_company_id as companyId,
+        iu.nick_name as interviewerName,
+        (select max(ses_id) from t_int_session where ses_appointment_id = a.apt_id) as sessionId
+    </sql>
+    <sql id="appointmentJoins">
         from t_sch_appointment a
-        LEFT JOIN t_int_session s ON s.ses_appointment_id = a.apt_id
+        left join t_process_stage psg on psg.psg_id = a.apt_stage_id
         left join t_tal t on t.tal_id = a.apt_candidate_id
         left join sys_user u on u.user_id = t.tal_user_id
-        left join t_pos pos on pos.pos_id = a.apt_position_id
+        join t_pos pos on pos.pos_id = a.apt_position_id
         left join sys_user iu on iu.user_id = a.apt_interviewer_id
-        where 1 = 1
-        <if test="status != null">
-            and a.apt_status = #{status}
-        </if>
-        <if test="from != null and from != ''">
-            and a.apt_start_time &gt;= #{from}
-        </if>
-        <if test="to != null and to != ''">
-            and a.apt_start_time &lt;= #{to}
-        </if>
-        order by a.apt_start_time
+    </sql>
+    <select id="selectAppointments" resultType="java.util.LinkedHashMap">
+        select <include refid="appointmentColumns"/> <include refid="appointmentJoins"/>
+        where pos.pos_company_id = #{companyId}
+        <if test="status != null">and a.apt_status = #{status}</if>
+        <if test="from != null and from != ''">and a.apt_end_time &gt; #{from}</if>
+        <if test="to != null and to != ''">and a.apt_start_time &lt; #{to}</if>
+        order by a.apt_start_time, a.apt_id
     </select>
-
     <select id="selectAppointmentById" resultType="java.util.LinkedHashMap">
-        select a.apt_id as appointmentId, a.apt_candidate_id as candidateId,
-               a.apt_position_id as positionId, a.apt_interviewer_id as interviewerId,
-               a.apt_slot_id as slotId, a.apt_status as status,
-               date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as startTime,
-               date_format(a.apt_end_time, '%Y-%m-%d %H:%i') as endTime,
-               a.apt_meeting_url as meetingUrl,
-               t.tal_user_id as candidateUserId, pos.pos_title as positionTitle,
-               s.ses_id AS sessionId
-        from t_sch_appointment a
-        LEFT JOIN t_int_session s ON s.ses_appointment_id = a.apt_id
-        left join t_tal t on t.tal_id = a.apt_candidate_id
-        left join t_pos pos on pos.pos_id = a.apt_position_id
+        select <include refid="appointmentColumns"/> <include refid="appointmentJoins"/>
         where a.apt_id = #{appointmentId}
     </select>
-
+    <select id="selectCandidateAppointments" resultType="java.util.LinkedHashMap">
+        select <include refid="appointmentColumns"/> <include refid="appointmentJoins"/>
+        where a.apt_candidate_id = #{candidateId} and a.apt_position_id = #{positionId}
+          and a.apt_status != 2
+        order by a.apt_start_time, a.apt_id
+    </select>
+    <select id="selectStageByIdForPosition" resultType="java.util.LinkedHashMap">
+        select s.psg_id as stageId, s.psg_name as stageName,
+               s.psg_type as stageType, s.psg_sort_order as stageOrder
+        from t_process_stage s join t_pos p on p.pos_process_template_id = s.psg_template_id
+        where s.psg_id = #{stageId} and p.pos_id = #{positionId}
+    </select>
     <select id="selectSlots" resultType="java.util.LinkedHashMap">
         select slt_id as slotId, slt_interviewer_id as interviewerId,
                date_format(slt_start_time, '%Y-%m-%d %H:%i') as startTime,
                date_format(slt_end_time, '%Y-%m-%d %H:%i') as endTime,
                slt_status as status,
                case when slt_status = 1 then '可用' else '已占用' end as statusLabel
-        from t_sch_slot
-        where slt_interviewer_id = #{interviewerId}
-        <if test="from != null and from != ''">
-            and slt_start_time &gt;= #{from}
-        </if>
-        <if test="to != null and to != ''">
-            and slt_start_time &lt;= #{to}
-        </if>
+        from t_sch_slot where slt_interviewer_id = #{interviewerId}
+        <if test="from != null and from != ''">and slt_end_time &gt; #{from}</if>
+        <if test="to != null and to != ''">and slt_start_time &lt; #{to}</if>
         order by slt_start_time
     </select>
-
-    <select id="selectOverlapOccupied" resultType="java.util.LinkedHashMap">
-        select slt_id as slotId
-        from t_sch_slot
-        where slt_interviewer_id = #{interviewerId}
-          and slt_status = 0
-          and slt_start_time &lt; #{endTime}
-          and slt_end_time &gt; #{startTime}
+    <!-- 所有创建/改期事务按候选人、升序面试官加锁，避免检查后并发占用。 -->
+    <select id="lockCandidate" resultType="long">
+        select tal_id from t_tal where tal_id = #{candidateId} for update
     </select>
-
-    <select id="selectAvailableSlot" resultType="long">
-        select slt_id
-        from t_sch_slot
-        where slt_interviewer_id = #{interviewerId}
-          and slt_status = 1
-          and slt_start_time = #{startTime}
-          and slt_end_time = #{endTime}
-        limit 1
+    <select id="lockInterviewer" resultType="long">
+        select user_id from sys_user where user_id = #{interviewerId} and status = '0' for update
     </select>
-
+    <select id="countInterviewerInCompany" resultType="int">
+        select count(*) from t_cmp_binding where bnd_company_id = #{companyId}
+            and bnd_user_id = #{interviewerId} and bnd_status = 1
+    </select>
+    <select id="countApplication" resultType="int">
+        select count(*) from t_process_instance
+        where pin_candidate_id = #{candidateId} and pin_position_id = #{positionId}
+    </select>
+    <select id="selectConflicts" resultType="java.util.LinkedHashMap">
+        select slt_id as conflictId from t_sch_slot
+        where slt_interviewer_id = #{interviewerId} and slt_status = 0
+          and slt_start_time &lt; #{endTime} and slt_end_time &gt; #{startTime}
+        <if test="excludeSlotId != null">and slt_id != #{excludeSlotId}</if>
+        union all
+        select apt_id as conflictId from t_sch_appointment
+        where apt_status in (0, 1)
+          and (apt_candidate_id = #{candidateId} or apt_interviewer_id = #{interviewerId})
+          and apt_start_time &lt; #{endTime} and apt_end_time &gt; #{startTime}
+        <if test="excludeAppointmentId != null">and apt_id != #{excludeAppointmentId}</if>
+    </select>
     <update id="updateSlotStatus">
-        update t_sch_slot
-        set slt_status = #{status}, slt_updated_at = now()
-        where slt_id = #{slotId}
+        update t_sch_slot set slt_status = #{status}, slt_updated_at = now() where slt_id = #{slotId}
     </update>
-
-    <insert id="insertSlot">
+    <insert id="insertSlot" useGeneratedKeys="true" keyProperty="slotId">
         insert into t_sch_slot (slt_interviewer_id, slt_position_id, slt_start_time, slt_end_time, slt_status)
-        values (#{interviewerId}, #{positionId}, #{startTime}, #{endTime}, #{status})
+        values (#{interviewerId}, #{positionId}, #{startTime}, #{endTime}, 0)
     </insert>
-
-    <select id="selectLastInsertSlot" resultType="long">
-        select slt_id
-        from t_sch_slot
-        where slt_interviewer_id = #{interviewerId} and slt_start_time = #{startTime}
-        order by slt_id desc
-        limit 1
-    </select>
-
-    <insert id="insertAppointment">
+    <insert id="insertAppointment" useGeneratedKeys="true" keyProperty="appointmentId">
         insert into t_sch_appointment
-            (apt_candidate_id, apt_position_id, apt_interviewer_id, apt_slot_id,
-             apt_start_time, apt_end_time, apt_meeting_url, apt_status)
-        values
-            (#{candidateId}, #{positionId}, #{interviewerId}, #{slotId},
-             #{startTime}, #{endTime}, #{meetingUrl}, 0)
+            (apt_candidate_id, apt_position_id, apt_stage_id, apt_stage_name, apt_stage_type,
+             apt_stage_order, apt_interviewer_id, apt_slot_id, apt_start_time, apt_end_time,
+             apt_meeting_url, apt_status)
+        values (#{candidateId}, #{positionId}, #{stageId}, #{stageName}, #{stageType},
+                #{stageOrder}, #{interviewerId}, #{slotId}, #{startTime}, #{endTime}, #{meetingUrl}, 0)
     </insert>
-
-    <select id="selectLastAppointment" resultType="long">
-        select apt_id
-        from t_sch_appointment
-        where apt_candidate_id = #{candidateId}
-        order by apt_id desc
-        limit 1
-    </select>
-
     <update id="updateAppointmentTime">
         update t_sch_appointment
-        set apt_slot_id = #{slotId}, apt_start_time = #{startTime}, apt_end_time = #{endTime},
-            apt_status = 0, apt_updated_at = now()
+        set apt_interviewer_id = #{interviewerId}, apt_slot_id = #{slotId},
+            apt_start_time = #{startTime}, apt_end_time = #{endTime}, apt_status = 0, apt_updated_at = now()
         where apt_id = #{appointmentId}
     </update>
-
     <insert id="insertReminderMessage">
         insert into t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content, msg_is_read)
         values (#{receiverId}, 0, 1, #{title}, #{content}, 0)
     </insert>
-
 </mapper>
