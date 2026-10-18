@@ -627,223 +627,239 @@ class _TalentInterviewInviteSheetState
           16,
           16 + MediaQuery.viewInsetsOf(context).bottom,
         ),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '邀请面试',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: '关闭',
-                    onPressed: _saving
-                        ? null
-                        : () => Navigator.pop(context, _changed || _uncertain),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const Text(
-                '日期和时间均按 UTC+8 展示',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              if (widget.job != null)
-                Text('岗位：${widget.job!.title}')
-              else ...[
-                if (_jobs.isNotEmpty)
-                  DropdownButtonFormField<int>(
-                    key: const Key('invite-job'),
-                    initialValue: _positionId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: '岗位'),
-                    items: _jobs
-                        .map(
-                          (row) => DropdownMenuItem(
-                            value: talentId(row['posId']),
-                            child: Text(talentText(row['title'])),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _locked
-                        ? null
-                        : (value) {
-                            if (value == null) return;
-                            setState(() => _positionId = value);
-                            _loadWorkflow(value);
-                          },
-                  ),
-                if (_loadingJobs) const LinearProgressIndicator(),
-                if (!_loadingJobs && _jobs.isEmpty && _jobsError == null)
-                  const Text('暂无可邀约岗位'),
-                if (_jobsError != null) Text(_jobsError!),
-                if (_jobsError != null || (!_loadingJobs && _jobs.isEmpty))
-                  TextButton(
-                    onPressed: _locked ? null : _loadJobs,
-                    child: const Text('重试加载岗位'),
-                  ),
-                if (_moreJobs && !_loadingJobs)
-                  TextButton(
-                    onPressed: _locked ? null : _loadJobs,
-                    child: const Text('加载更多岗位'),
-                  ),
-              ],
-              if (_loadingWorkflow)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: LinearProgressIndicator(),
-                ),
-              if (_workflowError != null) ...[
-                Text(
-                  _workflowError!,
-                  style: const TextStyle(color: AppColors.error),
-                ),
-                TextButton(
-                  onPressed: _locked ? null : () => _loadWorkflow(_positionId!),
-                  child: const Text('重新加载招聘流程'),
-                ),
-              ],
-              if (_stages.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Text(
-                  '招聘流程 · 点击卡片设置面试时间',
-                  style: TextStyle(
-                    color: AppColors.brand,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                for (final (index, item) in _stages.indexed)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Material(
-                      color: index == _selected
-                          ? AppColors.interactiveSoft
-                          : AppColors.canvas,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(
-                          color: index == _selected
-                              ? AppColors.interactive
-                              : AppColors.hairline,
-                        ),
-                      ),
-                      child: ListTile(
-                        key: ValueKey('invite-stage-$index'),
-                        dense: true,
-                        leading: Text(
-                          '${index + 1}',
-                          style: const TextStyle(
-                            color: AppColors.interactive,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        title: Text(item.name),
-                        subtitle: Text(_scheduleLabel(item)),
-                        trailing: IconButton(
-                          key: ValueKey('invite-stage-edit-$index'),
-                          tooltip: item.appointment == null
-                              ? '设置${item.name}'
-                              : '查看或编辑${item.name}',
-                          onPressed: _locked ? null : () => _editStage(index),
-                          icon: Icon(
-                            item.appointment != null
-                                ? Icons.check_circle_outline
-                                : Icons.edit_outlined,
-                            color: item.appointment != null
-                                ? AppColors.success
-                                : AppColors.interactive,
-                            size: 20,
-                          ),
-                        ),
-                        onTap: _locked ? null : () => _editStage(index),
-                      ),
-                    ),
-                  ),
-              ],
-              const SizedBox(height: 12),
-              if (_loadingPeople)
-                const LinearProgressIndicator()
-              else if (_peopleError != null) ...[
-                Text(_peopleError!),
-                TextButton(
-                  onPressed: _locked ? null : _loadPeople,
-                  child: const Text('重试加载面试官'),
-                ),
-              ] else if (_people.isEmpty) ...[
-                const Text('暂无可用面试官'),
-                TextButton(
-                  onPressed: _locked ? null : _loadPeople,
-                  child: const Text('刷新面试官'),
-                ),
-              ],
-              if (_submitError != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              key: const Key('invite-fixed-header'),
+              children: [
+                Expanded(
                   child: Text(
-                    _submitError!,
-                    style: const TextStyle(color: AppColors.error),
+                    '邀请面试',
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
-              const SizedBox(height: 12),
-              FilledButton(
-                key: const Key('invite-submit'),
-                onPressed: canSubmit ? _submit : null,
-                child: Text(
-                  _saving
-                      ? '正在提交'
-                      : allSaved
-                      ? '完成'
-                      : _stages.length > 1
-                      ? '确认邀请全部阶段'
-                      : '确认邀请',
+                IconButton(
+                  key: const Key('invite-close'),
+                  tooltip: '关闭',
+                  onPressed: _saving
+                      ? null
+                      : () => Navigator.pop(context, _changed || _uncertain),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: SingleChildScrollView(
+                key: const Key('invite-content-scroll'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.job != null)
+                      Text('岗位：${widget.job!.title}')
+                    else ...[
+                      if (_jobs.isNotEmpty)
+                        DropdownButtonFormField<int>(
+                          key: const Key('invite-job'),
+                          initialValue: _positionId,
+                          isExpanded: true,
+                          decoration: const InputDecoration(labelText: '岗位'),
+                          items: _jobs
+                              .map(
+                                (row) => DropdownMenuItem(
+                                  value: talentId(row['posId']),
+                                  child: Text(talentText(row['title'])),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: _locked
+                              ? null
+                              : (value) {
+                                  if (value == null) return;
+                                  setState(() => _positionId = value);
+                                  _loadWorkflow(value);
+                                },
+                        ),
+                      if (_loadingJobs) const LinearProgressIndicator(),
+                      if (!_loadingJobs && _jobs.isEmpty && _jobsError == null)
+                        const Text('暂无可邀约岗位'),
+                      if (_jobsError != null) Text(_jobsError!),
+                      if (_jobsError != null ||
+                          (!_loadingJobs && _jobs.isEmpty))
+                        TextButton(
+                          onPressed: _locked ? null : _loadJobs,
+                          child: const Text('重试加载岗位'),
+                        ),
+                      if (_moreJobs && !_loadingJobs)
+                        TextButton(
+                          onPressed: _locked ? null : _loadJobs,
+                          child: const Text('加载更多岗位'),
+                        ),
+                    ],
+                    if (_loadingWorkflow)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: LinearProgressIndicator(),
+                      ),
+                    if (_workflowError != null) ...[
+                      Text(
+                        _workflowError!,
+                        style: const TextStyle(color: AppColors.error),
+                      ),
+                      TextButton(
+                        onPressed: _locked
+                            ? null
+                            : () => _loadWorkflow(_positionId!),
+                        child: const Text('重新加载招聘流程'),
+                      ),
+                    ],
+                    if (_stages.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      const Text(
+                        '招聘流程 · 点击卡片设置面试时间',
+                        style: TextStyle(
+                          color: AppColors.brand,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      for (final (index, item) in _stages.indexed)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Material(
+                            color: index == _selected
+                                ? AppColors.interactiveSoft
+                                : AppColors.canvas,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: BorderSide(
+                                color: index == _selected
+                                    ? AppColors.interactive
+                                    : AppColors.hairline,
+                              ),
+                            ),
+                            child: ListTile(
+                              key: ValueKey('invite-stage-$index'),
+                              dense: true,
+                              leading: Text(
+                                '${index + 1}',
+                                style: const TextStyle(
+                                  color: AppColors.interactive,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              title: Text(item.name),
+                              subtitle: Text(_scheduleLabel(item)),
+                              trailing: IconButton(
+                                key: ValueKey('invite-stage-edit-$index'),
+                                tooltip: item.appointment == null
+                                    ? '设置${item.name}'
+                                    : '查看或编辑${item.name}',
+                                onPressed: _locked
+                                    ? null
+                                    : () => _editStage(index),
+                                icon: Icon(
+                                  item.appointment != null
+                                      ? Icons.check_circle_outline
+                                      : Icons.edit_outlined,
+                                  color: item.appointment != null
+                                      ? AppColors.success
+                                      : AppColors.interactive,
+                                  size: 20,
+                                ),
+                              ),
+                              onTap: _locked ? null : () => _editStage(index),
+                            ),
+                          ),
+                        ),
+                    ],
+                    const SizedBox(height: 12),
+                    if (_loadingPeople)
+                      const LinearProgressIndicator()
+                    else if (_peopleError != null) ...[
+                      Text(_peopleError!),
+                      TextButton(
+                        onPressed: _locked ? null : _loadPeople,
+                        child: const Text('重试加载面试官'),
+                      ),
+                    ] else if (_people.isEmpty) ...[
+                      const Text('暂无可用面试官'),
+                      TextButton(
+                        onPressed: _locked ? null : _loadPeople,
+                        child: const Text('刷新面试官'),
+                      ),
+                    ],
+                    if (_submitError != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          _submitError!,
+                          style: const TextStyle(color: AppColors.error),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      key: const Key('invite-submit'),
+                      onPressed: canSubmit ? _submit : null,
+                      child: Text(
+                        _saving
+                            ? '正在提交'
+                            : allSaved
+                            ? '完成'
+                            : _stages.length > 1
+                            ? '确认邀请全部阶段'
+                            : '确认邀请',
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _saving
+                          ? null
+                          : () =>
+                                Navigator.pop(context, _changed || _uncertain),
+                      child: Text(_uncertain ? '关闭并查看面试安排' : '取消'),
+                    ),
+                    const SizedBox(height: 8),
+                    TalentInterviewWeekCalendar(
+                      weekStart: _week,
+                      appointments: _calendar,
+                      loading: _loadingCalendar,
+                      error: _calendarError,
+                      enabled: !_locked,
+                      today: TalentUtc8.wallTime(_now()),
+                      selectedDay: stage?.date,
+                      onPrevious: () => _switchWeek(-1),
+                      onNext: () => _switchWeek(1),
+                      onToday: () => _switchWeek(0),
+                      onRefresh: _loadCalendar,
+                      onChooseDay: (_) {},
+                      onChooseTime: (day, hour, minute) {
+                        if (stage == null || stage.appointment != null) return;
+                        _editStage(
+                          _selected,
+                          suggestedStart: TalentUtc8.fromSelection(
+                            day,
+                            hour,
+                            minute,
+                          ),
+                        );
+                      },
+                      canEdit: _editable,
+                      onOpen: _openAppointment,
+                      onMove: (row, start, duration) => _update(
+                        row,
+                        InterviewTimeSelection(
+                          start: start,
+                          duration: duration,
+                          interviewerId: talentId(row['interviewerId'])!,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              TextButton(
-                onPressed: _saving
-                    ? null
-                    : () => Navigator.pop(context, _changed || _uncertain),
-                child: Text(_uncertain ? '关闭并查看面试安排' : '取消'),
-              ),
-              const SizedBox(height: 8),
-              TalentInterviewWeekCalendar(
-                weekStart: _week,
-                appointments: _calendar,
-                loading: _loadingCalendar,
-                error: _calendarError,
-                enabled: !_locked,
-                today: TalentUtc8.wallTime(_now()),
-                selectedDay: stage?.date,
-                onPrevious: () => _switchWeek(-1),
-                onNext: () => _switchWeek(1),
-                onToday: () => _switchWeek(0),
-                onRefresh: _loadCalendar,
-                onChooseDay: (_) {},
-                onChooseTime: (day, hour, minute) {
-                  if (stage == null || stage.appointment != null) return;
-                  _editStage(
-                    _selected,
-                    suggestedStart: TalentUtc8.fromSelection(day, hour, minute),
-                  );
-                },
-                canEdit: _editable,
-                onOpen: _openAppointment,
-                onMove: (row, start, duration) => _update(
-                  row,
-                  InterviewTimeSelection(
-                    start: start,
-                    duration: duration,
-                    interviewerId: talentId(row['interviewerId'])!,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

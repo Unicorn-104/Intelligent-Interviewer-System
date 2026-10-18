@@ -176,10 +176,6 @@ class _TalentInterviewWeekCalendarState
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const Text(
-              '点面试块编辑 · 长按移动 · 拖动上下边界调整时长（仅未开始）',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 11),
-            ),
             if (widget.loading) const LinearProgressIndicator(minHeight: 2),
             if (widget.error != null)
               Padding(

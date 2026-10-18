@@ -40,6 +40,37 @@ Future<void> openInvite(
 }
 
 void main() {
+  testWidgets('滚动到底部后标题和关闭按钮固定可用，移除日期时间提示', (tester) async {
+    final source = TalentFakeSource();
+    await openInvite(tester, source);
+    tester.view.physicalSize = const Size(320, 700);
+    await tester.pumpAndSettle();
+    final title = find.text('邀请面试');
+    final close = find.byKey(const Key('invite-close'));
+    final titleRect = tester.getRect(title);
+    final closeRect = tester.getRect(close);
+    expect(find.text('日期和时间均按 UTC+8 展示'), findsNothing);
+    final scroll = find
+        .descendant(
+          of: find.byKey(const Key('invite-content-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final state = tester.state<ScrollableState>(scroll);
+    expect(state.position.maxScrollExtent, greaterThan(0));
+    state.position.jumpTo(state.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(title), titleRect);
+    expect(tester.getRect(close), closeRect);
+    expect(close.hitTestable(), findsOneWidget);
+    expect(source.invites, isEmpty);
+    expect(tester.takeException(), isNull);
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    expect(find.byType(TalentInterviewInviteSheet), findsNothing);
+    expect(find.text('打开邀约'), findsOneWidget);
+  });
+
   testWidgets('主面板只有卡片，设置弹窗保存后更新，取消及关闭保留原内容', (tester) async {
     final source = TalentFakeSource();
     await openInvite(tester, source);
