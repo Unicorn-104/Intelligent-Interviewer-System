@@ -24,7 +24,7 @@ class JobPublishStageDraft {
   }
 
   final int id;
-  final name = TextEditingController(text: '新建面试阶段');
+  final name = TextEditingController(text: jobPublishStageTypes[3]);
   final duration = TextEditingController(text: '45');
   final threshold = TextEditingController(text: '70');
   final target = TextEditingController();
@@ -128,16 +128,6 @@ class JobPublishStageEditor extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      TextFormField(
-        key: ValueKey('job-publish-stage-name-${stage.id}'),
-        controller: stage.name,
-        enabled: enabled,
-        maxLength: 100,
-        decoration: const InputDecoration(labelText: '阶段名称 *', counterText: ''),
-        validator: (value) =>
-            value == null || value.trim().isEmpty ? '请填写阶段名称' : null,
-      ),
-      const SizedBox(height: 12),
       DropdownButtonFormField<int>(
         key: ValueKey('job-publish-stage-type-${stage.id}'),
         initialValue: stage.type,
@@ -219,6 +209,9 @@ class JobPublishStageEditor extends StatelessWidget {
       ),
       const SizedBox(height: 8),
       CheckboxListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         contentPadding: EdgeInsets.zero,
         controlAffinity: ListTileControlAffinity.leading,
         title: const Text('必选阶段', style: TextStyle(fontSize: 14)),
@@ -232,6 +225,9 @@ class JobPublishStageEditor extends StatelessWidget {
             : null,
       ),
       CheckboxListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         contentPadding: EdgeInsets.zero,
         controlAffinity: ListTileControlAffinity.leading,
         title: const Text('允许跳过', style: TextStyle(fontSize: 14)),
@@ -245,6 +241,9 @@ class JobPublishStageEditor extends StatelessWidget {
             : null,
       ),
       CheckboxListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         contentPadding: EdgeInsets.zero,
         controlAffinity: ListTileControlAffinity.leading,
         title: const Text('未通过可终止流程', style: TextStyle(fontSize: 14)),
@@ -265,9 +264,13 @@ class JobPublishStageDialog extends StatefulWidget {
     super.key,
     required this.stage,
     required this.isNew,
+    this.onSave,
+    this.onDelete,
   });
   final JobPublishStageDraft stage;
   final bool isNew;
+  final Future<bool> Function()? onSave;
+  final Future<bool> Function()? onDelete;
 
   @override
   State<JobPublishStageDialog> createState() => _JobPublishStageDialogState();
@@ -275,92 +278,149 @@ class JobPublishStageDialog extends StatefulWidget {
 
 class _JobPublishStageDialogState extends State<JobPublishStageDialog> {
   final _formKey = GlobalKey<FormState>();
+  bool _saving = false;
+  String? _error;
+
+  Future<void> _submit({bool delete = false}) async {
+    if (_saving) return;
+    if (!delete) {
+      if (!_formKey.currentState!.validate()) return;
+      widget.stage.name.text = jobPublishStageTypes[widget.stage.type]!;
+    }
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final saved =
+          await (delete ? widget.onDelete?.call() : widget.onSave?.call()) ??
+          true;
+      if (!mounted) return;
+      if (saved) {
+        Navigator.pop(context, !delete);
+      } else {
+        setState(() => _error = delete ? '删除失败，请核对后重试' : '流程保存失败，请核对后重试');
+      }
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _error = error.message.toString());
+    } catch (_) {
+      if (mounted) setState(() => _error = delete ? '删除失败，请重试' : '流程保存失败，请重试');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
-  Widget build(BuildContext context) => Dialog(
-    backgroundColor: AppColors.canvas,
-    surfaceTintColor: AppColors.canvas,
-    insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 520),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.isNew ? '新增招聘流程' : '编辑招聘流程',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.brand,
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_saving,
+    child: Dialog(
+      backgroundColor: AppColors.canvas,
+      surfaceTintColor: AppColors.canvas,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.isNew ? '新增招聘流程' : '编辑招聘流程',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.brand,
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  key: const Key('job-publish-stage-close'),
-                  tooltip: '关闭',
-                  onPressed: () => Navigator.pop(context, false),
-                  icon: const Icon(Icons.close, color: AppColors.textMuted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Flexible(
-              child: SingleChildScrollView(
-                child: Form(
-                  key: _formKey,
-                  child: JobPublishStageEditor(
-                    stage: widget.stage,
-                    onChanged: () => setState(() {}),
+                  IconButton(
+                    key: const Key('job-publish-stage-close'),
+                    tooltip: '关闭',
+                    onPressed: _saving
+                        ? null
+                        : () => Navigator.pop(context, false),
+                    icon: const Icon(Icons.close, color: AppColors.textMuted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Form(
+                    key: _formKey,
+                    child: JobPublishStageEditor(
+                      stage: widget.stage,
+                      enabled: !_saving,
+                      onChanged: () => setState(() {}),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    key: const Key('job-publish-stage-cancel'),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: AppColors.error),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              if (!widget.isNew && widget.onDelete != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: const Key('job-publish-stage-delete'),
                     style: TextButton.styleFrom(
-                      minimumSize: const Size(0, 46),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                      foregroundColor: AppColors.error,
+                      minimumSize: const Size(0, 44),
                     ),
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('取消'),
+                    onPressed: _saving ? null : () => _submit(delete: true),
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('删除阶段'),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    key: const Key('job-publish-stage-save'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.interactive,
-                      minimumSize: const Size(0, 46),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      key: const Key('job-publish-stage-cancel'),
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, 46),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
+                      onPressed: _saving
+                          ? null
+                          : () => Navigator.pop(context, false),
+                      child: const Text('取消'),
                     ),
-                    onPressed: () {
-                      if (_formKey.currentState!.validate()) {
-                        FocusScope.of(context).unfocus();
-                        Navigator.pop(context, true);
-                      }
-                    },
-                    child: const Text('保存流程'),
                   ),
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      key: const Key('job-publish-stage-save'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.interactive,
+                        minimumSize: const Size(0, 46),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      onPressed: _saving ? null : () => _submit(),
+                      child: Text(_saving ? '处理中…' : '保存流程'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     ),
@@ -375,12 +435,14 @@ class JobPublishStageCard extends StatelessWidget {
     required this.onEdit,
     required this.onRemove,
     this.enabled = true,
+    this.bottomActions,
   });
   final JobPublishStageDraft stage;
   final int index;
   final VoidCallback onEdit;
   final VoidCallback onRemove;
   final bool enabled;
+  final Widget? bottomActions;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -515,6 +577,7 @@ class JobPublishStageCard extends StatelessWidget {
                 ),
               ),
             ],
+            ?bottomActions,
           ],
         ),
       ),

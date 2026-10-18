@@ -11,6 +11,7 @@ import 'widgets/job_basic_info_tab.dart';
 import 'widgets/job_candidates_tab.dart';
 import 'widgets/job_jd_profile_section.dart';
 import 'widgets/job_workflow_section.dart';
+import 'widgets/job_workflow_timeline.dart';
 
 class JobDetailPage extends StatefulWidget {
   const JobDetailPage({
@@ -41,6 +42,7 @@ class _JobDetailPageState extends State<JobDetailPage>
   bool _workflowExpanded = false;
   bool _parsing = false;
   bool _savingWorkflow = false;
+  bool _editingWorkflow = false;
   bool _screening = false;
   DateTimeRange? _interviewRange;
 
@@ -194,6 +196,45 @@ class _JobDetailPageState extends State<JobDetailPage>
     }
   }
 
+  Future<void> _editWorkflowStage(int? index) async {
+    if (_editingWorkflow ||
+        _savingWorkflow ||
+        _workflow.loading ||
+        _workflow.data == null) {
+      return;
+    }
+    setState(() => _editingWorkflow = true);
+    try {
+      await showJobWorkflowStageEditor(
+        context: context,
+        data: _workflow.data!,
+        index: index,
+        onSave: _saveWorkflow,
+      );
+    } finally {
+      if (mounted) setState(() => _editingWorkflow = false);
+    }
+  }
+
+  Future<void> _editWorkflow() async {
+    if (_editingWorkflow ||
+        _savingWorkflow ||
+        _workflow.loading ||
+        _workflow.data == null) {
+      return;
+    }
+    setState(() => _editingWorkflow = true);
+    try {
+      await showJobWorkflowEditor(
+        context: context,
+        data: _workflow.data!,
+        onSave: _saveWorkflow,
+      );
+    } finally {
+      if (mounted) setState(() => _editingWorkflow = false);
+    }
+  }
+
   Future<void> _rescreen() async {
     final data = _detail.data;
     if (_screening ||
@@ -324,6 +365,15 @@ class _JobDetailPageState extends State<JobDetailPage>
             onReload: _loadDetail,
             onReloadProfile: _loadProfile,
             onInterviews: _openInterviews,
+            workflowTimeline: JobWorkflowTimeline(
+              state: _workflow,
+              onReload: _loadWorkflow,
+              enabled:
+                  !_workflow.loading && !_savingWorkflow && !_editingWorkflow,
+              onEditStage: (index) => _editWorkflowStage(index),
+              onAddStage: () => _editWorkflowStage(null),
+              onManage: _editWorkflow,
+            ),
             jdSection: JobJdProfileSection(
               positionId: jobPositiveId(widget.job['posId']) ?? 0,
               state: _profile,
@@ -338,9 +388,7 @@ class _JobDetailPageState extends State<JobDetailPage>
               state: _workflow,
               expanded: _workflowExpanded,
               onExpanded: (value) => setState(() => _workflowExpanded = value),
-              saving: _savingWorkflow,
               onReload: _loadWorkflow,
-              onSave: _saveWorkflow,
             ),
           ),
         ),

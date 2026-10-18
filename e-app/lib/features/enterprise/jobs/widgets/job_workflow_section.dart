@@ -4,74 +4,124 @@ import '../../../../theme/app_theme.dart';
 import '../../../../widgets/page_states.dart';
 import '../../../../widgets/skeleton_list.dart';
 import '../models/job_detail_view_data.dart';
+import 'job_publish_workflow.dart';
 
-class JobWorkflowSection extends StatefulWidget {
+Future<void> showJobWorkflowEditor({
+  required BuildContext context,
+  required Map<String, dynamic> data,
+  required Future<bool> Function(Map<String, Object?>) onSave,
+}) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  isDismissible: false,
+  enableDrag: false,
+  builder: (_) =>
+      _WorkflowEditor(initial: jobWorkflowSaveBody(data), onSave: onSave),
+);
+
+/// 节点直接编辑单个阶段；仍使用已有完整流程保存接口。
+Future<void> showJobWorkflowStageEditor({
+  required BuildContext context,
+  required Map<String, dynamic> data,
+  required int? index,
+  required Future<bool> Function(Map<String, Object?>) onSave,
+}) async {
+  final payload = jobWorkflowSaveBody(data);
+  final stages = (payload['stages'] as List)
+      .map((row) => Map<String, Object?>.from(row as Map))
+      .toList();
+  final source = index == null ? null : stages[index];
+  final draft = JobPublishStageDraft(index ?? stages.length);
+  if (source != null) {
+    draft
+      ..name.text = source['name']?.toString() ?? ''
+      ..type = int.tryParse('${source['type']}') ?? 3
+      ..duration.text = (int.tryParse('${source['duration']}') ?? 45).toString()
+      ..threshold.text = (int.tryParse('${source['threshold']}') ?? 70)
+          .toString()
+      ..target.text = source['target']?.toString() ?? ''
+      ..required = source['required'] == true
+      ..skip = source['skip'] == true || '${source['skip']}' == '1'
+      ..terminate =
+          source['terminate'] == true || '${source['terminate']}' == '1';
+  }
+  final baseline = draft.toJson();
+  final route = DialogRoute<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => JobPublishStageDialog(
+      stage: draft,
+      isNew: source == null,
+      onSave: () {
+        final current = draft.toJson();
+        final changed = source == null
+            ? current
+            : <String, Object?>{
+                ...source,
+                for (final entry in current.entries)
+                  if (entry.value != baseline[entry.key])
+                    entry.key: entry.value,
+              };
+        final updated = [...stages];
+        if (index == null) {
+          updated.add(changed);
+        } else {
+          updated[index] = changed;
+        }
+        return onSave({...payload, 'stages': updated});
+      },
+      onDelete: index == null
+          ? null
+          : () {
+              if (stages.length <= 1) {
+                throw const FormatException('至少保留一个阶段，请先添加新的阶段');
+              }
+              final updated = [...stages]..removeAt(index);
+              return onSave({...payload, 'stages': updated});
+            },
+    ),
+  );
+  try {
+    await Navigator.of(context).push(route);
+    await route.completed;
+  } finally {
+    draft.dispose();
+  }
+}
+
+class JobWorkflowSection extends StatelessWidget {
   const JobWorkflowSection({
     super.key,
     required this.positionId,
     required this.state,
     required this.expanded,
     required this.onExpanded,
-    required this.saving,
     required this.onReload,
-    required this.onSave,
   });
   final int positionId;
   final JobSectionState<Map<String, dynamic>> state;
   final bool expanded;
   final ValueChanged<bool> onExpanded;
-  final bool saving;
   final VoidCallback onReload;
-  final Future<bool> Function(Map<String, Object?>) onSave;
-
-  @override
-  State<JobWorkflowSection> createState() => _JobWorkflowSectionState();
-}
-
-class _JobWorkflowSectionState extends State<JobWorkflowSection> {
-  bool _editing = false;
-
-  Future<void> _edit() async {
-    if (_editing || widget.saving || widget.state.data == null) {
-      return;
-    }
-    setState(() => _editing = true);
-    try {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        isDismissible: false,
-        enableDrag: false,
-        builder: (_) => _WorkflowEditor(
-          initial: jobWorkflowSaveBody(widget.state.data!),
-          onSave: widget.onSave,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _editing = false);
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final raw = widget.state.data?['stages'];
+    final raw = state.data?['stages'];
     final stages = raw is List ? raw.whereType<Map>().toList() : const <Map>[];
-    final subtitle = widget.state.loading
+    final subtitle = state.loading
         ? '加载中'
-        : widget.state.error != null
+        : state.error != null
         ? '加载失败，展开重试'
         : stages.isEmpty
         ? '未配置，点击展开'
         : '已配置${stages.length}个阶段，点击展开';
     return ExpansionTile(
-      key: PageStorageKey('job-workflow-expansion-${widget.positionId}'),
+      key: PageStorageKey('job-workflow-expansion-$positionId'),
       title: const Text('招聘流程'),
       subtitle: Text(subtitle),
-      initiallyExpanded: widget.expanded,
-      onExpansionChanged: widget.onExpanded,
+      initiallyExpanded: expanded,
+      onExpansionChanged: onExpanded,
       maintainState: true,
       leading: const Icon(Icons.route_outlined, color: AppColors.interactive),
       backgroundColor: AppColors.canvas,
@@ -91,23 +141,23 @@ class _JobWorkflowSectionState extends State<JobWorkflowSection> {
   }
 
   Widget _body(List<Map> stages) {
-    if (widget.state.loading) {
+    if (state.loading) {
       return const SkeletonList(rows: 1);
     }
-    if (widget.state.error != null) {
+    if (state.error != null) {
       return PageMessage(
         icon: Icons.cloud_off_outlined,
         title: '招聘流程加载失败',
-        message: widget.state.error!,
-        onAction: widget.onReload,
+        message: state.error!,
+        onAction: onReload,
       );
     }
-    if (widget.state.data == null) {
+    if (state.data == null) {
       return PageMessage(
         icon: Icons.route_outlined,
         title: '暂无招聘流程数据',
         message: '请刷新后再配置',
-        onAction: widget.onReload,
+        onAction: onReload,
       );
     }
     return Column(
@@ -121,41 +171,8 @@ class _JobWorkflowSectionState extends State<JobWorkflowSection> {
               padding: const EdgeInsets.only(bottom: 12),
               child: Text('${index + 1}. ${jobValue(stages[index]['name'])}'),
             ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            key: const Key('job-workflow-edit'),
-            onPressed: widget.saving || _editing ? null : _edit,
-            icon: const Icon(Icons.edit_outlined, size: 18),
-            label: Text(
-              widget.saving
-                  ? '保存中…'
-                  : stages.isEmpty
-                  ? '配置流程'
-                  : '编辑流程',
-            ),
-          ),
-        ),
       ],
     );
-  }
-}
-
-class _WorkflowStageDraft {
-  _WorkflowStageDraft(this.id, this.data)
-    : name = TextEditingController(text: data['name']?.toString() ?? ''),
-      threshold = TextEditingController(
-        text: data['threshold']?.toString() ?? '70',
-      ),
-      requiredStage = data['required'] == true;
-  final int id;
-  final Map<String, Object?> data;
-  final TextEditingController name;
-  final TextEditingController threshold;
-  bool requiredStage;
-  void dispose() {
-    name.dispose();
-    threshold.dispose();
   }
 }
 
@@ -168,76 +185,134 @@ class _WorkflowEditor extends StatefulWidget {
 }
 
 class _WorkflowEditorState extends State<_WorkflowEditor> {
-  final _form = GlobalKey<FormState>();
-  late final TextEditingController _templateName;
-  final _stages = <_WorkflowStageDraft>[];
-  final _allStages = <_WorkflowStageDraft>[];
+  late final String _templateName;
+  final _stages = <JobPublishStageDraft>[];
+  final _allStages = <JobPublishStageDraft>[];
+  final _original = <int, Map<String, Object?>>{};
+  final _baseline = <int, Map<String, Object?>>{};
   int _nextId = 0;
-  bool _saving = false;
+  bool _saving = false, _editing = false;
   String? _error;
+
+  bool _flag(Object? value, {bool fallback = false}) => value == null
+      ? fallback
+      : value == true || '$value' == '1' || '$value' == 'true';
 
   @override
   void initState() {
     super.initState();
-    _templateName = TextEditingController(
-      text: widget.initial['templateName']?.toString() ?? '岗位招聘流程',
-    );
+    _templateName = widget.initial['templateName']?.toString() ?? '岗位招聘流程';
     for (final raw in widget.initial['stages'] as List) {
-      final stage = _WorkflowStageDraft(
-        _nextId++,
-        Map<String, Object?>.from(raw as Map),
-      );
+      final data = Map<String, Object?>.from(raw as Map);
+      final stage = JobPublishStageDraft(_nextId++)
+        ..name.text = data['name']?.toString() ?? ''
+        ..type = int.tryParse('${data['type']}') ?? 3
+        ..duration.text = (int.tryParse('${data['duration']}') ?? 45).toString()
+        ..threshold.text = (int.tryParse('${data['threshold']}') ?? 70)
+            .toString()
+        ..target.text = data['target']?.toString() ?? ''
+        ..required = _flag(data['required'])
+        ..skip = _flag(data['skip'])
+        ..terminate = _flag(data['terminate']);
       _stages.add(stage);
       _allStages.add(stage);
+      // Keep unexposed fields and omitted values unchanged unless edited.
+      _original[stage.id] = data;
+      _baseline[stage.id] = stage.toJson();
     }
   }
 
   @override
   void dispose() {
-    _templateName.dispose();
     for (final stage in _allStages) {
       stage.dispose();
     }
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (_saving) {
-      return;
+  Future<void> _editStage([JobPublishStageDraft? existing]) async {
+    if (_saving || _editing) return;
+    final draft = existing == null
+        ? JobPublishStageDraft(_nextId++)
+        : JobPublishStageDraft.copy(existing);
+    _allStages.add(draft);
+    setState(() => _editing = true);
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (_) => JobPublishStageDialog(
+          stage: draft,
+          isNew: existing == null,
+          onDelete: existing == null
+              ? null
+              : () async {
+                  setState(() {
+                    _stages.remove(existing);
+                    _error = null;
+                  });
+                  return true;
+                },
+        ),
+      );
+      if (!mounted || saved != true) return;
+      setState(() {
+        if (existing == null) {
+          _stages.add(draft);
+        } else {
+          _stages[_stages.indexOf(existing)] = draft;
+        }
+        _error = null;
+      });
+    } finally {
+      if (mounted) setState(() => _editing = false);
     }
+  }
+
+  Map<String, Object?> _stagePayload(JobPublishStageDraft stage) {
+    final original = _original[stage.id];
+    final current = stage.toJson();
+    if (original == null) return current;
+    final baseline = _baseline[stage.id]!;
+    return {
+      ...original,
+      for (final entry in current.entries)
+        if (entry.value != baseline[entry.key]) entry.key: entry.value,
+    };
+  }
+
+  Future<void> _save() async {
+    if (_saving || _editing) return;
     if (_stages.isEmpty) {
       setState(() => _error = '至少添加一个阶段');
       return;
     }
-    if (!_form.currentState!.validate()) {
-      return;
+    for (final stage in _stages) {
+      final duration = int.tryParse(stage.duration.text);
+      final threshold = int.tryParse(stage.threshold.text);
+      if (stage.name.text.trim().isEmpty ||
+          duration == null ||
+          duration < 1 ||
+          duration > 1440 ||
+          threshold == null ||
+          threshold < 0 ||
+          threshold > 100) {
+        setState(() => _error = '请编辑并完善「${stage.name.text.trim()}」的阶段设置');
+        return;
+      }
     }
     setState(() {
       _saving = true;
       _error = null;
     });
     final body = <String, Object?>{
-      'templateName': _templateName.text.trim(),
-      'stages': _stages
-          .map(
-            (stage) => <String, Object?>{
-              ...stage.data,
-              'name': stage.name.text.trim(),
-              'required': stage.requiredStage,
-              'threshold': int.parse(stage.threshold.text),
-            },
-          )
-          .toList(),
+      'templateName': _templateName,
+      'stages': _stages.map(_stagePayload).toList(),
     };
     final saved = await widget.onSave(body);
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
       _saving = false;
-      if (!saved) {
-        _error = '流程保存失败，请核对后重试';
-      }
+      if (!saved) _error = '流程保存失败，请核对后重试';
     });
     if (saved) Navigator.pop(context);
   }
@@ -248,161 +323,158 @@ class _WorkflowEditorState extends State<_WorkflowEditor> {
   });
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-    child: SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.85,
-      child: Column(
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              '编辑招聘流程',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_saving,
+    child: Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .85,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '编辑招聘流程',
+                      style: TextStyle(
+                        color: AppColors.brand,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: const Key('job-workflow-close'),
+                    tooltip: '关闭',
+                    onPressed: _saving || _editing
+                        ? null
+                        : () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Form(
-                key: _form,
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('保留现有阶段类型及面试配置；可调整名称、顺序、必经标识和通过阈值。'),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      key: const Key('job-workflow-name'),
-                      controller: _templateName,
-                      enabled: !_saving,
-                      maxLength: 100,
-                      decoration: const InputDecoration(labelText: '流程名称'),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? '请填写流程名称'
-                          : null,
-                    ),
-                    for (var index = 0; index < _stages.length; index++)
-                      _stageEditor(index),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        key: const Key('job-workflow-add-stage'),
-                        onPressed: _saving
-                            ? null
-                            : () => setState(() {
-                                final stage = _WorkflowStageDraft(_nextId++, {
-                                  'name': '',
-                                  'type': 3,
-                                  'required': true,
-                                  'threshold': 70,
-                                });
-                                _stages.add(stage);
-                                _allStages.add(stage);
-                              }),
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('添加阶段'),
+                    OutlinedButton.icon(
+                      key: const Key('job-workflow-add-stage'),
+                      onPressed: _saving || _editing
+                          ? null
+                          : () => _editStage(),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(46),
+                        foregroundColor: AppColors.interactive,
+                        backgroundColor: AppColors.canvas,
+                        side: const BorderSide(color: AppColors.hairline),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('新增招聘流程'),
                     ),
+                    for (final (index, stage) in _stages.indexed) ...[
+                      const SizedBox(height: 12),
+                      JobPublishStageCard(
+                        key: ValueKey('job-workflow-stage-${stage.id}'),
+                        stage: stage,
+                        index: index,
+                        enabled: !_saving && !_editing,
+                        onEdit: () => _editStage(stage),
+                        onRemove: () => setState(() {
+                          _stages.remove(stage);
+                          _error = null;
+                        }),
+                        bottomActions: _stages.length > 1
+                            ? Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  IconButton(
+                                    key: ValueKey(
+                                      'job-workflow-up-${stage.id}',
+                                    ),
+                                    tooltip: '上移阶段',
+                                    onPressed: _saving || _editing || index == 0
+                                        ? null
+                                        : () => _move(index, -1),
+                                    icon: const Icon(
+                                      Icons.arrow_upward,
+                                      size: 18,
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    key: ValueKey(
+                                      'job-workflow-down-${stage.id}',
+                                    ),
+                                    tooltip: '下移阶段',
+                                    onPressed:
+                                        _saving ||
+                                            _editing ||
+                                            index == _stages.length - 1
+                                        ? null
+                                        : () => _move(index, 1),
+                                    icon: const Icon(
+                                      Icons.arrow_downward,
+                                      size: 18,
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : null,
+                      ),
+                    ],
                     if (_error != null)
-                      Text(
-                        _error!,
-                        style: const TextStyle(color: AppColors.error),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: AppColors.error),
+                        ),
                       ),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                TextButton(
-                  onPressed: _saving ? null : () => Navigator.pop(context),
-                  child: const Text('取消'),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    key: const Key('job-workflow-save'),
-                    onPressed: _saving ? null : _save,
-                    child: Text(_saving ? '保存中…' : '保存流程'),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  TextButton(
+                    onPressed: _saving || _editing
+                        ? null
+                        : () => Navigator.pop(context),
+                    child: const Text('取消'),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _stageEditor(int index) {
-    final stage = _stages[index];
-    return Card(
-      key: ValueKey('job-workflow-stage-${stage.id}'),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            TextFormField(
-              controller: stage.name,
-              enabled: !_saving,
-              maxLength: 100,
-              decoration: InputDecoration(labelText: '阶段${index + 1}名称'),
-              validator: (value) =>
-                  value == null || value.trim().isEmpty ? '请填写阶段名称' : null,
-            ),
-            TextFormField(
-              controller: stage.threshold,
-              enabled: !_saving,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: '通过阈值（0–100）'),
-              validator: (value) {
-                final threshold = int.tryParse(value ?? '');
-                return threshold == null || threshold < 0 || threshold > 100
-                    ? '请输入0至100的整数'
-                    : null;
-              },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('必经阶段'),
-              value: stage.requiredStage,
-              onChanged: _saving
-                  ? null
-                  : (value) => setState(() => stage.requiredStage = value),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                IconButton(
-                  tooltip: '上移阶段',
-                  onPressed: _saving || index == 0
-                      ? null
-                      : () => _move(index, -1),
-                  icon: const Icon(Icons.arrow_upward),
-                ),
-                IconButton(
-                  tooltip: '下移阶段',
-                  onPressed: _saving || index == _stages.length - 1
-                      ? null
-                      : () => _move(index, 1),
-                  icon: const Icon(Icons.arrow_downward),
-                ),
-                IconButton(
-                  tooltip: '移除阶段',
-                  onPressed: _saving
-                      ? null
-                      : () => setState(() => _stages.removeAt(index)),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      key: const Key('job-workflow-save'),
+                      onPressed: _saving || _editing ? null : _save,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 46),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      child: Text(_saving ? '保存中…' : '保存流程'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }

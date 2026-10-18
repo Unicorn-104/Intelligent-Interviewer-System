@@ -569,8 +569,19 @@ class _JobPublishPageState extends State<JobPublishPage> {
     try {
       final saved = await showDialog<bool>(
         context: context,
-        builder: (_) =>
-            JobPublishStageDialog(stage: stage, isNew: existing == null),
+        builder: (_) => JobPublishStageDialog(
+          stage: stage,
+          isNew: existing == null,
+          onDelete: existing == null
+              ? null
+              : () async {
+                  setState(() {
+                    _stages.remove(existing);
+                    _dirty = true;
+                  });
+                  return true;
+                },
+        ),
       );
       if (!mounted || saved != true) return;
       setState(() {

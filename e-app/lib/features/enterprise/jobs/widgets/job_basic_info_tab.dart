@@ -15,6 +15,7 @@ class JobBasicInfoTab extends StatelessWidget {
     required this.onInterviews,
     required this.jdSection,
     required this.workflowSection,
+    required this.workflowTimeline,
   });
   final JobSectionState<JobDetailViewData> detail;
   final JobSectionState<Map<String, dynamic>> profile;
@@ -23,6 +24,7 @@ class JobBasicInfoTab extends StatelessWidget {
   final VoidCallback onInterviews;
   final Widget jdSection;
   final Widget workflowSection;
+  final Widget workflowTimeline;
 
   @override
   Widget build(BuildContext context) {
@@ -57,20 +59,40 @@ class JobBasicInfoTab extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          _section('面试安排', [
-            const Text('查看本岗位的面试记录，支持日期范围筛选。'),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                key: const Key('job-interviews-entry'),
-                onPressed: onInterviews,
-                icon: const Icon(Icons.event_outlined),
-                label: const Text('查看面试安排'),
-              ),
+          _section(null, [
+            workflowTimeline,
+            const SizedBox(height: 16),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final narrow =
+                    constraints.maxWidth < 300 ||
+                    MediaQuery.textScalerOf(context).scale(1) > 1.3;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    SizedBox(
+                      width: narrow ? constraints.maxWidth : null,
+                      child: OutlinedButton.icon(
+                        key: const Key('job-interviews-entry'),
+                        onPressed: onInterviews,
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 46),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        icon: const Icon(Icons.event_outlined, size: 18),
+                        label: const Text('查看面试安排'),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ]),
-          _section('岗位字段', [
+          _section(null, [
             Text(
               jobValue(job['title']),
               style: Theme.of(context).textTheme.titleLarge,
@@ -108,7 +130,7 @@ class JobBasicInfoTab extends StatelessWidget {
     );
   }
 
-  Widget _section(String title, List<Widget> children) => Container(
+  Widget _section(String? title, List<Widget> children) => Container(
     margin: const EdgeInsets.only(bottom: 16),
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
@@ -118,7 +140,7 @@ class JobBasicInfoTab extends StatelessWidget {
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [SectionTitle(title), ...children],
+      children: [if (title != null) SectionTitle(title), ...children],
     ),
   );
 

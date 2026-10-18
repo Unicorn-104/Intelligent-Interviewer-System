@@ -31,6 +31,148 @@ Future<void> pumpDetail(
 }
 
 void main() {
+  testWidgets('加号节点直接新增，保存后刷新节点，旧编辑按钮已移除', (tester) async {
+    final source = DetailFakeSource();
+    await pumpDetail(tester, source);
+    expect(find.byKey(const Key('job-workflow-edit')), findsNothing);
+    await tester.tap(find.byKey(const Key('job-workflow-placeholder')));
+    await tester.pumpAndSettle();
+    expect(find.text('新增招聘流程'), findsOneWidget);
+    expect(find.byKey(const Key('job-publish-stage-delete')), findsNothing);
+    await tester.tap(find.byKey(const Key('job-publish-stage-save')));
+    await tester.pumpAndSettle();
+    final stages = source.savedWorkflows.single['stages'] as List;
+    expect(stages.length, 2);
+    expect(stages.first['name'], '初筛');
+    expect(stages.last['name'], 'HR 综合面试');
+    expect(source.workflowCalls, 2);
+  });
+
+  testWidgets('最后一个阶段删除不发请求，规则选项紧凑且互斥规则保留', (tester) async {
+    final source = DetailFakeSource();
+    await pumpDetail(tester, source);
+    await tester.tap(find.byKey(const Key('job-workflow-node-0')));
+    await tester.pumpAndSettle();
+    for (final label in ['必选阶段', '允许跳过', '未通过可终止流程']) {
+      final tile = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(CheckboxListTile),
+      );
+      expect(tester.getSize(tile).height, lessThanOrEqualTo(40));
+    }
+    await tester.tap(find.text('允许跳过'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.ancestor(
+              of: find.text('必选阶段'),
+              matching: find.byType(CheckboxListTile),
+            ),
+          )
+          .value,
+      isFalse,
+    );
+    final remove = find.byKey(const Key('job-publish-stage-delete'));
+    await tester.ensureVisible(remove);
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(find.text('至少保留一个阶段，请先添加新的阶段'), findsOneWidget);
+    expect(source.savedWorkflows, isEmpty);
+    await tester.tap(find.byKey(const Key('job-publish-stage-cancel')));
+    await tester.pumpAndSettle();
+    expect(source.savedWorkflows, isEmpty);
+  });
+
+  testWidgets('长按节点保留流程排序管理入口', (tester) async {
+    await pumpDetail(tester, DetailFakeSource());
+    await tester.longPress(find.byKey(const Key('job-workflow-node-0')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('job-workflow-add-stage')), findsOneWidget);
+    expect(find.byKey(const Key('job-workflow-save')), findsOneWidget);
+  });
+
+  testWidgets('点击流程节点直接编辑阶段，保存沿用原接口', (tester) async {
+    final source = DetailFakeSource();
+    await pumpDetail(tester, source);
+    final interviews = find.byKey(const Key('job-interviews-entry'));
+    final edit = find.byKey(const Key('job-workflow-node-0'));
+    expect(edit, findsOneWidget);
+    expect(find.text('面试安排'), findsNothing);
+    expect(find.text('查看本岗位的面试记录，支持日期范围筛选。'), findsNothing);
+    expect(find.byKey(const Key('job-workflow-node-0')), findsOneWidget);
+    expect(find.text('可继续添加'), findsOneWidget);
+    expect(find.byKey(const Key('job-workflow-edit')), findsNothing);
+    expect(
+      tester.getBottomLeft(edit).dy,
+      lessThan(tester.getTopLeft(interviews).dy),
+    );
+    expect(source.savedWorkflows, isEmpty);
+    await tester.tap(edit);
+    await tester.pumpAndSettle();
+    expect(find.text('编辑招聘流程'), findsOneWidget);
+    expect(find.byKey(const Key('job-workflow-name')), findsNothing);
+    await tester.tap(find.byKey(const Key('job-publish-stage-save')));
+    await tester.pumpAndSettle();
+    expect(source.savedWorkflows, hasLength(1));
+    expect(source.savedWorkflows.single['templateName'], '默认流程');
+    expect(
+      (source.savedWorkflows.single['stages'] as List).single['name'],
+      'HR 综合面试',
+    );
+    expect(source.workflowCalls, 2);
+    expect(find.text('编辑招聘流程'), findsNothing);
+  });
+
+  testWidgets('取消编辑不保存，原流程展开后不再出现重复编辑入口', (tester) async {
+    final source = DetailFakeSource();
+    await pumpDetail(tester, source);
+    final edit = find.byKey(const Key('job-workflow-node-0'));
+    await tester.tap(edit);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消').last);
+    await tester.pumpAndSettle();
+    expect(source.savedWorkflows, isEmpty);
+    final flow = find.byKey(const PageStorageKey('job-workflow-expansion-1'));
+    await tester.scrollUntilVisible(
+      flow,
+      350,
+      scrollable: find
+          .descendant(
+            of: find.byType(JobBasicInfoTab),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.ensureVisible(flow);
+    await tester.pumpAndSettle();
+    await tester.tap(flow);
+    await tester.pumpAndSettle();
+    expect(find.text('1. 初筛'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: flow,
+        matching: find.byKey(const Key('job-workflow-edit')),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('320dp窄屏流程节点和面试安排入口可见且不溢出', (tester) async {
+    await pumpDetail(tester, DetailFakeSource());
+    tester.view.physicalSize = const Size(320, 700);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('job-interviews-entry')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('job-workflow-placeholder')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('三个 Tab 映射正确，进入页面不自动触发筛选 POST', (tester) async {
     final source = DetailFakeSource(
       scoreResult: [
