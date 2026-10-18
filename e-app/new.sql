@@ -485,3 +485,199 @@ SELECT column_name, column_type, is_nullable FROM information_schema.columns
 -- msg_is_read、msg_read_at、msg_target_url、msg_created_at。
 -- 本次无新增/修改数据库结构或业务数据，不创建重复消息表、不插入演示消息。
 -- 无需迁移或数据库回滚，仅部署消息模块接口与 APP 即可。
+
+
+-- ============================================================
+-- [追加] 2026-10-18：消息中心本地演示数据（默认关闭，手动启用）
+-- 来源：用户要求在数据库插入消息示例验收企业端消息中心效果
+-- ============================================================
+-- 仅限本地验收，不发送推送、短信或邮件；不创建真实候选人或招聘流程。
+-- 演示联系人禁用登录、无密码及角色，昵称和消息均注明“演示数据”。
+-- 幂等追加：重复执行不新增重复示例，也不重置已经读过的消息。
+-- 使用方式：在同一数据库会话先单独执行：
+-- SET @eapp_message_demo_enabled = 1;
+-- SET @eapp_message_demo_account = 'admin';
+-- 然后只执行本追加段，不要重新执行整个历史文件。
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+SET @eapp_message_demo_enabled = COALESCE(@eapp_message_demo_enabled, 0);
+SET @eapp_message_demo_account = CONVERT(COALESCE(@eapp_message_demo_account, 'admin') USING utf8mb4) COLLATE utf8mb4_unicode_ci;
+SET @eapp_message_demo_owner = (
+    SELECT user_id FROM sys_user
+     WHERE user_name = @eapp_message_demo_account AND status = '0' AND del_flag = '0'
+     LIMIT 1
+);
+SET @eapp_message_demo_marker = 'eapp_message_demo_20261018';
+
+START TRANSACTION;
+
+INSERT INTO sys_user (user_name, nick_name, status, del_flag, password, create_by, create_time, remark)
+SELECT 'eapp_msg_demo_alpha', '演示数据 · 候选人甲', '1', '0', '', @eapp_message_demo_marker, NOW(),
+       '消息中心本地演示数据；虚拟联系人，禁止登录；无真实联系方式'
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_message_demo_owner IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys_user WHERE user_name = 'eapp_msg_demo_alpha');
+SET @eapp_demo_alpha_user = (
+    SELECT user_id FROM sys_user WHERE user_name = 'eapp_msg_demo_alpha'
+      AND create_by = @eapp_message_demo_marker AND status = '1' AND del_flag = '0' LIMIT 1
+);
+INSERT INTO t_im_session (ims_user_a_id, ims_user_b_id, ims_last_message, ims_last_message_at,
+                         ims_unread_a, ims_unread_b, ims_created_at, ims_updated_at)
+SELECT @eapp_message_demo_owner, @eapp_demo_alpha_user, '', DATE_SUB(NOW(), INTERVAL 12 MINUTE),
+       2, 0, NOW(), NOW()
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_message_demo_owner IS NOT NULL AND @eapp_demo_alpha_user IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_session WHERE
+       (ims_user_a_id = @eapp_message_demo_owner AND ims_user_b_id = @eapp_demo_alpha_user)
+       OR (ims_user_b_id = @eapp_message_demo_owner AND ims_user_a_id = @eapp_demo_alpha_user));
+SET @eapp_demo_alpha_session = (
+    SELECT ims_id FROM t_im_session
+     WHERE ims_user_a_id = @eapp_message_demo_owner AND ims_user_b_id = @eapp_demo_alpha_user LIMIT 1
+);
+
+INSERT INTO sys_user (user_name, nick_name, status, del_flag, password, create_by, create_time, remark)
+SELECT 'eapp_msg_demo_beta', '演示数据 · 候选人乙', '1', '0', '', @eapp_message_demo_marker, NOW(),
+       '消息中心本地演示数据；虚拟联系人，禁止登录；无真实联系方式'
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_message_demo_owner IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys_user WHERE user_name = 'eapp_msg_demo_beta');
+SET @eapp_demo_beta_user = (
+    SELECT user_id FROM sys_user WHERE user_name = 'eapp_msg_demo_beta'
+      AND create_by = @eapp_message_demo_marker AND status = '1' AND del_flag = '0' LIMIT 1
+);
+INSERT INTO t_im_session (ims_user_a_id, ims_user_b_id, ims_last_message, ims_last_message_at,
+                         ims_unread_a, ims_unread_b, ims_created_at, ims_updated_at)
+SELECT @eapp_message_demo_owner, @eapp_demo_beta_user, '', DATE_SUB(NOW(), INTERVAL 70 MINUTE),
+       1, 0, NOW(), NOW()
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_message_demo_owner IS NOT NULL AND @eapp_demo_beta_user IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_session WHERE
+       (ims_user_a_id = @eapp_message_demo_owner AND ims_user_b_id = @eapp_demo_beta_user)
+       OR (ims_user_b_id = @eapp_message_demo_owner AND ims_user_a_id = @eapp_demo_beta_user));
+SET @eapp_demo_beta_session = (
+    SELECT ims_id FROM t_im_session
+     WHERE ims_user_a_id = @eapp_message_demo_owner AND ims_user_b_id = @eapp_demo_beta_user LIMIT 1
+);
+
+INSERT INTO sys_user (user_name, nick_name, status, del_flag, password, create_by, create_time, remark)
+SELECT 'eapp_msg_demo_gamma', '演示数据 · 候选人丙', '1', '0', '', @eapp_message_demo_marker, NOW(),
+       '消息中心本地演示数据；虚拟联系人，禁止登录；无真实联系方式'
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_message_demo_owner IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys_user WHERE user_name = 'eapp_msg_demo_gamma');
+SET @eapp_demo_gamma_user = (
+    SELECT user_id FROM sys_user WHERE user_name = 'eapp_msg_demo_gamma'
+      AND create_by = @eapp_message_demo_marker AND status = '1' AND del_flag = '0' LIMIT 1
+);
+INSERT INTO t_im_session (ims_user_a_id, ims_user_b_id, ims_last_message, ims_last_message_at,
+                         ims_unread_a, ims_unread_b, ims_created_at, ims_updated_at)
+SELECT @eapp_message_demo_owner, @eapp_demo_gamma_user, '', DATE_SUB(NOW(), INTERVAL 1440 MINUTE),
+       0, 0, NOW(), NOW()
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_message_demo_owner IS NOT NULL AND @eapp_demo_gamma_user IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_session WHERE
+       (ims_user_a_id = @eapp_message_demo_owner AND ims_user_b_id = @eapp_demo_gamma_user)
+       OR (ims_user_b_id = @eapp_message_demo_owner AND ims_user_a_id = @eapp_demo_gamma_user));
+SET @eapp_demo_gamma_session = (
+    SELECT ims_id FROM t_im_session
+     WHERE ims_user_a_id = @eapp_message_demo_owner AND ims_user_b_id = @eapp_demo_gamma_user LIMIT 1
+);
+
+INSERT INTO t_im_message (imsg_session_id, imsg_sender_id, imsg_type, imsg_content, imsg_is_recalled, imsg_created_at)
+SELECT @eapp_demo_alpha_session, @eapp_message_demo_owner, 1, '【演示数据】您好，欢迎了解移动端研发岗位，方便沟通您的技术经验吗？', 0, DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_demo_alpha_session IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_message WHERE imsg_session_id = @eapp_demo_alpha_session
+       AND imsg_sender_id = @eapp_message_demo_owner AND imsg_content = '【演示数据】您好，欢迎了解移动端研发岗位，方便沟通您的技术经验吗？');
+
+INSERT INTO t_im_message (imsg_session_id, imsg_sender_id, imsg_type, imsg_content, imsg_is_recalled, imsg_created_at)
+SELECT @eapp_demo_alpha_session, @eapp_demo_alpha_user, 1, '【演示数据】您好，我有 Flutter 与 Java 项目经验，期待进一步沟通。', 0, DATE_SUB(NOW(), INTERVAL 20 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_demo_alpha_session IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_message WHERE imsg_session_id = @eapp_demo_alpha_session
+       AND imsg_sender_id = @eapp_demo_alpha_user AND imsg_content = '【演示数据】您好，我有 Flutter 与 Java 项目经验，期待进一步沟通。');
+
+INSERT INTO t_im_message (imsg_session_id, imsg_sender_id, imsg_type, imsg_content, imsg_is_recalled, imsg_created_at)
+SELECT @eapp_demo_alpha_session, @eapp_demo_alpha_user, 1, '【演示数据】已收到面试安排，我会按时参加，谢谢！', 0, DATE_SUB(NOW(), INTERVAL 12 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_demo_alpha_session IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_message WHERE imsg_session_id = @eapp_demo_alpha_session
+       AND imsg_sender_id = @eapp_demo_alpha_user AND imsg_content = '【演示数据】已收到面试安排，我会按时参加，谢谢！');
+
+UPDATE t_im_session
+   SET ims_last_message = '【演示数据】已收到面试安排，我会按时参加，谢谢！',
+       ims_last_message_at = (SELECT MAX(imsg_created_at) FROM t_im_message WHERE imsg_session_id = @eapp_demo_alpha_session)
+ WHERE @eapp_message_demo_enabled = 1 AND ims_id = @eapp_demo_alpha_session AND COALESCE(ims_last_message, '') = '';
+
+INSERT INTO t_im_message (imsg_session_id, imsg_sender_id, imsg_type, imsg_content, imsg_is_recalled, imsg_created_at)
+SELECT @eapp_demo_beta_session, @eapp_message_demo_owner, 1, '【演示数据】您的资料已收到，方便补充近期项目中负责的工作吗？', 0, DATE_SUB(NOW(), INTERVAL 90 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_demo_beta_session IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_message WHERE imsg_session_id = @eapp_demo_beta_session
+       AND imsg_sender_id = @eapp_message_demo_owner AND imsg_content = '【演示数据】您的资料已收到，方便补充近期项目中负责的工作吗？');
+
+INSERT INTO t_im_message (imsg_session_id, imsg_sender_id, imsg_type, imsg_content, imsg_is_recalled, imsg_created_at)
+SELECT @eapp_demo_beta_session, @eapp_demo_beta_user, 1, '【演示数据】可以，我主要负责接口设计和性能优化，稍后补充项目说明。', 0, DATE_SUB(NOW(), INTERVAL 70 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_demo_beta_session IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_message WHERE imsg_session_id = @eapp_demo_beta_session
+       AND imsg_sender_id = @eapp_demo_beta_user AND imsg_content = '【演示数据】可以，我主要负责接口设计和性能优化，稍后补充项目说明。');
+
+UPDATE t_im_session
+   SET ims_last_message = '【演示数据】可以，我主要负责接口设计和性能优化，稍后补充项目说明。',
+       ims_last_message_at = (SELECT MAX(imsg_created_at) FROM t_im_message WHERE imsg_session_id = @eapp_demo_beta_session)
+ WHERE @eapp_message_demo_enabled = 1 AND ims_id = @eapp_demo_beta_session AND COALESCE(ims_last_message, '') = '';
+
+INSERT INTO t_im_message (imsg_session_id, imsg_sender_id, imsg_type, imsg_content, imsg_is_recalled, imsg_created_at)
+SELECT @eapp_demo_gamma_session, @eapp_message_demo_owner, 1, '【演示数据】感谢沟通，后续进展会在消息中心告知。', 0, DATE_SUB(NOW(), INTERVAL 1500 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_demo_gamma_session IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_message WHERE imsg_session_id = @eapp_demo_gamma_session
+       AND imsg_sender_id = @eapp_message_demo_owner AND imsg_content = '【演示数据】感谢沟通，后续进展会在消息中心告知。');
+
+INSERT INTO t_im_message (imsg_session_id, imsg_sender_id, imsg_type, imsg_content, imsg_is_recalled, imsg_created_at)
+SELECT @eapp_demo_gamma_session, @eapp_demo_gamma_user, 1, '【演示数据】好的，感谢您的回复，期待后续消息。', 0, DATE_SUB(NOW(), INTERVAL 1440 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_demo_gamma_session IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_im_message WHERE imsg_session_id = @eapp_demo_gamma_session
+       AND imsg_sender_id = @eapp_demo_gamma_user AND imsg_content = '【演示数据】好的，感谢您的回复，期待后续消息。');
+
+UPDATE t_im_session
+   SET ims_last_message = '【演示数据】好的，感谢您的回复，期待后续消息。',
+       ims_last_message_at = (SELECT MAX(imsg_created_at) FROM t_im_message WHERE imsg_session_id = @eapp_demo_gamma_session)
+ WHERE @eapp_message_demo_enabled = 1 AND ims_id = @eapp_demo_gamma_session AND COALESCE(ims_last_message, '') = '';
+
+INSERT INTO t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content,
+                   msg_is_read, msg_read_at, msg_target_url, msg_created_at)
+SELECT @eapp_message_demo_owner, 0, 2, '【演示数据】面试日程提醒', '【演示数据】明天有一场待准备的面试，请提前查看岗位流程与候选人资料。本通知仅用于界面验收，不创建真实面试。', 0,
+       NULL, NULL, DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_message_demo_owner IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_msg WHERE msg_receiver_id = @eapp_message_demo_owner
+       AND msg_title = '【演示数据】面试日程提醒' AND msg_content = '【演示数据】明天有一场待准备的面试，请提前查看岗位流程与候选人资料。本通知仅用于界面验收，不创建真实面试。');
+
+INSERT INTO t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content,
+                   msg_is_read, msg_read_at, msg_target_url, msg_created_at)
+SELECT @eapp_message_demo_owner, 0, 1, '【演示数据】新的岗位投递', '【演示数据】一份示例简历已准备就绪，可在消息中心查看通知样式。本通知不代表真实投递。', 0,
+       NULL, NULL, DATE_SUB(NOW(), INTERVAL 35 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_message_demo_owner IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_msg WHERE msg_receiver_id = @eapp_message_demo_owner
+       AND msg_title = '【演示数据】新的岗位投递' AND msg_content = '【演示数据】一份示例简历已准备就绪，可在消息中心查看通知样式。本通知不代表真实投递。');
+
+INSERT INTO t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content,
+                   msg_is_read, msg_read_at, msg_target_url, msg_created_at)
+SELECT @eapp_message_demo_owner, 0, 1, '【演示数据】消息中心已就绪', '【演示数据】这里可以查看会话、系统通知和未读角标。支持下拉刷新和全部已读。', 1,
+       NOW(), NULL, DATE_SUB(NOW(), INTERVAL 1450 MINUTE)
+ WHERE @eapp_message_demo_enabled = 1 AND @eapp_message_demo_owner IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM t_msg WHERE msg_receiver_id = @eapp_message_demo_owner
+       AND msg_title = '【演示数据】消息中心已就绪' AND msg_content = '【演示数据】这里可以查看会话、系统通知和未读角标。支持下拉刷新和全部已读。');
+
+COMMIT;
+
+-- 验证只显示演示记录ID和数量，不输出其他用户消息：
+SELECT ims_id AS demo_session_id, ims_unread_a AS unread_count FROM t_im_session
+ WHERE @eapp_message_demo_enabled = 1 AND ims_user_a_id = @eapp_message_demo_owner
+   AND ims_user_b_id IN (@eapp_demo_alpha_user, @eapp_demo_beta_user, @eapp_demo_gamma_user);
+SELECT msg_id AS demo_notification_id, msg_is_read AS is_read FROM t_msg
+ WHERE @eapp_message_demo_enabled = 1 AND msg_receiver_id = @eapp_message_demo_owner
+   AND msg_title IN ('【演示数据】面试日程提醒', '【演示数据】新的岗位投递', '【演示数据】消息中心已就绪');
+
+-- 防止后续误执行本段：
+SET @eapp_message_demo_enabled = 0;
+
+-- 清理说明：只清理上述演示账号和带【演示数据】前缀的消息，不删除其他资料。
+-- 1. 以 sys_user.create_by='eapp_message_demo_20261018' 且 user_name 为
+--    eapp_msg_demo_alpha / beta / gamma 找到演示用户与对应当前验收账号的会话。
+-- 2. 删除这些会话中 imsg_content LIKE '【演示数据】%' 的消息；
+--    删除验收账号上述三个 msg_title 且 msg_content LIKE '【演示数据】%' 的通知。
+-- 3. 仅当演示会话已无任何消息时删除会话；仅当联系人没有任何会话引用时删除禁用演示联系人。
+-- 若验收过程中发送了自己的新消息，保留这些会话及联系人，避免级联删除用户新输入。
+
+-- 本地本次验收记录（仅标识，不含凭据）：
+-- 会话ID：5、6、7；演示联系人ID：200、201、202；系统通知ID：17、18、19。
+-- 上述ID仅供本机清理核对；其他环境以演示用户名和create_by标记查询，不硬编码ID删除。
