@@ -1,16 +1,16 @@
-﻿# 企业端 APP「我的」与 PC 个人中心对齐
+# 企业端 APP「我的」与 PC 个人中心对齐
 
 ## 本次范围
 
-参考 `enterprise_pc/RuoYi-Vue3/src/views/enterprise/profile/index.vue`，将 APP「我的」完善为个人资料、偏好设置、通知设置三个分区，使用 AppColors、白底描边卡片、8px 卡片圆角和4px按钮圆角。不修改底部导航或后端、数据库、现有 api/ 函数签名。
+参考 `enterprise_pc/RuoYi-Vue3/src/views/enterprise/profile/index.vue`，将 APP「我的」完善为蓝色招聘名片，右上角齿轮进入独立设置页；账号安全、偏好设置、通知设置集中到设置页三个分区，使用 AppColors、白底描边卡片、8px 卡片圆角和4px按钮圆角。不修改底部导航或后端、数据库、现有 api/ 函数签名。
 
 ## 真实接口与字段
 
-- 个人资料：`GET /system/user/profile`，读取 `data` 用户信息及顶层 `roleGroup`、`postGroup`。显示姓名、登录账号、角色、岗位、部门、手机号、邮箱、性别、个人简介与服务端最近登录信息。缺失值显示空态，不将服务端最近登录记录误标为 APP 当前会话。
-- 资料修改：`PUT /system/user/profile`，仅提交 `nickName`、`phonenumber`、`email`、`sex`、`remark`。部门和账号只读。取消不写入；保存失败保留表单，成功后重新读取资料。
+- 个人资料：`GET /system/user/profile`，读取 `data` 用户信息及顶层 `roleGroup`、`postGroup`。名片显示姓名、角色、岗位、部门与个人简介摘要；不在主页单独展示基本信息。点击名片或编辑图标进入独立编辑资料页，查看和编辑账号、联系方式、性别等字段；账号安全中的联系方式脱敏展示。缺失值显示空态，不将服务端最近登录记录误标为 APP 当前会话。
+- 资料修改：`PUT /system/user/profile`，仅提交 `nickName`、`phonenumber`、`email`、`sex`、`remark`。部门和账号只读。使用独立页面的返回、取消与保存操作；取消不写入资料，保存失败保留表单，成功后返回并重新读取名片资料。
 - 密码修改：`PUT /system/user/profile/updatePwd`，JSON 体为 `oldPassword`、`newPassword`。新密码6–20字符、与旧密码不同、二次确认一致。服务端当前实现保留本会话并使其他会话失效；APP 不自行注销当前会话。不记录密码。
-- 头像：`POST /system/user/profile/avatar`，multipart 字段为 `avatarfile`，从响应顶层 `imgUrl` 取回地址。沿用现有上传通道，不修改它的签名。头像支持 jpg/jpeg/png/gif/bmp/webp，验证扩展名、文件头及小于5MB的体积；读取时也限制大小。取消文件选择不上传，错误不假报成功。
-- 企业设置与退出登录保留。退出需确认，确认后调用原企业壳回调。
+- 头像：`POST /system/user/profile/avatar`，multipart 字段为 `avatarfile`，从响应顶层 `imgUrl` 取回地址。沿用现有上传通道，不修改它的签名。头像支持 jpg/jpeg/png/gif/bmp/webp，验证扩展名、文件头及小于5MB的体积；读取时也限制大小。头像入口位于编辑资料页顶部，取消文件选择不上传，错误不假报成功。头像与 PC/用户端一致更换后立即保存，返回时刷新名片；其他未保存表单字段不随头像变更提交。
+- 最近登录、企业设置与退出登录入口集中到设置页，主页不重复展示。退出需确认，确认后调用原企业壳回调。
 
 ## 本机设置与未实现能力
 
@@ -24,6 +24,15 @@ PC 的偏好和通知仅用 localStorage 存储，未发现相应服务端接口
 
 ## 验证
 
-`profile_data_source_test.dart` 使用 HTTP 适配器核对真实路径、方法、字段、multipart 和错误解包，测试账号间设置隔离、头像大小和格式限制。`profile_page_test.dart` 使用合成资料覆盖编辑、取消、保存失败、防重复、密码验证、头像选择、通知回读、退出确认及320dp与横屏键盘布局。
+`profile_data_source_test.dart` 使用 HTTP 适配器核对真实路径、方法、字段、multipart 和错误解包，测试账号间设置隔离、头像大小和格式限制。`profile_page_test.dart` 使用合成资料覆盖编辑、取消、保存失败、防重复、密码验证、头像选择、通知回读、退出确认、名片入口、主页不展示详细字段、独立编辑页返回语义及320dp与横屏键盘布局。
 
 本地只读联调已确认个人资料接口 code=200，所需用户字段和角色/岗位分组存在；未对真实账号执行测试资料、密码或头像修改。自动测试不能替代登录 Pixel_10a 后对选图、密码修改、保存回读的人工验收。
+
+
+## 设置入口集中
+
+“我的”标题右侧新增齿轮，点击进入 `AccountSettingsPage`。主页仅保留名片与资料编辑；设置中的账号安全、偏好、通知、最近登录、企业设置与退出登录沿用原回调和数据源。设置页中的联系方式仍可进入资料编辑页，返回时刷新设置资料，再返回“我的”后刷新名片。设置写入中锁定返回和切换，避免中途退出导致重复操作；退出确认后先关闭设置路由再调用原企业壳退出回调。
+
+底部四 Tab 的标签和导航行为未变，企业壳只移交“我的”页标题栏给 AccountPage 绘制，避免重复标题。没有修改后端、数据库或现有 API。
+
+本次验证：修改文件格式检查通过；`flutter analyze --no-pub` 为 No issues found；`flutter test --no-pub --reporter expanded` 全部488项通过；`flutter build apk --debug --no-pub` 成功。新版已覆盖安装并启动 Pixel_10a，目前停留在登录页，设置页面的设备交互验收等待登录后进行。

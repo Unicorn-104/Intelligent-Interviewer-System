@@ -353,10 +353,7 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
       ),
       1 => const JobsPage(),
       2 => const MessageCenterPage(),
-      _ => Scaffold(
-        appBar: AppBar(title: const Text('我的')),
-        body: AccountPage(key: _accountKey, onLogout: widget.onLogout),
-      ),
+      _ => AccountPage(key: _accountKey, onLogout: widget.onLogout),
     };
   }
 

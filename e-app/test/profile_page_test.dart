@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:enterprise_recruiter/core/network/api_exception.dart';
 import 'package:enterprise_recruiter/features/enterprise/profile/account_page.dart';
+import 'package:enterprise_recruiter/features/enterprise/profile/account_settings_page.dart';
+import 'package:enterprise_recruiter/features/enterprise/profile/profile_edit_page.dart';
 import 'package:enterprise_recruiter/features/enterprise/profile/data/profile_data_source.dart';
 import 'package:enterprise_recruiter/features/enterprise/profile/models/profile_view_data.dart';
 import 'package:enterprise_recruiter/features/enterprise/profile/widgets/profile_edit_dialog.dart';
@@ -105,7 +107,6 @@ Future<void> mountProfile(
     MaterialApp(
       theme: AppTheme.light,
       home: Scaffold(
-        appBar: AppBar(title: const Text('我的')),
         body: AccountPage(
           key: pageKey,
           source: source,
@@ -118,6 +119,11 @@ Future<void> mountProfile(
 }
 
 Future<void> profileTap(WidgetTester tester, Finder target) async {
+  if (target.evaluate().isEmpty &&
+      find.byKey(const Key('profile-settings')).evaluate().isNotEmpty) {
+    await tester.tap(find.byKey(const Key('profile-settings')));
+    await tester.pumpAndSettle();
+  }
   if (target.evaluate().isEmpty) {
     await tester.scrollUntilVisible(
       target,
@@ -141,6 +147,98 @@ Future<void> profileEnter(WidgetTester tester, String key, String value) async {
 }
 
 void main() {
+  testWidgets('右上角齿轮集中账号安全与偏好，返回我的仅保留名片', (tester) async {
+    final source = FakeProfileSource();
+    await mountProfile(tester, source);
+    expect(find.text('我的'), findsOneWidget);
+    expect(find.byKey(const Key('profile-business-card')), findsOneWidget);
+    expect(find.byKey(const Key('profile-tab-1')), findsNothing);
+    expect(find.byKey(const Key('profile-tab-2')), findsNothing);
+    expect(find.text('账号与安全'), findsNothing);
+    expect(find.text('最近登录'), findsNothing);
+    expect(find.byKey(const Key('profile-enterprise-settings')), findsNothing);
+    expect(find.byKey(const Key('profile-logout')), findsNothing);
+    await profileTap(tester, find.byKey(const Key('profile-settings')));
+    expect(find.byType(AccountSettingsPage), findsOneWidget);
+    expect(find.text('设置'), findsOneWidget);
+    expect(find.byKey(const Key('profile-tab-1')), findsOneWidget);
+    expect(find.byKey(const Key('profile-tab-2')), findsOneWidget);
+    expect(find.text('账号与安全'), findsOneWidget);
+    expect(source.prefSaves, isEmpty);
+    expect(source.saved, isEmpty);
+    await tester.tap(find.byKey(const Key('profile-settings-back')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AccountSettingsPage), findsNothing);
+    expect(find.byKey(const Key('profile-business-card')), findsOneWidget);
+    expect(find.text('账号与安全'), findsNothing);
+  });
+
+  testWidgets('设置中的联系方式编辑返回时设置资料与名片均刷新', (tester) async {
+    final source = FakeProfileSource();
+    await mountProfile(tester, source);
+    await profileTap(tester, find.text('联系邮箱'));
+    expect(find.byType(ProfileEditPage), findsOneWidget);
+    await profileEnter(tester, 'profile-edit-nickName', '设置中更新的昵称');
+    await profileTap(tester, find.byKey(const Key('profile-edit-save')));
+    expect(find.byType(AccountSettingsPage), findsOneWidget);
+    expect(find.byType(ProfileEditPage), findsNothing);
+    await tester.tap(find.byKey(const Key('profile-settings-back')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Text>(find.byKey(const Key('profile-display-name'))).data,
+      '设置中更新的昵称',
+    );
+  });
+
+  testWidgets('我的用蓝色名片归纳资料，敏感字段只在编辑页显示且返回不保存', (tester) async {
+    final source = FakeProfileSource();
+    await mountProfile(tester, source);
+    expect(find.text('基本信息'), findsNothing);
+    expect(find.text('个人资料'), findsNothing);
+    expect(find.text('账号安全'), findsNothing);
+    expect(find.byKey(const Key('profile-settings')), findsOneWidget);
+    expect(find.text('synthetic@example.com'), findsNothing);
+    expect(find.text('登录账号：synthetic-account'), findsNothing);
+    expect(find.text('合成招聘说明'), findsOneWidget);
+    final card = find.byKey(const Key('profile-business-card'));
+    final decor = tester.widget<DecoratedBox>(
+      find.ancestor(of: card, matching: find.byType(DecoratedBox)).first,
+    );
+    expect((decor.decoration as BoxDecoration).gradient, isA<LinearGradient>());
+    await profileTap(tester, card);
+    expect(find.byType(ProfileEditPage), findsOneWidget);
+    expect(find.byType(ProfilePasswordDialog), findsNothing);
+    expect(find.text('基本资料'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('profile-edit-email')))
+          .controller!
+          .text,
+      'synthetic@example.com',
+    );
+    await profileEnter(tester, 'profile-edit-nickName', '不保存的名称');
+    await profileTap(tester, find.byKey(const Key('profile-edit-back')));
+    expect(source.saved, isEmpty);
+    expect(source.loads, 1);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('profile-display-name'))).data,
+      '合成招聘经理',
+    );
+  });
+
+  testWidgets('联系方式安全入口仍打开同一编辑页，系统返回保留原资料', (tester) async {
+    final source = FakeProfileSource();
+    await mountProfile(tester, source);
+    await profileTap(tester, find.text('联系邮箱'));
+    expect(find.byType(ProfileEditPage), findsOneWidget);
+    await profileEnter(tester, 'profile-edit-email', 'cancelled@example.com');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(ProfileEditPage), findsNothing);
+    expect(source.saved, isEmpty);
+    expect(source.user['email'], 'synthetic@example.com');
+  });
+
   testWidgets('设置保存中锁定切换，写入失败保留原值并可重试', (tester) async {
     final source = FakeProfileSource()..preferencesSaveFails = true;
     await mountProfile(tester, source);
@@ -167,12 +265,21 @@ void main() {
           .onPressed,
       isNull,
     );
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('profile-settings-back')))
+          .onPressed,
+      isNull,
+    );
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(find.byType(AccountSettingsPage), findsOneWidget);
     source.preferencesGate!.complete();
     await tester.pumpAndSettle();
     expect(source.prefs.notices['interview'], isFalse);
   });
 
-  testWidgets('我的展示服务端资料、角色部门和三分区，切换不写接口', (tester) async {
+  testWidgets('我的展示名片，齿轮进入设置分区且切换不写接口', (tester) async {
     final source = FakeProfileSource();
     await mountProfile(tester, source);
     expect(find.text('合成招聘经理'), findsWidgets);
@@ -186,7 +293,7 @@ void main() {
     expect(source.prefSaves, isEmpty);
     expect(source.loads, 1);
   });
-  testWidgets('资料弹窗取消不保存，成功保存刷新昵称；保存中阻止重复点击', (tester) async {
+  testWidgets('独立编辑页取消不保存，成功保存刷新名片；保存中阻止重复点击', (tester) async {
     final source = FakeProfileSource();
     await mountProfile(tester, source);
     await profileTap(tester, find.byKey(const Key('profile-edit')));
@@ -197,6 +304,8 @@ void main() {
     expect(find.text('取消的昵称'), findsNothing);
     await profileTap(tester, find.byKey(const Key('profile-edit')));
     await profileEnter(tester, 'profile-edit-nickName', '修改后的合成昵称');
+    await tester.ensureVisible(find.byKey(const Key('profile-edit-save')));
+    await tester.pumpAndSettle();
     source.saveGate = Completer<void>();
     await tester.tap(find.byKey(const Key('profile-edit-save')));
     await tester.pump();
@@ -209,7 +318,7 @@ void main() {
     );
     source.saveGate!.complete();
     await tester.pumpAndSettle();
-    expect(find.byType(ProfileEditDialog), findsNothing);
+    expect(find.byType(ProfileEditPage), findsNothing);
     expect(source.loads, 2);
     expect(
       tester.widget<Text>(find.byKey(const Key('profile-display-name'))).data,
@@ -231,7 +340,7 @@ void main() {
     await profileEnter(tester, 'profile-edit-email', 'new@example.com');
     await profileTap(tester, find.byKey(const Key('profile-edit-save')));
     expect(find.text('合成邮箱已存在'), findsOneWidget);
-    expect(find.byType(ProfileEditDialog), findsOneWidget);
+    expect(find.byType(ProfileEditPage), findsOneWidget);
     expect(source.loads, 1);
   });
   testWidgets('修改密码验证确认一致，失败可重试，成功沿用现有会话', (tester) async {
@@ -283,9 +392,13 @@ void main() {
       isFalse,
     );
   });
-  testWidgets('头像选择取消不上传，上传失败提示错误，成功后重新加载资料', (tester) async {
+  testWidgets('名片进入编辑页更换头像，取消选图不上传，失败可重试，返回刷新名片', (tester) async {
     final source = FakeProfileSource();
     await mountProfile(tester, source);
+    expect(find.byKey(const Key('profile-avatar')), findsNothing);
+    await profileTap(tester, find.byKey(const Key('profile-business-card')));
+    expect(find.byType(ProfileEditPage), findsOneWidget);
+    expect(find.text('编辑资料'), findsOneWidget);
     await profileTap(tester, find.byKey(const Key('profile-avatar')));
     expect(source.picks, 1);
     expect(source.uploads, 0);
@@ -297,10 +410,17 @@ void main() {
     await profileTap(tester, find.byKey(const Key('profile-avatar')));
     expect(find.text('合成上传失败'), findsOneWidget);
     expect(source.loads, 1);
+    await profileEnter(tester, 'profile-edit-nickName', '头像变更不应提交的昵称');
     source.uploadFails = false;
     await profileTap(tester, find.byKey(const Key('profile-avatar')));
     expect(source.uploads, 2);
+    expect(source.loads, 1);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
     expect(source.loads, 2);
+    expect(source.saved, isEmpty);
+    expect(source.user['nickName'], '合成招聘经理');
+    expect(find.byType(ProfileEditPage), findsNothing);
   });
   testWidgets('错误可重试，外部reload读取最新资料，退出须用户确认', (tester) async {
     final source = FakeProfileSource()..loadFails = true;
@@ -329,7 +449,8 @@ void main() {
   testWidgets('本机设置读取失败不阻断个人资料，也不允许覆盖坏数据', (tester) async {
     final source = FakeProfileSource()..settingsFail = true;
     await mountProfile(tester, source);
-    expect(find.text('基本信息'), findsOneWidget);
+    expect(find.text('基本信息'), findsNothing);
+    expect(find.byKey(const Key('profile-business-card')), findsOneWidget);
     await profileTap(tester, find.byKey(const Key('profile-tab-1')));
     expect(find.text('本机设置读取失败，请重试'), findsOneWidget);
     expect(find.byKey(const Key('profile-preferences-save')), findsNothing);
@@ -343,7 +464,7 @@ void main() {
     );
   });
   for (final size in [const Size(320, 700), const Size(900, 420)]) {
-    testWidgets('我的和资料弹窗在 $size 与键盘场景下无溢出', (tester) async {
+    testWidgets('我的和独立编辑页在 $size 与键盘场景下无溢出', (tester) async {
       await mountProfile(tester, FakeProfileSource(), size: size);
       expect(tester.takeException(), isNull);
       await profileTap(tester, find.byKey(const Key('profile-edit')));
@@ -358,6 +479,7 @@ void main() {
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       await profileTap(tester, find.byKey(const Key('profile-tab-2')));
+      expect(find.byType(AccountSettingsPage), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
