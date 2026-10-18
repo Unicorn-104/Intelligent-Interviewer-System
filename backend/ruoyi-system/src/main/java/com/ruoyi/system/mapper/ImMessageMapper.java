@@ -22,6 +22,18 @@ public interface ImMessageMapper
      */
     public int insertMessage(ImMessage message);
 
+    /** 只查询当前接收人的系统通知，使用消息ID游标分页。 */
+    List<Map<String, Object>> selectNotifications(@Param("userId") Long userId,
+            @Param("beforeId") Long beforeId, @Param("limit") int limit);
+
+    Map<String, Object> selectNotification(@Param("userId") Long userId, @Param("messageId") Long messageId);
+
+    int countUnreadNotifications(@Param("userId") Long userId);
+
+    int readNotification(@Param("userId") Long userId, @Param("messageId") Long messageId);
+
+    int readAllNotifications(@Param("userId") Long userId);
+
     /**
      * 快捷回复模板列表
      */

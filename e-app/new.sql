@@ -471,3 +471,17 @@ SELECT column_name, column_type, is_nullable FROM information_schema.columns
 -- ALTER TABLE t_sch_appointment DROP INDEX idx_apt_stage_id;
 -- ALTER TABLE t_sch_appointment DROP COLUMN apt_stage_id, DROP COLUMN apt_stage_name,
 --     DROP COLUMN apt_stage_type, DROP COLUMN apt_stage_order;
+
+
+-- ============================================================
+-- [追加] 2026-10-18：企业消息中心表结构核查与既有表复用
+-- 来源：企业 APP 消息中心接入真实会话、系统通知及已读能力
+-- ============================================================
+-- 已核查本地 information_schema：t_im_session、t_im_message、
+-- t_im_quick_reply、t_msg 均已存在，所需字段和查询索引齐全。
+-- 会话复用双方用户、摘要、最近消息时间和双方未读数；
+-- 消息复用发送人、类型、内容、附件、撤回与发送时间；
+-- 系统通知复用 msg_receiver_id、msg_title、msg_content、msg_type、
+-- msg_is_read、msg_read_at、msg_target_url、msg_created_at。
+-- 本次无新增/修改数据库结构或业务数据，不创建重复消息表、不插入演示消息。
+-- 无需迁移或数据库回滚，仅部署消息模块接口与 APP 即可。
