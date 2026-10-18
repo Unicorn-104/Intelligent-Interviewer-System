@@ -6,6 +6,7 @@ import 'account_settings_page.dart';
 import 'data/profile_data_source.dart';
 import 'models/profile_view_data.dart';
 import 'profile_edit_page.dart';
+import 'settings_page.dart';
 import 'widgets/profile_avatar_view.dart';
 
 class AccountPage extends StatefulWidget {
@@ -161,7 +162,11 @@ class AccountPageState extends State<AccountPage> {
         key: const Key('profile-scroll'),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [_hero(profile)],
+        children: [
+          _hero(profile),
+          const SizedBox(height: 24),
+          const EnterpriseManagementPanel(),
+        ],
       ),
     );
   }

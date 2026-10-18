@@ -7,7 +7,6 @@ import 'models/profile_view_data.dart';
 import 'profile_edit_page.dart';
 import 'widgets/profile_edit_dialog.dart';
 import 'widgets/profile_preferences_panel.dart';
-import 'settings_page.dart';
 
 class AccountSettingsPage extends StatefulWidget {
   const AccountSettingsPage({
@@ -250,33 +249,6 @@ class AccountSettingsPageState extends State<AccountSettingsPage> {
               onRetry: _loadPreferences,
               onSave: _savePreferences,
             ),
-          const SizedBox(height: 16),
-          Card(
-            child: ListTile(
-              key: const Key('profile-enterprise-settings'),
-              leading: const Icon(
-                Icons.business_outlined,
-                color: AppColors.interactive,
-              ),
-              title: const Text('企业设置', style: TextStyle(fontSize: 14)),
-              subtitle: const Text(
-                '组织、成员与配置概览',
-                style: TextStyle(fontSize: 12),
-              ),
-              trailing: const Icon(
-                Icons.chevron_right,
-                color: AppColors.textMuted,
-              ),
-              onTap: _actionOpen
-                  ? null
-                  : () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (_) => const EnterpriseSettingsPage(),
-                      ),
-                    ),
-            ),
-          ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
             key: const Key('profile-logout'),

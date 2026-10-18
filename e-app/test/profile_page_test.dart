@@ -10,6 +10,7 @@ import 'package:enterprise_recruiter/features/enterprise/profile/models/profile_
 import 'package:enterprise_recruiter/features/enterprise/profile/widgets/profile_edit_dialog.dart';
 import 'package:enterprise_recruiter/theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeProfileSource extends ProfileDataSource {
@@ -147,7 +148,9 @@ Future<void> profileEnter(WidgetTester tester, String key, String value) async {
 }
 
 void main() {
-  testWidgets('右上角齿轮集中账号安全与偏好，返回我的仅保留名片', (tester) async {
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  testWidgets('企业管理移到我的名片下方，齿轮仅保留个人设置', (tester) async {
     final source = FakeProfileSource();
     await mountProfile(tester, source);
     expect(find.text('我的'), findsOneWidget);
@@ -157,6 +160,7 @@ void main() {
     expect(find.text('账号与安全'), findsNothing);
     expect(find.text('最近登录'), findsNothing);
     expect(find.byKey(const Key('profile-enterprise-settings')), findsNothing);
+    expect(find.text('企业管理'), findsOneWidget);
     expect(find.byKey(const Key('profile-logout')), findsNothing);
     await profileTap(tester, find.byKey(const Key('profile-settings')));
     expect(find.byType(AccountSettingsPage), findsOneWidget);
@@ -164,6 +168,13 @@ void main() {
     expect(find.byKey(const Key('profile-tab-1')), findsOneWidget);
     expect(find.byKey(const Key('profile-tab-2')), findsOneWidget);
     expect(find.text('账号与安全'), findsOneWidget);
+    await tester.drag(
+      find.byKey(const Key('profile-settings-scroll')),
+      const Offset(0, -1800),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('企业设置'), findsNothing);
+    expect(find.byKey(const Key('profile-enterprise-settings')), findsNothing);
     expect(source.prefSaves, isEmpty);
     expect(source.saved, isEmpty);
     await tester.tap(find.byKey(const Key('profile-settings-back')));
@@ -467,6 +478,30 @@ void main() {
     testWidgets('我的和独立编辑页在 $size 与键盘场景下无溢出', (tester) async {
       await mountProfile(tester, FakeProfileSource(), size: size);
       expect(tester.takeException(), isNull);
+      for (final name in ['部门管理', '成员管理', '通知模板', '集成配置']) {
+        final entry = find.byKey(ValueKey('profile-management-$name'));
+        await tester.scrollUntilVisible(
+          entry,
+          180,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.ensureVisible(entry);
+        await tester.pumpAndSettle();
+        expect(entry.hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+      tester
+          .state<ScrollableState>(
+            find
+                .descendant(
+                  of: find.byKey(const Key('profile-scroll')),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          )
+          .position
+          .jumpTo(0);
+      await tester.pumpAndSettle();
       await profileTap(tester, find.byKey(const Key('profile-edit')));
       tester.view.viewInsets = FakeViewPadding(
         bottom: size.height < 500 ? 120 : 260,
