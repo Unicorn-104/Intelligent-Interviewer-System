@@ -319,14 +319,35 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
         children: [
           _basic(context),
           TalentResumeSection(state: _resume, onRetry: _loadResume),
-          TalentMatchAnalysisSection(
-            detail: _detail,
-            match: _match,
-            job: widget.jobContext,
-            onDetailRetry: _loadDetail,
-            onMatchRetry: _loadMatch,
+          TalentSectionFrame(
+            key: const Key('talent-ai-analysis-card'),
+            title: 'AI分析结果',
+            ai: true,
+            onRetry: _loadAll,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TalentMatchAnalysisSection(
+                  detail: _detail,
+                  match: _match,
+                  job: widget.jobContext,
+                  onDetailRetry: _loadDetail,
+                  onMatchRetry: _loadMatch,
+                  embedded: true,
+                ),
+                const Divider(
+                  height: 24,
+                  thickness: 1,
+                  color: AppColors.hairline,
+                ),
+                TalentRecommendationSection(
+                  state: _report,
+                  onRetry: _loadReport,
+                  embedded: true,
+                ),
+              ],
+            ),
           ),
-          TalentRecommendationSection(state: _report, onRetry: _loadReport),
           TalentInterviewSection(
             candidateId: _id,
             source: widget.source,
