@@ -120,10 +120,23 @@
         <el-form-item label="候选人">
           <span>{{ tagForm.userName }}</span>
         </el-form-item>
-        <el-form-item label="选择标签">
+        <el-form-item label="推荐标签">
           <el-checkbox-group v-model="tagForm.tags">
             <el-checkbox v-for="tag in tagOptions" :key="tag" :label="tag">{{ tag }}</el-checkbox>
           </el-checkbox-group>
+        </el-form-item>
+        <el-form-item v-if="tagForm.customTags.length" label="已有标签">
+          <el-tag
+            v-for="tag in tagForm.customTags"
+            :key="tag"
+            closable
+            size="small"
+            effect="plain"
+            class="custom-tag"
+            @close="removeCustomTag(tag)"
+          >
+            {{ tag }}
+          </el-tag>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="tagForm.remark" type="textarea" :rows="3" placeholder="可选" />
@@ -183,6 +196,7 @@ const tagForm = reactive({
   candidateId: undefined,
   userName: '',
   tags: [],
+  customTags: [],
   remark: ''
 })
 
@@ -246,17 +260,30 @@ function handleView(row) {
 function handleTag(row) {
   tagForm.candidateId = row.candidateId
   tagForm.userName = row.userName
-  tagForm.tags = row.tags ? String(row.tags).split(',').filter(Boolean) : []
+  const existing = row.tags
+    ? String(row.tags)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : []
+  // 固定推荐项进 checkbox，其余自定义标签单独保留展示
+  tagForm.tags = existing.filter((t) => tagOptions.includes(t))
+  tagForm.customTags = existing.filter((t) => !tagOptions.includes(t))
   tagForm.remark = ''
   dialogTitle.value = '标签管理 - ' + row.userName
   dialogOpen.value = true
+}
+
+/** 移除一个已有自定义标签 */
+function removeCustomTag(tag) {
+  tagForm.customTags = tagForm.customTags.filter((t) => t !== tag)
 }
 
 /** 提交标签 */
 function submitTag() {
   batchUpdateTag({
     candidateId: tagForm.candidateId,
-    tags: tagForm.tags.join(','),
+    tags: [...tagForm.tags, ...tagForm.customTags].join(','),
     remark: tagForm.remark
   })
     .then(() => {
@@ -404,6 +431,9 @@ const statusOptions = [
   margin-bottom: 8px;
 }
 .candidate-detail-dialog .tag-item {
+  margin: 0 8px 8px 0;
+}
+.custom-tag {
   margin: 0 8px 8px 0;
 }
 </style>
