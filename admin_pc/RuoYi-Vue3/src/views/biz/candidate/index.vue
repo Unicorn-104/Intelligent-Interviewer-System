@@ -50,7 +50,9 @@
           <el-tag :type="statusTag(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="最近操作时间" align="center" prop="updateTime" width="150" />
+      <el-table-column label="最近操作时间" align="center" width="150">
+        <template #default="scope">{{ parseTime(scope.row.updateTime) || '-' }}</template>
+      </el-table-column>
       <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
         <template #default="scope">
           <el-button link type="primary" icon="View" @click="handleView(scope.row)">详情</el-button>
@@ -93,7 +95,7 @@
 </template>
 
 <script setup name="BizCandidate">
-import { listCandidate, addCandidateTag, batchUpdateTag, updateCandidateStatus } from '@/api/biz/business'
+import { listCandidate, getCandidate, addCandidateTag, batchUpdateTag, updateCandidateStatus } from '@/api/biz/business'
 
 const { proxy } = getCurrentInstance()
 
@@ -153,13 +155,30 @@ function resetQuery() {
 
 /** 详情 */
 function handleView(row) {
-  // placeholder
+  getCandidate(row.candidateId)
+    .then((res) => {
+      const d = res.data || {}
+      proxy.$alert(
+        [
+          '姓名：' + (d.userName || '-'),
+          '手机：' + (d.phonenumber || '-'),
+          '邮箱：' + (d.email || '-'),
+          '意向岗位：' + (d.jobName || '-'),
+          '综合评分：' + (d.totalScore ?? '-')
+        ].join('\n'),
+        '候选人详情',
+        { confirmButtonText: '关闭', type: 'info' }
+      )
+    })
+    .catch((err) => console.error('候选人详情加载失败:', err))
 }
 
 /** 标签管理 */
 function handleTag(row) {
   tagForm.candidateId = row.candidateId
   tagForm.userName = row.userName
+  tagForm.tags = row.tags ? String(row.tags).split(',').filter(Boolean) : []
+  tagForm.remark = ''
   dialogTitle.value = '标签管理 - ' + row.userName
   dialogOpen.value = true
 }
@@ -239,8 +258,6 @@ function statusTag(val) {
 function handleSelectionChange(selection) {
   ids.value = selection.map((item) => item.candidateId)
 }
-
-getList()
 
 const tagOptions = ['技术能力强', '沟通表达佳', '经验匹配', '学历优质', '领导潜质']
 

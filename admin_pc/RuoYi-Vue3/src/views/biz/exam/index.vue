@@ -74,7 +74,9 @@
             <el-tag :type="recordStatusTag(scope.row.status)">{{ recordStatusLabel(scope.row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="提交时间" align="center" prop="submitTime" width="160" />
+        <el-table-column label="提交时间" align="center" width="160">
+          <template #default="scope">{{ parseTime(scope.row.submitTime) || '-' }}</template>
+        </el-table-column>
         <el-table-column label="异常说明" align="center" min-width="200" :show-overflow-tooltip="true">
           <template #default="scope">
             <span>{{ scope.row.remark || '-' }}</span>
@@ -154,6 +156,7 @@ function handleSave() {
   updateExamConfig(form.value)
     .then(function () {
       proxy.$modal.msgSuccess('保存成功')
+      getConfig()
     })
     .catch(function (err) {
       console.error(err)
