@@ -298,9 +298,10 @@ public class ExamGradeServiceImpl implements IExamGradeService
                 .withMinute(0).withSecond(0).withNano(0);
         try
         {
+            Long autoStageId = raw instanceof Map ? asLong(((Map<?, ?>) raw).get("stageId")) : null;
             Map<String, Object> invite = scheduleService.invite(operatorUserId,
-                    asLong(ctx.get("talId")), asLong(ctx.get("positionId")), interviewerId,
-                    start.format(TIME_FORMAT), duration);
+                    asLong(ctx.get("talId")), asLong(ctx.get("positionId")), autoStageId,
+                    interviewerId, start.format(TIME_FORMAT), duration);
             return "已自动创建面试邀约 #" + invite.get("appointmentId")
                     + "（建议时间 " + invite.get("startTime") + "）";
         }
