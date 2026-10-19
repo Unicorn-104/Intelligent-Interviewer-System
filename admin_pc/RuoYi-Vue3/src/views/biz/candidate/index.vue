@@ -218,6 +218,8 @@ function resetQuery() {
 function handleView(row) {
   detailOpen.value = true
   detailLoading.value = true
+  // 状态直接复用列表行已映射的值，保证与列表一致
+  detail.status = row.status || ''
   getCandidate(row.candidateId)
     .then((res) => {
       const d = res.data || {}
@@ -227,7 +229,7 @@ function handleView(row) {
       detail.email = d.email
       detail.jobName = d.jobName
       detail.totalScore = d.totalScore
-      detail.status = codeToStatus(d.statusCode)
+      detail.status = row.status || detail.status
       detail.resumeId = d.resumeId
       detail.companyId = d.companyId
       detail.createTime = d.createTime
@@ -238,23 +240,6 @@ function handleView(row) {
     .finally(() => {
       detailLoading.value = false
     })
-}
-
-/** 数字状态码转状态 key（与后端 CASE 保持一致） */
-function codeToStatus(code) {
-  const map = {
-    0: 'new',
-    1: 'screened',
-    2: 'interviewing',
-    3: 'rejected',
-    4: 'passed',
-    5: 'passed',
-    6: 'archived',
-    7: 'archived',
-    8: 'rejected',
-    9: 'new'
-  }
-  return map[code] !== undefined ? map[code] : 'new'
 }
 
 /** 标签管理 */
