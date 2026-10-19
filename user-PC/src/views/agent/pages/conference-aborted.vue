@@ -44,9 +44,9 @@
       </div>
 
       <div class="cab-keep">
-        <div><span>已完成题目</span><b>3 / 10</b></div>
-        <div><span>有效面试时长</span><b>{{ reasonInfo.duration }}</b></div>
-        <div><span>会话编号</span><b>SES-6002</b></div>
+        <div><span>已完成题目</span><b>{{ answered }} / {{ totalQ }}</b></div>
+        <div><span>有效面试时长</span><b>{{ duration }}</b></div>
+        <div><span>会话编号</span><b>{{ sessionNo }}</b></div>
       </div>
 
       <div class="cab-actions">
@@ -64,12 +64,16 @@ import { computed, onMounted, ref } from 'vue'
 import { getCurrentSession, getSessionResult, abortSession } from '@/api/system/conference'
 
 const sessionId = ref(null)
+// 有效面试时长 / 完成题量 / 会话编号：由后端结果回填，未取到时展示占位
+const duration = ref('—')
+const answered = ref(0)
+const totalQ = ref(0)
+const sessionNo = ref('—')
 const REASONS = {
   silence: {
     title: '连续 2 分钟未检测到有效语音',
     desc: '为保证面试的完整性，系统在长时间未检测到有效语音后自动挂断了本次面试。',
     rule: '触发规则：无有效语音 > 2 分钟 → 自动挂断',
-    duration: '06分12秒',
     logs: [
       { time: '14:33:50', text: '系统提示：已连续 60 秒未检测到有效语音，请确认你在麦克风前作答。' },
       { time: '14:34:50', text: '系统提示：仍未检测到有效语音，若 1 分钟后无响应将自动结束面试。' },
@@ -82,7 +86,6 @@ const REASONS = {
     title: '网络中断超过 30 秒',
     desc: '你的网络连接长时间未恢复，系统已自动挂断本次面试，避免面试记录持续为空。',
     rule: '触发规则：断网 > 30 秒 → 自动挂断',
-    duration: '11分04秒',
     logs: [
       { time: '14:38:02', text: '检测到网络中断，正在尝试自动重连（第 1 次）。' },
       { time: '14:38:12', text: '自动重连失败，正在尝试第 2 次重连。' },
@@ -99,16 +102,29 @@ function go(path) {
   window.__agentNavigate(path)
 }
 
+function formatDuration(seconds) {
+  const v = Math.max(0, Math.floor(Number(seconds) || 0))
+  return `${Math.floor(v / 60)}分${String(v % 60).padStart(2, '0')}秒`
+}
+
 onMounted(async () => {
   try {
     const res = await getCurrentSession()
-    if (res.data && res.data.sessionId) sessionId.value = res.data.sessionId
+    if (res.data && res.data.sessionId) {
+      sessionId.value = res.data.sessionId
+      sessionNo.value = `SES-${res.data.sessionId}`
+    }
   } catch (error) {
-    // 无后端时保留本地演示
+    // 后端未就绪时保持占位
   }
   if (!sessionId.value) return
   try {
     const result = await getSessionResult(sessionId.value)
+    if (result.data) {
+      if (result.data.durationSeconds != null) duration.value = formatDuration(result.data.durationSeconds)
+      if (result.data.answeredCount != null) answered.value = result.data.answeredCount
+      if (result.data.totalQuestionNo) totalQ.value = result.data.totalQuestionNo
+    }
     // 仅当后端尚未标记异常终止时才写入，避免重复提交
     if (result.data && result.data.status !== 3) {
       const reason = new URLSearchParams(window.location.search).get('reason')

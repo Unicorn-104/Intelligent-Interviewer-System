@@ -18,6 +18,7 @@ import com.ruoyi.enterprise.mapper.EnterpriseJdMapper;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 import com.ruoyi.system.service.IEnterpriseJobService;
+import com.ruoyi.system.mapper.app.AppCompanyMapper;
 
 /**
  * 企业端岗位管理 服务实现
@@ -35,6 +36,9 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
 
     @Autowired
     private EnterpriseJdMapper jdMapper;
+
+    @Autowired
+    private AppCompanyMapper companyMapper;
 
     @Override
     public Long resolveCompanyId(Long userId)
@@ -56,13 +60,21 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
     }
 
     @Override
+    @Transactional
     public int changeJobStatus(Long userId, Long posId, Integer status)
     {
         if (status == null || status < 0 || status > 2)
         {
             throw new ServiceException("非法岗位状态");
         }
-        return jobMapper.updateJobStatus(posId, resolveCompanyId(userId), status);
+        Long companyId = resolveCompanyId(userId);
+        Integer previous = companyMapper.lockPositionStatus(companyId, posId);
+        int changed = jobMapper.updateJobStatus(posId, companyId, status);
+        if (changed > 0 && status == 1 && previous != null && previous != 1)
+        {
+            companyMapper.notifyFollowers(companyId, posId);
+        }
+        return changed;
     }
 
     @Override
@@ -105,9 +117,10 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
             throw new ServiceException("请填写岗位信息", ErrorCode.BAD_REQUEST);
         }
         Map<String, Object> company = publishingCompany(userId);
+        Long companyId = ((Number) company.get("id")).longValue();
         List<PositionSkill> skills = positionSkills(form.get("skills"));
         Map<String, Object> job = new LinkedHashMap<>();
-        job.put("companyId", company.get("id"));
+        job.put("companyId", companyId);
         job.put("publisherId", userId);
         job.put("title", requiredText(form.get("title"), "岗位名称", 100));
         job.put("dept", requiredText(form.get("dept"), "所属部门", 50));
@@ -125,8 +138,10 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         job.put("salaryMax", max);
         job.put("education", choice(form.get("education"), null, 1, 5, "学历要求"));
         job.put("jobType", choice(form.get("jobType"), 1, 1, 3, "工作性质"));
-        job.put("status", choice(form.get("status"), 1, 0, 2, "岗位状态"));
+        int status = choice(form.get("status"), 1, 0, 2, "岗位状态");
+        job.put("status", status);
         Map<String, Object> jd = new LinkedHashMap<>();
+        jd.put("description", str(form.get("description")));
         jd.put("responsibilities", jobLines(form.get("responsibilities"), "工作职责"));
         jd.put("requirements", jobLines(form.get("requirements"), "任职要求"));
         job.put("jdJson", JSON.toJSONString(jd));
@@ -141,6 +156,10 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
             {
                 throw new ServiceException("岗位技能保存失败，请稍后重试");
             }
+        }
+        if (status == 1)
+        {
+            companyMapper.notifyFollowers(companyId, positionId);
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("posId", positionId);

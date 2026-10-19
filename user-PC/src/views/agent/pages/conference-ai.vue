@@ -2,8 +2,8 @@
   <div class="ca-page">
     <header class="ca-topbar">
       <div class="ca-tb-left">
-        <strong>{{ header.positionTitle }}</strong>
-        <span class="ca-chip">第 {{ header.roundNo }} 轮</span>
+        <strong>{{ header.positionTitle || '面试进行中' }}</strong>
+        <span v-if="header.roundNo" class="ca-chip">第 {{ header.roundNo }} 轮</span>
         <span class="ca-chip mode">{{ modeLabel }}</span>
       </div>
       <div class="ca-tb-right">
@@ -61,10 +61,10 @@
         <!-- 当前题目：无AI 模式隐藏 -->
         <div v-if="showAiPanel" class="ca-question">
           <div class="ca-q-head">
-            <span class="ca-q-index">第 {{ progress.current }} 题 / 共 {{ progress.total }} 题</span>
-            <div class="ca-q-bar"><u :style="{ width: (progress.current / progress.total) * 100 + '%' }" /></div>
+            <span class="ca-q-index">{{ progress.total ? `第 ${progress.current} 题 / 共 ${progress.total} 题` : '面试准备中' }}</span>
+            <div class="ca-q-bar"><u :style="{ width: (progress.total ? progress.current / progress.total * 100 : 0) + '%' }" /></div>
           </div>
-          <p class="ca-q-text">{{ questionText }}</p>
+          <p class="ca-q-text">{{ questionText || '等待面试官出题…' }}</p>
         </div>
 
         <div class="ca-self" :style="selfStyle" @mousedown.prevent="startDrag">
@@ -83,6 +83,7 @@
             <p v-for="(item, index) in captions" :key="index" :class="{ me: item.who === '我' }">
               <b>{{ item.who }}</b>{{ item.text }}
             </p>
+            <p v-if="!captions.length" class="ca-cap-empty">暂无字幕</p>
           </div>
         </div>
       </div>
@@ -151,9 +152,9 @@
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { getCurrentSession, getSessionContext, getProgress, listCaptions, heartbeat, finishSession, updateMedia } from '@/api/system/conference'
-import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, requestMedia, requestMediaWithFallback, savePreferredDevice } from '@/utils/media'
-import { createConferenceRtc } from '@/utils/webrtc'
+import { getCurrentSession, getSessionContext, getProgress, listCaptions, heartbeat, finishSession, updateMedia, getLiveKitToken } from '@/api/system/conference'
+import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, savePreferredDevice } from '@/utils/media'
+import { Room, RoomEvent, Track } from 'livekit-client'
 
 const PATHS = {
   mic: ['M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z', 'M19 10v2a7 7 0 0 1-14 0v-2', 'M12 19v3', 'M8 22h8'],
@@ -203,10 +204,10 @@ const netLevel = ref('ok')
 const showConfirm = ref(false)
 const toast = ref('')
 const sessionId = ref(null)
-// 面试进度/题面/顶部信息：默认文案用于无后端时演示，接口返回后覆盖
-const progress = ref({ current: 3, total: 10 })
-const questionText = ref('请结合你在订单中心的经历，说明分布式事务的选型过程，以及最终落地时遇到的补偿与幂等问题是如何解决的？')
-const header = ref({ positionTitle: '高级前端工程师', roundNo: 1 })
+// 面试进度/题面/顶部信息：全部来自后端真实数据，无数据时展示空态
+const progress = ref({ current: 0, total: 0 })
+const questionText = ref('')
+const header = ref({ positionTitle: '', roundNo: null })
 
 const seconds = ref(0) // 从进入会议起计时
 const clock = computed(() => {
@@ -215,16 +216,7 @@ const clock = computed(() => {
   return `${m}:${s}`
 })
 
-const captions = ref([
-  { who: 'AI 面试官', text: '我们开始第 3 题，请结合项目经历说明分布式事务的选型过程。' },
-  { who: '我', text: '好的，我们在订单中心使用了 TCC 模式，主要是为了避免 XA 的长事务锁。' },
-  { who: 'AI 面试官', text: '明白了，那补偿阶段如果失败，你们是如何保证最终一致性的？' }
-])
-const captionPool = [
-  { who: '我', text: '我们给每个分支事务加了业务唯一号，保证补偿逻辑幂等。' },
-  { who: 'AI 面试官', text: '很好，请补充说明防悬挂和空回滚的处理方式。' },
-  { who: '我', text: '事务控制表会先落一条记录，补偿时先校验状态再执行。' }
-]
+const captions = ref([])
 
 const selfStyle = computed(() =>
   selfPos.value.x === null ? { right: '16px', bottom: '16px' } : { left: `${selfPos.value.x}px`, top: `${selfPos.value.y}px` }
@@ -268,15 +260,15 @@ watch(peerStreams, () => {
   })
 }, { flush: 'post' })
 
-let videoTrack = null
-let audioTrack = null
+// LiveKit 房间连接（媒体层：发布本地轨道 + 订阅面试官远端轨道）
+let room = null
+const lkConnected = ref(false)
+// 远端轨道缓存：userId -> { video?: MediaStreamTrack, audio?: MediaStreamTrack }
+const remoteTracks = {}
 let screenTrack = null
 let timerId = null
-let captionId = null
 let heartbeatId = null
-let captionIndex = 0
 let toastTimer = null
-let rtc = null
 
 function notify(message) {
   toast.value = message
@@ -329,77 +321,120 @@ function startDragAi(event) {
   document.addEventListener('mouseup', up)
 }
 
-async function openCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    camOn.value = false
-    notify('当前浏览器不支持摄像头访问，请在 127.0.0.1 或 localhost 下使用最新版浏览器')
+// 连接 LiveKit 房间：向后端换取入会令牌后直连信令服务器，入会成功即发布本地音视频
+async function connectLiveKit() {
+  if (!sessionId.value || room) return
+  let info = null
+  try {
+    const res = await getLiveKitToken(sessionId.value)
+    info = res.data
+  } catch (error) {
+    notify('获取视频会议令牌失败，请刷新重试')
     return
   }
-  // 摄像头与麦克风分开申请：只屏蔽其中一项时另一项仍可正常采集
-  // 已有轨道时不重复申请（关闭摄像头只置 enabled，WebRTC sender 依赖轨道持续存在）
-  // 优先使用准备页/设置中选定的设备（如外接摄像头），不可用时回退系统默认
-  const prefVideo = getPreferredDevice('video')
-  const prefAudio = getPreferredDevice('audio')
-  const [camResult, micResult] = await Promise.all([
-    videoTrack ? Promise.resolve(null) : requestMediaWithFallback('video', prefVideo),
-    audioTrack ? Promise.resolve(null) : requestMediaWithFallback('audio', prefAudio)
-  ])
+  if (!info || !info.url || !info.token) return
+  room = new Room()
+  room.on(RoomEvent.TrackSubscribed, onRemoteTrack)
+  room.on(RoomEvent.TrackUnsubscribed, offRemoteTrack)
+  room.on(RoomEvent.ParticipantDisconnected, onPeerLeft)
+  room.on(RoomEvent.Disconnected, () => { lkConnected.value = false })
+  try {
+    await room.connect(info.url, info.token)
+    lkConnected.value = true
+    await openCamera()
+  } catch (error) {
+    room = null
+    notify('视频会议连接失败，请检查网络后刷新重试')
+  }
+}
 
-  if (videoTrack) {
-    videoTrack.enabled = true
-    if (selfVideo.value) selfVideo.value.srcObject = new MediaStream([videoTrack])
-    camOn.value = true
-    if (sessionId.value) updateMedia(sessionId.value, { cameraEnabled: true }).catch(() => {})
-  } else if (camResult.error) {
-    camOn.value = false
-  } else {
-    videoTrack = camResult.stream.getVideoTracks()[0] || null
-    if (selfVideo.value) selfVideo.value.srcObject = videoTrack ? new MediaStream([videoTrack]) : null
-    camOn.value = !!videoTrack
-    if (sessionId.value) updateMedia(sessionId.value, { cameraEnabled: true }).catch(() => {})
+// 令牌 identity 形如 u{userId}，据此把面试官远端轨道映射到宫格 tile
+function userIdFromIdentity(identity) {
+  const m = /^u(\d+)$/.exec(identity || '')
+  return m ? Number(m[1]) : null
+}
+
+function onRemoteTrack(track, publication, participant) {
+  const uid = userIdFromIdentity(participant.identity)
+  if (!uid) return
+  const kind = track.kind === Track.Kind.Video ? 'video' : track.kind === Track.Kind.Audio ? 'audio' : null
+  if (!kind) return
+  const bag = remoteTracks[uid] || (remoteTracks[uid] = {})
+  bag[kind] = track.mediaStreamTrack
+  setPeerStream(uid, bag)
+}
+
+function offRemoteTrack(track, publication, participant) {
+  const uid = userIdFromIdentity(participant.identity)
+  if (!uid || !remoteTracks[uid]) return
+  const kind = track.kind === Track.Kind.Video ? 'video' : track.kind === Track.Kind.Audio ? 'audio' : null
+  if (kind && remoteTracks[uid][kind] === track.mediaStreamTrack) delete remoteTracks[uid][kind]
+  setPeerStream(uid, remoteTracks[uid])
+}
+
+function onPeerLeft(participant) {
+  const uid = userIdFromIdentity(participant.identity)
+  if (!uid) return
+  delete remoteTracks[uid]
+  const next = { ...peerStreams.value }
+  delete next[String(uid)]
+  peerStreams.value = next
+}
+
+// 同一参与者的音视频轨合并为一条 MediaStream 写入 peerStreams
+function setPeerStream(uid, bag) {
+  const tracks = [bag.video, bag.audio].filter(Boolean)
+  const next = { ...peerStreams.value }
+  if (tracks.length) next[String(uid)] = new MediaStream(tracks)
+  else delete next[String(uid)]
+  peerStreams.value = next
+}
+
+// 开启一路本地轨道：优先使用准备页/设置中选定的设备，不可用时回退系统默认；返回错误（null 表示成功）
+async function enableTrack(setter, kind) {
+  const deviceId = getPreferredDevice(kind)
+  if (deviceId) {
+    try {
+      await setter(true, { deviceId: { exact: deviceId } })
+      return null
+    } catch (error) {
+      // 偏好设备失效，回退默认设备
+    }
   }
-  if (micResult && !micResult.error) {
-    audioTrack = micResult.stream.getAudioTracks()[0] || null
-    if (audioTrack) audioTrack.enabled = micOn.value
+  try {
+    await setter(true)
+    return null
+  } catch (error) {
+    return error
   }
-  const fellBack =
-    (prefVideo && camResult && !camResult.error && camResult.fallback) ||
-    (prefAudio && micResult && !micResult.error && micResult.fallback)
-  if (fellBack) notify('偏好的设备不可用，已切换到系统默认设备')
+}
+
+// 本地摄像头画面回填到本人小窗
+function syncSelfPreview() {
+  const track = room?.localParticipant.getTrackPublication(Track.Source.Camera)?.track
+  if (selfVideo.value) selfVideo.value.srcObject = track && camOn.value ? new MediaStream([track.mediaStreamTrack]) : null
+}
+
+// 采集并发布本地音视频到 LiveKit 房间
+// 摄像头与麦克风分头开启，任一失败不影响另一项
+async function openCamera() {
+  if (!room || !lkConnected.value) return
+  const camErr = await enableTrack((on, opts) => room.localParticipant.setCameraEnabled(on, opts), 'video')
+  const micErr = await enableTrack((on, opts) => room.localParticipant.setMicrophoneEnabled(on, opts), 'audio')
+  syncSelfPreview()
+  camOn.value = !camErr
+  micOn.value = !micErr
+  if (!camErr && sessionId.value) updateMedia(sessionId.value, { cameraEnabled: true }).catch(() => {})
 
   // 汇总提示：两者都失败时只弹一条，避免前一条被覆盖
   const failures = []
-  if (camResult?.error) failures.push({ error: camResult.error, kind: 'camera' })
-  if (micResult?.error) failures.push({ error: micResult.error, kind: 'microphone' })
+  if (camErr) failures.push({ error: camErr, kind: 'camera' })
+  if (micErr) failures.push({ error: micErr, kind: 'microphone' })
   if (failures.length === 1) {
     notify(await describeMediaNotice(failures[0].error, failures[0].kind))
   } else if (failures.length === 2) {
     notify('未获得摄像头与麦克风权限，请在浏览器地址栏允许访问后重新进入面试')
   }
-  rtc?.attachLocalTracks(videoTrack, audioTrack)
-}
-
-// WebRTC 网状信令连接：拿到场次后建立，各面试官远端流按 userId 分别缓存，主画面按选中项渲染
-function startRtc() {
-  if (rtc || !sessionId.value) return
-  rtc = createConferenceRtc({
-    sessionId: sessionId.value,
-    onPeerStream: (userId, s) => {
-      peerStreams.value = { ...peerStreams.value, [String(userId)]: s }
-    },
-    onPeerLeft: (userId) => {
-      const next = { ...peerStreams.value }
-      delete next[String(userId)]
-      peerStreams.value = next
-    },
-    // 面试官广播的录制状态：企业端未开录制时为 false，候选人端据此展示「录制中」标识
-    onControl: (type, payload) => {
-      if (type === 'recording') recording.value = !!payload.on
-    }
-  })
-  rtc.start()
-  // 媒体采集先于信令就绪时补挂本地轨道
-  if (videoTrack || audioTrack) rtc.attachLocalTracks(videoTrack, audioTrack)
 }
 
 // 应用场次上下文：回填顶部信息、面试官列表与面试模式
@@ -426,33 +461,44 @@ async function refreshContext() {
   }
 }
 
-function closeCamera() {
-  videoTrack?.stop()
-  videoTrack = null
-  if (selfVideo.value) selfVideo.value.srcObject = null
+// 关闭摄像头：仅静音停发，保留发布通道以便再次开启
+async function closeCamera() {
+  camOn.value = false
+  if (room && lkConnected.value) {
+    await room.localParticipant.setCameraEnabled(false).catch(() => {})
+    syncSelfPreview()
+  }
   if (sessionId.value) updateMedia(sessionId.value, { cameraEnabled: false }).catch(() => {})
 }
 
-function toggleMic() {
-  if (!audioTrack) {
+async function toggleMic() {
+  if (!room || !lkConnected.value || !room.localParticipant.getTrackPublication(Track.Source.Microphone)) {
     notify('麦克风尚未就绪，请检查浏览器权限')
     return
   }
-  micOn.value = !micOn.value
-  audioTrack.enabled = micOn.value
-  notify(micOn.value ? '麦克风已开启' : '麦克风已静音')
+  const on = !micOn.value
+  await room.localParticipant.setMicrophoneEnabled(on)
+  micOn.value = on
+  notify(on ? '麦克风已开启' : '麦克风已静音')
 }
 
 async function toggleCam() {
   if (camOn.value) {
-    closeCamera()
-    camOn.value = false
+    await closeCamera()
     notify('摄像头已关闭，面试官将无法看到你的画面')
     return
   }
-  await openCamera()
-  // 开启失败时 openCamera 已给出具体原因，此处不再覆盖提示
-  if (camOn.value) notify('摄像头已开启')
+  if (!room || !lkConnected.value) return
+  const camErr = await enableTrack((on, opts) => room.localParticipant.setCameraEnabled(on, opts), 'video')
+  syncSelfPreview()
+  camOn.value = !camErr
+  // 开启失败时 enableTrack 已给出具体原因，此处只提示成功
+  if (camOn.value) {
+    if (sessionId.value) updateMedia(sessionId.value, { cameraEnabled: true }).catch(() => {})
+    notify('摄像头已开启')
+  } else {
+    notify(await describeMediaNotice(camErr, 'camera'))
+  }
 }
 
 // 屏幕共享：把发往面试官的视频轨临时替换为屏幕轨（音频轨保持不变），
@@ -477,7 +523,6 @@ async function toggleShare() {
   screenTrack = result.getVideoTracks()[0] || null
   if (!screenTrack) return
   sharing.value = true
-  rtc?.attachLocalTracks(screenTrack, audioTrack)
   // 用户通过浏览器自带的「停止共享」按钮结束时要同步收尾
   screenTrack.onended = stopShare
   notify('已开始共享屏幕')
@@ -491,16 +536,26 @@ function stopShare() {
     screenTrack.stop()
     screenTrack = null
   }
-  // 恢复发送摄像头画面；摄像头已关闭时移除视频轨，避免对端停留在最后一帧
-  if (videoTrack) rtc?.attachLocalTracks(videoTrack, audioTrack)
-  else rtc?.attachLocalTracks(null, audioTrack)
   notify('已停止共享屏幕')
+}
+
+// 断开 LiveKit 房间并清空画面引用
+function disconnectRoom() {
+  if (room) {
+    room.removeAllListeners()
+    room.disconnect().catch(() => {})
+    room = null
+  }
+  lkConnected.value = false
+  Object.keys(remoteTracks).forEach((k) => delete remoteTracks[k])
+  peerStreams.value = {}
+  if (selfVideo.value) selfVideo.value.srcObject = null
 }
 
 async function endMeeting() {
   showConfirm.value = false
   stopShare()
-  closeCamera()
+  disconnectRoom()
   if (sessionId.value) {
     try {
       await finishSession(sessionId.value, 'normal')
@@ -508,8 +563,6 @@ async function endMeeting() {
       // 结束接口失败不阻塞跳转
     }
   }
-  rtc?.destroy()
-  rtc = null
   window.__agentNavigate('/agent/conference-ended')
 }
 
@@ -530,64 +583,50 @@ const setMicId = ref('')
 async function openSettings() {
   cameraDevices.value = await listMediaDevices('video')
   microphoneDevices.value = await listMediaDevices('audio')
-  setCamId.value = (videoTrack && videoTrack.getSettings().deviceId) || getPreferredDevice('video')
-  setMicId.value = (audioTrack && audioTrack.getSettings().deviceId) || getPreferredDevice('audio')
+  const camTrack = room?.localParticipant.getTrackPublication(Track.Source.Camera)?.track
+  const micTrack = room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+  setCamId.value = (camTrack && camTrack.mediaStreamTrack.getSettings().deviceId) || getPreferredDevice('video')
+  setMicId.value = (micTrack && micTrack.mediaStreamTrack.getSettings().deviceId) || getPreferredDevice('audio')
   showSettings.value = true
 }
 
-// 切换设备：先采集新设备、成功后再停旧轨道。
-// 下拉切换的一定是另一台物理设备，两者可短暂共存；而「先停旧轨道再开新设备」
-// 在 Windows 上常因硬件尚未完全释放而失败，且失败后连原画面都会一起丢掉。
+// 切换设备：通过 LiveKit restartTrack 换采集设备，成功后画面与发布同步更新
 async function applyDevice(kind) {
   const isVideo = kind === 'video'
   const deviceId = isVideo ? setCamId.value : setMicId.value
-  const oldTrack = isVideo ? videoTrack : audioTrack
-  if (!oldTrack) {
+  const source = isVideo ? Track.Source.Camera : Track.Source.Microphone
+  const track = room?.localParticipant.getTrackPublication(source)?.track
+  if (!track) {
     // 摄像头已关闭时只记录偏好，下次开启时生效
     if (deviceId) savePreferredDevice(kind, deviceId)
     else clearPreferredDevice(kind)
     notify('已保存设备偏好，下次开启时生效')
     return
   }
-  const res = await requestMedia({ [kind]: deviceId ? { deviceId: { exact: deviceId } } : true })
-    .then((stream) => ({ stream }))
-    .catch((error) => ({ error }))
-  const newTrack = res.stream ? (isVideo ? res.stream.getVideoTracks()[0] : res.stream.getAudioTracks()[0]) : null
-  if (!newTrack) {
-    // 采集失败：保留原设备与画面，只提示原因
-    notify(await describeMediaNotice(res.error, isVideo ? 'camera' : 'microphone'))
+  try {
+    await track.restartTrack(deviceId ? { deviceId: { exact: deviceId } } : {})
+  } catch (error) {
+    // 切换失败：保留原设备与画面，只提示原因
+    notify(await describeMediaNotice(error, isVideo ? 'camera' : 'microphone'))
     return
   }
-  // 新设备就绪后再写偏好并释放旧轨道
   if (deviceId) savePreferredDevice(kind, deviceId)
   else clearPreferredDevice(kind)
-  oldTrack.stop()
   if (isVideo) {
-    videoTrack = newTrack
-    videoTrack.enabled = camOn.value
-    if (selfVideo.value) selfVideo.value.srcObject = new MediaStream([videoTrack])
-    setCamId.value = videoTrack.getSettings().deviceId || deviceId
+    setCamId.value = track.mediaStreamTrack.getSettings().deviceId || deviceId
+    syncSelfPreview()
   } else {
-    audioTrack = newTrack
-    audioTrack.enabled = micOn.value
-    setMicId.value = audioTrack.getSettings().deviceId || deviceId
+    setMicId.value = track.mediaStreamTrack.getSettings().deviceId || deviceId
   }
-  rtc?.attachLocalTracks(videoTrack, audioTrack)
   notify('已切换设备')
 }
 
-onMounted(() => {
-  openCamera()
+onMounted(async () => {
   timerId = setInterval(() => (seconds.value += 1), 1000)
-  captionId = setInterval(() => {
-    const next = captionPool[captionIndex % captionPool.length]
-    captionIndex += 1
-    captions.value.push(next)
-    if (captions.value.length > 30) captions.value.shift()
-    scrollCaptions()
-  }, 8000)
   scrollCaptions()
-  initSession()
+  // 先解析场次，再换取 LiveKit 令牌入会（入会成功后自动采集并发布本地音视频）
+  await initSession()
+  connectLiveKit()
 })
 
 async function initSession() {
@@ -596,16 +635,14 @@ async function initSession() {
   const urlSessionId = route.query.sessionId
   if (urlSessionId) {
     sessionId.value = urlSessionId
-    startRtc()
   } else {
     try {
       const res = await getCurrentSession()
       if (res.data && res.data.sessionId) {
         sessionId.value = res.data.sessionId
-        startRtc()
       }
     } catch (error) {
-      // 无后端时保留本地演示
+      // 后端未就绪时保持空态
     }
   }
   if (!sessionId.value) return
@@ -619,27 +656,23 @@ async function initSession() {
       if (p.data.question && p.data.question.topic) questionText.value = p.data.question.topic
     }
   } catch (error) {
-    // 拉取进度失败保留 mock
+    // 后端未就绪时保持空态
   }
   try {
     const c = await listCaptions(sessionId.value, { afterSequence: 0, limit: 50 })
-    if (Array.isArray(c.data) && c.data.length > 0) {
+    if (Array.isArray(c.data)) {
       const roleMap = { 1: 'AI', 2: 'HR', 3: '我' }
       captions.value = c.data.map((item) => ({ who: roleMap[item.role] || 'AI', text: item.content }))
-      // 已接入真实字幕，停掉 mock 追加定时器
-      clearInterval(captionId)
-      captionId = null
       scrollCaptions()
     }
   } catch (error) {
-    // 拉取字幕失败保留 mock
+    // 后端未就绪时保持空态
   }
   heartbeatId = setInterval(() => heartbeat(sessionId.value).catch(() => {}), 15000)
 }
 
 onBeforeUnmount(() => {
   clearInterval(timerId)
-  clearInterval(captionId)
   clearInterval(heartbeatId)
   clearTimeout(toastTimer)
   if (screenTrack) {
@@ -647,11 +680,7 @@ onBeforeUnmount(() => {
     screenTrack.stop()
     screenTrack = null
   }
-  rtc?.destroy()
-  rtc = null
-  closeCamera()
-  audioTrack?.stop()
-  audioTrack = null
+  disconnectRoom()
 })
 </script>
 
@@ -753,6 +782,7 @@ onBeforeUnmount(() => {
 .ca-cap-list p { font-size: 14px; line-height: 1.6; color: #fff; text-shadow: 0 1px 4px rgba(0, 0, 0, .8); }
 .ca-cap-list p b { color: #8FB8FF; margin-right: 8px; font-weight: 600; }
 .ca-cap-list p.me b { color: #7EE0A0; }
+.ca-cap-list p.ca-cap-empty { color: rgba(255, 255, 255, .5); text-shadow: none; }
 .ca-cap-list::-webkit-scrollbar { width: 5px; }
 .ca-cap-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); border-radius: 999px; }
 

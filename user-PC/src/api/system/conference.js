@@ -1,9 +1,11 @@
 import request from '@/utils/request'
+import { getMockCandidateSchedule } from '@/mock/agentSchedule'
 
 // 纯前端演示模式（.env.development 中 VITE_FRONTEND_ONLY='true'）不依赖后端：
 // 直接返回空结果，由各页面回落到本地演示数据，避免请求后端拿到 401 后
 // 弹出「登录状态已过期」弹窗打断演示。接入后端时把该开关改为 'false' 即可恢复真实请求。
 const FRONTEND_ONLY = import.meta.env.VITE_FRONTEND_ONLY === 'true'
+const SCHEDULE_MOCK = import.meta.env.VITE_AGENT_SCHEDULE_MOCK === 'true'
 const call = (config) => (FRONTEND_ONLY ? Promise.resolve({ data: null }) : request(config))
 
 // ============================ 会议场次 ============================
@@ -16,10 +18,30 @@ export function getCurrentSession() {
   })
 }
 
+// 当前求职者在日期范围内的真实面试安排
+export function listCandidateSchedule(params) {
+  if (SCHEDULE_MOCK) {
+    return Promise.resolve({ data: getMockCandidateSchedule(params), mocked: true })
+  }
+  return call({
+    url: '/system/conference/schedule',
+    method: 'get',
+    params: params
+  })
+}
+
 // 指定场次的会议上下文
 export function getSessionContext(sessionId) {
   return call({
     url: '/system/conference/session/' + sessionId,
+    method: 'get'
+  })
+}
+
+// 换取 LiveKit 入会令牌（返回 { url, token, room, identity }，前端凭此直连 LiveKit Server）
+export function getLiveKitToken(sessionId) {
+  return call({
+    url: '/system/conference/livekit-token/' + sessionId,
     method: 'get'
   })
 }
@@ -85,31 +107,6 @@ export function reportParticipantState(sessionId, data) {
     method: 'put',
     data: data
   })
-}
-
-// ============================ WebRTC 信令 ============================
-
-// 签发一次性信令票据（登录后换取）
-export function signalTicket(sessionId) {
-  return call({
-    url: '/system/conference/session/' + sessionId + '/signal/ticket',
-    method: 'post'
-  })
-}
-
-// 向同场次对端转发信令（offer / answer / ice / ready / bye）
-export function signalSend(ticket, data) {
-  return call({
-    url: '/system/conference/signal/send',
-    method: 'post',
-    params: { ticket: ticket },
-    data: data
-  })
-}
-
-// SSE 信令通道地址（EventSource 直连，匿名 + 票据自校验）
-export function signalStreamUrl(ticket) {
-  return import.meta.env.VITE_APP_BASE_API + '/system/conference/signal/stream?ticket=' + encodeURIComponent(ticket)
 }
 
 // ============================ 进行中 ============================

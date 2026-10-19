@@ -43,6 +43,7 @@ public class AppMessageServiceImpl implements IAppMessageService
         }
         if ("COMPANY".equalsIgnoreCase(category))
         {
+            messageMapper.markCompanyMessagesRead(userId, messageId);
             return;
         }
         throw new ServiceException("不支持的消息类型");

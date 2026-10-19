@@ -15,9 +15,15 @@ class Job {
     this.companyVerified = false,
     this.description,
     this.applied = false,
+    this.reason,
+    this.educationText,
+    this.matchAvailable = true,
+    this.companyId,
+    this.available = true,
   });
 
   final int positionId;
+  final int? companyId;
   final String title;
   final String company;
   final String city;
@@ -30,11 +36,17 @@ class Job {
   final bool companyVerified;
   final String? description;
   final bool applied;
+  final bool available;
+  final String? reason;
+  final String? educationText;
+  final bool matchAvailable;
+  String get matchLabel => matchAvailable ? '$match%' : '待评估';
 
   factory Job.fromJson(Map<String, dynamic> json) {
     final rawTags = json['tags'];
     return Job(
       positionId: _asInt(json['positionId']),
+      companyId: _asNullableInt(json['companyId']),
       title: json['title']?.toString() ?? '未命名岗位',
       company: json['company']?.toString() ?? '企业信息待完善',
       city: json['city']?.toString() ?? '城市不限',
@@ -49,11 +61,17 @@ class Job {
       companyVerified: _asInt(json['companyVerified']) == 1,
       description: _nullableText(json['description']),
       applied: json['applied'] == true || _asInt(json['applied']) == 1,
+      available: json['available'] != false && json['available'] != 0,
+      reason: _nullableText(json['reason']),
+      educationText: _nullableText(json['educationText']),
+      matchAvailable:
+          num.tryParse(json['matchScore']?.toString() ?? '') != null,
     );
   }
 
   Job copyWith({bool? applied}) => Job(
     positionId: positionId,
+    companyId: companyId,
     title: title,
     company: company,
     city: city,
@@ -66,6 +84,10 @@ class Job {
     companyVerified: companyVerified,
     description: description,
     applied: applied ?? this.applied,
+    available: available,
+    reason: reason,
+    educationText: educationText,
+    matchAvailable: matchAvailable,
   );
 
   String get salary {
@@ -77,14 +99,16 @@ class Job {
     return '最高 ${max}K';
   }
 
-  String get educationLabel => switch (education) {
-    1 => '中专',
-    2 => '大专',
-    3 => '本科',
-    4 => '硕士',
-    5 => '博士',
-    _ => '学历不限',
-  };
+  String get educationLabel =>
+      educationText ??
+      switch (education) {
+        1 => '中专',
+        2 => '大专',
+        3 => '本科',
+        4 => '硕士',
+        5 => '博士',
+        _ => '学历不限',
+      };
 
   Color get accent {
     if (match >= 90) return const Color(0xFF7A3DFF);

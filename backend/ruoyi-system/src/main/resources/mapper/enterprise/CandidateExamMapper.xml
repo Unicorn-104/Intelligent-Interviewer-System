@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.CandidateExamMapper">
+
+    <!-- ============ 在线笔试：候选人端（我的考试/开考快照/作答） ============ -->
+
+    <select id="selectTalentByUser" resultType="java.util.LinkedHashMap">
+        select tal_id as talId
+        from t_tal
+        where tal_user_id = #{userId}
+        limit 1
+    </select>
+
+    <select id="selectMyScheduleList" resultType="java.util.LinkedHashMap">
+        select s.esd_id as scheduleId, s.esd_position_id as positionId,
+               pos.pos_title as positionTitle, s.esd_paper_id as paperId,
+               p.epa_name as paperName, p.epa_duration_min as durationMin,
+               p.epa_total_score as totalScore,
+               date_format(s.esd_start_at, '%Y-%m-%d %H:%i') as startAt,
+               date_format(s.esd_end_at, '%Y-%m-%d %H:%i') as endAt,
+               s.esd_status as status, s.esd_max_attempts as maxAttempts,
+               r.erc_id as recordId, r.erc_status as recordStatus,
+               date_format(r.erc_start_at, '%Y-%m-%d %H:%i') as recordStartAt,
+               date_format(r.erc_submit_at, '%Y-%m-%d %H:%i') as recordSubmitAt,
+               r.erc_total_score as totalScoreGot, r.erc_pass_status as passStatus
+        from t_exam_schedule s
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        join t_tal t on t.tal_user_id = #{userId}
+        join t_app_record a on a.app_position_id = s.esd_position_id
+            and a.app_candidate_id = t.tal_id
+        left join t_exam_record r on r.erc_schedule_id = s.esd_id
+            and r.erc_candidate_id = t.tal_id
+        order by s.esd_start_at desc, s.esd_id desc
+    </select>
+
+    <select id="selectScheduleForCandidate" resultType="java.util.LinkedHashMap">
+        select s.esd_id as scheduleId, s.esd_position_id as positionId,
+               pos.pos_title as positionTitle, s.esd_paper_id as paperId,
+               p.epa_name as paperName, p.epa_duration_min as durationMin,
+               p.epa_total_score as totalScore, p.epa_rule_json as ruleJson,
+               date_format(s.esd_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
+               date_format(s.esd_end_at, '%Y-%m-%d %H:%i:%s') as endAt,
+               s.esd_status as status, s.esd_max_attempts as maxAttempts,
+               s.esd_pass_threshold as passThreshold,
+               s.esd_force_dual_camera as forceDualCamera,
+               s.esd_submit_rule_json as submitRule,
+               r.erc_id as recordId, r.erc_status as recordStatus,
+               date_format(r.erc_start_at, '%Y-%m-%d %H:%i:%s') as recordStartAt
+        from t_exam_schedule s
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        join t_tal t on t.tal_user_id = #{userId}
+        join t_app_record a on a.app_position_id = s.esd_position_id
+            and a.app_candidate_id = t.tal_id
+        left join t_exam_record r on r.erc_schedule_id = s.esd_id
+            and r.erc_candidate_id = t.tal_id
+        where s.esd_id = #{scheduleId}
+    </select>
+
+    <insert id="insertRecord">
+        insert into t_exam_record (erc_schedule_id, erc_candidate_id, erc_start_at,
+            erc_status, erc_main_device_info)
+        values (#{scheduleId}, #{talId}, now(), 1, #{deviceInfo})
+    </insert>
+
+    <select id="selectLastRecordId" resultType="int">
+        select coalesce(max(erc_id), 0) from t_exam_record
+    </select>
+
+    <select id="selectRecordForCandidate" resultType="java.util.LinkedHashMap">
+        select r.erc_id as recordId, r.erc_schedule_id as scheduleId,
+               r.erc_candidate_id as talId, r.erc_status as status,
+               date_format(r.erc_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
+               date_format(r.erc_submit_at, '%Y-%m-%d %H:%i:%s') as submitAt,
+               s.esd_paper_id as paperId, s.esd_position_id as positionId,
+               pos.pos_title as positionTitle, p.epa_name as paperName,
+               p.epa_duration_min as durationMin, p.epa_total_score as totalScore,
+               r.erc_total_score as earnedScore, r.erc_pass_status as passStatus,
+               date_format(s.esd_end_at, '%Y-%m-%d %H:%i:%s') as endAt,
+               s.esd_submit_rule_json as submitRule, s.esd_status as scheduleStatus
+        from t_exam_record r
+        join t_exam_schedule s on s.esd_id = r.erc_schedule_id
+        join t_exam_paper p on p.epa_id = s.esd_paper_id
+        join t_pos pos on pos.pos_id = s.esd_position_id
+        join t_tal t on t.tal_id = r.erc_candidate_id and t.tal_user_id = #{userId}
+        where r.erc_id = #{recordId}
+    </select>
+
+    <insert id="insertAnswerSnapshot">
+        insert ignore into t_exam_answer (ean_record_id, ean_question_id, ean_max_score)
+        values (#{recordId}, #{questionId}, #{maxScore})
+    </insert>
+
+    <select id="selectRecordQuestions" resultType="java.util.LinkedHashMap">
+        select a.ean_question_id as questionId, a.ean_content as answer,
+               a.ean_max_score as score,
+               q.eqs_type as type, q.eqs_content as content,
+               q.eqs_options_json as optionsJson
+        from t_exam_answer a
+        join t_exam_question q on q.eqs_id = a.ean_question_id
+        where a.ean_record_id = #{recordId}
+        order by a.ean_id
+    </select>
+
+    <update id="updateAnswerContent">
+        update t_exam_answer
+        set ean_content = #{content}, ean_updated_at = now()
+        where ean_record_id = #{recordId} and ean_question_id = #{questionId}
+    </update>
+
+    <update id="updateRecordSubmitted">
+        update t_exam_record
+        set erc_status = 2, erc_submit_at = now(), erc_updated_at = now()
+        where erc_id = #{recordId} and erc_status = 1
+    </update>
+
+    <update id="updateRecordAbandoned">
+        update t_exam_record
+        set erc_status = 3, erc_updated_at = now()
+        where erc_id = #{recordId} and erc_status = 1
+    </update>
+
+</mapper>

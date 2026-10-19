@@ -53,6 +53,15 @@ public class EnterpriseJobController extends BaseController
     }
 
     /**
+     * 查询求职者端岗位多维筛选选项。
+     */
+    @GetMapping("/filter-options")
+    public AjaxResult filterOptions()
+    {
+        return success(agentJobService.selectJobFilterOptions());
+    }
+
+    /**
      * 分页查询当前公司岗位，支持 keyword/dept/status 过滤
      */
     @GetMapping("/list")
@@ -79,7 +88,7 @@ public class EnterpriseJobController extends BaseController
      * 切换岗位状态（0下线/1在招/2暂停）
      */
     @PutMapping("/{posId}/status/{status}")
-    public AjaxResult changeStatus(@PathVariable Long posId, @PathVariable Integer status)
+    public AjaxResult changeStatus(@PathVariable("posId") Long posId, @PathVariable("status") Integer status)
     {
         return toAjax(jobService.changeJobStatus(getUserId(), posId, status));
     }
@@ -106,7 +115,7 @@ public class EnterpriseJobController extends BaseController
      * 岗位详情聚合
      */
     @GetMapping("/{posId}")
-    public AjaxResult detail(@PathVariable Long posId)
+    public AjaxResult detail(@PathVariable("posId") Long posId)
     {
         return success(jobService.jobDetail(getUserId(), posId));
     }
@@ -115,7 +124,7 @@ public class EnterpriseJobController extends BaseController
      * 岗位流程配置读取
      */
     @GetMapping("/{posId}/workflow")
-    public AjaxResult workflow(@PathVariable Long posId)
+    public AjaxResult workflow(@PathVariable("posId") Long posId)
     {
         return success(jobService.workflow(getUserId(), posId));
     }
@@ -124,7 +133,7 @@ public class EnterpriseJobController extends BaseController
      * 保存岗位流程配置
      */
     @PutMapping("/{posId}/workflow")
-    public AjaxResult saveWorkflow(@PathVariable Long posId, @RequestBody Map<String, Object> body)
+    public AjaxResult saveWorkflow(@PathVariable("posId") Long posId, @RequestBody Map<String, Object> body)
     {
         String name = body.get("templateName") == null ? null : String.valueOf(body.get("templateName"));
         @SuppressWarnings("unchecked")

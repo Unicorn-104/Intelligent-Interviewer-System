@@ -21,9 +21,32 @@ const isWhiteList = (path) => {
   return whiteList.some(pattern => isPathMatch(pattern, path))
 }
 
+// 候选人端准入角色：求职者(biz_4)
+// 企业角色(biz_1/2/3)等其他角色禁止进入本端任何页面
+const CANDIDATE_ROLES = ['biz_4']
+
+function hasCandidateAccess() {
+  const roles = useUserStore().roles || []
+  return roles.some(r => CANDIDATE_ROLES.includes(r))
+}
+
+// 非求职者：强制登出并清理本地会话，由守卫负责跳回登录页
+async function denyNonCandidate() {
+  const userStore = useUserStore()
+  try {
+    await userStore.logOut()
+  } catch {
+    // 后端登出失败也要清理本地，避免残留令牌导致再次进入
+  }
+  removeToken()
+  clearCandidateSession()
+  userStore.$reset()
+  ElMessage.error('您的账号无求职者端访问权限，请前往企业端登录')
+}
+
 router.beforeEach(async (to, from) => {
   NProgress.start()
-  if (to.path === '/conference-join') {
+  if (to.path === '/conference-join' || to.path === '/exam-sub') {
     NProgress.done()
     return true
   }
@@ -71,6 +94,12 @@ router.beforeEach(async (to, from) => {
           NProgress.done()
           return { path: '/agent/login', query: { redirect: to.fullPath }, replace: true }
         }
+      }
+      // 身份准入：仅求职者(biz_4)可进入候选人端，企业角色等登录后立即拦回登录页
+      if (!hasCandidateAccess()) {
+        await denyNonCandidate()
+        NProgress.done()
+        return { path: '/agent/login', replace: true }
       }
       return true
     }

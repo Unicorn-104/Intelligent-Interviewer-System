@@ -29,8 +29,8 @@ public class ContentCategoryController extends BaseController {
     public TableDataInfo list() {
         startPage();
         List<Map<String, Object>> list = jdbcTemplate.queryForList(
-            "SELECT cca_id as id, cca_name as name, cca_parent_id as parentId, cca_sort as sort, " +
-            "cca_status as status, cca_create_time as createTime FROM t_content_category ORDER BY cca_sort"
+            "SELECT cca_id as categoryId, cca_name as categoryName, cca_parent_id as parentId, cca_sort as orderNum, " +
+            "cca_status as status, 0 as jobCount, cca_create_time as createTime FROM t_content_category ORDER BY cca_sort"
         );
         return getDataTable(list);
     }
@@ -41,15 +41,15 @@ public class ContentCategoryController extends BaseController {
     @PreAuthorize("@ss.hasPermi('content:category:add')")
     @PostMapping
     public AjaxResult add(@RequestBody Map<String, Object> body) {
-        String name = (String) body.get("name");
+        String name = (String) body.get("categoryName");
         if (name == null || name.trim().isEmpty()) {
             return AjaxResult.error("分类名称不能为空");
         }
         Object parentId = body.getOrDefault("parentId", 0);
-        Object sort = body.getOrDefault("sort", 0);
+        Object orderNum = body.getOrDefault("orderNum", 0);
         jdbcTemplate.update(
             "INSERT INTO t_content_category (cca_name, cca_parent_id, cca_sort) VALUES (?, ?, ?)",
-            name, parentId, sort
+            name, parentId, orderNum
         );
         return AjaxResult.success();
     }
@@ -60,15 +60,15 @@ public class ContentCategoryController extends BaseController {
     @PreAuthorize("@ss.hasPermi('content:category:edit')")
     @PutMapping
     public AjaxResult edit(@RequestBody Map<String, Object> body) {
-        Object id = body.get("id");
-        if (id == null) {
+        Object categoryId = body.get("categoryId");
+        if (categoryId == null) {
             return AjaxResult.error("分类ID不能为空");
         }
-        String name = (String) body.get("name");
-        Object sort = body.getOrDefault("sort", 0);
+        String categoryName = (String) body.get("categoryName");
+        Object orderNum = body.getOrDefault("orderNum", 0);
         jdbcTemplate.update(
             "UPDATE t_content_category SET cca_name = ?, cca_sort = ? WHERE cca_id = ?",
-            name, sort, id
+            categoryName, orderNum, categoryId
         );
         return AjaxResult.success();
     }

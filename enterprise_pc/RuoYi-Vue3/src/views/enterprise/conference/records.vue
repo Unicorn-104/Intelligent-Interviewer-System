@@ -1,28 +1,28 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
-  Search, Download, Play, Eye, Archive, KeyRound, Database, ArrowLeft,
-  AlertTriangle, ShieldCheck, Clock3, Upload, Video
+  Search, Download, Play, Eye, Archive, KeyRound, Database,
+  AlertTriangle, ShieldCheck, Clock3, Video
 } from '@/views/enterprise/components/icons'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { listRecordings, getStorageUsage, getStoragePolicy, saveStoragePolicy, sendDownloadCode, verifyDownloadCode } from '@/api/system/conference'
+import {
+  listRecordings, getStorageUsage, getStoragePolicy, saveStoragePolicy,
+  sendDownloadCode, verifyDownloadCode, getPlayback, updateRecordingAccess
+} from '@/api/system/conference'
 
 const router = useRouter()
+const route = useRoute()
+// 来自消息中心「查看录制」时携带的候选人用户ID，用于按候选人精确筛选其全部面试录制
+const candidateUserId = ref(route.query.candidateUserId || null)
 const toast = ref('')
 
 const filters = ref({ id: '', candidate: '', from: '', to: '' })
 const applied = ref({ id: '', candidate: '', from: '', to: '' })
 
-const records = ref([
-  { sid: null, id: 'REC-20260618-001', candidate: '王芳', position: '高级前端工程师', date: '2026-06-18', duration: '42:18', size: '1.8 GB', status: '已完成', mode: 'AI + HR 协同' },
-  { sid: null, id: 'REC-20260618-002', candidate: '李强', position: '后端开发工程师', date: '2026-06-18', duration: '38:04', size: '1.5 GB', status: '已完成', mode: '纯 AI 面试' },
-  { sid: null, id: 'REC-20260617-007', candidate: '赵敏', position: '产品经理', date: '2026-06-17', duration: '06:12', size: '0.3 GB', status: '异常终止', mode: '纯 AI 面试' },
-  { sid: null, id: 'REC-20260617-005', candidate: '陈晨', position: '数据分析师', date: '2026-06-17', duration: '45:52', size: '2.1 GB', status: '已完成', mode: 'AI + HR 协同' },
-  { sid: null, id: 'REC-20260616-011', candidate: '刘洋', position: '测试开发工程师', date: '2026-06-16', duration: '—', size: '—', status: '处理中', mode: '纯 AI 面试' },
-  { sid: null, id: 'REC-20260610-003', candidate: '孙悦', position: 'UI 设计师', date: '2026-06-10', duration: '31:20', size: '1.2 GB', status: '已过期', mode: 'AI + HR 协同' }
-])
+// 录制列表：全部来自后端真实数据
+const records = ref([])
 
 const filtered = computed(() => records.value.filter((item) => {
   const f = applied.value
@@ -33,19 +33,67 @@ const filtered = computed(() => records.value.filter((item) => {
   return true
 }))
 
-const storage = ref({ used: 120, total: 500 })
-const storagePercent = computed(() => Math.round((storage.value.used / storage.value.total) * 100))
+const storage = ref({ used: 0, total: 0 })
+const storagePercent = computed(() => storage.value.total ? Math.round((storage.value.used / storage.value.total) * 100) : 0)
+
+// 已用/剩余容量按量级自适应显示，避免不足 1GB 时恒显示为 0 GB
+function fmtStorage(gb) {
+  const n = Number(gb) || 0
+  if (n >= 1) return `${n.toFixed(1)} GB`
+  const mb = n * 1024
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(mb * 1024)} KB`
+}
+
+// 已用容量优先用真实字节数（与列表「占用」列口径一致），无字节数时回落到 GB 值
+function fmtUsed() {
+  const bytes = storage.value.usedBytes
+  return bytes > 0 ? fmtSize(0, bytes) : fmtStorage(storage.value.used)
+}
 
 const verifyVisible = ref(false)
 const policyVisible = ref(false)
 const authVisible = ref(false)
 const pendingDownload = ref(null)
 const smsCode = ref('')
+// 后端未接入短信通道时会返回 devCode，暂在弹窗内提示以便本地联调（接入短信后删除）
+const devCode = ref('')
 
-const policy = ref({ keepDays: 180, maxStorage: 500 })
-const auth = ref({ validDays: 7, level: '仅查看' })
+const policy = ref({ keepDays: 0, maxStorage: 0 })
+// 访问级别取值与后端 ses_rec_access_level 一致：1-仅HR/面试官，2-含管理员，3-候选人可见
+const auth = ref({ validDays: 7, level: 1 })
 
-const STATUS_TEXT = { 0: '处理中', 1: '处理中', 2: '已完成', 3: '异常终止', 4: '待审核' }
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detail = ref(null)
+
+const STATUS_TEXT = { 0: '录制中', 1: '已完成', 2: '异常终止' }
+// 面试模式与后端 ses_mode 一致：1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工
+const MODE_TEXT = { 1: '纯 AI 面试', 2: 'AI + HR 协同', 3: 'AI + HR 协同', 4: '无 AI 纯人工' }
+const ACCESS_TEXT = { 1: '仅HR/面试官', 2: '含管理员', 3: '候选人可见' }
+
+// 录制地址可能是后端相对路径（/profile/...），补上接口前缀后才能被浏览器直接访问
+function resolveRecUrl(u) {
+  if (!u) return ''
+  return /^https?:\/\//i.test(u) ? u : import.meta.env.VITE_APP_BASE_API + u
+}
+
+function downloadFile(url, filename) {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.target = '_blank'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+// 详情弹窗内直接下载（详情接口已做录制访问校验，无需再走短信验证）
+function downloadDetail() {
+  const url = resolveRecUrl(detail.value?.recUrl)
+  if (!url) return notify('该场次暂无录制地址，无法下载')
+  const ext = (url.split('?')[0].split('.').pop() || 'mp4').toLowerCase()
+  downloadFile(url, `${detail.value.sessionId}.${ext}`)
+}
 
 function fmtDuration(sec) {
   const v = Math.max(0, Math.floor(sec || 0))
@@ -68,19 +116,20 @@ function fmtSize(sec, bytes) {
   return `${gb.toFixed(1)} GB`
 }
 
-// 后端录制数据 -> 页面展示结构
+// 后端录制数据 -> 页面展示结构（每条录制记录对应一次录制，编号由后端生成且唯一）
 function mapRecord(item) {
   const date = item.interviewDate || ''
   return {
+    rid: item.recordingId,
     sid: item.sessionId,
-    id: `REC-${date.replaceAll('-', '')}-${String(item.sessionId).padStart(3, '0')}`,
+    id: item.code || `REC-${date.replaceAll('-', '')}-${String(item.sessionId).padStart(3, '0')}`,
     candidate: item.candidateName,
     position: item.positionTitle,
     date,
     duration: fmtDuration(item.durationSec),
     size: fmtSize(item.durationSec, item.recSizeBytes),
     status: STATUS_TEXT[item.status] || '已完成',
-    mode: item.mode === 2 ? 'AI + HR 协同' : '纯 AI 面试'
+    mode: MODE_TEXT[item.mode] || '—'
   }
 }
 
@@ -89,28 +138,31 @@ function notify(msg) {
   setTimeout(() => (toast.value = ''), 2200)
 }
 
-// 初始化拉取录制列表 / 存储用量 / 存储策略，失败静默保留 mock
+// 初始化拉取录制列表 / 存储用量 / 存储策略，无数据时保持空态
 async function initPage() {
+  // 从消息中心跳转进入时，候选人输入框回显姓名作为提示，实际筛选以后端候选人ID为准
+  if (candidateUserId.value && route.query.candidateName) filters.value.candidate = String(route.query.candidateName)
   try {
-    const res = await listRecordings({})
-    if (Array.isArray(res.data) && res.data.length > 0) records.value = res.data.map(mapRecord)
+    const res = await listRecordings(candidateUserId.value ? { candidateUserId: candidateUserId.value } : {})
+    if (Array.isArray(res.data)) records.value = res.data.map(mapRecord)
   } catch (e) {
-    // 无后端数据时保留 mock
+    // 后端未就绪时保持空态
   }
   try {
     const u = await getStorageUsage()
-    if (u.data && u.data.maxGb) storage.value = { used: u.data.usedGb, total: u.data.maxGb }
+    if (u.data && u.data.maxGb) storage.value = { used: u.data.usedGb, total: u.data.maxGb, usedBytes: u.data.usedBytes || 0 }
   } catch (e) {
-    // 无后端数据时保留 mock
+    // 后端未就绪时保持空态
   }
   try {
     const p = await getStoragePolicy()
     if (p.data) {
       policy.value.keepDays = p.data.keepDays
       policy.value.maxStorage = p.data.maxStorageGb
+      if (p.data.defaultAccessLevel) auth.value.level = p.data.defaultAccessLevel
     }
   } catch (e) {
-    // 无后端数据时保留 mock
+    // 后端未就绪时保持空态
   }
 }
 
@@ -119,15 +171,18 @@ onMounted(() => {
 })
 
 async function query() {
-  applied.value = { ...filters.value }
+  // 按候选人ID筛选时，姓名仅作展示提示，实际筛选由后端候选人ID完成，避免姓名口径差异导致漏筛
+  applied.value = { ...filters.value, candidate: candidateUserId.value ? '' : filters.value.candidate }
   try {
     // 面试 ID 是页面展示编号（REC-*），后端 sessionId 为数字主键，故只做本地过滤
-    const res = await listRecordings({
-      candidate: filters.value.candidate,
+    const params = {
+      candidate: candidateUserId.value ? '' : filters.value.candidate,
       from: filters.value.from,
       to: filters.value.to
-    })
-    if (Array.isArray(res.data) && res.data.length > 0) records.value = res.data.map(mapRecord)
+    }
+    if (candidateUserId.value) params.candidateUserId = candidateUserId.value
+    const res = await listRecordings(params)
+    if (Array.isArray(res.data)) records.value = res.data.map(mapRecord)
   } catch (e) {
     // 查询失败时保留现有列表
   }
@@ -137,37 +192,75 @@ async function query() {
 function reset() {
   filters.value = { id: '', candidate: '', from: '', to: '' }
   applied.value = { ...filters.value }
+  candidateUserId.value = null
 }
 
+// 按当前筛选结果导出真实 CSV（带 BOM，Excel 中文不乱码）
 function exportList() {
-  notify(`已导出 ${filtered.value.length} 条记录（CSV）`)
+  const rows = filtered.value
+  if (!rows.length) return notify('当前没有可导出的记录')
+  const header = ['面试 ID', '候选人', '岗位', '日期', '时长', '占用', '状态', '模式']
+  const lines = rows.map((r) => [r.id, r.candidate, r.position, r.date, r.duration, r.size, r.status, r.mode])
+  const csv = [header, ...lines]
+    .map((cols) => cols.map((c) => `"${String(c ?? '').replaceAll('"', '""')}"`).join(','))
+    .join('\r\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  downloadFile(url, `录制文件列表_${new Date().toISOString().slice(0, 10)}.csv`)
+  // 延迟释放，避免在下载真正开始前撤销 Blob URL 导致下载被取消
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
+  notify(`已导出 ${rows.length} 条记录（CSV）`)
+}
+
+// 拉取该条录制的真实详情（含面试官、访问级别、时间轴打点）
+async function openDetail(item) {
+  if (item.rid == null) return notify('该记录没有对应的录制记录，无法查看详情')
+  detail.value = null
+  detailLoading.value = true
+  detailVisible.value = true
+  try {
+    const res = await getPlayback(item.rid)
+    detail.value = res.data || null
+  } catch (e) {
+    // 详情拉取失败时展示失败占位
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 function openDownload(item) {
-  if (item.status === '处理中') return notify('该录制仍在处理中，暂不可下载')
+  if (item.status === '录制中') return notify('该录制尚未完成，暂不可下载')
   if (item.status === '已过期') return notify('该录制已超过保留期限，已归档删除')
   pendingDownload.value = item
   smsCode.value = ''
+  devCode.value = ''
   verifyVisible.value = true
-  if (item.sid) sendDownloadCode(item.sid).catch(() => {})
+  if (item.rid) {
+    sendDownloadCode(item.rid)
+      .then((res) => { devCode.value = res.data?.devCode || '' })
+      .catch(() => {})
+  }
 }
 
 async function confirmDownload() {
   if (smsCode.value.trim().length !== 6) return notify('请输入 6 位短信验证码')
+  if (pendingDownload.value?.rid == null) return notify('该记录没有对应的录制记录，无法下载')
   try {
-    if (pendingDownload.value?.sid) {
-      await verifyDownloadCode(pendingDownload.value.sid, smsCode.value.trim())
-    }
+    const res = await verifyDownloadCode(pendingDownload.value.rid, smsCode.value.trim())
+    const url = resolveRecUrl(res.data?.url)
+    if (!url) return notify('后端未返回录制地址，无法下载')
+    const ext = (url.split('?')[0].split('.').pop() || 'mp4').toLowerCase()
+    downloadFile(url, `${pendingDownload.value.id}.${ext}`)
+    verifyVisible.value = false
+    notify(`验证通过，开始下载 ${pendingDownload.value.id}`)
   } catch (e) {
-    // 校验失败时忽略，仍保留原有提示
+    notify('验证失败，请检查短信验证码')
   }
-  notify(`验证通过，开始下载 ${pendingDownload.value.id}`)
-  verifyVisible.value = false
 }
 
 function openPlayback(item) {
-  if (item.sid == null) return notify('该记录没有对应的面试场次，无法回放')
-  router.push(`/enterprise/conference/playback?id=${item.sid}`)
+  if (item.rid == null) return notify('该记录没有对应的录制记录，无法回放')
+  router.push(`/enterprise/conference/playback?id=${item.rid}`)
 }
 
 async function savePolicy() {
@@ -180,14 +273,29 @@ async function savePolicy() {
   }
 }
 
-function saveAuth() {
-  notify(`访问授权已更新：${auth.value.validDays} 天 / ${auth.value.level}`)
+// 页面级批量授权：对当前列表每条录制逐条写入访问级别与有效期
+async function saveAuth() {
+  const targets = filtered.value.filter((r) => r.rid != null)
+  if (!targets.length) {
+    notify('当前没有可授权的录制，请先确认列表中已有记录')
+    return
+  }
+  const payload = { validDays: auth.value.validDays, level: auth.value.level }
+  const results = await Promise.allSettled(targets.map((r) => updateRecordingAccess(r.rid, payload)))
+  const ok = results.filter((r) => r.status === 'fulfilled').length
+  const failed = results.length - ok
   authVisible.value = false
+  if (failed) {
+    notify(`授权完成：成功 ${ok} 条，失败 ${failed} 条`)
+  } else {
+    notify(`已为 ${ok} 条录制设置授权：${auth.value.validDays} 天 / ${ACCESS_TEXT[auth.value.level]}`)
+  }
+  initPage()
 }
 
 const statusClass = (status) => ({
   已完成: 'green',
-  处理中: 'orange',
+  录制中: 'orange',
   异常终止: 'red',
   已过期: 'gray',
   待审核: 'orange'
@@ -195,21 +303,12 @@ const statusClass = (status) => ({
 </script>
 
 <template>
-  <div class="console-page">
-    <header class="topbar">
-      <div class="bar">
-        <span class="mark">智</span>
-        <div>
-          <strong>录制回放与存储管理</strong>
-          <small>企业端 · HR / 管理员</small>
-        </div>
-        <button class="btn sm back" @click="router.push('/enterprise/dashboard')">
-          <ArrowLeft :size="15" />返回工作台
-        </button>
-      </div>
-    </header>
+  <div class="page">
+    <div class="page-heading">
+      <div><h1>录制回放与存储管理</h1><p>企业端 · HR / 管理员</p></div>
+    </div>
 
-    <main class="page">
+    <main>
       <section class="card filter">
         <div class="field">
           <label>面试 ID</label>
@@ -261,7 +360,7 @@ const statusClass = (status) => ({
               <td class="op">
                 <button class="link" :disabled="item.status !== '已完成'" @click="openPlayback(item)"><Play :size="14" />回放</button>
                 <button class="link" @click="openDownload(item)"><Download :size="14" />下载</button>
-                <button class="link" @click="notify(`查看 ${item.id} 的面试详情`)"><Eye :size="14" />查看</button>
+                <button class="link" @click="openDetail(item)"><Eye :size="14" />查看</button>
               </td>
             </tr>
             <tr v-if="!filtered.length">
@@ -288,14 +387,13 @@ const statusClass = (status) => ({
         <div class="storage-bar">
           <div class="bar-track"><u :style="{ width: storagePercent + '%' }" /></div>
           <div class="bar-meta">
-            <span>已用 <b>{{ storage.used }} GB</b> / {{ storage.total }} GB</span>
-            <span class="muted">剩余 {{ storage.total - storage.used }} GB · 使用率 {{ storagePercent }}%</span>
+            <span>已用 <b>{{ fmtUsed() }}</b> / {{ storage.total }} GB</span>
+            <span class="muted">剩余 {{ fmtStorage(storage.total - storage.used) }} · 使用率 {{ storagePercent }}%</span>
           </div>
         </div>
         <div class="storage-tips">
           <span><Clock3 :size="13" />当前保留策略：{{ policy.keepDays }} 天</span>
           <span><ShieldCheck :size="13" />下载需短信二次验证</span>
-          <span><Upload :size="13" />最近一次归档：2026-06-18 02:00</span>
         </div>
       </section>
     </main>
@@ -312,6 +410,7 @@ const statusClass = (status) => ({
       <div class="field">
         <label>短信验证码</label>
         <input v-model="smsCode" class="input" maxlength="6" placeholder="请输入发送至手机号的 6 位验证码" />
+        <small v-if="devCode" class="muted">本地联调：后端未接入短信通道，本次验证码为 {{ devCode }}</small>
       </div>
       <template #footer>
         <button class="btn" @click="verifyVisible = false">取消</button>
@@ -347,16 +446,50 @@ const statusClass = (status) => ({
       </div>
       <div class="field">
         <label>权限级别</label>
-        <select v-model="auth.level" class="select">
-          <option>仅查看</option>
-          <option>查看 + 下载</option>
-          <option>查看 + 下载 + 分享</option>
+        <select v-model.number="auth.level" class="select">
+          <option :value="1">仅HR/面试官</option>
+          <option :value="2">含管理员</option>
+          <option :value="3">候选人可见</option>
         </select>
       </div>
       <p class="tip-text"><ShieldCheck :size="14" />授权对象默认包含：面试官、HRBP、招聘负责人。</p>
       <template #footer>
         <button class="btn" @click="authVisible = false">取消</button>
         <button class="btn primary" @click="saveAuth">保存授权</button>
+      </template>
+    </BaseModal>
+
+    <BaseModal v-if="detailVisible" title="录制详情" width="560px" @close="detailVisible = false">
+      <div v-if="detailLoading" class="tip-text">正在加载录制详情…</div>
+      <template v-else-if="detail">
+        <div class="detail-grid">
+          <span>候选人</span><b>{{ detail.candidateName || '—' }}</b>
+          <span>岗位</span><b>{{ detail.positionTitle || '—' }}</b>
+          <span>面试日期</span><b>{{ detail.interviewDate || '—' }}</b>
+          <span>录制时长</span><b>{{ fmtDuration(detail.durationSec) }}</b>
+          <span>文件占用</span><b>{{ fmtSize(detail.durationSec, detail.recSizeBytes) }}</b>
+          <span>面试模式</span><b>{{ MODE_TEXT[detail.mode] || '—' }}</b>
+          <span>访问级别</span><b>{{ ACCESS_TEXT[detail.recAccessLevel] || '—' }}</b>
+          <span>授权有效期</span><b>{{ detail.recExpiresAt || '—' }}</b>
+          <span>面试官</span>
+          <b>{{ (detail.interviewers || []).map(i => i.userName).filter(Boolean).join('、') || detail.primaryInterviewerName || '—' }}</b>
+          <span>录制地址</span>
+          <b class="mono break">{{ resolveRecUrl(detail.recUrl) || '—' }}</b>
+        </div>
+        <div v-if="detail.chapters?.length" class="detail-block">
+          <h3>时间轴打点（{{ detail.chapters.length }}）</h3>
+          <p v-for="c in detail.chapters.slice(0, 8)" :key="c.second" class="detail-line">
+            <span class="mono">{{ fmtDuration(c.second) }}</span>{{ c.title }}
+          </p>
+        </div>
+        <p v-else class="tip-text">该场次暂无时间轴打点数据。</p>
+      </template>
+      <p v-else class="tip-text"><AlertTriangle :size="14" />录制详情加载失败，请稍后重试。</p>
+      <template #footer>
+        <button class="btn" @click="detailVisible = false">关闭</button>
+        <button class="btn primary" :disabled="!detail?.recUrl" @click="downloadDetail">
+          <Download :size="14" />下载录制
+        </button>
       </template>
     </BaseModal>
 
@@ -367,20 +500,6 @@ const statusClass = (status) => ({
 <style src="../enterprise.css"></style>
 
 <style scoped>
-.console-page { min-height: 100vh; background: var(--canvas); }
-.topbar { height: 64px; background: #fff; border-bottom: 1px solid var(--line); display: flex; align-items: center; }
-.bar { width: min(1240px, calc(100% - 48px)); margin: auto; display: flex; align-items: center; gap: 12px; }
-.mark {
-  width: 36px; height: 36px; border-radius: 10px;
-  display: grid; place-items: center;
-  color: #fff; font-weight: 700;
-  background: linear-gradient(145deg, var(--primary), #1d4ed8);
-}
-.bar strong { display: block; font-size: 16px; }
-.bar small { color: var(--muted); font-size: 12px; }
-.back { margin-left: auto; }
-.page { width: min(1240px, calc(100% - 48px)); margin: auto; padding: 22px 0 40px; }
-
 .filter { display: grid; grid-template-columns: 1fr 1fr 1.4fr auto; gap: 16px; align-items: end; padding: 18px 20px; }
 .range { display: flex; align-items: center; gap: 8px; }
 .range span { color: var(--muted); font-size: 12px; }
@@ -431,6 +550,15 @@ const statusClass = (status) => ({
 .download-target small { font-size: 12px; }
 .tip-text { display: flex; align-items: flex-start; gap: 7px; margin: 14px 0 12px; padding: 10px 12px; border-radius: 9px; background: #fff8e8; color: #96650a; font-size: 12px; line-height: 1.6; }
 .field + .field { margin-top: 16px; }
+
+.detail-grid { display: grid; grid-template-columns: 92px 1fr; gap: 10px 14px; font-size: 13px; }
+.detail-grid > span { color: var(--muted); font-size: 12px; }
+.detail-grid > b { font-weight: 600; }
+.detail-grid .break { word-break: break-all; font-size: 12px; font-weight: 400; }
+.detail-block { margin-top: 16px; }
+.detail-block h3 { font-size: 13px; margin-bottom: 8px; }
+.detail-line { display: flex; gap: 10px; padding: 5px 0; font-size: 12px; color: var(--text-2, #334155); }
+.detail-line .mono { flex: 0 0 52px; color: var(--muted); }
 
 @media (max-width: 1080px) {
   .filter { grid-template-columns: 1fr 1fr; }

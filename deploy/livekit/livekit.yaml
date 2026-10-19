@@ -1,0 +1,32 @@
+# =====================================================================
+# LiveKit 服务端配置模板（Linux 服务器 · host 网络模式）
+# 使用前替换所有 REPLACE_WITH_* 占位符；密钥对需与以下两处保持一致：
+#   - egress.yaml 的 api_key / api_secret
+#   - 后端 application.yml 的 livekit.api-key / livekit.api-secret
+# =====================================================================
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  # host 网络模式下 WebRTC 媒体走 UDP 端口区间，防火墙/安全组需放行
+  port_range_start: 50000
+  port_range_end: 60000
+  # 公网云服务器必须 true（用于探测本机公网地址返回给浏览器做 ICE 连接）；纯内网部署可 false
+  use_external_ip: true
+
+redis:
+  # host 网络模式下直接复用服务器已有 Redis（与后端同一实例）
+  address: localhost:6379
+
+keys:
+  # 格式「APIKey: APISecret」。Key 为自定义标识串，Secret 建议 openssl rand -hex 24 生成
+  REPLACE_WITH_API_KEY: REPLACE_WITH_API_SECRET
+
+webhook:
+  api_key: REPLACE_WITH_API_KEY
+  urls:
+    # 录制完成/异常状态回填全靠此回调，指向后端服务地址（后端同机部署时如下）
+    - http://127.0.0.1:8080/system/conference/webhook/livekit
+
+logging:
+  level: info

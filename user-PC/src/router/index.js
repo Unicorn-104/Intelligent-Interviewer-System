@@ -34,6 +34,8 @@ const agentPageDefinitions = [
   ['video-meeting', 'AgentVideoMeeting', '视频面试'],
   ['company-profile', 'AgentCompanyProfile', '企业主页'],
   ['contact-profile', 'AgentContactProfile', '联系人主页'],
+  ['exam', 'AgentExam', '在线笔试'],
+  ['exam-room', 'AgentExamRoom', '笔试答题'],
   ['conference-entry', 'AgentConferenceEntry', '面试链接校验'],
   ['conference-prep', 'AgentConferencePrep', '会议准备'],
   ['conference-waiting', 'AgentConferenceWaiting', '等候室'],
@@ -168,6 +170,12 @@ export const constantRoutes = [
     component: () => import('@/views/conference-join.vue'),
     hidden: true,
     meta: { title: '面试邀请' }
+  },
+  {
+    path: '/exam-sub',
+    component: () => import('@/views/agent/pages/exam-sub.vue'),
+    hidden: true,
+    meta: { title: '笔试副机位' }
   },
   ...agentRoutes,
   ...legacyAgentRoutes,

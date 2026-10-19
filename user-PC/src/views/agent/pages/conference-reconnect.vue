@@ -30,7 +30,7 @@
       </ul>
 
       <div class="cr-info">
-        <div><span>面试进度</span><b>已保留 3 / 10 题</b></div>
+        <div><span>面试进度</span><b>{{ answered }} / {{ totalQ }} 题</b></div>
         <div><span>断线时长</span><b>{{ offlineSeconds }} 秒</b></div>
         <div><span>累计中断</span><b>{{ attempt }} 次</b></div>
       </div>
@@ -49,7 +49,7 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { getCurrentSession, heartbeat } from '@/api/system/conference'
+import { getCurrentSession, getSessionResult, heartbeat } from '@/api/system/conference'
 
 const state = ref('retrying')
 const progress = ref(0)
@@ -57,6 +57,9 @@ const step = ref(0)
 const attempt = ref(1)
 const offlineSeconds = ref(0)
 const sessionId = ref(null)
+// 面试进度：来自后端结果，未取到时展示占位
+const answered = ref(0)
+const totalQ = ref(0)
 let progressTimer = null
 let stepTimer1 = null
 let stepTimer2 = null
@@ -104,7 +107,17 @@ onMounted(async () => {
     const res = await getCurrentSession()
     if (res.data && res.data.sessionId) sessionId.value = res.data.sessionId
   } catch (error) {
-    // 无后端时保留本地演示
+    // 后端未就绪时保持占位
+  }
+  if (!sessionId.value) return
+  try {
+    const result = await getSessionResult(sessionId.value)
+    if (result.data) {
+      if (result.data.answeredCount != null) answered.value = result.data.answeredCount
+      if (result.data.totalQuestionNo) totalQ.value = result.data.totalQuestionNo
+    }
+  } catch (error) {
+    // 后端未就绪时保持占位
   }
 })
 

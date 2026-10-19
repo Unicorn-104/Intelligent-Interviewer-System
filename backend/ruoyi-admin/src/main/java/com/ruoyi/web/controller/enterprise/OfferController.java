@@ -59,4 +59,54 @@ public class OfferController extends BaseController
     {
         return success(offerService.getOfferDetail(getUserId(), offerId));
     }
+
+    /**
+     * Offer 管理页：创建 Offer 草稿（candidateId + positionId + 薪资/职级/福利/入职日期/截止时间）
+     */
+    @PostMapping("/create")
+    public AjaxResult create(@RequestBody Map<String, Object> body)
+    {
+        return success(offerService.createOffer(getUserId(), body));
+    }
+
+    /**
+     * Offer 管理页：发送录用意向书与入职指引邮件（草稿转为已发送）
+     *
+     * <p>body.senderType：company-企业邮箱（默认），personal-个人 SMTP 凭据直发。</p>
+     */
+    @PostMapping("/{offerId}/send")
+    public AjaxResult send(@PathVariable("offerId") Long offerId,
+            @RequestBody(required = false) Map<String, Object> body)
+    {
+        String senderType = body == null || body.get("senderType") == null ? null
+                : String.valueOf(body.get("senderType"));
+        return success(offerService.sendOffer(getUserId(), offerId, senderType));
+    }
+
+    /**
+     * Offer 管理页：企业候选人选项（创建表单下拉用，按投递记录关联企业）
+     */
+    @GetMapping("/candidate-options")
+    public AjaxResult candidateOptions()
+    {
+        return success(offerService.listCandidateOptions(getUserId()));
+    }
+
+    /**
+     * 个人资料页：邮箱与发信设置回显（企业邮箱 + 个人 SMTP 配置，授权码仅掩码回显）
+     */
+    @GetMapping("/mail-profile")
+    public AjaxResult mailProfile()
+    {
+        return success(offerService.getMailProfile(getUserId()));
+    }
+
+    /**
+     * 个人资料页：保存个人 SMTP 发信配置（授权码加密存储，空值或掩码时保留原值）
+     */
+    @PostMapping("/mail-profile")
+    public AjaxResult saveMailProfile(@RequestBody Map<String, Object> body)
+    {
+        return success(offerService.saveMailProfile(getUserId(), body));
+    }
 }

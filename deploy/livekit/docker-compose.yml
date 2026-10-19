@@ -1,0 +1,30 @@
+# =====================================================================
+# LiveKit 服务器部署编排（Linux + Docker）
+# 用法：
+#   1. 修改同目录 livekit.yaml / egress.yaml 中的 REPLACE_WITH_* 占位符
+#   2. 修改本文件 environment 里的 RECORDING_DIR（录制输出宿主目录，
+#      必须与后端 profile 上传目录下的 upload/recording 一致，
+#      后端会把容器内 /out 映射到该目录）
+#   3. docker compose up -d
+# 防火墙/安全组放行：7880/tcp、7881/tcp、50000-60000/udp
+# =====================================================================
+services:
+  livekit-server:
+    image: livekit/livekit-server:v1.13.9
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    command: --config /etc/livekit.yaml
+
+  livekit-egress:
+    image: livekit/egress:v1.15.0
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - livekit-server
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    volumes:
+      - ./egress.yaml:/etc/egress.yaml:ro
+      - ${RECORDING_DIR:-/home/ruoyi/uploadPath/upload/recording}:/out

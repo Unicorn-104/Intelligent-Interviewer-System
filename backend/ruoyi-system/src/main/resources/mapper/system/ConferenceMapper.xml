@@ -20,14 +20,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         s.ses_auto_recording              as autoRecording,
         s.ses_candidate_consent           as consent,
         s.ses_consent_at                  as consentAt,
-        s.ses_rec_url                     as recUrl,
-        s.ses_rec_duration_sec            as recDurationSec,
-        s.ses_rec_access_level            as recAccessLevel,
         p.pos_title                       as positionTitle,
+        cast(p.pos_jd_json as char)       as positionJd,
         p.pos_company_id                  as companyId,
         c.cmp_name                        as companyName,
         t.tal_user_id                     as candidateUserId,
         ifnull(u.nick_name, u.user_name)   as candidateName,
+        u.avatar                          as candidateAvatar,
+        t.tal_status                      as candidateStatus,
         ifnull(iu.nick_name, iu.user_name) as interviewerName,
         date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as appointmentStartAt,
         date_format(a.apt_end_time, '%Y-%m-%d %H:%i')   as appointmentEndAt,
@@ -67,6 +67,36 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         limit 1
     </select>
 
+    <select id="selectCandidateSchedule" resultType="java.util.LinkedHashMap">
+        select a.apt_id as appointmentId,
+               s.ses_id as sessionId,
+               p.pos_id as positionId,
+               p.pos_title as positionTitle,
+               c.cmp_name as companyName,
+               date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as startAt,
+               date_format(a.apt_end_time, '%Y-%m-%d %H:%i') as endAt,
+               a.apt_status as appointmentStatus,
+               s.ses_status as sessionStatus,
+               s.ses_mode as mode,
+               s.ses_room_token as roomToken,
+               case
+                   when s.ses_status = 1 then '进行中'
+                   when s.ses_status = 2 then '已结束'
+                   when a.apt_start_time >= now() then '待面试'
+                   else '待确认'
+               end as statusText
+        from t_sch_appointment a
+        join t_tal t on t.tal_id = a.apt_candidate_id
+        join t_pos p on p.pos_id = a.apt_position_id
+        left join t_cmp c on c.cmp_id = p.pos_company_id
+        left join t_int_session s on s.ses_appointment_id = a.apt_id
+        where t.tal_user_id = #{userId}
+          and a.apt_start_time &gt;= #{from}
+          and a.apt_start_time &lt; #{to}
+          and a.apt_status in (0, 1)
+        order by a.apt_start_time asc, a.apt_id asc
+    </select>
+
     <select id="selectSessionContext" resultType="java.util.LinkedHashMap">
         select <include refid="sessionContextColumns"/>
         <include refid="sessionContextJoins"/>
@@ -91,20 +121,30 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         limit 1
     </select>
 
-    <select id="selectActiveSessionByCandidate" resultType="java.util.LinkedHashMap">
-        select s.ses_id         as sessionId,
-               s.ses_room_id    as roomId,
-               s.ses_room_token as roomToken,
-               s.ses_status     as status
-        from t_int_session s
-        where s.ses_candidate_id = #{candidateId}
-          and s.ses_status in (0, 1)
-        <if test="interviewerId != null">
-          and s.ses_interviewer_id = #{interviewerId}
-        </if>
-        order by s.ses_id desc
-        limit 1
+    <select id="selectPositionSkills" resultType="java.util.LinkedHashMap">
+        select psk_name     as name,
+               psk_required as required
+        from t_pos_skill
+        where psk_position_id = #{positionId}
+        order by psk_required desc, psk_id asc
     </select>
+
+    <select id="selectCandidateFlowHistory" resultType="java.util.LinkedHashMap">
+        select tsl_to_status   as toStatus,
+               tsl_reason      as reason,
+               date_format(tsl_created_at, '%m-%d %H:%i') as at
+        from t_tal_status_log
+        where tsl_candidate_id = #{candidateId}
+        order by tsl_created_at asc, tsl_id asc
+    </select>
+
+    <update id="abortActiveSessionsByCandidate">
+        update t_int_session
+        set ses_status = 3,
+            ses_end_at = ifnull(ses_end_at, sysdate()),
+            ses_updated_at = sysdate()
+        where ses_candidate_id = #{candidateId} and ses_status in (0, 1)
+    </update>
 
     <insert id="insertAppointment" parameterType="java.util.Map" useGeneratedKeys="true" keyProperty="appointmentId">
         insert into t_sch_appointment
@@ -363,8 +403,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_int_session
         set ses_status = #{status},
             ses_end_at = sysdate(),
-            ses_rec_duration_sec = if(ses_start_at is null, ses_rec_duration_sec,
-                                      timestampdiff(second, ses_start_at, sysdate())),
             ses_updated_at = sysdate()
         where ses_id = #{sessionId}
     </update>
@@ -373,8 +411,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_int_session
         set ses_status = 3,
             ses_end_at = sysdate(),
-            ses_rec_duration_sec = if(ses_start_at is null, ses_rec_duration_sec,
-                                      timestampdiff(second, ses_start_at, sysdate())),
             ses_updated_at = sysdate()
         where ses_id = #{sessionId}
     </update>
@@ -385,9 +421,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                s.ses_mode     as mode,
                date_format(s.ses_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
                date_format(s.ses_end_at, '%Y-%m-%d %H:%i:%s')   as endAt,
-               ifnull(s.ses_rec_duration_sec,
-                      if(s.ses_start_at is null, 0,
-                         timestampdiff(second, s.ses_start_at, ifnull(s.ses_end_at, sysdate())))) as durationSeconds,
+               if(s.ses_start_at is null, 0,
+                  timestampdiff(second, s.ses_start_at, ifnull(s.ses_end_at, sysdate()))) as durationSeconds,
                ifnull(m.mst_current_question, 0) as answeredCount,
                ifnull(m.mst_total_question, 0)   as totalQuestionNo,
                (select count(*) from t_int_evaluation e where e.evl_session_id = s.ses_id) as reportGenerated
@@ -397,92 +432,183 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectRecordingList" resultType="java.util.LinkedHashMap">
-        select s.ses_id    as sessionId,
+        select r.rcd_id    as recordingId,
+               r.rcd_code  as code,
+               r.rcd_session_id as sessionId,
+               s.ses_candidate_id as candidateId,
                ifnull(u.nick_name, u.user_name) as candidateName,
                p.pos_title as positionTitle,
-               date_format(s.ses_end_at, '%Y-%m-%d') as interviewDate,
-               ifnull(s.ses_rec_duration_sec, 0) as durationSec,
-               s.ses_rec_size_bytes as recSizeBytes,
-               s.ses_status as status,
+               date_format(r.rcd_start_at, '%Y-%m-%d') as interviewDate,
+               date_format(r.rcd_start_at, '%Y-%m-%d %H:%i:%s') as startedAt,
+               ifnull(r.rcd_duration_sec, 0) as durationSec,
+               r.rcd_size_bytes as recSizeBytes,
+               r.rcd_status as status,
                s.ses_mode as mode,
-               s.ses_rec_url as recUrl,
-               s.ses_rec_access_level as recAccessLevel,
-               date_format(s.ses_rec_expires_at, '%Y-%m-%d') as recExpiresAt
-        from t_int_session s
+               r.rcd_url as recUrl,
+               r.rcd_access_level as recAccessLevel,
+               date_format(r.rcd_expires_at, '%Y-%m-%d') as recExpiresAt
+        from t_int_recording r
+        join t_int_session s on s.ses_id = r.rcd_session_id
         join t_pos p on p.pos_id = s.ses_position_id
         join t_tal t on t.tal_id = s.ses_candidate_id
         join sys_user u on u.user_id = t.tal_user_id
-        where p.pos_company_id = #{companyId} and s.ses_rec_url is not null
+        where p.pos_company_id = #{companyId}
+        <if test="recordingId != null">
+            and r.rcd_id = #{recordingId}
+        </if>
         <if test="sessionId != null">
-            and s.ses_id = #{sessionId}
+            and r.rcd_session_id = #{sessionId}
+        </if>
+        <if test="candidateId != null">
+            and s.ses_candidate_id = #{candidateId}
+        </if>
+        <if test="candidateUserId != null">
+            and t.tal_user_id = #{candidateUserId}
         </if>
         <if test="candidate != null and candidate != ''">
             and (u.nick_name like concat('%', #{candidate}, '%') or u.user_name like concat('%', #{candidate}, '%'))
         </if>
         <if test="from != null and from != ''">
-            and s.ses_end_at &gt;= #{from}
+            and r.rcd_start_at &gt;= #{from}
         </if>
         <if test="to != null and to != ''">
-            and s.ses_end_at &lt;= concat(#{to}, ' 23:59:59')
+            and r.rcd_start_at &lt;= concat(#{to}, ' 23:59:59')
         </if>
-        order by s.ses_end_at desc, s.ses_id desc
+        order by r.rcd_start_at desc, r.rcd_id desc
     </select>
 
     <select id="selectRecordingStorageTotal" parameterType="Long" resultType="java.util.LinkedHashMap">
-        select ifnull(sum(s.ses_rec_duration_sec), 0) as totalSeconds,
-               ifnull(sum(s.ses_rec_size_bytes), 0)    as totalBytes
-        from t_int_session s
+        select ifnull(sum(r.rcd_duration_sec), 0) as totalSeconds,
+               ifnull(sum(r.rcd_size_bytes), 0)   as totalBytes,
+               ifnull(sum(case when ifnull(r.rcd_size_bytes, 0) = 0
+                               then ifnull(r.rcd_duration_sec, 0) else 0 end), 0) as estSeconds
+        from t_int_recording r
+        join t_int_session s on s.ses_id = r.rcd_session_id
         join t_pos p on p.pos_id = s.ses_position_id
         where p.pos_company_id = #{companyId}
     </select>
 
+    <select id="selectActiveRecording" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select r.rcd_id   as recordingId,
+               r.rcd_code as code,
+               r.rcd_seq  as seq,
+               r.rcd_status as status,
+               date_format(r.rcd_start_at, '%Y-%m-%d %H:%i:%s') as startedAt
+        from t_int_recording r
+        where r.rcd_session_id = #{sessionId} and r.rcd_status = 0
+        order by r.rcd_id desc
+        limit 1
+    </select>
+
+    <select id="selectNextRecordingSeq" parameterType="Long" resultType="Integer">
+        select ifnull(max(rcd_seq), 0) + 1 from t_int_recording where rcd_session_id = #{sessionId}
+    </select>
+
+    <insert id="insertRecording" parameterType="java.util.Map" useGeneratedKeys="true" keyProperty="recordingId">
+        insert into t_int_recording
+            (rcd_session_id, rcd_code, rcd_seq, rcd_start_at, rcd_status, rcd_url, rcd_access_level)
+        values
+            (#{sessionId}, #{code}, #{seq}, sysdate(), 0, #{url}, #{accessLevel})
+    </insert>
+
+    <update id="updateRecordingEgressId">
+        update t_int_recording
+        set rcd_egress_id = #{egressId},
+            rcd_updated_at = sysdate()
+        where rcd_id = #{recordingId}
+    </update>
+
+    <update id="finishRecordingByRecordingId">
+        update t_int_recording
+        set rcd_status = 1,
+            rcd_end_at = sysdate(),
+            rcd_duration_sec = greatest(timestampdiff(second, rcd_start_at, sysdate()), 0),
+            rcd_expires_at = date_add(sysdate(), interval #{keepDays} day),
+            rcd_updated_at = sysdate()
+        where rcd_id = #{recordingId} and rcd_status = 0
+    </update>
+
+    <update id="finishRecordingByEgressId">
+        update t_int_recording
+        set rcd_status = #{status},
+            rcd_end_at = ifnull(rcd_end_at, sysdate()),
+            rcd_duration_sec = ifnull(#{durationSec,jdbcType=INTEGER}, rcd_duration_sec),
+            rcd_size_bytes = ifnull(#{sizeBytes,jdbcType=BIGINT}, rcd_size_bytes),
+            rcd_url = ifnull(#{recUrl,jdbcType=VARCHAR}, rcd_url),
+            rcd_expires_at = date_add(sysdate(), interval #{keepDays} day),
+            rcd_updated_at = sysdate()
+        where rcd_egress_id = #{egressId}
+    </update>
+
+    <update id="abortRecordingBySession" parameterType="Long">
+        update t_int_recording
+        set rcd_status = 2,
+            rcd_end_at = ifnull(rcd_end_at, sysdate()),
+            rcd_duration_sec = ifnull(rcd_duration_sec, greatest(timestampdiff(second, rcd_start_at, sysdate()), 0)),
+            rcd_updated_at = sysdate()
+        where rcd_session_id = #{sessionId} and rcd_status = 0
+    </update>
+
+    <select id="selectRecordingAccessContext" parameterType="Long" resultType="java.util.LinkedHashMap">
+        select r.rcd_id           as recordingId,
+               r.rcd_session_id   as sessionId,
+               r.rcd_url          as recUrl,
+               r.rcd_access_level as accessLevel,
+               r.rcd_status       as status,
+               p.pos_company_id   as companyId,
+               t.tal_user_id      as candidateUserId,
+               s.ses_interviewer_id as interviewerId
+        from t_int_recording r
+        join t_int_session s on s.ses_id = r.rcd_session_id
+        join t_pos p on p.pos_id = s.ses_position_id
+        join t_tal t on t.tal_id = s.ses_candidate_id
+        where r.rcd_id = #{recordingId}
+    </select>
+
     <select id="selectRecordingDetail" parameterType="Long" resultType="java.util.LinkedHashMap">
-        select s.ses_id as sessionId,
-               s.ses_rec_url as recUrl,
-               ifnull(s.ses_rec_duration_sec, 0) as durationSec,
-               s.ses_rec_size_bytes as recSizeBytes,
+        select r.rcd_id     as recordingId,
+               r.rcd_code   as code,
+               r.rcd_session_id as sessionId,
+               r.rcd_url    as recUrl,
+               ifnull(r.rcd_duration_sec, 0) as durationSec,
+               r.rcd_size_bytes as recSizeBytes,
+               r.rcd_status as status,
+               date_format(r.rcd_start_at, '%Y-%m-%d') as interviewDate,
+               date_format(r.rcd_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
                ifnull(u.nick_name, u.user_name) as candidateName,
                p.pos_title as positionTitle,
-               date_format(ifnull(s.ses_end_at, s.ses_start_at), '%Y-%m-%d') as interviewDate,
                s.ses_mode as mode,
-               s.ses_rec_access_level as recAccessLevel,
-               date_format(s.ses_rec_expires_at, '%Y-%m-%d') as recExpiresAt,
+               r.rcd_access_level as recAccessLevel,
+               date_format(r.rcd_expires_at, '%Y-%m-%d') as recExpiresAt,
                ifnull(iu.nick_name, iu.user_name) as primaryInterviewerName
-        from t_int_session s
+        from t_int_recording r
+        join t_int_session s on s.ses_id = r.rcd_session_id
         join t_pos p on p.pos_id = s.ses_position_id
         join t_tal t on t.tal_id = s.ses_candidate_id
         join sys_user u on u.user_id = t.tal_user_id
         left join sys_user iu on iu.user_id = s.ses_interviewer_id
-        where s.ses_id = #{sessionId}
+        where r.rcd_id = #{recordingId}
     </select>
 
-    <select id="selectRecordingTimeline" parameterType="Long" resultType="java.util.LinkedHashMap">
+    <select id="selectRecordingTimeline" resultType="java.util.LinkedHashMap">
         select d.dlg_order   as sequence,
                d.dlg_role    as role,
                d.dlg_content as content,
-               greatest(ifnull(timestampdiff(second, s.ses_start_at, d.dlg_created_at), 0), 0) as second
+               greatest(ifnull(timestampdiff(second, #{startAt}, d.dlg_created_at), 0), 0) as second
         from t_int_dialogue d
-        left join t_int_session s on s.ses_id = d.dlg_session_id
         where d.dlg_session_id = #{sessionId}
+        <if test="startAt != null and startAt != ''">
+            and d.dlg_created_at &gt;= #{startAt}
+        </if>
         order by d.dlg_order asc
     </select>
 
     <update id="updateRecordingAccess">
-        update t_int_session
-        set ses_rec_access_level = #{level},
-            ses_rec_expires_at = date_add(sysdate(), interval #{validDays} day),
-            ses_updated_at = sysdate()
-        where ses_id = #{sessionId}
-    </update>
-
-    <update id="updateRecordingFile">
-        update t_int_session
-        set ses_rec_url = #{recUrl},
-            ses_rec_duration_sec = #{durationSec},
-            ses_rec_size_bytes = #{sizeBytes},
-            ses_rec_expires_at = date_add(sysdate(), interval #{keepDays} day),
-            ses_updated_at = sysdate()
-        where ses_id = #{sessionId}
+        update t_int_recording
+        set rcd_access_level = #{level},
+            rcd_expires_at = date_add(sysdate(), interval #{validDays} day),
+            rcd_updated_at = sysdate()
+        where rcd_id = #{recordingId}
     </update>
 
     <select id="selectStoragePolicy" parameterType="Long" resultType="java.util.LinkedHashMap">

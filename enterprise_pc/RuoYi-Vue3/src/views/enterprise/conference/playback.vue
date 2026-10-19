@@ -149,8 +149,9 @@ async function initPlayback() {
     if (Array.isArray(d.interviewers) && d.interviewers.length > 0) {
       record.value.interviewers = d.interviewers.map((i) => i.userName).filter(Boolean).join(' · ')
     }
+    // 录制编号以后端返回的 code 为准（REC-日期-场次-序号），缺失时再按场次兜底拼接
     const date = d.interviewDate || ''
-    record.value.id = `REC-${date.replaceAll('-', '')}-${String(d.sessionId).padStart(3, '0')}`
+    record.value.id = d.code || (date ? `REC-${date.replaceAll('-', '')}-${String(d.sessionId).padStart(3, '0')}` : '')
     chapters.value = Array.isArray(d.chapters) ? d.chapters.map((c) => ({
       label: c.title && c.title.length > 16 ? `${c.title.slice(0, 16)}…` : c.title,
       t: c.second
@@ -158,7 +159,7 @@ async function initPlayback() {
     // 后端不返回评分，用占位符避免 UI 出现空白
     qa.value = Array.isArray(d.qa) ? d.qa.map((q) => ({ t: q.second, q: q.title, score: '—' })) : []
   } catch (e) {
-    // 无后端数据时保留 mock
+    // 后端未就绪时保持空态，由页面展示降级提示
   }
 }
 

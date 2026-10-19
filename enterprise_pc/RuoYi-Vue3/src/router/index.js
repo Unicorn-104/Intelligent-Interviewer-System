@@ -123,10 +123,52 @@ export const constantRoutes = [
         meta: { title: '候选人流程' }
       },
       {
+        path: 'screening',
+        component: () => import('@/views/enterprise/screening/index.vue'),
+        name: 'EnterpriseScreening',
+        meta: { title: 'AI 初筛' }
+      },
+      {
+        path: 'conference/active',
+        component: () => import('@/views/enterprise/conference/active.vue'),
+        name: 'EnterpriseConferenceActive',
+        meta: { title: '正在进行的面试' }
+      },
+      {
+        path: 'conference/records',
+        component: () => import('@/views/enterprise/conference/records.vue'),
+        name: 'EnterpriseConferenceRecords',
+        meta: { title: '录制回放与存储管理' }
+      },
+      {
+        path: 'exam',
+        component: () => import('@/views/enterprise/exam/index.vue'),
+        name: 'EnterpriseExam',
+        meta: { title: '在线笔试' }
+      },
+      {
+        path: 'exam/proctor',
+        component: () => import('@/views/enterprise/exam/proctor.vue'),
+        name: 'EnterpriseExamProctor',
+        meta: { title: '监考监控' }
+      },
+      {
+        path: 'exam/proctor/room',
+        component: () => import('@/views/enterprise/exam/proctor-room.vue'),
+        name: 'EnterpriseExamProctorRoom',
+        meta: { title: '监考房间' }
+      },
+      {
         path: 'interviews',
         component: () => import('@/views/enterprise/interviews/index.vue'),
         name: 'EnterpriseInterviews',
         meta: { title: '面试安排中心' }
+      },
+      {
+        path: 'offer',
+        component: () => import('@/views/enterprise/offer/index.vue'),
+        name: 'EnterpriseOffer',
+        meta: { title: 'Offer 管理' }
       },
       {
         path: 'interviews/:id/evaluation',
@@ -191,13 +233,6 @@ export const constantRoutes = [
     name: 'EnterpriseConferenceOngoing',
     hidden: true,
     meta: { title: '协同面试进行中' }
-  },
-  {
-    path: '/enterprise/conference/records',
-    component: () => import('@/views/enterprise/conference/records.vue'),
-    name: 'EnterpriseConferenceRecords',
-    hidden: true,
-    meta: { title: '录制回放与存储管理' }
   },
   {
     path: '/enterprise/conference/playback',
@@ -288,7 +323,9 @@ export const dynamicRoutes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // 路由记录本身以 /enterprise 开头，history base 必须保持 '/'，
+  // 否则深链会被剥掉 /enterprise/ 前缀后匹配不到而落入 404（vite 资源前缀仍为 /enterprise/）
+  history: createWebHistory('/'),
   routes: constantRoutes,
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) {

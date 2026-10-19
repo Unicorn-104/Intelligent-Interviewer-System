@@ -29,6 +29,16 @@ public class ConferenceController extends BaseController
     private IConferenceService conferenceService;
 
     /**
+     * 当前求职者在指定日期范围内的面试日程
+     */
+    @GetMapping("/schedule")
+    public AjaxResult schedule(@RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to)
+    {
+        return success(conferenceService.listCandidateSchedule(getUserId(), from, to));
+    }
+
+    /**
      * 当前用户进行中 / 待开始的面试场次上下文（无场次返回空对象）
      */
     @GetMapping("/session/current")
@@ -283,16 +293,22 @@ public class ConferenceController extends BaseController
     }
 
     /**
-     * 录制文件列表（企业范围内）
+     * 录制文件列表（企业范围内，一场面试多次录制各为一条）
      */
     @GetMapping("/recordings")
-    public AjaxResult recordings(@RequestParam(required = false) Long sessionId,
+    public AjaxResult recordings(@RequestParam(required = false) Long recordingId,
+            @RequestParam(required = false) Long sessionId,
+            @RequestParam(required = false) Long candidateId,
+            @RequestParam(required = false) Long candidateUserId,
             @RequestParam(required = false) String candidate,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to)
     {
         Map<String, Object> query = new HashMap<>();
+        query.put("recordingId", recordingId);
         query.put("sessionId", sessionId);
+        query.put("candidateId", candidateId);
+        query.put("candidateUserId", candidateUserId);
         query.put("candidate", candidate);
         query.put("from", from);
         query.put("to", to);
@@ -311,38 +327,38 @@ public class ConferenceController extends BaseController
     /**
      * 回放详情（含时间轴 / 章节打点）
      */
-    @GetMapping("/recordings/{sessionId}")
-    public AjaxResult playback(@PathVariable Long sessionId)
+    @GetMapping("/recordings/{recordingId}")
+    public AjaxResult playback(@PathVariable Long recordingId)
     {
-        return success(conferenceService.getRecordingDetail(getUserId(), sessionId));
+        return success(conferenceService.getRecordingDetail(getUserId(), recordingId));
     }
 
     /**
      * 更新录制访问授权
      */
-    @PostMapping("/recordings/{sessionId}/access")
-    public AjaxResult access(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    @PostMapping("/recordings/{recordingId}/access")
+    public AjaxResult access(@PathVariable Long recordingId, @RequestBody Map<String, Object> body)
     {
-        return success(conferenceService.updateRecordingAccess(getUserId(), sessionId,
+        return success(conferenceService.updateRecordingAccess(getUserId(), recordingId,
                 intOf(body, "validDays"), intOf(body, "level")));
     }
 
     /**
      * 发送下载验证码
      */
-    @PostMapping("/recordings/{sessionId}/download-code")
-    public AjaxResult downloadCode(@PathVariable Long sessionId)
+    @PostMapping("/recordings/{recordingId}/download-code")
+    public AjaxResult downloadCode(@PathVariable Long recordingId)
     {
-        return success(conferenceService.sendDownloadCode(getUserId(), sessionId));
+        return success(conferenceService.sendDownloadCode(getUserId(), recordingId));
     }
 
     /**
      * 校验下载验证码并返回录制地址
      */
-    @PostMapping("/recordings/{sessionId}/download")
-    public AjaxResult download(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    @PostMapping("/recordings/{recordingId}/download")
+    public AjaxResult download(@PathVariable Long recordingId, @RequestBody Map<String, Object> body)
     {
-        return success(conferenceService.verifyDownloadCode(getUserId(), sessionId, str(body, "code")));
+        return success(conferenceService.verifyDownloadCode(getUserId(), recordingId, str(body, "code")));
     }
 
     /**
@@ -365,16 +381,33 @@ public class ConferenceController extends BaseController
     }
 
     /**
-     * 上传录制分片（浏览器端 MediaRecorder 切片，末片 last=true 触发服务端拼接落盘）
+     * 开始录制（LiveKit Egress 服务端房间合成录制，仅主面试官可操作）
      */
-    @PostMapping("/recordings/{sessionId}/chunk")
-    public AjaxResult recordingChunk(@PathVariable Long sessionId,
-            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
-            @RequestParam("index") int index,
-            @RequestParam(value = "last", required = false, defaultValue = "false") boolean last,
-            @RequestParam(value = "durationSec", required = false) Integer durationSec)
+    @PostMapping("/session/{sessionId}/recording/start")
+    public AjaxResult startRecording(@PathVariable Long sessionId)
     {
-        return success(conferenceService.uploadRecordingChunk(getUserId(), sessionId, file, index, last, durationSec));
+        return success(conferenceService.startRecording(getUserId(), sessionId));
+    }
+
+    /**
+     * 停止录制（停止 Egress 任务，文件落盘结果由 Webhook 回填）
+     */
+    @PostMapping("/session/{sessionId}/recording/stop")
+    public AjaxResult stopRecording(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.stopRecording(getUserId(), sessionId));
+    }
+
+    /**
+     * LiveKit 事件回调（egress_ended 回填录制状态 / 时长 / 字节数 / 文件地址）
+     * <p>由 LiveKit 服务端直接调用，无法携带用户令牌，故匿名放行
+     */
+    @Anonymous
+    @PostMapping("/webhook/livekit")
+    public AjaxResult livekitWebhook(@RequestBody Map<String, Object> payload)
+    {
+        conferenceService.handleLiveKitWebhook(payload);
+        return success();
     }
 
     private static Integer intOf(Map<String, Object> body, String key)
@@ -402,7 +435,6 @@ public class ConferenceController extends BaseController
         }
         return value instanceof Number ? ((Number) value).longValue() : Long.valueOf(value.toString());
     }
-
     private static java.util.List<Long> longListOf(Map<String, Object> body, String key)
     {
         Object value = body.get(key);

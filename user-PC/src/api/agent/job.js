@@ -15,6 +15,13 @@ export function listJobCategories() {
   })
 }
 
+export function listJobFilterOptions() {
+  return request({
+    url: '/system/enterprise/jobs/filter-options',
+    method: 'get'
+  })
+}
+
 export function getJob(jobId) {
   return request({
     url: `/agent/v1/jobs/${jobId}`,
