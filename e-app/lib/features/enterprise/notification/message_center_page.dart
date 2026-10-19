@@ -1,381 +1,403 @@
 import 'package:flutter/material.dart';
-import '../../../widgets/demo_data_badge.dart';
 
 import '../../../theme/app_theme.dart';
 import '../../../widgets/skeleton_list.dart';
-import 'mock_notification.dart';
+import 'data/message_data_source.dart';
+import 'models/message_view_data.dart';
+import 'system_notifications_page.dart';
+import 'conversation_page.dart';
+import 'widgets/message_avatar.dart';
 
-/// 模块六：反馈与通知 - IM 消息中心页（P5）。
-///
-/// 依据《业务功能分析》UC-16 及全流程通用沟通能力：
-/// HR 与候选人/面试官的即时通讯，支持会话列表、聊天气泡与快捷回复。
-/// 数据来源：本地 Mock 数据（mock_notification.dart），
-/// TODO: P7阶段替换为真实接口（lib/api/message_api.dart 的
-/// listImSessions / listImMessages / sendImMessage / listQuickReplies）。
+// 保留旧聊天页导入入口，运行时仅使用真实接口。
+export 'conversation_page.dart' show ChatPage;
+
 class MessageCenterPage extends StatefulWidget {
-  const MessageCenterPage({super.key});
-
+  const MessageCenterPage({super.key, this.source = const MessageDataSource()});
+  final MessageDataSource source;
   @override
   State<MessageCenterPage> createState() => _MessageCenterPageState();
 }
 
 class _MessageCenterPageState extends State<MessageCenterPage> {
-  List<Map<String, dynamic>>? _sessions;
-  bool _loading = true;
-
+  List<MessageSession> _sessions = [];
+  NotificationSlice? _notifications;
+  bool _loading = true, _action = false;
+  int _tab = 0, _request = 0;
+  String? _sessionsError, _notificationsError;
   @override
   void initState() {
     super.initState();
     _load();
   }
 
-  /// 模拟加载会话列表。
-  /// TODO: P7阶段替换为真实接口（message_api.listImSessions）。
   Future<void> _load() async {
+    if (_action) return;
+    final request = ++_request;
     setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 700));
+    await Future.wait([
+      () async {
+        try {
+          final rows = await widget.source.loadSessions();
+          if (mounted && request == _request) {
+            setState(() {
+              _sessions = rows;
+              _sessionsError = null;
+            });
+          }
+        } catch (error) {
+          if (mounted && request == _request) {
+            setState(() => _sessionsError = messageError(error));
+          }
+        }
+      }(),
+      () async {
+        try {
+          final rows = await widget.source.loadNotifications();
+          if (mounted && request == _request) {
+            setState(() {
+              _notifications = rows;
+              _notificationsError = null;
+            });
+          }
+        } catch (error) {
+          if (mounted && request == _request) {
+            setState(() => _notificationsError = messageError(error));
+          }
+        }
+      }(),
+    ]);
+    if (mounted && request == _request) setState(() => _loading = false);
+  }
+
+  Future<void> _readAll() async {
+    if (_action ||
+        _loading ||
+        _sessionsError != null ||
+        _notificationsError != null) {
+      return;
+    }
+    setState(() => _action = true);
+    String? failure;
+    try {
+      await widget.source.readAllSessions();
+      await widget.source.readAllNotifications();
+    } catch (error) {
+      failure = messageError(error);
+    }
     if (!mounted) return;
-    setState(() {
-      _sessions = List.of(mockImSessions);
-      _loading = false;
-    });
+    setState(() => _action = false);
+    await _load();
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(failure ?? '消息已全部标为已读')));
+    }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return DemoDataBadge(
-      child: Scaffold(
-        appBar: AppBar(title: const Text('消息中心')),
-        body: _loading
-            ? const SkeletonList(rows: 5)
-            : RefreshIndicator(
-                onRefresh: _load,
-                child: ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                  itemCount: _sessions?.length ?? 0,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, index) {
-                    final session = _sessions![index];
-                    return _SessionTile(
-                      session: session,
-                      onOpen: () async {
-                        // 进入会话页（模拟），返回后刷新未读数
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ChatPage(session: session),
-                          ),
-                        );
-                        _load();
-                      },
-                    );
-                  },
-                ),
-              ),
-      ),
-    );
+  Future<void> _openSession(MessageSession item) async {
+    if (_action) return;
+    setState(() => _action = true);
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => ChatPage(session: item.raw, source: widget.source),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _action = false);
+    }
+    if (mounted) await _load();
   }
-}
 
-class _SessionTile extends StatelessWidget {
-  const _SessionTile({required this.session, required this.onOpen});
+  Future<void> _openSystem() async {
+    if (_action) return;
+    setState(() => _action = true);
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => SystemNotificationsPage(source: widget.source),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _action = false);
+    }
+    if (mounted) await _load();
+  }
 
-  final Map<String, dynamic> session;
-  final VoidCallback onOpen;
-
+  int get _unread =>
+      _sessions.fold(0, (sum, item) => sum + item.unread) +
+      (_notifications?.unreadCount ?? 0);
   @override
-  Widget build(BuildContext context) {
-    final unread = session['unread'] as int;
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.background,
+    appBar: AppBar(
+      backgroundColor: AppColors.canvas,
+      title: const Text('消息中心'),
+      actions: [
+        TextButton.icon(
+          key: const Key('messages-read-all'),
+          onPressed:
+              _action ||
+                  _loading ||
+                  _unread == 0 ||
+                  _sessionsError != null ||
+                  _notificationsError != null
+              ? null
+              : _readAll,
+          icon: const Icon(Icons.done_all, size: 16),
+          label: const Text('全部已读', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    ),
+    body: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          color: AppColors.canvas,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: AppColors.primarySoft,
-                child: Text(
-                  '${session['name']}'.substring(0, 1),
-                  style: const TextStyle(
-                    color: AppColors.interactive,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              const Text(
+                '候选人沟通与系统通知统一管理',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          '${session['name']}',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.background,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            '${session['role']}',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: AppColors.muted,
+                    for (final (index, label) in ['全部', 'AI Agent'].indexed)
+                      Expanded(
+                        child: TextButton(
+                          key: ValueKey('messages-tab-$index'),
+                          style: TextButton.styleFrom(
+                            backgroundColor: _tab == index
+                                ? AppColors.interactive
+                                : AppColors.background,
+                            foregroundColor: _tab == index
+                                ? AppColors.canvas
+                                : AppColors.textMuted,
+                            minimumSize: const Size(0, 40),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
                             ),
                           ),
+                          onPressed: () => setState(() => _tab = index),
+                          child: Text(
+                            label,
+                            style: const TextStyle(fontSize: 13),
+                          ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${session['lastMessage']}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                      ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${session['time']}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 6),
-                  if (unread > 0)
-                    Container(
-                      width: 18,
-                      height: 18,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: AppColors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        '$unread',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// 聊天页：聊天气泡 + 快捷回复 + 输入框（模拟发送与自动回复）。
-class ChatPage extends StatefulWidget {
-  const ChatPage({super.key, required this.session});
-
-  final Map<String, dynamic> session;
-
-  @override
-  State<ChatPage> createState() => _ChatPageState();
-}
-
-class _ChatPageState extends State<ChatPage> {
-  final _input = TextEditingController();
-  final ScrollController _scroll = ScrollController();
-  final List<Map<String, dynamic>> _messages = List.of(mockImMessages);
-
-  @override
-  void dispose() {
-    _input.dispose();
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) {
-        _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  /// 模拟发送消息（含自动回复）。
-  /// TODO: P7阶段替换为真实接口（message_api.sendImMessage）。
-  Future<void> _send([String? preset]) async {
-    final text = (preset ?? _input.text).trim();
-    if (text.isEmpty) return;
-    setState(() {
-      _messages.add({
-        'id': 900 + _messages.length,
-        'from': 'me',
-        'text': text,
-        'time': '刚刚',
-      });
-      _input.clear();
-    });
-    _scrollToBottom();
-    // 模拟对方自动回复
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    if (!mounted) return;
-    setState(() {
-      _messages.add({
-        'id': 901 + _messages.length,
-        'from': 'them',
-        'text': '收到，谢谢！我稍后确认（模拟自动回复）',
-        'time': '刚刚',
-      });
-    });
-    _scrollToBottom();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return DemoDataBadge(
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text('${widget.session['name']}（${widget.session['role']}）'),
-        ),
-        body: Column(
-          children: [
-            Expanded(
-              child: ListView.builder(
-                controller: _scroll,
-                padding: const EdgeInsets.all(16),
-                itemCount: _messages.length,
-                itemBuilder: (_, index) =>
-                    _ChatBubble(message: _messages[index]),
-              ),
+        Expanded(child: _tab == 1 ? _agentEmpty() : _list()),
+      ],
+    ),
+  );
+  Widget _agentEmpty() => const Center(
+    child: Padding(
+      padding: EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.smart_toy_outlined,
+            color: AppColors.accentPurple,
+            size: 48,
+          ),
+          SizedBox(height: 16),
+          Text(
+            'AI Agent',
+            style: TextStyle(
+              color: AppColors.brand,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
             ),
-            // 快捷回复（复用 /system/im/quick-replies 占位）
-            SizedBox(
-              height: 38,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: mockQuickReplies.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (_, index) => Material(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(16),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () => _send(mockQuickReplies[index]),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      child: Text(
-                        mockQuickReplies[index],
+          ),
+          SizedBox(height: 8),
+          Text(
+            '企业端 AI Agent 会话功能开发中',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
+        ],
+      ),
+    ),
+  );
+  Widget _list() {
+    if (_loading) return const SkeletonList(rows: 5);
+    final notifications = _notifications;
+    final hasSystem = notifications != null && notifications.items.isNotEmpty;
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (_sessionsError != null || _notificationsError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        _sessionsError != null
+                            ? '会话加载失败：$_sessionsError'
+                            : '系统通知加载失败：$_notificationsError',
                         style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.interactive,
+                          color: AppColors.error,
+                          fontSize: 13,
                         ),
                       ),
-                    ),
+                      TextButton(onPressed: _load, child: const Text('重试加载消息')),
+                    ],
                   ),
                 ),
               ),
             ),
-            // 输入区
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Row(
+          if (_sessions.isEmpty &&
+              !hasSystem &&
+              _sessionsError == null &&
+              _notificationsError == null)
+            const Padding(
+              padding: EdgeInsets.all(36),
+              child: Column(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _input,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _send(),
-                      decoration: const InputDecoration(hintText: '输入消息…'),
-                    ),
+                  Icon(
+                    Icons.chat_bubble_outline,
+                    color: AppColors.textMuted,
+                    size: 44,
                   ),
-                  const SizedBox(width: 10),
-                  FilledButton(
-                    onPressed: _send,
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(52, 46),
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                    ),
-                    child: const Icon(Icons.send, size: 18),
+                  SizedBox(height: 12),
+                  Text(
+                    '暂无消息',
+                    style: TextStyle(color: AppColors.brand, fontSize: 17),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    '新的会话和系统通知将在这里显示',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 13),
                   ),
                 ],
               ),
+            )
+          else
+            Card(
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  if (hasSystem)
+                    _row(
+                      key: const Key('messages-system'),
+                      name: '系统通知',
+                      preview: notifications.items.first.title,
+                      time: notifications.items.first.time,
+                      unread: notifications.unreadCount,
+                      system: true,
+                      onTap: _openSystem,
+                    ),
+                  for (final (index, item) in _sessions.indexed) ...[
+                    if (index > 0 || hasSystem)
+                      const Divider(
+                        height: 1,
+                        indent: 76,
+                        color: AppColors.hairline,
+                      ),
+                    _row(
+                      key: ValueKey('message-session-${item.id}'),
+                      name: item.name,
+                      preview: item.preview,
+                      time: item.time,
+                      unread: item.unread,
+                      avatar: widget.source.avatarUrl(item.avatar),
+                      onTap: () => _openSession(item),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
-}
 
-class _ChatBubble extends StatelessWidget {
-  const _ChatBubble({required this.message});
-
-  final Map<String, dynamic> message;
-
-  @override
-  Widget build(BuildContext context) {
-    final mine = message['from'] == 'me';
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Align(
-        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.72,
+  Widget _row({
+    required Key key,
+    required String name,
+    required String preview,
+    required DateTime? time,
+    required int unread,
+    required VoidCallback onTap,
+    bool system = false,
+    String? avatar,
+  }) => InkWell(
+    key: key,
+    onTap: _action ? null : onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      child: Row(
+        children: [
+          MessageAvatar(name: name, url: avatar, system: system),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.brand,
+                    fontSize: 15,
+                    fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          decoration: BoxDecoration(
-            color: mine ? AppColors.interactive : AppColors.canvas,
-            borderRadius: BorderRadius.circular(8),
-            border: mine ? null : Border.all(color: AppColors.hairline),
-          ),
-          child: Column(
-            crossAxisAlignment: mine
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${message['text']}',
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 1.5,
-                  color: mine ? Colors.white : AppColors.body,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                '${message['time']}',
-                style: TextStyle(
+                messageDate(time),
+                style: const TextStyle(
+                  color: AppColors.textMuted,
                   fontSize: 10,
-                  color: mine
-                      ? Colors.white.withValues(alpha: 0.7)
-                      : AppColors.muted,
                 ),
               ),
+              const SizedBox(height: 10),
+              MessageUnreadBadge(count: unread),
             ],
           ),
-        ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

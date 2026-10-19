@@ -1,5 +1,6 @@
 package com.ruoyi.web.controller.enterprise;
 
+import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
@@ -52,7 +54,8 @@ public class InterviewScheduleController extends BaseController
     public AjaxResult invite(@RequestBody Map<String, Object> body)
     {
         return success(scheduleService.invite(getUserId(), asLong(body.get("candidateId")),
-                asLong(body.get("positionId")), asLong(body.get("interviewerId")),
+                asLong(body.get("positionId")), asLong(body.get("stageId")),
+                asLong(body.get("interviewerId")),
                 body.get("startTime") == null ? null : String.valueOf(body.get("startTime")),
                 asInt(body.get("durationMin"), 45)));
     }
@@ -76,7 +79,8 @@ public class InterviewScheduleController extends BaseController
             @RequestBody Map<String, Object> body)
     {
         return success(scheduleService.reschedule(getUserId(), appointmentId,
-                body.get("newStartTime") == null ? null : String.valueOf(body.get("newStartTime"))));
+                body.get("newStartTime") == null ? null : String.valueOf(body.get("newStartTime")),
+                asInt(body.get("durationMin"), null), asLong(body.get("interviewerId"))));
     }
 
     /**
@@ -86,6 +90,26 @@ public class InterviewScheduleController extends BaseController
     public AjaxResult remind(@PathVariable("appointmentId") Long appointmentId)
     {
         return success(scheduleService.remind(getUserId(), appointmentId));
+    }
+
+    @PostMapping("/invite/stages")
+    public AjaxResult inviteStages(@RequestBody Map<String, Object> body)
+    {
+        if (!(body.get("stages") instanceof List<?> rows) || rows.isEmpty()
+                || rows.stream().anyMatch(row -> !(row instanceof Map)))
+        {
+            throw new ServiceException("请填写各阶段面试安排");
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> stages = (List<Map<String, Object>>) body.get("stages");
+        return success(scheduleService.inviteStages(getUserId(), asLong(body.get("candidateId")),
+                asLong(body.get("positionId")), stages));
+    }
+
+    @GetMapping("/candidate-plan")
+    public AjaxResult candidatePlan(@RequestParam Long candidateId, @RequestParam Long positionId)
+    {
+        return success(scheduleService.candidateAppointments(getUserId(), candidateId, positionId));
     }
 
     private Long asLong(Object v)

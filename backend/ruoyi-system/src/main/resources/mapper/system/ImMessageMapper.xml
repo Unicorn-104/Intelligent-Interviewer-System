@@ -44,4 +44,30 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         delete from t_im_quick_reply where id = #{id}
     </delete>
 
+    <sql id="notificationColumns">
+        msg_id as messageId, msg_title as title, msg_content as content,
+        msg_type as type, msg_is_read as isRead, msg_target_url as targetUrl,
+        date_format(msg_created_at, '%Y-%m-%d %H:%i:%s') as createdAt
+    </sql>
+    <select id="selectNotifications" resultType="java.util.LinkedHashMap">
+        select <include refid="notificationColumns"/> from t_msg
+        where msg_receiver_id = #{userId}
+        <if test="beforeId != null">and msg_id &lt; #{beforeId}</if>
+        order by msg_id desc limit #{limit}
+    </select>
+    <select id="selectNotification" resultType="java.util.LinkedHashMap">
+        select <include refid="notificationColumns"/> from t_msg
+        where msg_id = #{messageId} and msg_receiver_id = #{userId}
+    </select>
+    <select id="countUnreadNotifications" resultType="int">
+        select count(*) from t_msg where msg_receiver_id = #{userId} and msg_is_read = 0
+    </select>
+    <update id="readNotification">
+        update t_msg set msg_is_read = 1, msg_read_at = now()
+        where msg_id = #{messageId} and msg_receiver_id = #{userId} and msg_is_read = 0
+    </update>
+    <update id="readAllNotifications">
+        update t_msg set msg_is_read = 1, msg_read_at = now()
+        where msg_receiver_id = #{userId} and msg_is_read = 0
+    </update>
 </mapper>

@@ -35,6 +35,9 @@ public interface IEnterpriseJobService
      */
     public Map<String, Object> createJob(Long userId, Map<String, Object> form);
 
+    /** 发布前读取真实企业信息和部门选项。 */
+    public Map<String, Object> publishingOptions(Long userId);
+
     /**
      * 岗位详情聚合（岗位信息+漏斗+候选人+流程阶段）
      */

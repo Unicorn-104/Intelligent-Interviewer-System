@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.system.domain.ImMessage;
@@ -95,6 +96,31 @@ public class ImController extends BaseController
         AjaxResult ajax = AjaxResult.success();
         ajax.put("count", imService.sumUnread(getUserId()));
         return ajax;
+    }
+
+    /** 系统通知复用 t_msg，接收人始终来自登录态。 */
+    @GetMapping("/notifications")
+    public AjaxResult notifications(@RequestParam(required = false) Long beforeId,
+            @RequestParam(defaultValue = "50") Integer limit)
+    {
+        List<Map<String, Object>> rows = imService.selectNotifications(getUserId(), beforeId, limit);
+        AjaxResult result = success(rows);
+        result.put("unreadCount", imService.countUnreadNotifications(getUserId()));
+        return result;
+    }
+
+    @PutMapping("/notifications/{messageId}/read")
+    public AjaxResult readNotification(@PathVariable Long messageId)
+    {
+        imService.readNotification(getUserId(), messageId);
+        return success();
+    }
+
+    @PutMapping("/notifications/read-all")
+    public AjaxResult readAllNotifications()
+    {
+        imService.readAllNotifications(getUserId());
+        return success();
     }
 
     /**

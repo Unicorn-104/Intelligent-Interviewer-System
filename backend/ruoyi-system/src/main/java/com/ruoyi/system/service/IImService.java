@@ -44,6 +44,14 @@ public interface IImService
      */
     public int sumUnread(Long userId);
 
+    List<Map<String, Object>> selectNotifications(Long userId, Long beforeId, Integer limit);
+
+    int countUnreadNotifications(Long userId);
+
+    void readNotification(Long userId, Long messageId);
+
+    int readAllNotifications(Long userId);
+
     /**
      * 快捷回复模板列表
      */
