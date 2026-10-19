@@ -15,11 +15,13 @@
       <el-table-column label="状态" align="center" width="100">
         <template #default="scope">
           <el-tag :type="statusTag(scope.row.status)">
-            <span v-if="scope.row.status === '1'" class="dot-running"></span>{{ statusLabel(scope.row.status) }}
+            <span v-if="Number(scope.row.status) === 1" class="dot-running"></span>{{ statusLabel(scope.row.status) }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="开始时间" align="center" prop="startTime" width="160" />
+      <el-table-column label="开始时间" align="center" width="160">
+        <template #default="scope">{{ parseTime(scope.row.startTime) || '-' }}</template>
+      </el-table-column>
       <el-table-column label="已进行时长" align="center" prop="duration" width="100" />
       <el-table-column label="综合评分" align="center" width="90">
         <template #default="scope">
@@ -36,7 +38,7 @@
         <template #default="scope">
           <el-button link type="primary" icon="View" @click="handleDetail(scope.row)">详情</el-button>
           <el-button
-            v-if="scope.row.status === '1'"
+            v-if="Number(scope.row.status) === 1"
             link
             type="danger"
             icon="CircleClose"
@@ -70,7 +72,7 @@
           <el-descriptions-item label="状态">
             <el-tag :type="statusTag(detailInterview.status)">{{ statusLabel(detailInterview.status) }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="开始时间">{{ detailInterview.startTime }}</el-descriptions-item>
+          <el-descriptions-item label="开始时间">{{ parseTime(detailInterview.startTime) || '-' }}</el-descriptions-item>
           <el-descriptions-item label="已进行时长">{{ detailInterview.duration }}</el-descriptions-item>
           <el-descriptions-item label="综合评分">{{ formatScore(detailInterview.score) }}</el-descriptions-item>
           <el-descriptions-item label="鉴权异常" :span="2">
@@ -151,7 +153,6 @@ const handleSelectionChange = (selection) => {
 
 const detailOpen = ref(false)
 const detailLoading = ref(false)
-const detailData = ref({})
 const detailTitle = ref('面试详情')
 const detailInterview = ref({})
 const terminateOpen = ref(false)
@@ -185,8 +186,9 @@ function handleDetail(row) {
   detailLoading.value = true
   getInterview(row.interviewId)
     .then((response) => {
-      detailData.value = response.data || {}
-      authLogs.value = response.data?.authLogs || []
+      const data = response.data || {}
+      detailInterview.value = data
+      authLogs.value = data.authLogs || []
     })
     .catch((err) => {
       console.error('面试详情查询失败:', err)

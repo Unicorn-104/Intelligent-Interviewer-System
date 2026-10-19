@@ -79,7 +79,7 @@
       <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
         <template #default="scope">
           <el-button
-            v-if="scope.row.status === '0'"
+            v-if="Number(scope.row.status) === 0"
             link
             type="primary"
             icon="Edit"
@@ -88,7 +88,7 @@
             >审核</el-button
           >
           <el-button
-            v-if="scope.row.status === '1'"
+            v-if="Number(scope.row.status) === 1"
             link
             type="danger"
             icon="CircleClose"
@@ -97,7 +97,7 @@
             >违规下架</el-button
           >
           <el-button
-            v-if="scope.row.status === '2' || scope.row.status === '3'"
+            v-if="Number(scope.row.status) === 2 || Number(scope.row.status) === 3"
             link
             type="primary"
             icon="View"
@@ -206,6 +206,18 @@ function riskLevelTag(level) {
 function riskLevelLabel(level) {
   return RISK_LEVEL_LABEL_MAP[level] || '未知'
 }
+
+/** 后端 riskWords 为 JSON 字符串，统一解析为数组 */
+function parseRiskWords(val) {
+  if (Array.isArray(val)) return val
+  if (!val) return []
+  try {
+    const parsed = JSON.parse(val)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
 const jobList = ref([])
 const loading = ref(true)
 const ids = ref([])
@@ -240,7 +252,10 @@ function getList() {
   loading.value = true
   listJob(queryParams.value)
     .then((response) => {
-      jobList.value = response.rows
+      jobList.value = (response.rows || []).map((r) => ({
+        ...r,
+        riskWords: parseRiskWords(r.riskWords)
+      }))
       total.value = response.total
     })
     .catch((err) => {

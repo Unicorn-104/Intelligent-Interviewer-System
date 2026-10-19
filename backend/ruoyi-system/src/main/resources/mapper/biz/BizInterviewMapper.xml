@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.biz.BizInterviewMapper">
+
+    <sql id="interviewSelect">
+        SELECT
+            ses.ses_id AS interviewId,
+            IFNULL(u.nick_name, u.user_name) AS candidate,
+            pos.pos_title AS jobName,
+            cmp.cmp_name AS companyName,
+            CONCAT('第', ses.ses_cascade_round, '轮') AS roundName,
+            ses.ses_mode AS mode,
+            ses.ses_status AS status,
+            ses.ses_start_at AS startTime,
+            CASE
+                WHEN ses.ses_rec_duration_sec IS NULL THEN '-'
+                ELSE CONCAT(FLOOR(ses.ses_rec_duration_sec / 60), '分钟')
+            END AS duration,
+            (SELECT ROUND(AVG(scr.scr_score), 1)
+             FROM t_int_score scr WHERE scr.scr_session_id = ses.ses_id) AS score,
+            0 AS authFail,
+            CAST(NULL AS CHAR) AS terminateReason
+        FROM t_int_session ses
+        LEFT JOIN t_tal tal ON tal.tal_id = ses.ses_candidate_id
+        LEFT JOIN sys_user u ON u.user_id = tal.tal_user_id
+        LEFT JOIN t_pos pos ON pos.pos_id = ses.ses_position_id
+        LEFT JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+    </sql>
+
+    <select id="selectAdminInterviewList" resultType="java.util.LinkedHashMap">
+        <include refid="interviewSelect"/>
+        ORDER BY ses.ses_start_at DESC, ses.ses_id DESC
+    </select>
+
+    <select id="selectAdminInterviewById" resultType="java.util.LinkedHashMap">
+        <include refid="interviewSelect"/>
+        WHERE ses.ses_id = #{sesId}
+    </select>
+
+    <update id="terminateInterview">
+        UPDATE t_int_session SET ses_status = 2, ses_end_at = NOW(), ses_updated_at = NOW()
+        WHERE ses_id = #{sesId} AND ses_status = 1
+    </update>
+
+</mapper>
