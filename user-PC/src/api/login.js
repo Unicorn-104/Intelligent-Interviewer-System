@@ -19,25 +19,8 @@ export function login(username, password, code, uuid) {
   })
 }
 
-// 手机号密码登录
-export function loginByPhonePassword(phone, password) {
-  return request({
-    url: '/login',
-    headers: {
-      isToken: false,
-      repeatSubmit: false
-    },
-    method: 'post',
-    data: {
-      phone,
-      password,
-      loginType: 'phone_password'
-    }
-  })
-}
-
 // 账号密码登录
-export function loginByAccountPassword(username, password) {
+export function loginByAccountPassword(account, password) {
   return request({
     url: '/login',
     headers: {
@@ -46,7 +29,7 @@ export function loginByAccountPassword(username, password) {
     },
     method: 'post',
     data: {
-      username,
+      account,
       password,
       loginType: 'account_password'
     }

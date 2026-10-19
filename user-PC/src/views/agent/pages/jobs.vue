@@ -189,7 +189,7 @@
                 </div>
               </div>
               <div class="tag-row">
-                <span class="job-tag primary">{{ job.statusText }}</span>
+                <span class="job-tag job-tag-primary">{{ job.statusText }}</span>
                 <span v-if="job.category" class="job-tag">{{ job.category }}</span>
                 <span v-if="job.skills?.[0]" class="job-tag">{{ job.skills[0] }}</span>
                 <span class="job-tag">{{ job.educationText }}</span>
@@ -710,6 +710,14 @@ onBeforeUnmount(() => {
 </style>
 
 <style scoped>
+.job-tag-primary{color:#2b7fff;background:#eaf2ff}
+.search-box{width:auto;margin:0}
+.search-box svg{position:static;top:auto;left:auto;flex:0 0 auto}
+.search-box input{min-width:0;padding:0}
+.job-card{min-height:0}
+.job-side{align-items:flex-start;gap:12px;justify-content:flex-start}
+.feedback{margin-top:0}
+.card-actions{width:100%;margin-top:2px}
 .position-section{grid-column:1/-1;padding-bottom:10px;border-bottom:1px solid #edf1f6}
 .position-section:last-of-type{border-bottom:0}
 .position-section h3,.industry-section h3{margin:0;padding:4px 9px 7px;color:#6c7b90;font-size:12px;font-weight:700}

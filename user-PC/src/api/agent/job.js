@@ -2,7 +2,7 @@ import request from '@/utils/request'
 
 export function listJobs(params) {
   return request({
-    url: '/system/enterprise/jobs',
+    url: '/agent/v1/jobs',
     method: 'get',
     params
   })
@@ -10,14 +10,14 @@ export function listJobs(params) {
 
 export function listJobCategories() {
   return request({
-    url: '/system/enterprise/jobs/categories',
+    url: '/agent/v1/jobs/categories',
     method: 'get'
   })
 }
 
 export function listJobFilterOptions() {
   return request({
-    url: '/system/enterprise/jobs/filter-options',
+    url: '/agent/v1/jobs/filter-options',
     method: 'get'
   })
 }

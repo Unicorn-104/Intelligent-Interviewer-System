@@ -36,6 +36,9 @@ public class SysUser extends BaseEntity
     @Excel(name = "登录名称")
     private String userName;
 
+    /** 用户身份：1-求职者，2-HR，3-管理员 */
+    private Integer userIdentityType;
+
     /** 用户昵称 */
     @Excel(name = "用户名称")
     private String nickName;
@@ -154,6 +157,16 @@ public class SysUser extends BaseEntity
     public void setUserName(String userName)
     {
         this.userName = userName;
+    }
+
+    public Integer getUserIdentityType()
+    {
+        return userIdentityType;
+    }
+
+    public void setUserIdentityType(Integer userIdentityType)
+    {
+        this.userIdentityType = userIdentityType;
     }
 
     @Email(message = "邮箱格式不正确")
