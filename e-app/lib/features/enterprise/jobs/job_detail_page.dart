@@ -5,6 +5,7 @@ import '../talent/talent_detail_page.dart';
 import '../talent/models/talent_detail_view_data.dart';
 import 'data/job_detail_data_source.dart';
 import 'job_interviews_page.dart';
+import 'job_publish_page.dart';
 import 'models/job_detail_view_data.dart';
 import 'widgets/job_ai_screening_tab.dart';
 import 'widgets/job_basic_info_tab.dart';
@@ -44,6 +45,7 @@ class _JobDetailPageState extends State<JobDetailPage>
   bool _savingWorkflow = false;
   bool _editingWorkflow = false;
   bool _screening = false;
+  bool _editingJob = false;
   DateTimeRange? _interviewRange;
 
   int get _positionId {
@@ -288,6 +290,31 @@ class _JobDetailPageState extends State<JobDetailPage>
     }
   }
 
+  Future<void> _editJob() async {
+    if (_editingJob || _parsing || _savingWorkflow || _editingWorkflow) return;
+    setState(() => _editingJob = true);
+    try {
+      final id = _positionId;
+      final saved = await Navigator.of(context, rootNavigator: true).push<int>(
+        MaterialPageRoute(
+          builder: (_) => JobPublishPage(
+            editingPositionId: id,
+            loadOptions: () => widget.source.loadEditingOptions(id),
+            submitJob: (body) => widget.source.updateJob(id, body),
+          ),
+        ),
+      );
+      if (!mounted || saved != id) return;
+      await Future.wait([_loadDetail(), _loadProfile()]);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('岗位信息已更新')));
+      }
+    } finally {
+      if (mounted) setState(() => _editingJob = false);
+    }
+  }
+
   void _openCandidate(Map<String, dynamic> candidate) {
     final id = jobPositiveId(candidate['talId']);
     if (id == null) {
@@ -365,6 +392,10 @@ class _JobDetailPageState extends State<JobDetailPage>
             onReload: _loadDetail,
             onReloadProfile: _loadProfile,
             onInterviews: _openInterviews,
+            onEdit:
+                _editingJob || _parsing || _savingWorkflow || _editingWorkflow
+                ? null
+                : _editJob,
             workflowTimeline: JobWorkflowTimeline(
               state: _workflow,
               onReload: _loadWorkflow,

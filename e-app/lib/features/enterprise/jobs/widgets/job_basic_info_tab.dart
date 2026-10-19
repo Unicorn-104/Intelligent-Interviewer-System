@@ -13,6 +13,7 @@ class JobBasicInfoTab extends StatelessWidget {
     required this.onReload,
     required this.onReloadProfile,
     required this.onInterviews,
+    this.onEdit,
     required this.jdSection,
     required this.workflowSection,
     required this.workflowTimeline,
@@ -22,6 +23,7 @@ class JobBasicInfoTab extends StatelessWidget {
   final Future<void> Function() onReload;
   final VoidCallback onReloadProfile;
   final VoidCallback onInterviews;
+  final VoidCallback? onEdit;
   final Widget jdSection;
   final Widget workflowSection;
   final Widget workflowTimeline;
@@ -93,9 +95,29 @@ class JobBasicInfoTab extends StatelessWidget {
             ),
           ]),
           _section(null, [
-            Text(
-              jobValue(job['title']),
-              style: Theme.of(context).textTheme.titleLarge,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    jobValue(job['title']),
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  key: const Key('job-edit-entry'),
+                  onPressed: onEdit,
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(44, 46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('编辑'),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Text(

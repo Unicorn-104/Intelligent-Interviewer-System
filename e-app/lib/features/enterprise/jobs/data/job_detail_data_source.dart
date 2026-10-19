@@ -9,6 +9,20 @@ class JobDetailDataSource {
   const JobDetailDataSource();
 
   Future<Map<String, dynamic>> loadDetail(int id) => jobs.getJobDetail(id);
+  Future<Map<String, dynamic>> loadEditingOptions(int id) async {
+    final results = await Future.wait([
+      jobs.getJobPublishingOptions(),
+      jobs.getJobDetail(id),
+    ]);
+    return {
+      ...results[0],
+      'job': results[1]['job'],
+      'skills': results[1]['skills'],
+    };
+  }
+
+  Future<Map<String, dynamic>> updateJob(int id, Map<String, Object?> body) =>
+      jobs.updateJob(id, body);
   Future<Map<String, dynamic>> loadProfile(int id) => jd.getJdProfile(id);
   Future<Map<String, dynamic>> loadWorkflow(int id) => jobs.getJobWorkflow(id);
   Future<List<Map<String, dynamic>>> loadScores(int id) =>
