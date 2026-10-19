@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.biz.BizExamMapper">
+
+    <select id="selectAdminExamRecords" resultType="java.util.LinkedHashMap">
+        SELECT
+            erc.erc_id AS recordId,
+            IFNULL(u.nick_name, u.user_name) AS candidate,
+            pos.pos_title AS jobName,
+            cmp.cmp_name AS companyName,
+            CAST('' AS CHAR) AS language,
+            CASE
+                WHEN erc.erc_start_at IS NULL OR erc.erc_submit_at IS NULL THEN '-'
+                ELSE CONCAT(TIMESTAMPDIFF(MINUTE, erc.erc_start_at, erc.erc_submit_at), '分钟')
+            END AS duration,
+            erc.erc_total_score AS score,
+            CASE erc.erc_status
+                WHEN 4 THEN '0'
+                WHEN 1 THEN '1'
+                WHEN 2 THEN '2'
+                WHEN 3 THEN '2'
+                ELSE '1'
+            END AS status,
+            erc.erc_submit_at AS submitTime,
+            CAST('' AS CHAR) AS remark
+        FROM t_exam_record erc
+        LEFT JOIN t_tal tal ON tal.tal_id = erc.erc_candidate_id
+        LEFT JOIN sys_user u ON u.user_id = tal.tal_user_id
+        LEFT JOIN t_exam_schedule esd ON esd.esd_id = erc.erc_schedule_id
+        LEFT JOIN t_pos pos ON pos.pos_id = esd.esd_position_id
+        LEFT JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        ORDER BY COALESCE(erc.erc_submit_at, erc.erc_created_at) DESC, erc.erc_id DESC
+    </select>
+
+</mapper>
