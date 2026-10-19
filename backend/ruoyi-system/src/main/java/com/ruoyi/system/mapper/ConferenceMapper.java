@@ -147,6 +147,11 @@ public interface ConferenceMapper
     public int abortActiveSessionsByCandidate(@Param("candidateId") Long candidateId);
 
     /**
+     * 发起面试后把候选人流程状态推进为「面试中」(2)
+     */
+    public int markCandidateInterviewing(@Param("candidateId") Long candidateId);
+
+    /**
      * 候选人准备就绪，进入面试
      */
     public int startSession(@Param("sessionId") Long sessionId);
