@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
@@ -15,46 +17,92 @@ class MessagesScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.onUnreadChanged,
+    this.refreshVersion = 0,
   });
 
   final AuthSession session;
   final ValueChanged<int> onUnreadChanged;
+  final int refreshVersion;
 
   @override
   State<MessagesScreen> createState() => _MessagesScreenState();
 }
 
-class _MessagesScreenState extends State<MessagesScreen> {
+class _MessagesScreenState extends State<MessagesScreen>
+    with WidgetsBindingObserver {
   late final ApiClient _client;
   late final MessageApi _api;
   List<AppMessage>? _messages;
   String? _error;
   int _selectedFilter = 0;
   bool _markingAllRead = false;
+  bool _loading = false, _openingMessage = false;
+  int _mutationEpoch = 0;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _client = ApiClient();
     _api = MessageApi(_client);
+    WidgetsBinding.instance.addObserver(this);
+    _startPolling();
     _load();
+  }
+
+  void _startPolling() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _load(silent: true),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant MessagesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshVersion != widget.refreshVersion) _load();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startPolling();
+      _load(silent: true);
+    } else {
+      _refreshTimer?.cancel();
+    }
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _client.close();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() => _error = null);
+  Future<void> _load({bool silent = false}) async {
+    if (_loading || _markingAllRead || _openingMessage) return;
+    _loading = true;
+    final epoch = _mutationEpoch;
+    if (!silent) setState(() => _error = null);
     try {
       final messages = await _api.fetchMessages(widget.session.token);
-      if (!mounted) return;
-      setState(() => _messages = messages);
+      if (!mounted || epoch != _mutationEpoch) return;
+      setState(() {
+        _messages = messages;
+        _error = null;
+      });
       _notifyUnread(messages);
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted &&
+          epoch == _mutationEpoch &&
+          (!silent || _messages == null)) {
+        setState(() => _error = error.message);
+      }
+    } finally {
+      _loading = false;
     }
   }
 
@@ -66,7 +114,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   Future<void> _markAllRead() async {
     final messages = _messages;
-    if (messages == null || _markingAllRead) return;
+    if (messages == null || _markingAllRead || _openingMessage) return;
+    _mutationEpoch++;
     setState(() => _markingAllRead = true);
     try {
       await _api.markAllRead(widget.session.token);
@@ -89,6 +138,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Future<void> _openMessage(AppMessage message) async {
+    if (_openingMessage || _markingAllRead) return;
+    _openingMessage = true;
+    _mutationEpoch++;
+    try {
+      await _openMessageDetails(message);
+    } finally {
+      _openingMessage = false;
+      if (mounted) await _load();
+    }
+  }
+
+  Future<void> _openMessageDetails(AppMessage message) async {
     if (message.unreadCount > 0) {
       try {
         await _api.markRead(widget.session.token, message);
@@ -113,10 +174,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
     if (message.category == AppMessageCategory.hr) {
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => HrChatScreen(
-            session: widget.session,
-            conversation: message,
-          ),
+          builder: (_) =>
+              HrChatScreen(session: widget.session, conversation: message),
         ),
       );
       if (mounted) await _load();
@@ -124,9 +183,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => MessageDetailScreen(message: message),
+        builder: (_) =>
+            MessageDetailScreen(message: message, session: widget.session),
       ),
     );
+    if (mounted) await _load();
   }
 
   void _showSnackBar(String text) {

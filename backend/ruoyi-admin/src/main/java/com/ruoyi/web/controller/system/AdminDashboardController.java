@@ -27,10 +27,10 @@ public class AdminDashboardController extends BaseController
     private JdbcTemplate jdbcTemplate;
 
     /**
- * 后台管理端Controller
- *
- * @author TQY
- */
+     * 后台管理端Controller
+     *
+     * @author TQY
+     */
     @PreAuthorize("@ss.hasPermi('dashboard:view')")
     @GetMapping("/stats")
     public AjaxResult stats()
@@ -81,10 +81,10 @@ public class AdminDashboardController extends BaseController
     }
 
     /**
- * 后台管理端Controller
- *
- * @author TQY
- */
+     * 后台管理端Controller
+     *
+     * @author TQY
+     */
     @PreAuthorize("@ss.hasPermi('dashboard:view')")
     @GetMapping("/trend")
     public AjaxResult trend()
@@ -96,27 +96,27 @@ public class AdminDashboardController extends BaseController
         List<Integer> interviews = new ArrayList<>();
         List<Integer> applications = new ArrayList<>();
         
-        // 浠庢暟鎹簱鏌ヨ杩?0澶╃殑鏁版嵁
+        // 从数据库查询近30天的数据
         try {
-            // 鏌ヨ姣忓ぉ鏂板鐨勪紒涓?
+            // 查询每天新增的企业
             List<Map<String, Object>> companyList = jdbcTemplate.queryForList(
                 "SELECT DATE(cmp_created_at) AS dt, COUNT(*) AS cnt FROM t_cmp WHERE cmp_created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY DATE(cmp_created_at)"
             );
-            // 鏌ヨ姣忓ぉ鏂板鐨勫€欓€変汉
+            // 查询每天新增的候选人
             List<Map<String, Object>> candidateList = jdbcTemplate.queryForList(
                 "SELECT DATE(created_at) AS dt, COUNT(*) AS cnt FROM t_tal WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY DATE(created_at)"
             );
-            // 鏌ヨ姣忓ぉ鐨勯潰璇曞満娆?
+            // 查询每天的面试场次
             List<Map<String, Object>> interviewList = jdbcTemplate.queryForList(
                 "SELECT DATE(created_at) AS dt, COUNT(*) AS cnt FROM t_int_session WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY DATE(created_at)"
             );
             
-            // 鐢熸垚杩?0澶╃殑鏃ユ湡
+            // 生成近30天的日期
             for (int i = 29; i >= 0; i--) {
                 String date = java.time.LocalDate.now().minusDays(i).toString();
                 dates.add(date.substring(5)); // MM-dd
                 
-                // 鏌ヨ褰撳ぉ鐨勬暟鎹?
+                // 查询当天的数据
                 int companyCnt = 0;
                 int candidateCnt = 0;
                 int interviewCnt = 0;
@@ -143,7 +143,7 @@ public class AdminDashboardController extends BaseController
                 applications.add((int)(Math.random() * 5));
             }
         } catch (Exception e) {
-            // 濡傛灉鏌ヨ澶辫触锛岃繑鍥為粯璁ゆ暟鎹?
+            // 如果查询失败，返回默认数据
             for (int i = 30; i >= 1; i--) {
                 dates.add("09-" + (i < 10 ? "0" + i : i));
                 companies.add(0);
@@ -162,10 +162,10 @@ public class AdminDashboardController extends BaseController
     }
 
     /**
- * 后台管理端Controller
- *
- * @author TQY
- */
+     * 后台管理端Controller
+     *
+     * @author TQY
+     */
     @PreAuthorize("@ss.hasPermi('dashboard:view')")
     @GetMapping("/packageDist")
     public AjaxResult packageDist()
@@ -187,10 +187,10 @@ public class AdminDashboardController extends BaseController
     }
 
     /**
- * 后台管理端Controller
- *
- * @author TQY
- */
+     * 后台管理端Controller
+     *
+     * @author TQY
+     */
     @PreAuthorize("@ss.hasPermi('dashboard:view')")
     @GetMapping("/apiTop")
     public AjaxResult apiTop()
@@ -198,18 +198,18 @@ public class AdminDashboardController extends BaseController
         List<Map<String, Object>> list = new ArrayList<>();
         
         try {
-            // 浠庢暟鎹簱鏌ヨ浼佷笟API璋冪敤閲?
+            // 从数据库查询企业API调用量
             list = jdbcTemplate.queryForList(
                 "SELECT c.cmp_name AS companyName, c.api_used AS calls FROM t_cmp c ORDER BY c.api_used DESC LIMIT 10"
             );
         } catch (Exception e) {
-            // 濡傛灉鏌ヨ澶辫触锛岃繑鍥為粯璁ゆ暟鎹?
+            // 如果查询失败，返回默认数据
             Map<String, Object> item1 = new HashMap<>();
-            item1.put("companyName", "鏉窞浜戞櫤绉戞妧");
+            item1.put("companyName", "杭州云智科技");
             item1.put("calls", 3000);
             list.add(item1);
             Map<String, Object> item2 = new HashMap<>();
-            item2.put("companyName", "鍖椾含鏁拌仈淇℃伅");
+            item2.put("companyName", "北京数联信息");
             item2.put("calls", 6500);
             list.add(item2);
         }
@@ -218,10 +218,10 @@ public class AdminDashboardController extends BaseController
     }
 
     /**
- * 后台管理端Controller
- *
- * @author TQY
- */
+     * 后台管理端Controller
+     *
+     * @author TQY
+     */
     @PreAuthorize("@ss.hasPermi('dashboard:view')")
     @GetMapping("/recentLogs")
     public AjaxResult recentLogs()
@@ -229,15 +229,15 @@ public class AdminDashboardController extends BaseController
         List<Map<String, Object>> list = new ArrayList<>();
         
         try {
-            // 浠庢暟鎹簱鏌ヨ鏈€杩戠殑鎿嶄綔鏃ュ織
+            // 从数据库查询最近的操作日志
             list = jdbcTemplate.queryForList(
                 "SELECT user_name AS operName, operation AS content, create_time AS operTime, 'primary' AS level FROM sys_oper_log ORDER BY create_time DESC LIMIT 10"
             );
         } catch (Exception e) {
-            // 濡傛灉鏌ヨ澶辫触锛岃繑鍥為粯璁ゆ暟鎹?
+            // 如果查询失败，返回默认数据
             Map<String, Object> item1 = new HashMap<>();
             item1.put("operName", "admin");
-            item1.put("content", "鐧诲綍绯荤粺");
+            item1.put("content", "登录系统");
             item1.put("operTime", "2026-09-29 10:00:00");
             item1.put("level", "primary");
             list.add(item1);
@@ -247,10 +247,10 @@ public class AdminDashboardController extends BaseController
     }
 
     /**
- * 后台管理端Controller
- *
- * @author TQY
- */
+     * 后台管理端Controller
+     *
+     * @author TQY
+     */
     @PreAuthorize("@ss.hasPermi('dashboard:view')")
     @GetMapping("/recruitmentOverview")
     public AjaxResult recruitmentOverview()
@@ -259,15 +259,15 @@ public class AdminDashboardController extends BaseController
         List<Map<String, Object>> pipeline = new ArrayList<>();
         
         try {
-            // 浠庢暟鎹簱鏌ヨ鐪熷疄鏁版嵁
+            // 从数据库查询真实数据
             int jobCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM t_pos", Integer.class);
             int candidateCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM t_tal", Integer.class);
             
             Map<String, Object> p1 = new HashMap<>();
             p1.put("key", "jobs");
-            p1.put("label", "宀椾綅鍙戝竷");
+            p1.put("label", "岗位发布");
             p1.put("value", jobCount);
-            p1.put("detail", "鏈湀鏂板 2");
+            p1.put("detail", "本月新增 2");
             p1.put("route", "/job/list");
             p1.put("tone", "blue");
             p1.put("icon", "Briefcase");
@@ -275,9 +275,9 @@ public class AdminDashboardController extends BaseController
             
             Map<String, Object> p2 = new HashMap<>();
             p2.put("key", "applications");
-            p2.put("label", "鍊欓€変汉");
+            p2.put("label", "候选人");
             p2.put("value", candidateCount);
-            p2.put("detail", "鏈湀鏂板 8");
+            p2.put("detail", "本月新增 8");
             p2.put("route", "/talent/list");
             p2.put("tone", "green");
             p2.put("icon", "User");
@@ -285,9 +285,9 @@ public class AdminDashboardController extends BaseController
         } catch (Exception e) {
             Map<String, Object> p1 = new HashMap<>();
             p1.put("key", "jobs");
-            p1.put("label", "宀椾綅鍙戝竷");
+            p1.put("label", "岗位发布");
             p1.put("value", 5);
-            p1.put("detail", "鏈湀鏂板 2");
+            p1.put("detail", "本月新增 2");
             p1.put("route", "/job/list");
             p1.put("tone", "blue");
             p1.put("icon", "Briefcase");

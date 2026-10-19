@@ -44,7 +44,9 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="入职时间" align="center" prop="entryTime" />
+            <el-table-column label="入职时间" align="center" width="160">
+              <template #default="scope">{{ formatTime(scope.row.entryTime) }}</template>
+            </el-table-column>
           </el-table>
         </el-collapse-item>
       </el-collapse>
@@ -87,6 +89,12 @@ function apiStatus(used, quota) {
   if (pct > 90) return 'exception'
   if (pct > 70) return 'warning'
   return ''
+}
+
+/** 格式化时间 */
+function formatTime(time) {
+  if (!time) return ''
+  return time.replace('T', ' ').substring(0, 19)
 }
 
 getList()

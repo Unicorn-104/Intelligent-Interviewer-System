@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../features/messages/domain/app_message.dart';
+import '../features/auth/domain/auth_session.dart';
+import '../features/companies/presentation/company_screen.dart';
 import '../theme/app_theme.dart';
 
 class MessageDetailScreen extends StatelessWidget {
-  const MessageDetailScreen({super.key, required this.message});
+  const MessageDetailScreen({
+    super.key,
+    required this.message,
+    required this.session,
+  });
 
   final AppMessage message;
+  final AuthSession session;
 
   @override
   Widget build(BuildContext context) {
@@ -46,10 +53,29 @@ class MessageDetailScreen extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: accent.withValues(alpha: 0.12),
-                      child: Icon(icon, color: accent, size: 20),
+                    InkWell(
+                      onTap: message.companyId == null
+                          ? null
+                          : () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CompanyScreen(
+                                  session: session,
+                                  companyId: message.companyId!,
+                                ),
+                              ),
+                            ),
+                      customBorder: const CircleBorder(),
+                      child: Tooltip(
+                        message: company ? '查看企业主页' : '系统通知',
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.xs),
+                          child: CircleAvatar(
+                            radius: 18,
+                            backgroundColor: accent.withValues(alpha: 0.12),
+                            child: Icon(icon, color: accent, size: 20),
+                          ),
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 9),
                     Flexible(
@@ -84,8 +110,9 @@ class MessageDetailScreen extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             _formatTime(message.occurredAt),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(fontSize: 10),
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(fontSize: 10),
                           ),
                         ],
                       ),

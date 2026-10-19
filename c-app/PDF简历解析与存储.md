@@ -9,7 +9,9 @@
 ## 解析配置
 
 配置文件：`backend/ruoyi-system/src/main/resources/resume-pdf.properties`。
-修改后重新打包、重启后端；可通过 Spring 配置、命令行或环境变量覆盖。
+修改打包默认配置后需要重新打包、重启后端；可通过 Spring 配置、命令行或环境变量覆盖。
+
+本机 AI 配置使用 `backend/config/application.yml`，已加入 Git 忽略。将 DeepSeek 密钥填写到 `app.resume.structure.api-key` 的双引号内，从 `backend/` 启动时自动加载；修改此私有文件后只需重启后端，无需重新打包。空模板见 [application.example.yml](../backend/config/application.example.yml)，不要把真实密钥填写到示例文件。
 
 | 配置 | 默认值 | 用途 |
 | --- | --- | --- |

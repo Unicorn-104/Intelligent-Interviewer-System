@@ -46,7 +46,7 @@ async function denyNonCandidate() {
 
 router.beforeEach(async (to, from) => {
   NProgress.start()
-  if (to.path === '/conference-join') {
+  if (to.path === '/conference-join' || to.path === '/exam-sub') {
     NProgress.done()
     return true
   }

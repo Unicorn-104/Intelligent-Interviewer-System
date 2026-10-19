@@ -29,10 +29,9 @@ public interface EnterpriseJobMapper
     /**
      * 新增岗位
      */
-    public int insertJob(@Param("companyId") Long companyId, @Param("publisherId") Long publisherId, @Param("title") String title,
-                         @Param("dept") String dept, @Param("city") String city, @Param("salaryMin") java.math.BigDecimal salaryMin,
-                         @Param("salaryMax") java.math.BigDecimal salaryMax, @Param("experience") String experience,
-                         @Param("education") Integer education, @Param("jobType") Integer jobType, @Param("jdJson") String jdJson, @Param("status") Integer status);
+    public int insertJob(Map<String, Object> job);
+
+    public Map<String, Object> selectPublishingCompany(@Param("companyId") Long companyId);
 
     /**
      * 岗位详情（限本公司）

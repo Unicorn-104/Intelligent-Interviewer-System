@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Search, Download, Play, Eye, Archive, KeyRound, Database, ArrowLeft,
+  Search, Download, Play, Eye, Archive, KeyRound, Database,
   AlertTriangle, ShieldCheck, Clock3, Video
 } from '@/views/enterprise/components/icons'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
@@ -303,21 +303,12 @@ const statusClass = (status) => ({
 </script>
 
 <template>
-  <div class="console-page">
-    <header class="topbar">
-      <div class="bar">
-        <span class="mark">智</span>
-        <div>
-          <strong>录制回放与存储管理</strong>
-          <small>企业端 · HR / 管理员</small>
-        </div>
-        <button class="btn sm back" @click="router.push('/enterprise/dashboard')">
-          <ArrowLeft :size="15" />返回工作台
-        </button>
-      </div>
-    </header>
+  <div class="page">
+    <div class="page-heading">
+      <div><h1>录制回放与存储管理</h1><p>企业端 · HR / 管理员</p></div>
+    </div>
 
-    <main class="page">
+    <main>
       <section class="card filter">
         <div class="field">
           <label>面试 ID</label>
@@ -509,20 +500,6 @@ const statusClass = (status) => ({
 <style src="../enterprise.css"></style>
 
 <style scoped>
-.console-page { min-height: 100vh; background: var(--canvas); }
-.topbar { height: 64px; background: #fff; border-bottom: 1px solid var(--line); display: flex; align-items: center; }
-.bar { width: min(1240px, calc(100% - 48px)); margin: auto; display: flex; align-items: center; gap: 12px; }
-.mark {
-  width: 36px; height: 36px; border-radius: 10px;
-  display: grid; place-items: center;
-  color: #fff; font-weight: 700;
-  background: linear-gradient(145deg, var(--primary), #1d4ed8);
-}
-.bar strong { display: block; font-size: 16px; }
-.bar small { color: var(--muted); font-size: 12px; }
-.back { margin-left: auto; }
-.page { width: min(1240px, calc(100% - 48px)); margin: auto; padding: 22px 0 40px; }
-
 .filter { display: grid; grid-template-columns: 1fr 1fr 1.4fr auto; gap: 16px; align-items: end; padding: 18px 20px; }
 .range { display: flex; align-items: center; gap: 8px; }
 .range span { color: var(--muted); font-size: 12px; }

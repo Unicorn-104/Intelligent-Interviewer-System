@@ -63,7 +63,16 @@ public class EnterpriseJobController extends BaseController
     }
 
     /**
-     * 发布新岗位
+     * 发布前确认企业归属，读取企业和部门选项
+     */
+    @GetMapping("/publishing-options")
+    public AjaxResult publishingOptions()
+    {
+        return success(jobService.publishingOptions(getUserId()));
+    }
+
+    /**
+     * 发布新岗位，返回生成的岗位 ID
      */
     @PostMapping
     public AjaxResult create(@RequestBody Map<String, Object> form)

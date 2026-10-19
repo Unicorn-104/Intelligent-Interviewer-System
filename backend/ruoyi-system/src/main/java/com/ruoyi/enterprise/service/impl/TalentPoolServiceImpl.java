@@ -33,8 +33,9 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     public List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
             Integer pageNum, Integer pageSize)
     {
+        Long companyId = resolveCompanyId(userId);
         PageUtils.startPage(pageNum, pageSize);
-        return talentPoolMapper.selectTalentList(resolveCompanyId(userId), keyword, tag);
+        return talentPoolMapper.selectTalentList(companyId, keyword, tag);
     }
 
     @Override

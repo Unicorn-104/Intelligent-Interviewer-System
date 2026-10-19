@@ -1,0 +1,12 @@
+# Merge this section into a private loaded Spring profile. No real key belongs in this file.
+# JD document import only. Keep credentials in the backend environment.
+app:
+  jd:
+    ai:
+      enabled: true
+      base-url: ${JD_AI_BASE_URL:https://api.deepseek.com/anthropic}
+      model: ${JD_AI_MODEL:deepseek-v4-pro}
+      api-key: ${ANTHROPIC_AUTH_TOKEN:}
+      timeout-seconds: 60
+      max-input-chars: 40000
+      max-concurrent-requests: 2

@@ -1,114 +1,130 @@
 package com.ruoyi.system.domain;
 
-import java.util.Date;
-import com.fasterxml.jackson.annotation.JsonFormat;
+import java.math.BigDecimal;
+import java.util.List;
+import com.ruoyi.common.core.domain.BaseEntity;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * 广告管理对象 t_ad
  *
  * @author TQY
  */
-public class Ad
+public class Ad extends BaseEntity
 {
     private static final long serialVersionUID = 1L;
 
     /** 广告ID */
-    private Long adId;
-
-    /** 广告位编码 */
-    private String adSlotCode;
+    private Long advertId;
 
     /** 广告标题 */
-    private String adTitle;
+    @NotBlank(message = "广告标题不能为空")
+    private String title;
 
-    /** 广告类型 */
-    private Integer adType;
+    /** 广告位ID */
+    @NotBlank(message = "所属广告位不能为空")
+    private String slotId;
 
-    /** 广告媒体URL */
-    private String adMediaUrl;
+    /** 广告类型（image图片 video视频 rich富文本） */
+    @NotBlank(message = "广告类型不能为空")
+    private String adType;
 
-    /** 封面URL */
-    private String adCoverUrl;
+    /** 素材URL */
+    private String mediaUrl;
 
-    /** 跳转URL */
-    private String adJumpUrl;
+    /** 富文本内容 */
+    private String richContent;
 
-    /** 目标用户 */
-    private String adTargetUsers;
+    /** 跳转类型（none无跳转 h5H5链接 miniapp小程序 appApp内页面） */
+    private String jumpType;
 
-    /** 目标设备 */
-    private String adTargetDevices;
-
-    /** 每日频次 */
-    private Integer adFreqDaily;
-
-    /** 排序 */
-    private Integer adSortOrder;
+    /** 跳转地址 */
+    private String jumpUrl;
 
     /** 开始时间 */
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private Date adStartAt;
+    @NotBlank(message = "开始时间不能为空")
+    private String startTime;
 
     /** 结束时间 */
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private Date adEndAt;
+    @NotBlank(message = "结束时间不能为空")
+    private String endTime;
 
-    /** 状态（1启用 0禁用） */
-    private Integer adStatus;
+    /** 每日展示频次 */
+    private Integer dailyLimit;
 
-    /** 创建时间 */
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private Date adCreatedAt;
+    /** 总曝光上限 */
+    private Integer totalLimit;
 
-    /** 更新时间 */
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private Date adUpdatedAt;
+    /** 目标套餐 */
+    private List<String> packageTarget;
 
-    public Long getAdId() { return adId; }
-    public void setAdId(Long adId) { this.adId = adId; }
+    /** 曝光次数 */
+    private Long exposure;
 
-    public String getAdSlotCode() { return adSlotCode; }
-    public void setAdSlotCode(String adSlotCode) { this.adSlotCode = adSlotCode; }
+    /** 点击次数 */
+    private Long clicks;
 
-    public String getAdTitle() { return adTitle; }
-    public void setAdTitle(String adTitle) { this.adTitle = adTitle; }
+    /** 点击率 */
+    private BigDecimal ctr;
 
-    public Integer getAdType() { return adType; }
-    public void setAdType(Integer adType) { this.adType = adType; }
+    /** 状态（0草稿 1进行中 2暂停 3已结束） */
+    private String status;
 
-    public String getAdMediaUrl() { return adMediaUrl; }
-    public void setAdMediaUrl(String adMediaUrl) { this.adMediaUrl = adMediaUrl; }
+    /** 广告位名称（关联查询用） */
+    private String slotName;
 
-    public String getAdCoverUrl() { return adCoverUrl; }
-    public void setAdCoverUrl(String adCoverUrl) { this.adCoverUrl = adCoverUrl; }
+    public Long getAdvertId() { return advertId; }
+    public void setAdvertId(Long advertId) { this.advertId = advertId; }
 
-    public String getAdJumpUrl() { return adJumpUrl; }
-    public void setAdJumpUrl(String adJumpUrl) { this.adJumpUrl = adJumpUrl; }
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
 
-    public String getAdTargetUsers() { return adTargetUsers; }
-    public void setAdTargetUsers(String adTargetUsers) { this.adTargetUsers = adTargetUsers; }
+    public String getSlotId() { return slotId; }
+    public void setSlotId(String slotId) { this.slotId = slotId; }
 
-    public String getAdTargetDevices() { return adTargetDevices; }
-    public void setAdTargetDevices(String adTargetDevices) { this.adTargetDevices = adTargetDevices; }
+    public String getAdType() { return adType; }
+    public void setAdType(String adType) { this.adType = adType; }
 
-    public Integer getAdFreqDaily() { return adFreqDaily; }
-    public void setAdFreqDaily(Integer adFreqDaily) { this.adFreqDaily = adFreqDaily; }
+    public String getMediaUrl() { return mediaUrl; }
+    public void setMediaUrl(String mediaUrl) { this.mediaUrl = mediaUrl; }
 
-    public Integer getAdSortOrder() { return adSortOrder; }
-    public void setAdSortOrder(Integer adSortOrder) { this.adSortOrder = adSortOrder; }
+    public String getRichContent() { return richContent; }
+    public void setRichContent(String richContent) { this.richContent = richContent; }
 
-    public Date getAdStartAt() { return adStartAt; }
-    public void setAdStartAt(Date adStartAt) { this.adStartAt = adStartAt; }
+    public String getJumpType() { return jumpType; }
+    public void setJumpType(String jumpType) { this.jumpType = jumpType; }
 
-    public Date getAdEndAt() { return adEndAt; }
-    public void setAdEndAt(Date adEndAt) { this.adEndAt = adEndAt; }
+    public String getJumpUrl() { return jumpUrl; }
+    public void setJumpUrl(String jumpUrl) { this.jumpUrl = jumpUrl; }
 
-    public Integer getAdStatus() { return adStatus; }
-    public void setAdStatus(Integer adStatus) { this.adStatus = adStatus; }
+    public String getStartTime() { return startTime; }
+    public void setStartTime(String startTime) { this.startTime = startTime; }
 
-    public Date getAdCreatedAt() { return adCreatedAt; }
-    public void setAdCreatedAt(Date adCreatedAt) { this.adCreatedAt = adCreatedAt; }
+    public String getEndTime() { return endTime; }
+    public void setEndTime(String endTime) { this.endTime = endTime; }
 
-    public Date getAdUpdatedAt() { return adUpdatedAt; }
-    public void setAdUpdatedAt(Date adUpdatedAt) { this.adUpdatedAt = adUpdatedAt; }
+    public Integer getDailyLimit() { return dailyLimit; }
+    public void setDailyLimit(Integer dailyLimit) { this.dailyLimit = dailyLimit; }
+
+    public Integer getTotalLimit() { return totalLimit; }
+    public void setTotalLimit(Integer totalLimit) { this.totalLimit = totalLimit; }
+
+    public List<String> getPackageTarget() { return packageTarget; }
+    public void setPackageTarget(List<String> packageTarget) { this.packageTarget = packageTarget; }
+
+    public Long getExposure() { return exposure; }
+    public void setExposure(Long exposure) { this.exposure = exposure; }
+
+    public Long getClicks() { return clicks; }
+    public void setClicks(Long clicks) { this.clicks = clicks; }
+
+    public BigDecimal getCtr() { return ctr; }
+    public void setCtr(BigDecimal ctr) { this.ctr = ctr; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getSlotName() { return slotName; }
+    public void setSlotName(String slotName) { this.slotName = slotName; }
 }

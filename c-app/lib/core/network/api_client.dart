@@ -6,6 +6,9 @@ import '../../config/app_config.dart';
 import 'api_exception.dart';
 
 class ApiClient {
+  static final _unauthorized = StreamController<String>.broadcast();
+  static Stream<String> get unauthorizedTokens => _unauthorized.stream;
+
   ApiClient({HttpClient? httpClient, this.baseUrl = AppConfig.apiBaseUrl})
     : _httpClient = httpClient ?? HttpClient();
 
@@ -96,6 +99,7 @@ class ApiClient {
       return await _readResponse(
         response,
         timeout: AppConfig.fileUploadTimeout,
+        token: token,
       );
     } on ApiException {
       rethrow;
@@ -139,7 +143,7 @@ class ApiClient {
       }
 
       final response = await request.close().timeout(timeout);
-      return _readResponse(response, timeout: timeout);
+      return _readResponse(response, timeout: timeout, token: token);
     } on ApiException {
       rethrow;
     } on TimeoutException {
@@ -156,7 +160,11 @@ class ApiClient {
   Future<Map<String, dynamic>> _readResponse(
     HttpClientResponse response, {
     Duration timeout = AppConfig.requestTimeout,
+    String? token,
   }) async {
+    if (response.statusCode == 401 && token != null && token.isNotEmpty) {
+      _unauthorized.add(token);
+    }
     final responseText = await utf8.decoder
         .bind(response)
         .join()
@@ -172,11 +180,20 @@ class ApiClient {
     }
 
     final code = _asInt(decoded['code']) ?? response.statusCode;
+    if (code == 401 &&
+        response.statusCode != 401 &&
+        token != null &&
+        token.isNotEmpty) {
+      _unauthorized.add(token);
+    }
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         code != 200) {
+      final message = decoded['msg']?.toString();
       throw ApiException(
-        decoded['msg']?.toString() ?? '请求失败，请稍后重试',
+        message?.startsWith('No static resource ') == true
+            ? '服务暂时不可用，请稍后重试'
+            : message ?? '请求失败，请稍后重试',
         code: code,
         statusCode: response.statusCode,
       );

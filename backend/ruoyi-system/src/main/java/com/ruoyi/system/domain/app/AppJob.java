@@ -28,6 +28,7 @@ public class AppJob implements Serializable
     private String description;
     private String tagsCsv;
     private Boolean applied;
+    private Boolean available = true;
 
     public Long getPositionId() { return positionId; }
     public void setPositionId(Long positionId) { this.positionId = positionId; }
@@ -60,6 +61,8 @@ public class AppJob implements Serializable
     public void setTagsCsv(String tagsCsv) { this.tagsCsv = tagsCsv; }
     public Boolean getApplied() { return applied; }
     public void setApplied(Boolean applied) { this.applied = applied; }
+    public Boolean getAvailable() { return available; }
+    public void setAvailable(Boolean available) { this.available = available; }
 
     public List<String> getTags()
     {

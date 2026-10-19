@@ -90,9 +90,13 @@ public class MemberUserController extends BaseController {
             map.put("phone", item.get("phonenumber"));
             map.put("email", item.get("email"));
             map.put("status", item.get("status"));
-            map.put("createTime", item.get("create_time"));
-            map.put("deptName", item.get("dept_name"));
+            map.put("registerTime", item.get("create_time"));
+            map.put("companyName", item.get("dept_name"));
             map.put("identity", 1);
+            map.put("realStatus", "0");
+            map.put("resumeCount", 0);
+            map.put("applyCount", 0);
+            map.put("lastLoginTime", item.get("create_time"));
             result.add(map);
         }
 

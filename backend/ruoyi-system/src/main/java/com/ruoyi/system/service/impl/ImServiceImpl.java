@@ -53,6 +53,13 @@ public class ImServiceImpl implements IImService
     @Transactional
     public Long sendMessage(ImMessage message, Long senderId, Long peerId)
     {
+        if (message == null) throw new ServiceException("消息不能为空");
+        int type = message.getType() == null ? 1 : message.getType();
+        if (type < 1 || type > 5) throw new ServiceException("不支持的消息类型");
+        String content = StringUtils.nvl(message.getContent(), "").trim();
+        if ((type == 1 || type == 4) && content.isEmpty()) throw new ServiceException("消息内容不能为空");
+        if ((type == 1 || type == 4) && content.length() > 1000) throw new ServiceException("消息内容不能超过1000个字符");
+        message.setContent(content);
         Long sessionId = message.getSessionId();
         ImSession session = null;
         if (StringUtils.isNull(sessionId))
@@ -133,6 +140,33 @@ public class ImServiceImpl implements IImService
     public int sumUnread(Long userId)
     {
         return sessionMapper.sumUnreadByUser(userId);
+    }
+
+    @Override
+    public List<Map<String, Object>> selectNotifications(Long userId, Long beforeId, Integer limit)
+    {
+        return messageMapper.selectNotifications(userId, beforeId, limit == null ? 50 : Math.max(1, Math.min(limit, 100)));
+    }
+
+    @Override
+    public int countUnreadNotifications(Long userId)
+    {
+        return messageMapper.countUnreadNotifications(userId);
+    }
+
+    @Override
+    @Transactional
+    public void readNotification(Long userId, Long messageId)
+    {
+        if (messageId == null || messageMapper.selectNotification(userId, messageId) == null)
+            throw new ServiceException("通知不存在或无权访问");
+        messageMapper.readNotification(userId, messageId);
+    }
+
+    @Override
+    public int readAllNotifications(Long userId)
+    {
+        return messageMapper.readAllNotifications(userId);
     }
 
     @Override

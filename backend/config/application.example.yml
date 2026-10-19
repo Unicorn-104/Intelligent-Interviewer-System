@@ -1,0 +1,10 @@
+# 复制为同目录 application.yml 后填写实际密钥。
+# application.yml 已被 Git 忽略；不要在此示例文件中填写真实密钥。
+# 从 backend/ 目录启动后端时，Spring Boot 自动加载 config/application.yml。
+app:
+  resume:
+    structure:
+      enabled: true
+      api-url: https://api.deepseek.com/chat/completions
+      model: deepseek-chat
+      api-key: ""

@@ -6,6 +6,7 @@ import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import SwitchToggle from '@/views/enterprise/components/SwitchToggle.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { getUserProfile, updateUserProfile, updateUserPwd, uploadAvatar } from '@/api/system/user'
+import { getMailProfile, saveMailProfile } from '@/api/offer'
 import useUserStore from '@/store/modules/user'
 
 const userStore = useUserStore()
@@ -207,8 +208,61 @@ function securityPlaceholder(label) {
   notify(`${label} 接口待后端实现`)
 }
 
+// ---------- 邮箱与发信设置 ----------
+const mail = reactive({
+  companyEmail: '',
+  configured: false,
+  smtpHost: '',
+  smtpPort: '',
+  ssl: 1,
+  username: '',
+  password: ''
+})
+const mailLoading = ref(false)
+
+async function loadMailProfile() {
+  try {
+    const res = await getMailProfile()
+    const d = res.data || {}
+    mail.companyEmail = d.companyEmail || ''
+    mail.configured = !!d.configured
+    mail.smtpHost = d.smtpHost || ''
+    mail.smtpPort = d.smtpPort ?? ''
+    mail.ssl = d.ssl ?? 1
+    mail.username = d.username || ''
+    mail.password = ''
+  } catch (e) { /* 拦截器已提示 */ }
+}
+
+async function saveMailConfig() {
+  if (!mail.smtpHost || !mail.username || !mail.smtpPort) {
+    return ElMessage.warning('请填写 SMTP 服务器、端口与认证账号')
+  }
+  if (!mail.configured && !mail.password) {
+    return ElMessage.warning('首次保存请填写邮箱授权码')
+  }
+  mailLoading.value = true
+  try {
+    const res = await saveMailProfile({
+      smtpHost: mail.smtpHost,
+      smtpPort: Number(mail.smtpPort),
+      ssl: Number(mail.ssl),
+      username: mail.username,
+      password: mail.password
+    })
+    mail.configured = !!(res.data?.configured)
+    mail.password = ''
+    ElMessage.success(res.data?.message || '保存成功')
+  } catch (e) {
+    ElMessage.error(e?.message || '保存失败')
+  } finally {
+    mailLoading.value = false
+  }
+}
+
 onMounted(() => {
   loadProfile()
+  loadMailProfile()
   loadPreferences()
   loadNotices()
 })
@@ -242,7 +296,8 @@ onMounted(() => {
     </nav>
 
     <!-- ============ 个人资料 Tab ============ -->
-    <div v-if="active==='个人资料'" class="profile-grid">
+    <template v-if="active==='个人资料'">
+    <div class="profile-grid">
       <!-- 基本信息表单 -->
       <section class="card form-card">
         <div class="section-title">
@@ -328,6 +383,47 @@ onMounted(() => {
         </section>
       </aside>
     </div>
+
+    <!-- 邮箱与发信设置 -->
+    <section class="card mail-card">
+      <div class="section-title">
+        <div><h2>邮箱与发信设置</h2><p>发送 Offer 时可选择企业邮箱或个人邮箱发信 · 个人授权码加密存储，不会明文回显</p></div>
+        <Mail :size="18" class="green-icon" />
+      </div>
+      <div class="mail-grid">
+        <div class="field">
+          <label>企业邮箱（发件地址）</label>
+          <input class="input" :value="mail.companyEmail || '未配置'" disabled title="企业邮箱由企业资料统一管理" />
+        </div>
+        <div class="field">
+          <label>SMTP 服务器</label>
+          <input class="input" v-model="mail.smtpHost" placeholder="如 smtp.qq.com" />
+        </div>
+        <div class="field">
+          <label>SMTP 端口</label>
+          <input class="input" v-model="mail.smtpPort" placeholder="SSL 常用 465，STARTTLS 常用 587" maxlength="5" />
+        </div>
+        <div class="field">
+          <label>连接方式</label>
+          <select class="select" v-model="mail.ssl">
+            <option :value="1">SSL（推荐）</option>
+            <option :value="0">STARTTLS / 非 SSL</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>认证账号（发件人）</label>
+          <input class="input" v-model="mail.username" placeholder="如 your_name@qq.com" />
+        </div>
+        <div class="field">
+          <label>授权码 / 密码</label>
+          <input class="input" type="password" v-model="mail.password" :placeholder="mail.configured ? '已保存 ********，留空则不修改' : '如 QQ 邮箱 16 位授权码'" />
+        </div>
+      </div>
+      <div class="save-row">
+        <button class="btn primary" :disabled="mailLoading" @click="saveMailConfig"><Save :size="15" />{{ mailLoading ? '保存中…' : '保存发信配置' }}</button>
+      </div>
+    </section>
+    </template>
 
     <!-- ============ 偏好设置 Tab ============ -->
     <section v-else-if="active==='偏好设置'" class="card preference-card">
@@ -447,6 +543,9 @@ onMounted(() => {
 .login-item .pill{position:absolute;right:0;top:0}
 .login-card>button{float:right;border:0;background:none;color:#2563eb;font-size:9px;margin-top:12px}
 .preference-card,.notification-card{padding:25px;min-height:480px}
+.mail-card{margin-top:15px;padding:23px}
+.mail-card .section-title{display:flex;align-items:flex-start;justify-content:space-between}
+.mail-grid{margin-top:18px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
 .preference-grid{margin-top:24px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .preference-grid .field:last-child{grid-column:1/-1}
 .preference-grid .select{height:40px;border:1px solid #e2e8f0;border-radius:8px;padding:0 12px;font-size:13px;background:#fff}

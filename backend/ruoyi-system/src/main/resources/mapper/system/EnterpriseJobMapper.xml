@@ -10,7 +10,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                pos_experience_required as experience, pos_education_required as education,
                pos_status as status, date_format(pos_created_at, '%m-%d') as date,
                pos_jd_json as jdJson,
-               (select count(*) from t_process_instance pi where pi.pin_position_id = p.pos_id) as applicantCount
+               (select count(*) from t_process_instance pi where pi.pin_position_id = p.pos_id) as applicantCount,
+               date_format(p.pos_created_at, '%Y-%m-%d %H:%i') as publishTime,
+               date_format((select max(a.apt_created_at) from t_sch_appointment a
+                            where a.apt_position_id = p.pos_id), '%Y-%m-%d %H:%i') as latestApplyTime
         from t_pos p
         where p.pos_company_id = #{companyId}
         <if test="keyword != null and keyword != ''">
@@ -22,7 +25,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <if test="status != null">
             and p.pos_status = #{status}
         </if>
-        order by p.pos_created_at desc, p.pos_id desc
+        order by case when latestApplyTime is null then 1 else 0 end,
+                 latestApplyTime desc, p.pos_created_at desc, p.pos_id desc
     </select>
 
     <select id="selectJobDepartments" resultType="java.lang.String">
@@ -36,7 +40,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where pos_id = #{posId} and pos_company_id = #{companyId}
     </update>
 
-    <insert id="insertJob">
+    <insert id="insertJob" useGeneratedKeys="true" keyProperty="posId" keyColumn="pos_id">
         insert into t_pos (pos_company_id, pos_publisher_id, pos_title, pos_department, pos_work_city,
                            pos_salary_min, pos_salary_max, pos_experience_required, pos_education_required,
                            pos_job_type, pos_jd_json, pos_status)
@@ -44,6 +48,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 #{salaryMin}, #{salaryMax}, #{experience}, #{education},
                 #{jobType}, #{jdJson}, #{status})
     </insert>
+
+    <select id="selectPublishingCompany" resultType="java.util.LinkedHashMap">
+        select cmp_id as id, cmp_name as name, cmp_city as city
+        from t_cmp where cmp_id = #{companyId} and cmp_status = 1
+    </select>
 
     <select id="selectJobById" resultType="java.util.LinkedHashMap">
         select pos_id as posId, pos_title as title, pos_department as dept, pos_work_city as city,
@@ -85,7 +94,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectJobStages" resultType="java.util.LinkedHashMap">
-        select s.psg_name as name, s.psg_type as type, s.psg_sort_order as sortOrder
+        select s.psg_id as stageId, s.psg_name as name, s.psg_type as type, s.psg_sort_order as sortOrder
         from t_pos p
         join t_process_stage s on s.psg_template_id = p.pos_process_template_id
         where p.pos_id = #{posId}
@@ -100,7 +109,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectStagesByTemplate" resultType="java.util.LinkedHashMap">
-        select psg_name as name, psg_type as type, psg_sort_order as sortOrder,
+        select psg_id as stageId, psg_name as name, psg_type as type, psg_sort_order as sortOrder,
                psg_is_required as required, psg_pass_threshold as threshold,
                psg_interviewer_config_json as configJson
         from t_process_stage

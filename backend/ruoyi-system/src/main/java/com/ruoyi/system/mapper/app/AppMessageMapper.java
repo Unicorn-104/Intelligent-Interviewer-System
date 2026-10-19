@@ -21,6 +21,8 @@ public interface AppMessageMapper
 
     int markAllHrSessionsRead(@Param("userId") Long userId);
 
+    int markCompanyMessagesRead(@Param("userId") Long userId, @Param("interestId") Long interestId);
+
     List<AppChatMessage> selectHrChatMessages(@Param("userId") Long userId,
                                                @Param("sessionId") Long sessionId,
                                                @Param("limit") Integer limit);

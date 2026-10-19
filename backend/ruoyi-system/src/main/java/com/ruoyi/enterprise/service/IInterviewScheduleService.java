@@ -22,7 +22,7 @@ public interface IInterviewScheduleService
      * 发起面试邀约（UC-07）：占用面试官时段 + 创建预约记录 + 生成会议链接
      */
     public Map<String, Object> invite(Long userId, Long candidateId, Long positionId,
-            Long interviewerId, String startTime, Integer durationMin);
+            Long stageId, Long interviewerId, String startTime, Integer durationMin);
 
     /**
      * 面试官日历忙闲（UC-08）：可用/已占用时段列表
@@ -33,7 +33,13 @@ public interface IInterviewScheduleService
     /**
      * 面试改期（UC-09）：释放原时段（回退可用池）+ 占用新时段 + 更新预约
      */
-    public Map<String, Object> reschedule(Long userId, Long appointmentId, String newStartTime);
+    public Map<String, Object> reschedule(Long userId, Long appointmentId, String newStartTime,
+            Integer durationMin, Long interviewerId);
+
+    public List<Map<String, Object>> inviteStages(Long userId, Long candidateId, Long positionId,
+            List<Map<String, Object>> stages);
+
+    public List<Map<String, Object>> candidateAppointments(Long userId, Long candidateId, Long positionId);
 
     /**
      * 面试提醒（UC-07 步骤11）：向候选人发送提醒消息（写入系统消息）
