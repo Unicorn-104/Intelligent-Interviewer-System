@@ -13,6 +13,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.mapper.EnterpriseJdMapper;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
+import com.ruoyi.system.mapper.app.AppCompanyMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +28,7 @@ class EnterpriseJobPublishingTest
     @Mock private EnterpriseJobMapper jobMapper;
     @Mock private DashboardMapper dashboardMapper;
     @Mock private EnterpriseJdMapper jdMapper;
+    @Mock private AppCompanyMapper companyMapper;
     @InjectMocks private EnterpriseJobServiceImpl service;
 
     @BeforeEach
