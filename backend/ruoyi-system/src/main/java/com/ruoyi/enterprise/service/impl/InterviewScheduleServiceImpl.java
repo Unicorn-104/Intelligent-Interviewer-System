@@ -144,6 +144,8 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             row.put("status", 0);
             row.put("message", "邀约已创建，等待候选人确认");
         }
+        // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
+        scheduleMapper.markCandidateInterviewing(candidateId);
         return prepared;
     }
 
@@ -249,6 +251,26 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("appointmentId", appointmentId);
         result.put("message", "提醒已发送");
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
+    public Map<String, Object> updateStatus(Long userId, Long appointmentId, Integer status)
+    {
+        if (status == null || (status != 1 && status != 2))
+            throw new ServiceException("仅支持确认(1)或取消(2)面试安排");
+        Map<String, Object> row = scheduleMapper.selectAppointmentById(appointmentId);
+        if (row == null) throw new ServiceException("预约记录不存在");
+        requireJob(userId, requiredId(row.get("positionId")));
+        int current = integer(row.get("status"), -1);
+        if (current == 2 || current == 3)
+            throw new ServiceException("该面试安排已取消或已完成，无法变更状态");
+        scheduleMapper.updateAppointmentStatus(appointmentId, status);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("appointmentId", appointmentId);
+        result.put("status", status);
+        result.put("message", status == 1 ? "已确认该面试安排" : "已取消该面试安排");
         return result;
     }
 

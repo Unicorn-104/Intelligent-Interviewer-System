@@ -45,4 +45,9 @@ public interface IInterviewScheduleService
      * 面试提醒（UC-07 步骤11）：向候选人发送提醒消息（写入系统消息）
      */
     public Map<String, Object> remind(Long userId, Long appointmentId);
+
+    /**
+     * 确认/取消面试安排（UC-07）：1-已确认，2-已取消
+     */
+    public Map<String, Object> updateStatus(Long userId, Long appointmentId, Integer status);
 }
