@@ -129,6 +129,12 @@ export const constantRoutes = [
         meta: { title: 'AI 初筛' }
       },
       {
+        path: 'talent',
+        component: () => import('@/views/enterprise/talent/index.vue'),
+        name: 'EnterpriseTalent',
+        meta: { title: '人才库' }
+      },
+      {
         path: 'conference/active',
         component: () => import('@/views/enterprise/conference/active.vue'),
         name: 'EnterpriseConferenceActive',

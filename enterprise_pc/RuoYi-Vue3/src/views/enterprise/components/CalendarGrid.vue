@@ -1,15 +1,20 @@
 <script setup>
-import { ref, computed, reactive } from 'vue'
-import { schedule as rawSchedule } from '@/views/enterprise/data/mock'
+import { ref, computed } from 'vue'
 
-const schedule = reactive(rawSchedule.map(item => ({...item})))
+const props = defineProps({
+  // 面试块：{ id, day(0-6), startMin, durMin, candidate, position, interviewer, status, ... }
+  items: { type: Array, default: () => [] },
+  // 当前展示周的 7 个“日”数字，如 [7,8,9,10,11,12,13]
+  weekDates: { type: Array, default: () => [0, 0, 0, 0, 0, 0, 0] },
+  // 今天在本周的下标（0-6），无则 -1
+  todayIndex: { type: Number, default: -1 }
+})
 
-const emit = defineEmits(['day-click', 'block-click'])
+const emit = defineEmits(['day-click', 'block-click', 'drag-start', 'drag-end'])
 const days = ['周一','周二','周三','周四','周五','周六','周日']
-const dates = [7,8,9,10,11,12,13]
 const blocked = ref(false)
 const dayCols = ref([])
-defineExpose({ toggleBlocked: () => blocked.value = !blocked.value, schedule })
+defineExpose({ toggleBlocked: () => blocked.value = !blocked.value })
 
 // 日历时间范围：09:00-18:00 = 540分钟 = 9小时
 const TOTAL_MIN = 540
@@ -29,7 +34,7 @@ function posStyle(item) {
 // 每天面试场次数
 const dayCounts = computed(() => {
   const counts = [0,0,0,0,0,0,0]
-  schedule.forEach(s => counts[s.day]++)
+  props.items.forEach(s => { if (s.day >= 0 && s.day < 7) counts[s.day]++ })
   return counts
 })
 
@@ -42,27 +47,43 @@ const statusClass = {
 }
 
 function openBlock(item) {
+  if(suppressClick) return // 刚完成拖拽，忽略随之而来的点击，避免误开详情
   emit('block-click', item)
 }
 
-// === 拖拽调整时间 ===
+// === 拖拽调整时间（支持纵向改时间 + 横向跨天；拖动期间本地实时移动，松手后由父组件标记为「待调整」） ===
+let suppressClick = false
 function onMouseDown(e, item, colEl) {
+  if(!colEl) return
   const startY = e.clientY
-  const startMin = item.startMin
+  const fromStartMin = item.startMin
+  const fromDay = item.day
   const colH = colEl.clientHeight
+  let moved = false
+  let started = false
   e.preventDefault()
 
   const onMove = (ev) => {
     const deltaY = ev.clientY - startY
     const deltaMin = Math.round(deltaY / colH * TOTAL_MIN / 15) * 15
-    let newMin = startMin + deltaMin
-    newMin = Math.max(0, Math.min(TOTAL_MIN - item.durMin, newMin))
-    item.startMin = newMin
-    item.time = minToTime(newMin, item.durMin)
+    const newMin = Math.max(0, Math.min(TOTAL_MIN - item.durMin, fromStartMin + deltaMin))
+    // 跨天：按鼠标 X 落在哪一列决定目标 day
+    const el = document.elementFromPoint(ev.clientX, ev.clientY)
+    const col = el && el.closest ? el.closest('.day-col') : null
+    const newDay = (col && col.dataset && col.dataset.day !== undefined) ? Number(col.dataset.day) : item.day
+    const willMove = newMin !== item.startMin || newDay !== item.day
+    if(willMove && !started){ started = true; moved = true; emit('drag-start', item) }
+    if(newMin !== item.startMin){ item.startMin = newMin; item.time = minToTime(newMin, item.durMin) }
+    if(newDay !== item.day){ item.day = newDay; item.dayName = days[newDay] }
   }
   const onUp = () => {
     document.removeEventListener('mousemove', onMove)
     document.removeEventListener('mouseup', onUp)
+    if(moved){
+      suppressClick = true
+      setTimeout(() => suppressClick = false, 0)
+    }
+    emit('drag-end', { item, startMin: item.startMin, fromStartMin, day: item.day, fromDay, moved })
   }
   document.addEventListener('mousemove', onMove)
   document.addEventListener('mouseup', onUp)
@@ -74,9 +95,9 @@ function onMouseDown(e, item, colEl) {
     <!-- 顶部日期行 -->
     <div class="cal-header">
       <div class="corner"></div>
-      <button v-for="(day,i) in days" :key="day" class="day-head" :class="{ today:i===2, weekend:i>=5 }" @click="$emit('day-click',i)">
+      <button v-for="(day,i) in days" :key="day" class="day-head" :class="{ today:i===todayIndex, weekend:i>=5 }" @click="$emit('day-click',i)">
         <span>{{ day }}</span>
-        <b>{{ dates[i] }}</b>
+        <b>{{ weekDates[i] }}</b>
         <em v-if="dayCounts[i]" class="count-badge">{{ dayCounts[i] }}</em>
       </button>
     </div>
@@ -86,16 +107,16 @@ function onMouseDown(e, item, colEl) {
         <span class="tlabel" style="top:0;transform:none;padding-top:2px">09:00</span>
         <span v-for="h in 9" :key="h" class="tlabel" :class="{last:h===9}" :style="{ top: (h/9*100)+'%' }">{{ String(h+9).padStart(2,'0') }}:00</span>
       </div>
-      <div v-for="day in 7" :key="day" class="day-col" :class="{ weekend: day>=6 }" :ref="el => dayCols[day-1] = el">
+      <div v-for="day in 7" :key="day" class="day-col" :class="{ weekend: day>=6 }" :data-day="day-1" :ref="el => dayCols[day-1] = el">
         <!-- 每小时网格线：absolute 定位，和面试块同一坐标系（含09:00线） -->
         <div class="hour-line line-0"></div>
         <div v-for="h in 9" :key="h" class="hour-line" :style="{ top: (h/9*100)+'%' }"></div>
         <div v-if="blocked" class="blocked"><span>非空闲时间</span></div>
         <article
-          v-for="item in schedule.filter(x=>x.day===day-1)"
+          v-for="item in props.items.filter(x=>x.day===day-1)"
           :key="item.id"
           class="event"
-          :class="[statusClass[item.status], { compact: item.durMin < 30 }]"
+          :class="[statusClass[item.status], { compact: item.durMin < 30, adjusting: item.pending }]"
           :style="posStyle(item)"
           @click="openBlock(item)"
           @mousedown="onMouseDown($event, item, dayCols[day-1])"
@@ -104,7 +125,7 @@ function onMouseDown(e, item, colEl) {
           <i v-else-if="item.notify==='unsent'" class="notify-icon unsent" title="通知未发送">◔</i>
           <i v-else-if="item.notify==='sending'" class="notify-icon sending" title="发送中">◌</i>
           <div class="ev-line ev-name">{{ item.candidate }} · {{ item.position }}</div>
-          <div class="ev-line ev-sub">{{ item.interviewer }} · {{ item.stage }}</div>
+          <div class="ev-line ev-sub">{{ item.interviewer }}</div>
         </article>
       </div>
     </div>
@@ -161,6 +182,10 @@ function onMouseDown(e, item, colEl) {
 .st-conflict{background:#fee2e2;color:#991b1b;border:1.5px solid #dc2626;border-left:3px solid #dc2626}
 .st-conflict .ev-sub{color:#dc2626}
 .st-cancelled{background:#f1f5f9;color:#94a3b8;text-decoration:line-through;border-left-color:#cbd5e1}
+
+/* 待调整（拖拽后未确认）：紫色虚线，确认后恢复原状态色 */
+.event.adjusting{background:#ede9fe;color:#5b21b6;border:2px dashed #7c3aed}
+.event.adjusting .ev-sub{color:#7c3aed}
 
 /* 紧凑块 */
 .event.compact .ev-sub{display:none}

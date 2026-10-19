@@ -112,6 +112,16 @@ public class InterviewScheduleController extends BaseController
         return success(scheduleService.candidateAppointments(getUserId(), candidateId, positionId));
     }
 
+    /**
+     * UC-07：确认/取消面试安排（1-已确认，2-已取消）
+     */
+    @PutMapping("/{appointmentId}/status")
+    public AjaxResult updateStatus(@PathVariable("appointmentId") Long appointmentId,
+            @RequestBody Map<String, Object> body)
+    {
+        return success(scheduleService.updateStatus(getUserId(), appointmentId, asInt(body.get("status"), null)));
+    }
+
     private Long asLong(Object v)
     {
         if (v == null)

@@ -28,6 +28,8 @@ public interface InterviewScheduleMapper
     int insertSlot(Map<String, Object> values);
     int insertAppointment(Map<String, Object> values);
     int updateAppointmentTime(Map<String, Object> values);
+    int updateAppointmentStatus(@Param("appointmentId") Long appointmentId, @Param("status") Integer status);
+    int markCandidateInterviewing(@Param("candidateId") Long candidateId);
     int insertReminderMessage(@Param("receiverId") Long receiverId, @Param("title") String title,
             @Param("content") String content);
 }

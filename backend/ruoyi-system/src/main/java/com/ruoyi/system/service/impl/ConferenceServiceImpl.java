@@ -211,6 +211,9 @@ public class ConferenceServiceImpl implements IConferenceService
         session.put("mode", interviewMode);
         conferenceMapper.insertSession(session);
 
+        // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
+        conferenceMapper.markCandidateInterviewing(candidateId);
+
         Long sessionId = toLong(session.get("sessionId"));
         String roomId = "INTERVIEW-" + sessionId;
         String roomToken = randomToken();
