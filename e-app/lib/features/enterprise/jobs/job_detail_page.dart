@@ -7,7 +7,6 @@ import 'data/job_detail_data_source.dart';
 import 'job_interviews_page.dart';
 import 'job_publish_page.dart';
 import 'models/job_detail_view_data.dart';
-import 'widgets/job_ai_screening_tab.dart';
 import 'widgets/job_basic_info_tab.dart';
 import 'widgets/job_candidates_tab.dart';
 import 'widgets/job_jd_profile_section.dart';
@@ -60,8 +59,9 @@ class _JobDetailPageState extends State<JobDetailPage>
   void initState() {
     super.initState();
     _tabs = TabController(
-      length: 3,
-      initialIndex: widget.initialTab,
+      length: 2,
+      // 兼容旧 AI 筛选入口：索引 2 进入合并后的求职者页。
+      initialIndex: widget.initialTab == 2 ? 1 : widget.initialTab,
       vsync: this,
     )..addListener(_tabChanged);
     _loadDetail();
@@ -77,13 +77,18 @@ class _JobDetailPageState extends State<JobDetailPage>
   }
 
   void _tabChanged() {
-    if (_tabs.index == 2) {
+    if (_tabs.index == 1) {
       _ensureScores();
     }
   }
 
   void _ensureScores() {
-    if (!_scoresRequested && _detail.data != null && _detail.error == null) {
+    final data = _detail.data;
+    if (!_scoresRequested &&
+        data != null &&
+        data.candidates.isNotEmpty &&
+        !data.tooManyCandidates &&
+        _detail.error == null) {
       _loadScores();
     }
   }
@@ -125,7 +130,7 @@ class _JobDetailPageState extends State<JobDetailPage>
       }
       return data;
     });
-    if (mounted && _tabs.index == 2) {
+    if (mounted && _tabs.index == 1) {
       _ensureScores();
     }
   }
@@ -249,27 +254,6 @@ class _JobDetailPageState extends State<JobDetailPage>
     }
     setState(() => _screening = true);
     try {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('确认重新筛选？'),
-          content: const Text('将重新计算当前岗位候选人的通用评分。该评分非岗位维度，可能同步影响其他页面的展示。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              key: const Key('job-rescreen-confirm'),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('确认重新筛选'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) {
-        return;
-      }
       final summary = await widget.source.startScreening(_positionId);
       if (!mounted) {
         return;
@@ -378,7 +362,6 @@ class _JobDetailPageState extends State<JobDetailPage>
         tabs: const [
           Tab(text: '基础信息'),
           Tab(text: '求职者'),
-          Tab(text: 'AI筛选'),
         ],
       ),
     ),
@@ -425,13 +408,6 @@ class _JobDetailPageState extends State<JobDetailPage>
         ),
         _DetailTab(
           child: JobCandidatesTab(
-            state: _detail,
-            onReload: _loadDetail,
-            onOpen: _openCandidate,
-          ),
-        ),
-        _DetailTab(
-          child: JobAiScreeningTab(
             detail: _detail,
             scores: _scores,
             screening: _screening,

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:enterprise_recruiter/features/enterprise/jobs/job_detail_page.dart';
 import 'package:enterprise_recruiter/features/enterprise/jobs/job_interviews_page.dart';
-import 'package:enterprise_recruiter/features/enterprise/jobs/widgets/job_ai_screening_tab.dart';
 import 'package:enterprise_recruiter/features/enterprise/jobs/widgets/job_basic_info_tab.dart';
 import 'package:enterprise_recruiter/features/enterprise/jobs/widgets/job_candidates_tab.dart';
 import 'package:enterprise_recruiter/theme/app_theme.dart';
@@ -173,7 +172,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('三个 Tab 映射正确，进入页面不自动触发筛选 POST', (tester) async {
+  testWidgets('仅保留两个 Tab，求职者页合入 AI 能力且进入时不自动筛选', (tester) async {
     final source = DetailFakeSource(
       scoreResult: [
         {'resultId': 1, 'totalScore': 88},
@@ -182,36 +181,38 @@ void main() {
     await pumpDetail(tester, source);
     expect(find.byType(JobBasicInfoTab), findsOneWidget);
     expect(find.byType(JobCandidatesTab), findsNothing);
-    expect(find.byType(JobAiScreeningTab), findsNothing);
+    expect(tester.widget<TabBar>(find.byType(TabBar)).tabs, hasLength(2));
+    expect(find.text('AI筛选'), findsNothing);
+    expect(source.scoreCalls, 0);
     expect(source.screenCalls, 0);
     await tester.tap(find.text('求职者'));
     await tester.pumpAndSettle();
     expect(find.byType(JobCandidatesTab), findsOneWidget);
-    await tester.tap(find.text('AI筛选'));
-    await tester.pumpAndSettle();
-    expect(find.byType(JobAiScreeningTab), findsOneWidget);
+    expect(find.text('AI辅助筛选'), findsOneWidget);
+    expect(find.byKey(const Key('job-rescreen')), findsOneWidget);
     expect(source.screenCalls, 0);
     expect(source.scoreCalls, 1);
   });
 
   testWidgets('AI 评分失败保留同批候选人并显示重试，不清空名单', (tester) async {
     final source = DetailFakeSource(scoreFailure: true);
-    await pumpDetail(tester, source, initialTab: 2);
+    await pumpDetail(tester, source, initialTab: 1);
     expect(find.text('候选人甲'), findsOneWidget);
     expect(find.text('候选人乙'), findsOneWidget);
     expect(find.text('加载筛选结果失败，重试'), findsOneWidget);
-    expect(find.text('通用评分，非岗位维度'), findsOneWidget);
+    expect(find.text('通用评分，非岗位维度'), findsNothing);
+    expect(find.text('AI 结果仅供参考'), findsNothing);
+    expect(find.text('AI辅助筛选'), findsOneWidget);
   });
 
-  testWidgets('重新筛选必须用户点击并确认，确认后只调用一次', (tester) async {
+  testWidgets('AI辅助筛选点击即执行，不弹出确认框', (tester) async {
     final source = DetailFakeSource();
-    await pumpDetail(tester, source, initialTab: 2);
+    await pumpDetail(tester, source, initialTab: 1);
     expect(source.screenCalls, 0);
     await tester.tap(find.byKey(const Key('job-rescreen')));
     await tester.pumpAndSettle();
-    expect(find.text('确认重新筛选？'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('job-rescreen-confirm')));
-    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byKey(const Key('job-rescreen-confirm')), findsNothing);
     expect(source.screenCalls, 1);
   });
 
@@ -268,11 +269,13 @@ void main() {
     expect(find.text('重新解析'), findsOneWidget);
   });
 
-  testWidgets('面试入口打开独立页面，initialTab 2 可直接进入 AI', (tester) async {
+  testWidgets('面试入口保持独立，旧 initialTab 2 兼容进入合并后的求职者页', (tester) async {
     final source = DetailFakeSource();
     await pumpDetail(tester, source, initialTab: 2);
     expect(find.byType(JobInterviewsPage), findsNothing);
-    expect(find.byType(JobAiScreeningTab), findsOneWidget);
+    expect(find.byType(JobCandidatesTab), findsOneWidget);
+    expect(find.text('AI辅助筛选'), findsOneWidget);
+    expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 1);
     await tester.tap(find.text('基础信息'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('job-interviews-entry')));

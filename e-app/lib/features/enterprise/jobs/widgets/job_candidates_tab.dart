@@ -8,62 +8,120 @@ import '../models/job_detail_view_data.dart';
 class JobCandidatesTab extends StatelessWidget {
   const JobCandidatesTab({
     super.key,
-    required this.state,
-    required this.onReload,
+    required this.detail,
+    required this.scores,
+    required this.screening,
+    required this.onReloadDetail,
+    required this.onReloadScores,
+    required this.onScreen,
     required this.onOpen,
   });
-  final JobSectionState<JobDetailViewData> state;
-  final Future<void> Function() onReload;
+  final JobSectionState<JobDetailViewData> detail;
+  final JobSectionState<List<Map<String, dynamic>>> scores;
+  final bool screening;
+  final Future<void> Function() onReloadDetail;
+  final Future<void> Function() onReloadScores;
+  final VoidCallback onScreen;
   final ValueChanged<Map<String, dynamic>> onOpen;
 
   @override
   Widget build(BuildContext context) {
-    if (state.loading) {
+    if (detail.loading) {
       return const SkeletonList(rows: 4);
     }
-    if (state.error != null) {
+    if (detail.error != null) {
       return PageMessage(
         icon: Icons.cloud_off_outlined,
         title: '求职者加载失败',
-        message: state.error!,
-        onAction: onReload,
+        message: detail.error!,
+        onAction: onReloadDetail,
       );
     }
-    final detail = state.data;
-    if (detail == null || detail.candidates.isEmpty) {
+    final data = detail.data;
+    if (data == null || data.candidates.isEmpty) {
       return PageMessage(
         icon: Icons.people_outline,
         title: '暂无求职者',
-        message: '该岗位暂无投递候选人',
+        message: '有求职者投递后，可查看同批候选人的通用评分',
         actionLabel: '刷新',
-        onAction: onReload,
+        onAction: onReloadDetail,
       );
     }
-    if (detail.tooManyCandidates) {
+    if (data.tooManyCandidates) {
       return PageMessage(
         icon: Icons.people_outline,
         title: '数据量过大，暂无法完整展示',
-        message: '详情接口没有候选人分页参数，不截断名单',
-        onAction: onReload,
+        message: '不使用筛选接口替换或截断详情候选人集合',
+        onAction: onReloadDetail,
       );
     }
+    final ranked = rankJobCandidates(
+      data.candidates,
+      scores.error == null ? scores.data ?? const [] : const [],
+    );
+    final hasScores = ranked.any((row) => row.resultScore != null);
     return RefreshIndicator(
-      onRefresh: onReload,
-      child: ListView.separated(
+      onRefresh: () async {
+        await onReloadDetail();
+        await onReloadScores();
+      },
+      child: ListView(
         key: const PageStorageKey('job-candidates-scroll'),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(20),
-        itemCount: detail.candidates.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (_, index) {
-          final candidate = detail.candidates[index];
-          return JobCandidateCard(
-            key: ValueKey('job-candidate-$index'),
-            candidate: candidate,
-            score: jobScore(candidate['matchScore']),
-            onOpen: () => onOpen(candidate),
-          );
-        },
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Tooltip(
+              message: '刷新AI筛选结果',
+              child: FilledButton.icon(
+                key: const Key('job-rescreen'),
+                onPressed: screening ? null : onScreen,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(screening ? '筛选中…' : 'AI辅助筛选'),
+              ),
+            ),
+          ),
+          if (scores.loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: LinearProgressIndicator(),
+            ),
+          if (scores.error != null) ...[
+            const SizedBox(height: 8),
+            Text(scores.error!, style: const TextStyle(color: AppColors.error)),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton(
+                key: const Key('job-scores-retry'),
+                onPressed: scores.loading ? null : onReloadScores,
+                child: const Text('加载筛选结果失败，重试'),
+              ),
+            ),
+          ] else if (!scores.loading && !hasScores) ...[
+            const SizedBox(height: 12),
+            const Text('暂无评分数据', style: TextStyle(fontWeight: FontWeight.w600)),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: onReloadScores,
+                child: const Text('刷新评分'),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          for (var index = 0; index < ranked.length; index++) ...[
+            JobCandidateCard(
+              key: ValueKey(
+                'job-candidate-${ranked[index].candidate['talId'] ?? index}',
+              ),
+              candidate: ranked[index].candidate,
+              score: ranked[index].score,
+              onOpen: () => onOpen(ranked[index].candidate),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ],
       ),
     );
   }
