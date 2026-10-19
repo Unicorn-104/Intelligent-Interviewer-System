@@ -69,6 +69,51 @@
       @pagination="getList"
     />
 
+    <!-- 候选人详情对话框 -->
+    <el-dialog title="候选人详情" v-model="detailOpen" width="560px" append-to-body class="candidate-detail-dialog">
+      <div v-loading="detailLoading">
+        <div class="detail-header">
+          <div class="detail-avatar">{{ (detail.userName || '?').charAt(0) }}</div>
+          <div class="detail-head-info">
+            <div class="detail-name">
+              {{ detail.userName || '-' }}
+              <el-tag :type="statusTag(detail.status)" size="small" effect="light">{{
+                statusLabel(detail.status)
+              }}</el-tag>
+            </div>
+            <div class="detail-sub">意向岗位：{{ detail.jobName || '-' }}</div>
+          </div>
+          <div class="detail-score">
+            <div class="score-num" :style="{ color: scoreColor(detail.totalScore) }">
+              {{ detail.totalScore ?? '-' }}
+            </div>
+            <div class="score-label">综合评分</div>
+          </div>
+        </div>
+
+        <el-descriptions :column="2" border size="small" class="detail-desc">
+          <el-descriptions-item label="手机号">{{ detail.phonenumber || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">{{ detail.email || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="意向岗位" :span="2">{{ detail.jobName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="简历编号">{{ detail.resumeId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="企业编号">{{ detail.companyId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间" :span="2">{{
+            parseTime(detail.createTime) || '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="最近更新" :span="2">{{
+            parseTime(detail.updateTime) || '-'
+          }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="detail-tags" v-if="detail.tags && detail.tags.length">
+          <div class="tags-title">标签</div>
+          <el-tag v-for="t in detail.tags" :key="t" size="small" type="info" effect="plain" class="tag-item">{{
+            t
+          }}</el-tag>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- 标签管理对话框 -->
     <el-dialog :title="dialogTitle" v-model="dialogOpen" width="500px" append-to-body>
       <el-form ref="tagFormRef" :model="tagForm" label-width="80px">
@@ -110,6 +155,22 @@ const ids = ref([])
 const total = ref(0)
 const dialogOpen = ref(false)
 const dialogTitle = ref('')
+const detailOpen = ref(false)
+const detailLoading = ref(false)
+const detail = reactive({
+  candidateId: undefined,
+  userName: '',
+  phonenumber: '',
+  email: '',
+  jobName: '',
+  totalScore: undefined,
+  status: '',
+  resumeId: undefined,
+  companyId: undefined,
+  createTime: undefined,
+  updateTime: undefined,
+  tags: []
+})
 const queryParams = ref({
   pageNum: 1,
   pageSize: 10,
@@ -155,22 +216,45 @@ function resetQuery() {
 
 /** 详情 */
 function handleView(row) {
+  detailOpen.value = true
+  detailLoading.value = true
   getCandidate(row.candidateId)
     .then((res) => {
       const d = res.data || {}
-      proxy.$alert(
-        [
-          '姓名：' + (d.userName || '-'),
-          '手机：' + (d.phonenumber || '-'),
-          '邮箱：' + (d.email || '-'),
-          '意向岗位：' + (d.jobName || '-'),
-          '综合评分：' + (d.totalScore ?? '-')
-        ].join('\n'),
-        '候选人详情',
-        { confirmButtonText: '关闭', type: 'info' }
-      )
+      detail.candidateId = d.candidateId
+      detail.userName = d.userName
+      detail.phonenumber = d.phonenumber
+      detail.email = d.email
+      detail.jobName = d.jobName
+      detail.totalScore = d.totalScore
+      detail.status = codeToStatus(d.statusCode)
+      detail.resumeId = d.resumeId
+      detail.companyId = d.companyId
+      detail.createTime = d.createTime
+      detail.updateTime = d.updateTime
+      detail.tags = Array.isArray(d.tags) ? d.tags : []
     })
     .catch((err) => console.error('候选人详情加载失败:', err))
+    .finally(() => {
+      detailLoading.value = false
+    })
+}
+
+/** 数字状态码转状态 key（与后端 CASE 保持一致） */
+function codeToStatus(code) {
+  const map = {
+    0: 'new',
+    1: 'screened',
+    2: 'interviewing',
+    3: 'rejected',
+    4: 'passed',
+    5: 'passed',
+    6: 'archived',
+    7: 'archived',
+    8: 'rejected',
+    9: 'new'
+  }
+  return map[code] !== undefined ? map[code] : 'new'
 }
 
 /** 标签管理 */
@@ -270,3 +354,71 @@ const statusOptions = [
   { value: 'rejected', label: '淘汰' }
 ]
 </script>
+
+<style>
+.candidate-detail-dialog .detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 4px 18px;
+  border-bottom: 1px solid #ebeef5;
+}
+.candidate-detail-dialog .detail-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4e7cff, #22c55e);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.candidate-detail-dialog .detail-head-info {
+  flex: 1;
+  min-width: 0;
+}
+.candidate-detail-dialog .detail-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.candidate-detail-dialog .detail-sub {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #909399;
+}
+.candidate-detail-dialog .detail-score {
+  text-align: center;
+  flex-shrink: 0;
+}
+.candidate-detail-dialog .score-num {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+.candidate-detail-dialog .score-label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
+}
+.candidate-detail-dialog .detail-desc {
+  margin-top: 18px;
+}
+.candidate-detail-dialog .detail-tags {
+  margin-top: 16px;
+}
+.candidate-detail-dialog .tags-title {
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 8px;
+}
+.candidate-detail-dialog .tag-item {
+  margin: 0 8px 8px 0;
+}
+</style>
