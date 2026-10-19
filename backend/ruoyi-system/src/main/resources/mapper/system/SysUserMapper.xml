@@ -8,6 +8,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <id     property="userId"        column="user_id"         />
         <result property="deptId"        column="dept_id"         />
         <result property="userName"      column="user_name"       />
+        <result property="userIdentityType" column="user_identity_type" />
         <result property="nickName"      column="nick_name"       />
         <result property="email"         column="email"           />
         <result property="phonenumber"   column="phonenumber"     />
@@ -153,6 +154,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			<if test="userId != null and userId != 0">user_id,</if>
  			<if test="deptId != null and deptId != 0">dept_id,</if>
  			<if test="userName != null and userName != ''">user_name,</if>
+			<if test="userIdentityType != null">user_identity_type,</if>
  			<if test="nickName != null and nickName != ''">nick_name,</if>
  			<if test="email != null and email != ''">email,</if>
  			<if test="avatar != null and avatar != ''">avatar,</if>
@@ -168,6 +170,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			<if test="userId != null and userId != ''">#{userId},</if>
  			<if test="deptId != null and deptId != ''">#{deptId},</if>
  			<if test="userName != null and userName != ''">#{userName},</if>
+			<if test="userIdentityType != null">#{userIdentityType},</if>
  			<if test="nickName != null and nickName != ''">#{nickName},</if>
  			<if test="email != null and email != ''">#{email},</if>
  			<if test="avatar != null and avatar != ''">#{avatar},</if>

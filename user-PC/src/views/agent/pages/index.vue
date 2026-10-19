@@ -5,8 +5,8 @@
     <main class="main-content" id="dashboard">
       <section class="welcome-row" aria-labelledby="pageTitle">
         <div>
-          <p class="eyebrow">TUESDAY · 2024年6月18日</p>
-          <h1 id="pageTitle">早上好，晓雨</h1>
+          <p class="eyebrow">{{ todayLabel }}</p>
+          <h1 id="pageTitle">{{ greeting }}，{{ displayName }}</h1>
           <p class="welcome-subtitle">岗位数据来自企业端已发布且正在招聘的真实岗位。</p>
         </div>
         <div class="search-box">
@@ -20,37 +20,46 @@
         <article class="panel application-panel" id="applications">
           <div class="panel-header">
             <div><h2 class="panel-title">我的投递进度摘要</h2><p class="panel-caption">持续跟进每一个值得期待的机会</p></div>
-            <button class="text-button" id="viewAllApplications">查看全部 →</button>
+            <button class="text-button" id="viewAllApplications" type="button" @click="openApplications">查看全部 →</button>
           </div>
-          <div class="application-overview">
-            <div class="progress-ring" aria-label="进行中的投递 8 个">
-              <svg viewBox="0 0 92 92" aria-hidden="true"><circle class="track" cx="46" cy="46" r="34" /><circle class="value" cx="46" cy="46" r="34" /></svg>
-              <div class="progress-ring-label">8<small>进行中</small></div>
-            </div>
-            <div class="stat-copy">
-              <strong>8 个投递</strong>
-              <span>过去 30 天，你一共投递了 12 个岗位</span>
-              <div class="stat-chips"><span class="stat-chip"><strong>2</strong>面试中</span><span class="stat-chip"><strong>4</strong>待反馈</span><span class="stat-chip"><strong>2</strong>已入库</span></div>
-            </div>
+          <div v-if="applicationLoading" class="dashboard-state">正在读取真实投递数据...</div>
+          <div v-else-if="applicationError" class="dashboard-state error-state">
+            <span>{{ applicationError }}</span>
+            <button class="text-button" type="button" @click="loadApplications">重新加载</button>
           </div>
-          <div class="latest-application">
-            <p class="latest-label">最新进展</p>
-            <div class="latest-main">
-              <div class="company-logo">极氪</div>
-              <div class="job-basic"><div class="job-title">高级产品经理 · 智能座舱</div><div class="job-company">极氪智能科技 · 杭州</div></div>
-              <span class="status-pill">面试邀约</span>
+          <template v-else>
+            <div class="application-overview">
+              <div class="progress-ring" :aria-label="`进行中的投递 ${inProgressApplicationCount} 个`">
+                <svg viewBox="0 0 92 92" aria-hidden="true"><circle class="track" cx="46" cy="46" r="34" /><circle class="value" cx="46" cy="46" r="34" :style="{ strokeDashoffset: progressRingOffset }" /></svg>
+                <div class="progress-ring-label">{{ inProgressApplicationCount }}<small>进行中</small></div>
+              </div>
+              <div class="stat-copy">
+                <strong>{{ applicationTotal }} 个投递</strong>
+                <span>数据来自当前账号的真实投递记录</span>
+                <div class="stat-chips"><span class="stat-chip"><strong>{{ interviewApplicationCount }}</strong>面试中</span><span class="stat-chip"><strong>{{ activeApplicationCount }}</strong>待反馈</span><span class="stat-chip"><strong>{{ closedApplicationCount }}</strong>已结束</span></div>
+              </div>
             </div>
-            <div class="latest-footer"><span class="time-note">更新于 6月17日 15:40</span><button class="outline-button" type="button" @click="openApplications">查看详情</button></div>
-          </div>
+            <div v-if="latestApplication" class="latest-application">
+              <p class="latest-label">最新进展</p>
+              <div class="latest-main">
+                <div class="company-logo" :class="companyLogoClass(latestApplication.companyName)">{{ companyMark(latestApplication.companyName) }}</div>
+                <div class="job-basic"><div class="job-title">{{ latestApplication.jobTitle }}</div><div class="job-company">{{ latestApplication.companyName }} · {{ latestApplication.locationText || '地点待定' }}</div></div>
+                <span class="status-pill" :class="applicationStatusClass(latestApplication.status)">{{ latestApplication.statusText || '投递处理中' }}</span>
+              </div>
+              <div class="latest-footer"><span class="time-note">更新于 {{ formatApplicationTime(latestApplication.updatedAt || latestApplication.appliedAt) }}</span><button class="outline-button" type="button" @click="openApplication(latestApplication)">查看详情</button></div>
+            </div>
+            <div v-else class="latest-application dashboard-empty">暂无投递记录，去岗位浏览看看新的机会吧。</div>
+          </template>
         </article>
 
         <article class="panel activity-panel">
-          <div class="panel-header"><div><h2 class="panel-title">关注企业动态</h2><p class="panel-caption">你关注的企业有了新消息</p></div><button class="text-button" type="button" @click="showToast('关注企业管理已准备好')">管理关注 →</button></div>
-          <ul class="activity-list">
-            <li class="activity-item"><span class="activity-dot"></span><div class="activity-body"><div class="activity-company">极氪智能科技 <span>招聘团队</span></div><p class="activity-content">发布了 3 个产品岗位，正在寻找热爱智能出行的产品人。</p><div class="activity-time">2 小时前</div></div></li>
-            <li class="activity-item"><span class="activity-dot"></span><div class="activity-body"><div class="activity-company">阿里巴巴集团 <span>企业动态</span></div><p class="activity-content">杭州团队开放日即将开始，欢迎关注电商与 AI 方向的新机会。</p><div class="activity-time">昨天 18:20</div></div></li>
-            <li class="activity-item"><span class="activity-dot"></span><div class="activity-body"><div class="activity-company">小红书 <span>招聘团队</span></div><p class="activity-content">为提升求职者体验，面试流程全面接入 AI 面试准备助手。</p><div class="activity-time">6月15日</div></div></li>
+          <div class="panel-header"><div><h2 class="panel-title">系统通知与平台动态</h2><p class="panel-caption">来自后端通知中心的最新消息</p></div><button class="text-button" type="button" @click="openMessages">查看全部 →</button></div>
+          <div v-if="noticesLoading" class="dashboard-state">正在读取真实通知...</div>
+          <div v-else-if="noticesError" class="dashboard-state error-state"><span>通知暂时无法读取</span><button class="text-button" type="button" @click="loadNotices">重新加载</button></div>
+          <ul v-else-if="noticeItems.length" class="activity-list">
+            <li v-for="item in noticeItems" :key="item.noticeId" class="activity-item" :class="{ 'activity-unread': !item.isRead }" role="button" tabindex="0" @click="openNotice(item)" @keydown.enter="openNotice(item)" @keydown.space.prevent="openNotice(item)"><span class="activity-dot"></span><div class="activity-body"><div class="activity-company">{{ item.noticeTitle || '系统通知' }} <span>{{ item.noticeType === '1' ? '通知' : '公告' }}</span></div><p class="activity-content">{{ noticePreview(item.noticeContent) || '暂无通知内容' }}</p><div class="activity-time">{{ formatRelativeTime(item.createTime) }}</div></div></li>
           </ul>
+          <div v-else class="dashboard-state">暂无系统通知</div>
         </article>
       </section>
 
@@ -86,7 +95,6 @@
               <h2 id="scheduleHeading" class="panel-title">面试安排</h2>
               <div class="schedule-caption">
                 <p class="panel-caption">查看即将开始的面试与会议时间</p>
-                <span v-if="scheduleMockEnabled" class="mock-badge">演示数据</span>
               </div>
             </div>
             <div class="schedule-toolbar">
@@ -193,13 +201,23 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { listJobs } from '@/api/agent/job'
+import { listApplications } from '@/api/agent/application'
 import { listCandidateSchedule } from '@/api/system/conference'
+import { listNoticeTop, markNoticeRead } from '@/api/system/notice'
+import useUserStore from '@/store/modules/user'
 
+const userStore = useUserStore()
 const jobs = ref([])
 const keyword = ref('')
 const sort = ref('match')
 const loading = ref(false)
 const errorMessage = ref('')
+const applications = ref([])
+const applicationLoading = ref(false)
+const applicationError = ref('')
+const noticeItems = ref([])
+const noticesLoading = ref(false)
+const noticesError = ref(false)
 const savedJobs = ref(new Set(readSavedJobs()))
 const toastVisible = ref(false)
 const toastMessage = ref('')
@@ -210,13 +228,37 @@ const selectedDate = ref(todayKey.value)
 const scheduleItems = ref([])
 const scheduleLoading = ref(false)
 const scheduleError = ref('')
-const scheduleMockEnabled = import.meta.env.VITE_AGENT_SCHEDULE_MOCK === 'true'
 const linkDialogVisible = ref(false)
 const linkDialogItem = ref(null)
 const interviewLink = ref('')
 const copiedLink = ref(false)
 let toastTimer
 let todayTimer
+
+const displayName = computed(() => userStore.nickName || userStore.name || '求职者')
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 6) return '晚上好'
+  if (hour < 12) return '早上好'
+  if (hour < 18) return '下午好'
+  return '晚上好'
+})
+const todayLabel = computed(() => {
+  const date = new Date()
+  const weekdays = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+  return `${weekdays[date.getDay()]} · ${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+})
+const applicationTotal = computed(() => applications.value.length)
+const activeApplicationCount = computed(() => applications.value.filter(item => item.status === 'active').length)
+const interviewApplicationCount = computed(() => applications.value.filter(item => item.status === 'interview').length)
+const closedApplicationCount = computed(() => applications.value.filter(item => item.status === 'closed').length)
+const inProgressApplicationCount = computed(() => activeApplicationCount.value + interviewApplicationCount.value)
+const latestApplication = computed(() => applications.value[0] || null)
+const progressRingOffset = computed(() => {
+  const circumference = 2 * Math.PI * 34
+  const progress = applicationTotal.value ? inProgressApplicationCount.value / applicationTotal.value : 0
+  return (circumference * (1 - Math.min(progress, 1))).toFixed(2)
+})
 
 const scheduleMonthLabel = computed(() => {
   const date = calendarDate.value
@@ -269,6 +311,34 @@ async function loadJobs() {
     errorMessage.value = error?.message || '岗位数据暂时无法读取，请稍后重试'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadApplications() {
+  applicationLoading.value = true
+  applicationError.value = ''
+  try {
+    const response = await listApplications({ page: 1, size: 100 })
+    applications.value = Array.isArray(response.data?.items) ? response.data.items : []
+  } catch (error) {
+    applications.value = []
+    applicationError.value = error?.message || '投递数据暂时无法读取，请稍后重试'
+  } finally {
+    applicationLoading.value = false
+  }
+}
+
+async function loadNotices() {
+  noticesLoading.value = true
+  noticesError.value = false
+  try {
+    const response = await listNoticeTop({ limit: 3 })
+    noticeItems.value = Array.isArray(response.data) ? response.data : []
+  } catch {
+    noticeItems.value = []
+    noticesError.value = true
+  } finally {
+    noticesLoading.value = false
   }
 }
 
@@ -474,6 +544,66 @@ function openApplications() {
   window.__agentNavigate('/agent/applications')
 }
 
+function openMessages() {
+  window.__agentNavigate('/agent/messages?view=system')
+}
+
+function openApplication(application) {
+  window.__agentNavigate(`/agent/application-detail?id=${encodeURIComponent(application.id)}`)
+}
+
+async function openNotice(notice) {
+  if (!notice.isRead) {
+    try {
+      await markNoticeRead(notice.noticeId)
+      notice.isRead = true
+      window.dispatchEvent(new CustomEvent('agent-notifications-updated'))
+    } catch {
+      // 通知打开失败时仍允许进入消息中心查看详情。
+    }
+  }
+  window.__agentNavigate(`/agent/messages?view=system#notice-${encodeURIComponent(notice.noticeId)}`)
+}
+
+function plainText(value) {
+  if (!value) return ''
+  const holder = document.createElement('div')
+  holder.innerHTML = value
+  return (holder.textContent || holder.innerText || '').replace(/\s+/g, ' ').trim()
+}
+
+function noticePreview(value) {
+  const content = plainText(value)
+  return content.length > 120 ? `${content.slice(0, 120)}…` : content
+}
+
+function formatRelativeTime(value) {
+  const date = parseDate(value)
+  if (!date) return '--'
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+  if (seconds < 60) return '刚刚'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)} 天前`
+  return `${date.getMonth() + 1}月${date.getDate()}日`
+}
+
+function parseDate(value) {
+  if (!value) return null
+  const date = new Date(String(value).includes(' ') ? String(value).replace(' ', 'T') : value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatApplicationTime(value) {
+  return value ? String(value).replace('T', ' ').slice(0, 16) : '刚刚'
+}
+
+function applicationStatusClass(status) {
+  if (status === 'interview') return 'green'
+  if (status === 'closed') return 'red'
+  return 'orange'
+}
+
 function companyMark(name) {
   return (name || '企业').slice(0, 2)
 }
@@ -491,6 +621,8 @@ function showToast(message) {
 
 onMounted(() => {
   loadJobs()
+  loadApplications()
+  loadNotices()
   loadSchedule()
   todayTimer = window.setInterval(() => {
     const nextTodayKey = formatDateKey(new Date())
@@ -679,6 +811,10 @@ onUnmounted(() => {
 
     /* 投递摘要 */
     .application-panel { min-height: 280px; }
+    .dashboard-state { min-height: 150px; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 20px 24px; color: var(--muted); font-size: 12px; text-align: center; }
+    .dashboard-state .text-button { padding: 0; }
+    .dashboard-state.error-state { flex-direction: column; color: #A95D64; }
+    .dashboard-empty { min-height: 92px; margin: 0 24px 22px; border: 1px dashed #DDE6F2; border-radius: 9px; background: #FBFCFE; }
     .application-overview { display: flex; align-items: center; gap: 22px; padding: 1px 24px 18px; }
     .progress-ring { position: relative; width: 92px; height: 92px; flex: 0 0 auto; }
     .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
@@ -709,19 +845,20 @@ onUnmounted(() => {
     .outline-button:hover { border-color: var(--interactive); background: var(--interactive-soft); }
 
     /* 企业动态 */
-    .activity-panel { min-height: 280px; }
-    .activity-list { list-style: none; margin: 0; padding: 0 24px 17px; }
-    .activity-item { display: flex; gap: 12px; padding: 0 0 16px; }
+    .activity-panel { min-height: 280px; overflow: hidden; }
+    .activity-list { max-height: 272px; display: flex; flex-direction: column; list-style: none; margin: 0; overflow-y: auto; padding: 0 24px 17px; }
+    .activity-item { display: flex; align-items: flex-start; flex: 0 0 auto; min-width: 0; gap: 12px; padding: 0 0 16px; }
     .activity-item + .activity-item { padding-top: 16px; border-top: 1px solid #F0F2F6; }
-    .activity-dot { position: relative; width: 9px; flex: 0 0 9px; margin-top: 5px; }
-    .activity-dot::before { content: ""; position: absolute; left: 0; width: 9px; height: 9px; border-radius: 50%; background: var(--interactive); box-shadow: 0 0 0 4px var(--interactive-soft); }
+    .activity-item.activity-unread .activity-company { color: var(--primary); }
+    .activity-dot { position: relative; width: 9px; height: 9px; flex: 0 0 9px; margin-top: 5px; }
+    .activity-dot::before { content: ""; position: absolute; top: 0; left: 0; width: 9px; height: 9px; border-radius: 50%; background: var(--interactive); box-shadow: 0 0 0 4px var(--interactive-soft); }
     .activity-item:nth-child(2) .activity-dot::before { background: #35A77F; box-shadow: 0 0 0 4px var(--success-soft); }
     .activity-item:nth-child(3) .activity-dot::before { background: #E19A38; box-shadow: 0 0 0 4px var(--warning-soft); }
-    .activity-body { min-width: 0; flex: 1; }
-    .activity-company { color: var(--primary); font-size: 13px; font-weight: 700; }
+    .activity-body { min-width: 0; flex: 1; overflow: hidden; }
+    .activity-company { overflow: hidden; color: var(--primary); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
     .activity-company span { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 400; }
-    .activity-content { margin: 4px 0 0; color: #4D5F78; font-size: 12px; line-height: 1.55; }
-    .activity-time { margin-top: 6px; color: #9AA7B8; font-size: 11px; }
+    .activity-content { display: -webkit-box; max-height: 38px; margin: 4px 0 0; overflow: hidden; color: #4D5F78; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; text-overflow: ellipsis; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .activity-time { margin-top: 6px; color: #9AA7B8; font-size: 11px; white-space: nowrap; }
 
     /* 推荐岗位区域 */
     .jobs-section { margin-top: 3px; }
@@ -931,4 +1068,14 @@ onUnmounted(() => {
       .schedule-modal-info { align-items: flex-start; flex-direction: column; gap: 3px; }
       .schedule-modal-info strong { text-align: left; }
     }
+</style>
+
+<style scoped>
+.dashboard-grid{align-items:start}
+.activity-list{max-height:none;overflow:visible;padding-bottom:22px}
+.activity-item{display:grid;grid-template-columns:9px minmax(0,1fr);width:100%;min-height:78px;align-items:start}
+.activity-body{width:100%;min-width:0}
+.app-shell .search-box{margin-top:0}
+.app-shell .search-box svg{top:12px;left:14px;width:18px;height:18px}
+.app-shell .search-box input{height:100%;padding:0 42px 0 40px;border:1px solid var(--line);border-radius:9px;color:var(--text);background:var(--card)}
 </style>

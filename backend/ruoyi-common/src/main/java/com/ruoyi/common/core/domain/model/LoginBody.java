@@ -8,7 +8,12 @@ package com.ruoyi.common.core.domain.model;
 public class LoginBody
 {
     /**
-     * 用户名
+     * 登录账号，可以是手机号或用户名
+     */
+    private String account;
+
+    /**
+     * 兼容后台登录接口的用户名字段
      */
     private String username;
 
@@ -38,9 +43,19 @@ public class LoginBody
     private String smsCode;
 
     /**
-     * 登录方式：password、sms
+     * 登录方式：account_password、sms
      */
     private String loginType;
+
+    public String getAccount()
+    {
+        return account;
+    }
+
+    public void setAccount(String account)
+    {
+        this.account = account;
+    }
 
     public String getUsername()
     {

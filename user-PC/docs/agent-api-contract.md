@@ -4,7 +4,7 @@
 **适用范围：** `src/views/agent/pages/` 下的 20 个求职者页面；RuoYi 原有管理端接口不在本契约范围内。  
 **接入地址：** 开发环境前缀为 `/dev-api/agent/v1`，由 Vite 代理到 `http://localhost:8080/agent/v1`。
 
-> 当前页面使用静态数据和 `localStorage` 演示。本文件定义替换这些演示数据时的唯一接口口径；在后端和数据库尚未完成前，不要求修改页面行为。
+> 岗位浏览、岗位详情、简历选择和投递页面已接入真实接口与数据库；收藏仍由前端 `localStorage` 保存，其他页面按各自接口实现状态为准。
 
 ## 1. 通用约定
 
@@ -183,8 +183,9 @@ HTTP 状态表达协议错误；响应体 `code` 表达可展示的业务错误�
 
 | 方法 | 路径 | 用途 | 请求参数 | `data` |
 | --- | --- | --- | --- | --- |
-| `GET` | `/jobs` | 岗位浏览、首页推荐 | `keyword,category,city,district,employmentType,experienceMin,education,sort,page,size,recommended` | 分页 `Job` 摘要 |
-| `GET` | `/system/enterprise/jobs/categories` | 岗位分类选项 | 无 | 当前在招岗位的分类名称数组 |
+| `GET` | `/jobs` | 岗位浏览、首页推荐 | `keyword,category,city,district,employmentType,experienceMin,education,industry,companySize,salaryMin,salaryMax,sort,page,size` | 分页 `Job` 摘要 |
+| `GET` | `/jobs/categories` | 岗位分类选项 | 无 | 当前在招岗位的分类名称数组 |
+| `GET` | `/jobs/filter-options` | 岗位筛选选项 | 无 | 城市、类型、经验、学历、行业和公司规模 |
 | `GET` | `/jobs/{jobId}` | 岗位详情 | 无 | `Job` 全量 |
 | `GET` | `/jobs/{jobId}/match` | 刷新岗位匹配分 | `resumeId` 可选 | `Job.match` |
 | `PUT` | `/jobs/{jobId}/favorite` | 收藏岗位 | 无 | `{favorited:true}` |

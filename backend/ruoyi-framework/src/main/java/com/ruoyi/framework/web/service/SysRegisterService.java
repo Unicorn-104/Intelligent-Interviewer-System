@@ -18,6 +18,9 @@ import com.ruoyi.framework.manager.AsyncManager;
 import com.ruoyi.framework.manager.factory.AsyncFactory;
 import com.ruoyi.system.service.ISysConfigService;
 import com.ruoyi.system.service.ISysUserService;
+import com.ruoyi.system.mapper.SysRoleMapper;
+import com.ruoyi.common.core.domain.entity.SysRole;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 注册校验方法
@@ -39,9 +42,13 @@ public class SysRegisterService
     @Autowired
     private SmsCodeService smsCodeService;
 
+    @Autowired
+    private SysRoleMapper roleMapper;
+
     /**
      * 注册
      */
+    @Transactional
     public String register(RegisterBody registerBody)
     {
         String msg = "", phone = registerBody.getPhone(), username = registerBody.getUsername(),
@@ -106,15 +113,21 @@ public class SysRegisterService
         else
         {
             sysUser.setNickName(username);
+            sysUser.setUserIdentityType(1);
             sysUser.setPwdUpdateDate(DateUtils.getNowDate());
             sysUser.setPassword(SecurityUtils.encryptPassword(password));
-            boolean regFlag = userService.registerUser(sysUser);
-            if (!regFlag)
+            SysRole candidateRole = roleMapper.checkRoleKeyUnique("biz_4");
+            if (candidateRole == null)
+            {
+                msg = "注册失败，系统未配置求职者角色";
+            }
+            else if (!userService.registerUser(sysUser))
             {
                 msg = "注册失败,请联系系统管理人员";
             }
             else
             {
+                userService.insertUserAuth(sysUser.getUserId(), new Long[] { candidateRole.getRoleId() });
                 AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.REGISTER, MessageUtils.message("user.register.success")));
             }
         }

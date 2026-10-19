@@ -13,6 +13,11 @@ export function isValidAccount(value) {
   return /^[A-Za-z0-9_-]{2,20}$/.test(String(value || '').trim())
 }
 
+export function isValidAccountOrPhone(value) {
+  const normalizedValue = String(value || '').trim()
+  return isValidPhoneNumber(normalizedValue) || isValidAccount(normalizedValue)
+}
+
 export function isValidSmsCode(value) {
   return /^\d{6}$/.test(String(value || '').trim())
 }

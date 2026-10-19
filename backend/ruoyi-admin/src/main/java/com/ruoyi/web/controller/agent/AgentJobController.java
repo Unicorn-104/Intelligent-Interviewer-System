@@ -30,6 +30,18 @@ public class AgentJobController extends BaseController
         return success(jobService.selectJobs(query, getUserId()));
     }
 
+    @GetMapping("/jobs/categories")
+    public AjaxResult categories()
+    {
+        return success(jobService.selectJobCategories());
+    }
+
+    @GetMapping("/jobs/filter-options")
+    public AjaxResult filterOptions()
+    {
+        return success(jobService.selectJobFilterOptions());
+    }
+
     @GetMapping("/jobs/{jobId}")
     public AjaxResult detail(@PathVariable("jobId") Long jobId)
     {

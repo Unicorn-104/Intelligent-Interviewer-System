@@ -65,13 +65,10 @@ public class SysLoginController
         {
             token = loginService.loginBySms(loginBody.getPhone(), loginBody.getSmsCode());
         }
-        else if ("phone_password".equalsIgnoreCase(loginBody.getLoginType()))
-        {
-            token = loginService.loginByPhonePassword(loginBody.getPhone(), loginBody.getPassword());
-        }
         else if ("account_password".equalsIgnoreCase(loginBody.getLoginType()))
         {
-            token = loginService.loginByAccountPassword(loginBody.getUsername(), loginBody.getPassword());
+            String account = loginBody.getAccount() == null ? loginBody.getUsername() : loginBody.getAccount();
+            token = loginService.loginByAccountPassword(account, loginBody.getPassword());
         }
         else
         {
