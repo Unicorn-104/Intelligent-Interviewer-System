@@ -34,11 +34,41 @@ export function createJob(data) {
   })
 }
 
+// 导入岗位文件：上传 JD 文档并解析为岗位草稿（单文件，AI 解析耗时较长需放宽超时）
+export function parseJdDocument(file) {
+  const data = new FormData()
+  data.append('file', file)
+  return request({
+    url: '/enterprise/jd/parse-document',
+    method: 'post',
+    headers: { 'Content-Type': 'multipart/form-data', repeatSubmit: false },
+    data,
+    timeout: 120000
+  })
+}
+
+// 覆盖更新岗位内容（导入解析确认命中重复岗位时使用，不改动岗位状态与流程模板）
+export function updateJob(posId, data) {
+  return request({
+    url: `/system/enterprise/jobs/${posId}`,
+    method: 'put',
+    data
+  })
+}
+
 // 岗位详情聚合
 export function jobDetail(posId) {
   return request({
     url: `/system/enterprise/jobs/${posId}`,
     method: 'get'
+  })
+}
+
+// 删除草稿岗位（仅草稿状态可删除）
+export function deleteDraftJob(posId) {
+  return request({
+    url: `/system/enterprise/jobs/${posId}`,
+    method: 'delete'
   })
 }
 
