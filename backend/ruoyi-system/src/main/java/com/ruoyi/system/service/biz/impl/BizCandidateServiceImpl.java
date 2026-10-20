@@ -43,17 +43,21 @@ public class BizCandidateServiceImpl implements IBizCandidateService
     }
 
     @Override
-    public int updateCandidateStatus(Long talId, Integer status)
+    public int updateCandidateStatus(Long talId, Integer status, String reason, Long operatorId)
     {
         if (talId == null || status == null)
         {
             throw new ServiceException("候选人或状态不能为空");
         }
-        if (candidateMapper.selectAdminCandidateById(talId) == null)
+        Map<String, Object> exist = candidateMapper.selectAdminCandidateById(talId);
+        if (exist == null)
         {
             throw new ServiceException("候选人不存在");
         }
-        return candidateMapper.updateCandidateStatus(talId, status);
+        int rows = candidateMapper.updateCandidateStatus(talId, status);
+        // t_tal 已有 AFTER UPDATE 触发器自动写日志，这里仅回填人工填写的原因与操作人，避免重复记录
+        candidateMapper.updateTalStatusLogMeta(talId, reason, operatorId);
+        return rows;
     }
 
     @Override
@@ -68,6 +72,50 @@ public class BizCandidateServiceImpl implements IBizCandidateService
         {
             throw new ServiceException("候选人不存在");
         }
+        return replaceTags(talId, tagsCsv);
+    }
+
+    @Override
+    @Transactional
+    public int batchUpdateTags(List<Long> talIds, String tagsCsv)
+    {
+        if (talIds == null || talIds.isEmpty())
+        {
+            throw new ServiceException("请先选择候选人");
+        }
+        int rows = 0;
+        for (Long talId : talIds)
+        {
+            if (candidateMapper.selectAdminCandidateById(talId) == null)
+            {
+                throw new ServiceException("候选人不存在: " + talId);
+            }
+            rows += appendTags(talId, tagsCsv);
+        }
+        return rows;
+    }
+
+    @Override
+    public List<Map<String, Object>> selectTalStatusLogs(Long talId)
+    {
+        if (talId == null)
+        {
+            throw new ServiceException("候选人不能为空");
+        }
+        return candidateMapper.selectTalStatusLogs(talId);
+    }
+
+    @Override
+    public List<Map<String, Object>> selectCandidateSummary()
+    {
+        return candidateMapper.selectCandidateSummary();
+    }
+
+    /**
+     * 先清后插单个候选人标签
+     */
+    private int replaceTags(Long talId, String tagsCsv)
+    {
         candidateMapper.deleteCandidateTags(talId);
         Set<String> tags = new LinkedHashSet<>();
         if (StringUtils.isNotEmpty(tagsCsv))
@@ -81,9 +129,34 @@ public class BizCandidateServiceImpl implements IBizCandidateService
                 }
             }
         }
-        // 降级：remark 无列不持久化
         int rows = 0;
         for (String t : tags)
+        {
+            rows += candidateMapper.insertCandidateTag(talId, t);
+        }
+        return rows;
+    }
+
+    /**
+     * 批量追加标签：保留已有标签，仅插入尚不存在的标签（不去重清空）
+     */
+    private int appendTags(Long talId, String tagsCsv)
+    {
+        Set<String> existing = new LinkedHashSet<>(candidateMapper.selectCandidateTags(talId));
+        Set<String> toAdd = new LinkedHashSet<>();
+        if (StringUtils.isNotEmpty(tagsCsv))
+        {
+            for (String t : tagsCsv.split(","))
+            {
+                String v = t == null ? "" : t.trim();
+                if (StringUtils.isNotEmpty(v) && !existing.contains(v))
+                {
+                    toAdd.add(v);
+                }
+            }
+        }
+        int rows = 0;
+        for (String t : toAdd)
         {
             rows += candidateMapper.insertCandidateTag(talId, t);
         }

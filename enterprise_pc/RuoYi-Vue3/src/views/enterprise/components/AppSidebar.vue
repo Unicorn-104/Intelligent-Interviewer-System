@@ -17,10 +17,11 @@ const menus = reactive([
       { label: '岗位列表', to: '/enterprise/jobs', match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] }
     ] },
   { label: '候选人与初筛', to: '/enterprise/candidates', icon: UsersRound,
-    match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess', 'EnterpriseScreening'],
+    match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess', 'EnterpriseScreening', 'EnterpriseTalent'],
     children: [
       { label: '候选人列表', to: '/enterprise/candidates', match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
-      { label: 'AI 初筛', to: '/enterprise/screening', match: ['EnterpriseScreening'] }
+      { label: 'AI 初筛', to: '/enterprise/screening', match: ['EnterpriseScreening'] },
+      { label: '人才库', to: '/enterprise/talent', match: ['EnterpriseTalent'] }
     ] },
   { label: '面试与笔试', to: '/enterprise/interviews', icon: CalendarDays,
     match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation', 'EnterpriseExam', 'EnterpriseExamProctor', 'EnterpriseExamProctorRoom'],

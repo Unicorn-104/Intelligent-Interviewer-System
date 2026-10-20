@@ -9,6 +9,7 @@ import '../dashboard/home_models.dart';
 import '../dashboard/widgets/home_interview_preview.dart';
 import 'data/job_detail_data_source.dart';
 import 'models/job_detail_view_data.dart';
+import '../talent/widgets/talent_interview_reschedule_sheet.dart';
 
 class JobInterviewsPage extends StatefulWidget {
   const JobInterviewsPage({
@@ -59,6 +60,9 @@ class _JobInterviewsPageState extends State<JobInterviewsPage>
   bool _descending = false;
   _InterviewFilter _filter = _InterviewFilter.all;
   Timer? _expiryTimer;
+  Timer? _hintTimer;
+  OverlayEntry? _hint;
+  bool _rescheduling = false;
   DateTime get _now => widget.now?.call() ?? DateTime.now();
 
   @override
@@ -72,6 +76,7 @@ class _JobInterviewsPageState extends State<JobInterviewsPage>
   @override
   void dispose() {
     _expiryTimer?.cancel();
+    _hideHint();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -152,6 +157,81 @@ class _JobInterviewsPageState extends State<JobInterviewsPage>
       setState(() {});
       _scheduleExpiry();
     });
+  }
+
+  void _hideHint() {
+    _hintTimer?.cancel();
+    _hintTimer = null;
+    _hint?.remove();
+    _hint?.dispose();
+    _hint = null;
+  }
+
+  void _showHint(String message) {
+    _hideHint();
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    _hint = OverlayEntry(
+      builder: (_) => Positioned.fill(
+        child: IgnorePointer(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Material(
+                color: AppColors.brandDeep,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
+                  child: Text(
+                    message,
+                    key: const Key('job-reschedule-hint'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.canvas),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(_hint!);
+    _hintTimer = Timer(const Duration(seconds: 2), _hideHint);
+  }
+
+  Future<void> _reschedule(HomeInterview interview) async {
+    if (_rescheduling) return;
+    if ((interview.status != 0 && interview.status != 1) ||
+        !interview.startTime.isAfter(_now)) {
+      _showHint('仅未开始且未取消的面试可以改期');
+      return;
+    }
+    _hideHint();
+    setState(() => _rescheduling = true);
+    try {
+      await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        isDismissible: false,
+        enableDrag: false,
+        backgroundColor: AppColors.canvas,
+        builder: (_) => FractionallySizedBox(
+          heightFactor: .9,
+          child: TalentInterviewRescheduleSheet(
+            appointment: interview.raw,
+            source: widget.source.candidateActionsSource,
+            now: widget.now,
+          ),
+        ),
+      );
+      if (mounted) await _load();
+    } finally {
+      if (mounted) setState(() => _rescheduling = false);
+    }
   }
 
   Future<void> _start(HomeInterview interview) async {
@@ -453,6 +533,7 @@ class _JobInterviewsPageState extends State<JobInterviewsPage>
               interview: interview,
               now: () => _now,
               onOpen: () => _start(interview),
+              onReschedule: () => _reschedule(interview),
             ),
           );
         },

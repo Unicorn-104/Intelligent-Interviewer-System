@@ -4,6 +4,9 @@ import request from '@/utils/request'
 export function listResume(query) {
   return request({ url: '/biz/resume/list', method: 'get', params: query })
 }
+export function getResumeSummary() {
+  return request({ url: '/biz/resume/summary', method: 'get' })
+}
 export function getResume(id) {
   return request({ url: '/biz/resume/' + id, method: 'get' })
 }

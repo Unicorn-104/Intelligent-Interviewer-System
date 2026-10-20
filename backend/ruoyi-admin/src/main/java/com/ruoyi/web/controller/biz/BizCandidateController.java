@@ -1,7 +1,9 @@
 package com.ruoyi.web.controller.biz;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,11 +44,27 @@ public class BizCandidateController extends BaseController
         return getDataTable(list);
     }
 
+    /** 统计概览 */
+    @PreAuthorize("@ss.hasPermi('biz:candidate:query')")
+    @GetMapping("/summary")
+    public AjaxResult summary()
+    {
+        return success(candidateService.selectCandidateSummary());
+    }
+
     @PreAuthorize("@ss.hasPermi('biz:candidate:query')")
     @GetMapping("/{talId}")
     public AjaxResult getInfo(@PathVariable("talId") Long talId)
     {
         return success(candidateService.selectAdminCandidateById(talId));
+    }
+
+    /** 状态变更历史 */
+    @PreAuthorize("@ss.hasPermi('biz:candidate:query')")
+    @GetMapping("/{talId}/logs")
+    public AjaxResult logs(@PathVariable("talId") Long talId)
+    {
+        return success(candidateService.selectTalStatusLogs(talId));
     }
 
     @PreAuthorize("@ss.hasPermi('biz:candidate:edit')")
@@ -56,7 +74,8 @@ public class BizCandidateController extends BaseController
     {
         Long talId = body.get("candidateId") == null ? null : Long.valueOf(String.valueOf(body.get("candidateId")));
         Integer status = toInt(body.get("status"));
-        return toAjax(candidateService.updateCandidateStatus(talId, status));
+        String reason = body.get("reason") == null ? null : String.valueOf(body.get("reason"));
+        return toAjax(candidateService.updateCandidateStatus(talId, status, reason, getUserId()));
     }
 
     @PreAuthorize("@ss.hasPermi('biz:candidate:edit')")
@@ -78,6 +97,19 @@ public class BizCandidateController extends BaseController
         String tags = body.get("tags") == null ? null : String.valueOf(body.get("tags"));
         String remark = body.get("remark") == null ? null : String.valueOf(body.get("remark"));
         return toAjax(candidateService.batchUpdateTag(talId, tags, remark));
+    }
+
+    /** 批量给多个候选人打标签 */
+    @PreAuthorize("@ss.hasPermi('biz:candidate:edit')")
+    @Log(title = "批量打标签", businessType = BusinessType.UPDATE)
+    @PutMapping("/batchTags")
+    public AjaxResult batchTags(@RequestBody Map<String, Object> body)
+    {
+        List<Long> ids = Arrays.stream(String.valueOf(body.get("ids")).split(","))
+                .map(String::trim).filter(s -> !s.isEmpty()).map(Long::valueOf)
+                .collect(Collectors.toList());
+        String tags = body.get("tags") == null ? null : String.valueOf(body.get("tags"));
+        return toAjax(candidateService.batchUpdateTags(ids, tags));
     }
 
     private Integer toInt(Object v)

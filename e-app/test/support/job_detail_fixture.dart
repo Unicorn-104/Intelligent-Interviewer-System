@@ -1,5 +1,7 @@
 import 'package:enterprise_recruiter/features/enterprise/jobs/data/job_detail_data_source.dart';
 
+import 'talent_detail_fixture.dart';
+
 Map<String, dynamic> jobDetailJson({List<Map<String, dynamic>>? candidates}) =>
     {
       'job': {
@@ -56,6 +58,9 @@ Map<String, dynamic> profileJson() => {
 };
 
 final class DetailFakeSource extends JobDetailDataSource {
+  final actions = TalentFakeSource();
+  @override
+  TalentFakeSource get candidateActionsSource => actions;
   DetailFakeSource({this.scoreResult = const [], this.scoreFailure = false});
   final List<Map<String, dynamic>> scoreResult;
   final bool scoreFailure;
@@ -66,6 +71,11 @@ final class DetailFakeSource extends JobDetailDataSource {
   int screenCalls = 0;
   int interviewCalls = 0;
   final List<Map<String, Object?>> savedWorkflows = [];
+
+  @override
+  Future<Map<String, dynamic>> loadCandidateResume(int id) async => {
+    'educationList': [],
+  };
 
   @override
   Future<Map<String, dynamic>> loadDetail(int id) async {

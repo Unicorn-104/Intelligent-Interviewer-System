@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart' show CancelToken, DioException, ProgressCallback;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,12 +26,14 @@ class JobPublishPage extends StatefulWidget {
   const JobPublishPage({
     super.key,
     this.loadOptions,
+    this.editingPositionId,
     this.submitJob,
     this.pickDocument,
     this.parseDocument,
     this.saveWorkflow,
   });
 
+  final int? editingPositionId;
   final Future<Map<String, dynamic>> Function()? loadOptions;
   final Future<Map<String, dynamic>> Function(Map<String, Object?>)? submitJob;
   final Future<JdPickedDocument?> Function()? pickDocument;
@@ -85,6 +89,8 @@ class _JobPublishPageState extends State<JobPublishPage> {
   bool _stageEditorOpen = false;
   bool _confirmingLeave = false;
   bool _draftApplied = false;
+
+  bool get _editing => widget.editingPositionId != null;
 
   bool get _importBusy => switch (_importPhase) {
     JdDocumentImportPhase.selecting ||
@@ -145,12 +151,13 @@ class _JobPublishPageState extends State<JobPublishPage> {
       _error = null;
     });
     try {
-      final options = await (widget.loadOptions ?? getJobPublishingOptions)();
+      final options = await (widget.loadOptions ?? _defaultOptions)();
       final company = options['company'];
       if (company is! Map || company['id'] == null || company['name'] == null) {
         throw const ApiException('无法读取所属企业，请稍后重试');
       }
       if (!mounted) return;
+      if (_editing) _fillExisting(options);
       setState(() {
         _company = Map<String, dynamic>.from(company);
         _departments =
@@ -171,8 +178,11 @@ class _JobPublishPageState extends State<JobPublishPage> {
     }
   }
 
-  String _message(Object error) =>
-      error is ApiException ? error.message : '暂时无法连接服务，请稍后重试';
+  String _message(Object error) => switch (error) {
+    ApiException() => error.message,
+    FormatException() => error.message,
+    _ => '暂时无法连接服务，请稍后重试',
+  };
 
   Future<void> _leave() async {
     if (_saving || _allowPop || _confirmingLeave) return;
@@ -210,11 +220,13 @@ class _JobPublishPageState extends State<JobPublishPage> {
         discard = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('离开岗位发布？'),
+            title: Text(_editing ? '放弃岗位修改？' : '离开岗位发布？'),
             content: Text(
               _importBusy
                   ? '离开后将停止等待本次解析，已填写的内容不会保留。'
-                  : '已填写的内容或待核对草稿尚未发布，离开后将不会保留。',
+                  : (_editing
+                        ? '岗位修改尚未保存，离开后将不会保留。'
+                        : '已填写的内容或待核对草稿尚未发布，离开后将不会保留。'),
             ),
             actions: [
               TextButton(
@@ -456,6 +468,79 @@ class _JobPublishPageState extends State<JobPublishPage> {
     });
   }
 
+  Future<Map<String, dynamic>> _defaultOptions() async {
+    final options = await getJobPublishingOptions();
+    if (!_editing) return options;
+    final detail = await getJobDetail(widget.editingPositionId!);
+    return {...options, 'job': detail['job'], 'skills': detail['skills']};
+  }
+
+  void _fillExisting(Map<String, dynamic> options) {
+    final raw = options['job'];
+    final skills = options['skills'];
+    if (raw is! Map ||
+        int.tryParse('${raw['posId']}') != widget.editingPositionId ||
+        skills is! List) {
+      throw const FormatException('岗位编辑数据不完整，请刷新后重试');
+    }
+    final json = raw['jdJson'];
+    final description = json == null || json == ''
+        ? <String, dynamic>{}
+        : json is String
+        ? jsonDecode(json)
+        : json;
+    if (description is! Map) throw const FormatException('岗位描述格式不正确');
+    String lines(Object? value) {
+      if (value == null) return '';
+      if (value is String) return value;
+      if (value is List && value.every((item) => item is String)) {
+        return value.join('\n');
+      }
+      throw const FormatException('岗位职责或要求格式不正确');
+    }
+
+    final loadedSkills = <JdImportSkill>[];
+    for (final skill in skills) {
+      if (skill is! Map ||
+          skill['name'] is! String ||
+          (skill['name'] as String).trim().isEmpty) {
+        throw const FormatException('岗位技能格式不正确');
+      }
+      final flag = skill['required'] == null
+          ? null
+          : int.tryParse('${skill['required']}');
+      if (skill['required'] != null && flag != 0 && flag != 1) {
+        throw const FormatException('技能必备标识无效');
+      }
+      loadedSkills.add(
+        JdImportSkill(name: skill['name'] as String, requiredFlag: flag),
+      );
+    }
+    final education = raw['education'] == null
+        ? 0
+        : int.tryParse('${raw['education']}');
+    final jobType = int.tryParse('${raw['jobType']}');
+    if (!_educationLabels.containsKey(education) ||
+        !_jobTypeLabels.containsKey(jobType)) {
+      throw const FormatException('岗位学历或工作性质无效，请核对原岗位数据');
+    }
+    _title.text = '${raw['title'] ?? ''}';
+    _department.text = '${raw['dept'] ?? ''}';
+    _city.text = '${raw['city'] ?? ''}';
+    _salaryMin.text = '${raw['salaryMin'] ?? ''}';
+    _salaryMax.text = '${raw['salaryMax'] ?? ''}';
+    _negotiable = raw['salaryMin'] == null && raw['salaryMax'] == null;
+    _experience = '${raw['experience'] ?? '经验不限'}';
+    _education = education!;
+    _jobType = jobType!;
+    _responsibilities.text = lines(description['responsibilities']);
+    _requirements.text = lines(description['requirements']);
+    _skills
+      ..clear()
+      ..addAll(loadedSkills);
+    _formImportRevision++;
+  }
+
   List<String> _lines(TextEditingController controller) => controller.text
       .split(RegExp(r'\r?\n'))
       .map((s) => s.trim())
@@ -474,7 +559,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
     'responsibilities': _lines(_responsibilities),
     'requirements': _lines(_requirements),
     'skills': _skills.map((skill) => skill.toJson()).toList(),
-    'status': 1,
+    if (!_editing) 'status': 1,
   };
 
   void _showPreview() {
@@ -522,6 +607,19 @@ class _JobPublishPageState extends State<JobPublishPage> {
       _error = null;
     });
     try {
+      if (_editing) {
+        final id = widget.editingPositionId!;
+        final result =
+            await (widget.submitJob ?? (body) => updateJob(id, body))(
+              _payload(),
+            );
+        if (!mounted) return;
+        if (int.tryParse('${result['posId']}') != id) {
+          throw const ApiException('保存响应的岗位编号不一致，请刷新核对');
+        }
+        _finishPublish(id);
+        return;
+      }
       if (_createdPositionId == null) {
         final result = await (widget.submitJob ?? createJob)(_payload());
         final positionId = int.tryParse('${result['posId']}');
@@ -673,9 +771,9 @@ class _JobPublishPageState extends State<JobPublishPage> {
         counterText: '',
         errorMaxLines: 2,
         fillColor: AppColors.background,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: AppColors.hairline),
         ),
       );
@@ -699,7 +797,11 @@ class _JobPublishPageState extends State<JobPublishPage> {
               : _leave,
           icon: const Icon(Icons.arrow_back_rounded),
         ),
-        title: Text(_preview ? '预览岗位' : '发布岗位'),
+        title: Text(
+          _preview
+              ? (_editing ? '预览修改' : '预览岗位')
+              : (_editing ? '编辑岗位' : '发布岗位'),
+        ),
         actions: [
           if (!_loading && _company != null)
             Padding(
@@ -718,7 +820,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
           : _company == null
           ? PageMessage(
               icon: Icons.business_outlined,
-              title: '暂时无法发布岗位',
+              title: _editing ? '暂时无法编辑岗位' : '暂时无法发布岗位',
               message: _error ?? '请确认企业绑定状态',
               actionLabel: '重试',
               onAction: _loadOptions,
@@ -755,7 +857,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
                           onReview: _reviewDraft,
                         ),
                         const SizedBox(height: 12),
-                        _workflowEditor(),
+                        if (!_editing) _workflowEditor(),
                         const SizedBox(height: 20),
                         _form(),
                       ],
@@ -785,7 +887,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
   Widget _hero() => Container(
     padding: const EdgeInsets.all(22),
     decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(8),
       gradient: const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
@@ -800,12 +902,12 @@ class _JobPublishPageState extends State<JobPublishPage> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.canvas.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(
                 Icons.business_center_outlined,
-                color: Colors.white,
+                color: AppColors.canvas,
                 size: 22,
               ),
             ),
@@ -814,7 +916,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
               child: Text(
                 '${_company!['name']}',
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: AppColors.canvas,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
@@ -824,18 +926,20 @@ class _JobPublishPageState extends State<JobPublishPage> {
         ),
         const SizedBox(height: 20),
         Text(
-          _preview ? '好的岗位，值得被看见' : '让合适的人才找到你',
+          _editing ? '完善岗位信息' : (_preview ? '好的岗位，值得被看见' : '让合适的人才找到你'),
           style: const TextStyle(
-            color: Colors.white,
+            color: AppColors.canvas,
             fontSize: 22,
             fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          _preview ? '确认信息后发布，岗位将进入招聘中状态。' : '完善职位信息，清晰表达团队的期待。',
+          _editing
+              ? '修改职位信息，清晰表达团队的期待。'
+              : (_preview ? '确认信息后发布，岗位将进入招聘中状态。' : '完善职位信息，清晰表达团队的期待。'),
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
+            color: AppColors.canvas.withValues(alpha: 0.85),
             fontSize: 13,
             height: 1.6,
           ),
@@ -853,8 +957,8 @@ class _JobPublishPageState extends State<JobPublishPage> {
     margin: const EdgeInsets.only(bottom: 16),
     padding: const EdgeInsets.all(20),
     decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      color: AppColors.canvas,
+      borderRadius: BorderRadius.circular(8),
       border: Border.all(color: AppColors.hairline),
     ),
     child: Column(
@@ -1157,7 +1261,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
     _section(
       '02',
       '工作职责',
-      '发布后将按以下条目展示',
+      _editing ? '保存后将按以下条目展示' : '发布后将按以下条目展示',
       _lines(_responsibilities).map(_bullet).toList(),
     ),
     _section(
@@ -1273,7 +1377,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
 
   Widget _footer() => Container(
     decoration: const BoxDecoration(
-      color: Colors.white,
+      color: AppColors.canvas,
       border: Border(top: BorderSide(color: AppColors.hairline)),
     ),
     child: SafeArea(
@@ -1295,7 +1399,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
                       },
                 style: OutlinedButton.styleFrom(
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
                 child: const Text('返回修改'),
@@ -1315,7 +1419,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 52),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
                 icon: _saving
@@ -1334,10 +1438,16 @@ class _JobPublishPageState extends State<JobPublishPage> {
                   _needsListCheck
                       ? '返回岗位列表'
                       : _saving
-                      ? (_createdPositionId == null ? '正在发布…' : '正在保存流程…')
+                      ? (_editing
+                            ? '正在保存…'
+                            : (_createdPositionId == null
+                                  ? '正在发布…'
+                                  : '正在保存流程…'))
                       : _preview
-                      ? (_createdPositionId == null ? '确认发布' : '重试保存流程')
-                      : '预览岗位',
+                      ? (_editing
+                            ? '保存修改'
+                            : (_createdPositionId == null ? '确认发布' : '重试保存流程'))
+                      : (_editing ? '预览修改' : '预览岗位'),
                 ),
               ),
             ),
