@@ -2,10 +2,11 @@
 import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Video, Play, Zap, Smile, Paperclip, Send, Settings2, FileText, Bell, Copy } from '@/views/enterprise/components/icons'
+import { Search, Video, Play, Zap, Smile, Paperclip, Send, Settings2, FileText, Bell, Copy, MessageSquareText } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import { listSessions, listMessages, sendMessage, readSession, readAll, uploadFile, listQuickReplies, saveQuickReply, deleteQuickReply } from '@/api/system/im'
 import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice } from '@/api/system/conference'
+import { listSurveyTemplates, sendSurvey } from '@/api/survey'
 import { refreshUnread, totalUnread } from '@/views/enterprise/store/unread'
 import { match as pinyinMatch } from 'pinyin-pro'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
@@ -473,6 +474,63 @@ async function sendLinkToChat() {
   }
 }
 
+// ---------- 发送调研问卷：选择问卷模板，生成匿名填写链接并发送到会话 ----------
+const surveyOpen = ref(false)
+const surveyTemplates = ref([])
+const surveyLoading = ref(false)
+const surveySending = ref(false)
+const selectedSurveyId = ref(null)
+const surveyLink = ref('')
+const SURVEY_SCENE = { 1: '面试后', 2: '初筛后', 3: '录用后', 4: '淘汰后', 5: '投递简历后' }
+function sceneText(v) { return SURVEY_SCENE[Number(v)] || '—' }
+
+async function openSurveyModal() {
+  const peer = peerUserId.value
+  if (peer == null) { ElMessage.warning('当前会话缺少对方信息，无法发送调研问卷'); return }
+  selectedSurveyId.value = null
+  surveyLink.value = ''
+  surveyOpen.value = true
+  surveyLoading.value = true
+  try {
+    const res = await listSurveyTemplates()
+    surveyTemplates.value = res.data || []
+  } catch (e) {
+    surveyTemplates.value = []
+    ElMessage.error(e?.message || '加载问卷模板失败')
+  } finally {
+    surveyLoading.value = false
+  }
+}
+
+// 链接拼接规则：候选人端统一入口页 + 匿名令牌
+function surveyLinkUrl(token) {
+  return import.meta.env.VITE_CANDIDATE_APP_URL + '/survey-fill?token=' + token
+}
+
+async function sendSurveyToChat() {
+  const peer = peerUserId.value
+  if (peer == null || selectedSurveyId.value == null) { ElMessage.warning('请选择要发送的调研问卷'); return }
+  surveySending.value = true
+  try {
+    const res = await sendSurvey({ candidateUserId: peer, templateId: selectedSurveyId.value })
+    const info = res.data || {}
+    surveyLink.value = surveyLinkUrl(info.token)
+    const tplName = info.templateName || '调研问卷'
+    // 以普通文本消息发送（type=1），与日常聊天一致，链接在气泡内可点击
+    const body = { type: 1, content: `【满意度调研】诚邀您填写《${tplName}》：${surveyLink.value}` }
+    if (activeId.value != null) body.sessionId = activeId.value
+    else body.peerId = newChat.value.peerId
+    await sendMessage(body)
+    surveyOpen.value = false
+    await afterSend()
+    ElMessage.success('调研问卷已发送')
+  } catch (e) {
+    ElMessage.error(e?.message || '发送失败')
+  } finally {
+    surveySending.value = false
+  }
+}
+
 onMounted(async () => {
   await loadConversations()
   const { peerId, peerName, notices } = route.query
@@ -564,6 +622,7 @@ onBeforeUnmount(() => {
           <div class="composer-tools">
             <button title="表情" @click="emojiOpen=!emojiOpen"><Smile :size="18"/></button>
             <button title="发送文件" @click="pickFile"><Paperclip :size="18"/></button>
+            <button title="发送调研文件" @click="openSurveyModal"><MessageSquareText :size="18"/></button>
             <button class="rec-btn" @click="openRecordings"><Play :size="16"/>查看录制</button>
             <button class="quick" v-if="templates.length" @click="useTemplate(templates[0].content)"><Zap :size="15"/>快捷回复</button>
             <input ref="fileInput" type="file" style="display:none" @change="onFileChange" />
@@ -649,6 +708,24 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </BaseModal>
+
+    <BaseModal v-if="surveyOpen" title="发送调研问卷" width="480px" @close="surveyOpen=false">
+      <div class="survey-form">
+        <p class="sf-tip">选择要发送给「{{ activeConv?.name || '当前候选人' }}」的调研问卷，系统将生成匿名填写链接并以消息发送。</p>
+        <p v-if="surveyLoading" class="sf-empty">加载中…</p>
+        <p v-else-if="!surveyTemplates.length" class="sf-empty">暂无可用的调研问卷，请先在「满意度调研」中创建并启用问卷</p>
+        <div v-else class="sf-list">
+          <label v-for="t in surveyTemplates" :key="t.templateId" class="sf-item" :class="{ on: selectedSurveyId === t.templateId }">
+            <input type="radio" :value="t.templateId" v-model="selectedSurveyId" />
+            <div><b>{{ t.name }}</b><small>{{ sceneText(t.triggerScene) }} · {{ (t.questions || []).length }} 道题目</small></div>
+          </label>
+        </div>
+        <div class="sf-foot">
+          <button class="btn" @click="surveyOpen=false">取消</button>
+          <button class="btn primary" :disabled="surveySending || selectedSurveyId == null" @click="sendSurveyToChat"><Send :size="14"/>{{ surveySending ? '发送中…' : '发送' }}</button>
+        </div>
+      </div>
+    </BaseModal>
   </div>
 </template>
 
@@ -701,4 +778,15 @@ onBeforeUnmount(() => {
 .nc-reject{border:1px solid #dfe6ef;background:#fff;color:#64748b;padding:0 18px}
 .nc-enter{border:0;background:#16a34a;color:#fff}
 .nc-rejected{font-size:12px;color:#9aa7b8}
+.survey-form{display:flex;flex-direction:column;gap:12px}
+.sf-tip{font-size:12px;color:#5b6b82;line-height:1.6}
+.sf-empty{font-size:12px;color:#9aa7b8;text-align:center;padding:18px 0}
+.sf-list{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto}
+.sf-item{display:flex;align-items:center;gap:10px;border:1px solid #e0e7f0;border-radius:9px;padding:10px 12px;cursor:pointer}
+.sf-item.on{border-color:#8eb2fa;background:#f2f7ff}
+.sf-item input{accent-color:#2563eb}
+.sf-item div{min-width:0}
+.sf-item b{display:block;font-size:12px;color:#26364d}
+.sf-item small{color:#8392a7;font-size:10px}
+.sf-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:4px}
 </style>
