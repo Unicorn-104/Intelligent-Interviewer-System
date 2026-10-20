@@ -135,6 +135,12 @@ export const constantRoutes = [
         meta: { title: '人才库' }
       },
       {
+        path: 'survey',
+        component: () => import('@/views/enterprise/survey/index.vue'),
+        name: 'EnterpriseSurvey',
+        meta: { title: '满意度调研' }
+      },
+      {
         path: 'conference/active',
         component: () => import('@/views/enterprise/conference/active.vue'),
         name: 'EnterpriseConferenceActive',
