@@ -54,6 +54,18 @@ Future<Map<String, dynamic>> createJob(Map<String, Object?> body) async {
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
+/// 更新当前企业的已有岗位，保留岗位状态与招聘流程。
+Future<Map<String, dynamic>> updateJob(
+  int positionId,
+  Map<String, Object?> body,
+) async {
+  final response = await EnterpriseApiClient().put(
+    '/system/enterprise/jobs/$positionId',
+    body: body,
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
 /// 发布前读取当前账号所属企业及已有部门。
 Future<Map<String, dynamic>> getJobPublishingOptions() async {
   final response = await EnterpriseApiClient().get(

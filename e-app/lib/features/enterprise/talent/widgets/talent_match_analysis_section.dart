@@ -31,7 +31,7 @@ class _TalentAiInfoButtonState extends State<TalentAiInfoButton> {
         onPressed: _show,
         icon: const Icon(Icons.info_outline, size: 18),
         color: AppColors.muted,
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
     ),
   );
@@ -48,56 +48,58 @@ class TalentSectionFrame extends StatelessWidget {
     required this.onRetry,
     this.child,
     this.ai = false,
+    this.embedded = false,
   });
 
   final String title;
-  final bool loading, empty, ai;
+  final bool loading, empty, ai, embedded;
   final String? error;
   final String emptyText;
   final VoidCallback onRetry;
   final Widget? child;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (title.isNotEmpty || ai) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: AppColors.brand,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+  Widget build(BuildContext context) {
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (title.isNotEmpty || ai) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: AppColors.brand,
+                    fontWeight: FontWeight.w600,
                   ),
-                  if (ai) const TalentAiInfoButton(),
-                ],
+                ),
               ),
-              const SizedBox(height: 6),
+              if (ai) const TalentAiInfoButton(),
             ],
-            if (loading)
-              const LinearProgressIndicator()
-            else if (error != null) ...[
-              Text(error!),
-              TextButton(onPressed: onRetry, child: const Text('重试')),
-            ] else if (empty) ...[
-              Text(emptyText, style: const TextStyle(color: AppColors.muted)),
-              TextButton(onPressed: onRetry, child: const Text('刷新')),
-            ] else
-              ?child,
-          ],
-        ),
+          ),
+          const SizedBox(height: 6),
+        ],
+        if (loading)
+          const LinearProgressIndicator()
+        else if (error != null) ...[
+          Text(error!),
+          TextButton(onPressed: onRetry, child: const Text('重试')),
+        ] else if (empty) ...[
+          Text(emptyText, style: const TextStyle(color: AppColors.muted)),
+          TextButton(onPressed: onRetry, child: const Text('刷新')),
+        ] else
+          ?child,
+      ],
+    );
+    if (embedded) return content;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Padding(padding: const EdgeInsets.all(14), child: content),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// Preserve the full source text while keeping long summaries compact initially.
@@ -174,11 +176,13 @@ class TalentMatchAnalysisSection extends StatelessWidget {
     this.job,
     required this.onDetailRetry,
     required this.onMatchRetry,
+    this.embedded = false,
   });
   final TalentSectionState<Map<String, dynamic>> detail;
   final TalentSectionState<TalentMatchData> match;
   final TalentJobContext? job;
   final VoidCallback onDetailRetry, onMatchRetry;
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +199,8 @@ class TalentMatchAnalysisSection extends StatelessWidget {
       children: [
         TalentSectionFrame(
           title: '通用评分，非岗位维度',
-          ai: true,
+          ai: !embedded,
+          embedded: embedded,
           loading: detail.loading && result == null,
           error: result == null ? detail.error : null,
           empty: score == null,
@@ -209,9 +214,12 @@ class TalentMatchAnalysisSection extends StatelessWidget {
             ),
           ),
         ),
+        if (embedded)
+          const Divider(height: 24, thickness: 1, color: AppColors.hairline),
         TalentSectionFrame(
           title: '岗位技能分析',
-          ai: true,
+          ai: !embedded,
+          embedded: embedded,
           loading: job != null && match.loading,
           error: job == null ? null : match.error,
           empty: job == null,

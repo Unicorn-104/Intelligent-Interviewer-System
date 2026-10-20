@@ -292,16 +292,18 @@ public class ExamGradeServiceImpl implements IExamGradeService
         {
             return "请在面试安排中心手动邀约面试";
         }
+        // 从自动流转配置读取招聘阶段；旧配置未指定阶段时沿用单次邀约的可空语义。
+        Long stageId = raw instanceof Map ? asLong(((Map<?, ?>) raw).get("stageId")) : null;
         int days = raw instanceof Map ? asInt(((Map<?, ?>) raw).get("startAfterDays"), 3) : 3;
         int duration = raw instanceof Map ? asInt(((Map<?, ?>) raw).get("durationMin"), 45) : 45;
         LocalDateTime start = LocalDateTime.now().plusDays(Math.max(days, 0))
                 .withMinute(0).withSecond(0).withNano(0);
         try
         {
-            Long autoStageId = raw instanceof Map ? asLong(((Map<?, ?>) raw).get("stageId")) : null;
             Map<String, Object> invite = scheduleService.invite(operatorUserId,
-                    asLong(ctx.get("talId")), asLong(ctx.get("positionId")), autoStageId,
-                    interviewerId, start.format(TIME_FORMAT), duration);
+                    asLong(ctx.get("talId")), asLong(ctx.get("positionId")),
+                    stageId, interviewerId,
+                    start.format(TIME_FORMAT), duration);
             return "已自动创建面试邀约 #" + invite.get("appointmentId")
                     + "（建议时间 " + invite.get("startTime") + "）";
         }

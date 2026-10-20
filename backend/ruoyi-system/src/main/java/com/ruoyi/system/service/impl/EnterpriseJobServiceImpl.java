@@ -119,32 +119,11 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         Map<String, Object> company = publishingCompany(userId);
         Long companyId = ((Number) company.get("id")).longValue();
         List<PositionSkill> skills = positionSkills(form.get("skills"));
-        Map<String, Object> job = new LinkedHashMap<>();
+        Map<String, Object> job = validatedJob(form, Map.of());
         job.put("companyId", companyId);
         job.put("publisherId", userId);
-        job.put("title", requiredText(form.get("title"), "岗位名称", 100));
-        job.put("dept", requiredText(form.get("dept"), "所属部门", 50));
-        job.put("city", requiredText(form.get("city"), "工作城市", 50));
-        String experience = form.get("experience") == null ? "经验不限"
-                : requiredText(form.get("experience"), "经验要求", 20);
-        job.put("experience", experience);
-        BigDecimal min = salary(form.get("salaryMin"));
-        BigDecimal max = salary(form.get("salaryMax"));
-        if ((min == null) != (max == null) || (min != null && min.compareTo(max) > 0))
-        {
-            throw new ServiceException("请填写完整薪资范围，且最高月薪不得低于最低月薪", ErrorCode.BAD_REQUEST);
-        }
-        job.put("salaryMin", min);
-        job.put("salaryMax", max);
-        job.put("education", choice(form.get("education"), null, 1, 5, "学历要求"));
-        job.put("jobType", choice(form.get("jobType"), 1, 1, 3, "工作性质"));
         int status = choice(form.get("status"), 1, 0, 2, "岗位状态");
         job.put("status", status);
-        Map<String, Object> jd = new LinkedHashMap<>();
-        jd.put("description", str(form.get("description")));
-        jd.put("responsibilities", jobLines(form.get("responsibilities"), "工作职责"));
-        jd.put("requirements", jobLines(form.get("requirements"), "任职要求"));
-        job.put("jdJson", JSON.toJSONString(jd));
         if (jobMapper.insertJob(job) != 1 || job.get("posId") == null)
         {
             throw new ServiceException("岗位发布失败，请稍后重试");
@@ -166,6 +145,87 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         result.put("title", job.get("title"));
         result.put("status", job.get("status"));
         return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> updateJob(Long userId, Long posId, Map<String, Object> form)
+    {
+        if (form == null || posId == null || posId <= 0)
+        {
+            throw new ServiceException("请填写有效的岗位信息", ErrorCode.BAD_REQUEST);
+        }
+        Long companyId = ((Number) publishingCompany(userId).get("id")).longValue();
+        Map<String, Object> existing = jobMapper.selectJobForUpdate(posId, companyId);
+        if (existing == null)
+        {
+            throw new ServiceException("岗位不存在或无权修改", ErrorCode.FORBIDDEN);
+        }
+        Map<String, Object> existingJd;
+        try
+        {
+            String json = str(existing.get("jdJson"));
+            existingJd = StringUtils.isEmpty(json) ? new LinkedHashMap<>() : JSON.parseObject(json);
+            if (existingJd == null) throw new IllegalArgumentException();
+        }
+        catch (RuntimeException error)
+        {
+            throw new ServiceException("原岗位描述格式异常，请先核对岗位数据");
+        }
+        Map<String, Object> job = validatedJob(form, existingJd);
+        List<PositionSkill> skills = form.containsKey("skills") ? positionSkills(form.get("skills")) : null;
+        job.put("posId", posId);
+        job.put("companyId", companyId);
+        if (jobMapper.updateJob(job) != 1)
+        {
+            throw new ServiceException("岗位保存失败，请刷新后重试");
+        }
+        if (skills != null)
+        {
+            jdMapper.deletePositionSkills(posId);
+            for (PositionSkill skill : skills)
+            {
+                if (jdMapper.insertPositionSkill(posId, skill.name(), skill.required()) != 1)
+                {
+                    throw new ServiceException("岗位技能保存失败，请稍后重试");
+                }
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("posId", posId);
+        result.put("title", job.get("title"));
+        result.put("status", existing.get("status"));
+        return result;
+    }
+
+    private Map<String, Object> validatedJob(Map<String, Object> form, Map<String, Object> existingJd)
+    {
+        Map<String, Object> job = new LinkedHashMap<>();
+        job.put("title", requiredText(form.get("title"), "岗位名称", 100));
+        job.put("dept", requiredText(form.get("dept"), "所属部门", 50));
+        job.put("city", requiredText(form.get("city"), "工作城市", 50));
+        String experience = form.get("experience") == null ? "经验不限"
+                : requiredText(form.get("experience"), "经验要求", 20);
+        job.put("experience", experience);
+        BigDecimal min = salary(form.get("salaryMin"));
+        BigDecimal max = salary(form.get("salaryMax"));
+        if ((min == null) != (max == null) || (min != null && min.compareTo(max) > 0))
+        {
+            throw new ServiceException("请填写完整薪资范围，且最高月薪不得低于最低月薪", ErrorCode.BAD_REQUEST);
+        }
+        job.put("salaryMin", min);
+        job.put("salaryMax", max);
+        job.put("education", choice(form.get("education"), null, 1, 5, "学历要求"));
+        job.put("jobType", choice(form.get("jobType"), 1, 1, 3, "工作性质"));
+        Map<String, Object> jd = new LinkedHashMap<>(existingJd);
+        if (form.containsKey("description"))
+        {
+            jd.put("description", str(form.get("description")));
+        }
+        jd.put("responsibilities", jobLines(form.get("responsibilities"), "工作职责"));
+        jd.put("requirements", jobLines(form.get("requirements"), "任职要求"));
+        job.put("jdJson", JSON.toJSONString(jd));
+        return job;
     }
 
     private record PositionSkill(String name, Integer required) { }
@@ -300,6 +360,7 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         }
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("job", job);
+        result.put("skills", jdMapper.selectPositionSkills(posId));
         result.put("funnel", jobMapper.selectJobFunnel(posId));
         result.put("candidates", jobMapper.selectJobCandidates(posId));
         result.put("stages", jobMapper.selectJobStages(posId));

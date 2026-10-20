@@ -1,6 +1,7 @@
 package com.ruoyi.system.service.impl;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +10,9 @@ import java.util.UUID;
 import com.ruoyi.enterprise.mapper.EnterpriseJdMapper;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
+import com.ruoyi.system.mapper.app.AppCompanyMapper;
+import com.ruoyi.common.exception.ServiceException;
+import com.alibaba.fastjson2.JSON;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +31,7 @@ class EnterpriseJobSkillsTransactionTest
 {
     private JdbcTemplate jdbc;
     private EnterpriseJobServiceImpl service;
+    private AppCompanyMapper companyMapper;
 
     @BeforeEach
     void setUp() throws Exception
@@ -43,7 +48,7 @@ class EnterpriseJobSkillsTransactionTest
                 pos_publisher_id bigint, pos_title varchar(100), pos_department varchar(50),
                 pos_work_city varchar(50), pos_salary_min decimal(10,2), pos_salary_max decimal(10,2),
                 pos_experience_required varchar(20), pos_education_required tinyint, pos_job_type tinyint,
-                pos_jd_json varchar(20000), pos_status tinyint)
+                pos_jd_json varchar(20000), pos_status tinyint, pos_updated_at timestamp, pos_process_template_id bigint)
             """);
         jdbc.execute("""
             create table t_pos_skill (psk_id bigint auto_increment primary key,
@@ -60,6 +65,8 @@ class EnterpriseJobSkillsTransactionTest
         ReflectionTestUtils.setField(target, "jobMapper", session.getMapper(EnterpriseJobMapper.class));
         ReflectionTestUtils.setField(target, "dashboardMapper", session.getMapper(DashboardMapper.class));
         ReflectionTestUtils.setField(target, "jdMapper", session.getMapper(EnterpriseJdMapper.class));
+        companyMapper = mock(AppCompanyMapper.class);
+        ReflectionTestUtils.setField(target, "companyMapper", companyMapper);
         ProxyFactory proxy = new ProxyFactory(target);
         proxy.setProxyTargetClass(true);
         proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source),
@@ -107,5 +114,75 @@ class EnterpriseJobSkillsTransactionTest
         service.createJob(100L, empty);
         assertEquals(2, jdbc.queryForObject("select count(*) from t_pos", Integer.class));
         assertEquals(0, jdbc.queryForObject("select count(*) from t_pos_skill", Integer.class));
+    }
+
+    @Test
+    void updatesExistingJobAndSkillsWithoutChangingStatusOwnerOrWorkflow()
+    {
+        Map<String, Object> original = form();
+        original.put("skills", List.of("Java"));
+        original.put("description", "Legacy PC description");
+        Long id = ((Number) service.createJob(100L, original).get("posId")).longValue();
+        jdbc.update("update t_pos set pos_status = 2, pos_process_template_id = 17, pos_jd_json = ? where pos_id = ?",
+                "{\"description\":\"Legacy PC description\",\"summary\":\"Keep AI summary\",\"softRequirements\":[\"Teamwork\"]}", id);
+        clearInvocations(companyMapper);
+        Map<String, Object> updated = form();
+        updated.put("title", "Updated role");
+        updated.put("companyId", 999L);
+        updated.put("publisherId", 999L);
+        updated.put("status", 1);
+        updated.put("skills", List.of(Map.of("name", "SQL", "required", 0)));
+        Map<String, Object> result = service.updateJob(100L, id, updated);
+        assertEquals(id, result.get("posId"));
+        assertEquals("Updated role", result.get("title"));
+        assertEquals(2, ((Number) result.get("status")).intValue());
+        assertEquals(1, jdbc.queryForObject("select count(*) from t_pos", Integer.class));
+        assertEquals(2L, jdbc.queryForObject("select pos_company_id from t_pos where pos_id = ?", Long.class, id));
+        assertEquals(100L, jdbc.queryForObject("select pos_publisher_id from t_pos where pos_id = ?", Long.class, id));
+        assertEquals(17L, jdbc.queryForObject("select pos_process_template_id from t_pos where pos_id = ?", Long.class, id));
+        assertEquals(List.of("SQL"), jdbc.queryForList("select psk_name from t_pos_skill where psk_position_id = ?", String.class, id));
+        Map<String, Object> jd = JSON.parseObject(jdbc.queryForObject("select pos_jd_json from t_pos where pos_id = ?", String.class, id));
+        assertEquals("Legacy PC description", jd.get("description"));
+        assertEquals("Keep AI summary", jd.get("summary"));
+        assertEquals(List.of("Teamwork"), jd.get("softRequirements"));
+        verifyNoInteractions(companyMapper);
+    }
+
+    @Test
+    void rollsBackJobAndDeletedSkillsWhenReplacementSkillFails()
+    {
+        Map<String, Object> original = form(); original.put("skills", List.of("Java"));
+        Long id = ((Number) service.createJob(100L, original).get("posId")).longValue();
+        Map<String, Object> updated = form(); updated.put("title", "Must roll back");
+        updated.put("skills", List.of("SQL", "FAIL_SKILL"));
+        assertThrows(DataIntegrityViolationException.class, () -> service.updateJob(100L, id, updated));
+        assertEquals(original.get("title"), jdbc.queryForObject("select pos_title from t_pos where pos_id = ?", String.class, id));
+        assertEquals(List.of("Java"), jdbc.queryForList("select psk_name from t_pos_skill where psk_position_id = ?", String.class, id));
+    }
+
+    @Test
+    void rejectsForeignJobInvalidSalaryAndInvalidExistingJsonBeforeUpdating()
+    {
+        Long id = ((Number) service.createJob(100L, form()).get("posId")).longValue();
+        jdbc.execute("insert into t_cmp values (3, 'Other company', 'Other city', 1)");
+        jdbc.execute("insert into t_cmp_binding values (101, 3, 1)");
+        assertThrows(ServiceException.class, () -> service.updateJob(101L, id, form()));
+        Map<String, Object> invalid = form(); invalid.put("salaryMin", "invalid");
+        assertThrows(ServiceException.class, () -> service.updateJob(100L, id, invalid));
+        jdbc.update("update t_pos set pos_jd_json = 'not-json' where pos_id = ?", id);
+        assertThrows(ServiceException.class, () -> service.updateJob(100L, id, form()));
+        assertEquals(form().get("title"), jdbc.queryForObject("select pos_title from t_pos where pos_id = ?", String.class, id));
+    }
+
+    @Test
+    void omittedSkillsPreserveExistingRowsAndExplicitEmptyListClearsThem()
+    {
+        Map<String, Object> original = form(); original.put("skills", List.of("Java"));
+        Long id = ((Number) service.createJob(100L, original).get("posId")).longValue();
+        service.updateJob(100L, id, form());
+        assertEquals(1, jdbc.queryForObject("select count(*) from t_pos_skill where psk_position_id = ?", Integer.class, id));
+        Map<String, Object> cleared = form(); cleared.put("skills", List.of());
+        service.updateJob(100L, id, cleared);
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_pos_skill where psk_position_id = ?", Integer.class, id));
     }
 }

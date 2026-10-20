@@ -31,6 +31,10 @@ public interface EnterpriseJobMapper
      */
     public int insertJob(Map<String, Object> job);
 
+    public Map<String, Object> selectJobForUpdate(@Param("posId") Long posId, @Param("companyId") Long companyId);
+
+    public int updateJob(Map<String, Object> job);
+
     public Map<String, Object> selectPublishingCompany(@Param("companyId") Long companyId);
 
     /**
