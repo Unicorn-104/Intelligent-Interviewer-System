@@ -6,40 +6,55 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <!-- ============ 满意度调研（UC-17） ============ -->
 
+    <select id="selectCompanyIdByUser" parameterType="Long" resultType="Long">
+        select bnd_company_id from t_cmp_binding
+        where bnd_user_id = #{userId} and bnd_status = 1
+        limit 1
+    </select>
+
     <select id="selectSummary" resultType="java.util.LinkedHashMap">
-        select count(*) as total, avg(svr_satisfaction_score) as avgScore
-        from t_survey_response
+        select count(*) as total, avg(r.svr_satisfaction_score) as avgScore
+        from t_survey_response r
+        left join t_tal t on t.tal_id = r.svr_candidate_id
         where 1 = 1
+        <if test="companyId != null">
+            and t.tal_company_id = #{companyId}
+        </if>
         <if test="templateId != null">
-            and svr_template_id = #{templateId}
+            and r.svr_template_id = #{templateId}
         </if>
         <if test="from != null and from != ''">
-            and svr_submitted_at &gt;= #{from}
+            and r.svr_submitted_at &gt;= #{from}
         </if>
         <if test="to != null and to != ''">
-            and svr_submitted_at &lt;= #{to}
+            and r.svr_submitted_at &lt;= #{to}
         </if>
     </select>
 
     <select id="selectDistribution" resultType="java.util.LinkedHashMap">
-        select round(svr_satisfaction_score / 10) as bucket, count(*) as count
-        from t_survey_response
+        select round(r.svr_satisfaction_score) as bucket, count(*) as count
+        from t_survey_response r
+        left join t_tal t on t.tal_id = r.svr_candidate_id
         where 1 = 1
+        <if test="companyId != null">
+            and t.tal_company_id = #{companyId}
+        </if>
         <if test="templateId != null">
-            and svr_template_id = #{templateId}
+            and r.svr_template_id = #{templateId}
         </if>
         <if test="from != null and from != ''">
-            and svr_submitted_at &gt;= #{from}
+            and r.svr_submitted_at &gt;= #{from}
         </if>
         <if test="to != null and to != ''">
-            and svr_submitted_at &lt;= #{to}
+            and r.svr_submitted_at &lt;= #{to}
         </if>
-        group by round(svr_satisfaction_score / 10)
+        group by round(r.svr_satisfaction_score)
         order by bucket
     </select>
 
     <select id="selectResponses" resultType="java.util.LinkedHashMap">
-        select r.svr_id as responseId, r.svr_candidate_id as candidateId,
+        select r.svr_id as responseId, r.svr_template_id as templateId,
+               r.svr_candidate_id as candidateId,
                r.svr_satisfaction_score as satisfactionScore,
                cast(r.svr_answers as char) as answers,
                date_format(r.svr_submitted_at, '%Y-%m-%d %H:%i') as submittedAt,
@@ -49,6 +64,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join sys_user u on u.user_id = t.tal_user_id
         left join t_survey_template svt on svt.svt_id = r.svr_template_id
         where 1 = 1
+        <if test="companyId != null">
+            and t.tal_company_id = #{companyId}
+        </if>
         <if test="templateId != null">
             and r.svr_template_id = #{templateId}
         </if>
@@ -61,12 +79,116 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by r.svr_submitted_at desc
     </select>
 
+    <select id="selectDispatchSummary" resultType="java.util.LinkedHashMap">
+        select count(*) as sentTotal,
+               sum(case when d.svd_status = 0 then 1 else 0 end) as pendingTotal
+        from t_survey_dispatch d
+        where 1 = 1
+        <if test="companyId != null">
+            and d.svd_company_id = #{companyId}
+        </if>
+        <if test="templateId != null">
+            and d.svd_template_id = #{templateId}
+        </if>
+        <if test="from != null and from != ''">
+            and d.svd_sent_at &gt;= #{from}
+        </if>
+        <if test="to != null and to != ''">
+            and d.svd_sent_at &lt;= #{to}
+        </if>
+    </select>
+
+    <select id="selectDispatches" resultType="java.util.LinkedHashMap">
+        select d.svd_id as dispatchId, d.svd_candidate_id as candidateId,
+               cast(d.svd_link_token as char) as token, d.svd_status as status,
+               date_format(d.svd_sent_at, '%Y-%m-%d %H:%i') as sentAt,
+               date_format(d.svd_submitted_at, '%Y-%m-%d %H:%i') as submittedAt,
+               u.nick_name as candidateName, svt.svt_name as templateName
+        from t_survey_dispatch d
+        left join t_tal t on t.tal_id = d.svd_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_survey_template svt on svt.svt_id = d.svd_template_id
+        where 1 = 1
+        <if test="companyId != null">
+            and d.svd_company_id = #{companyId}
+        </if>
+        <if test="templateId != null">
+            and d.svd_template_id = #{templateId}
+        </if>
+        <if test="from != null and from != ''">
+            and d.svd_sent_at &gt;= #{from}
+        </if>
+        <if test="to != null and to != ''">
+            and d.svd_sent_at &lt;= #{to}
+        </if>
+        order by d.svd_sent_at desc
+    </select>
+
     <select id="selectTemplates" resultType="java.util.LinkedHashMap">
         select svt_id as templateId, svt_name as name, svt_trigger_scene as triggerScene,
-               cast(svt_questions as char) as questions, svt_status as status
+               svt_company_id as companyId, cast(svt_questions as char) as questions, svt_status as status,
+               date_format(svt_created_at, '%Y-%m-%d %H:%i') as createdAt
         from t_survey_template
-        where svt_status = 1
+        where (svt_company_id is null or svt_company_id = #{companyId})
+        <if test="status != null">
+            and svt_status = #{status}
+        </if>
         order by svt_id
     </select>
+
+    <select id="selectTemplateById" resultType="java.util.LinkedHashMap">
+        select svt_id as templateId, svt_name as name, svt_trigger_scene as triggerScene,
+               svt_company_id as companyId, cast(svt_questions as char) as questions, svt_status as status
+        from t_survey_template
+        where svt_id = #{templateId}
+    </select>
+
+    <insert id="insertTemplate" parameterType="map" useGeneratedKeys="true" keyProperty="templateId">
+        insert into t_survey_template (svt_name, svt_trigger_scene, svt_company_id, svt_questions, svt_status)
+        values (#{name}, #{triggerScene}, #{companyId}, #{questions}, #{status})
+    </insert>
+
+    <update id="updateTemplate" parameterType="map">
+        update t_survey_template
+        set svt_name = #{name},
+            svt_trigger_scene = #{triggerScene},
+            svt_questions = #{questions},
+            svt_status = #{status},
+            svt_updated_at = now()
+        where svt_id = #{templateId}
+    </update>
+
+    <update id="updateTemplateStatus">
+        update t_survey_template
+        set svt_status = #{status}, svt_updated_at = now()
+        where svt_id = #{templateId}
+    </update>
+
+    <delete id="deleteTemplate">
+        delete from t_survey_template where svt_id = #{templateId}
+    </delete>
+
+    <select id="countResponsesByTemplate" resultType="int">
+        select count(*) from t_survey_response where svr_template_id = #{templateId}
+    </select>
+
+    <select id="countDispatchesByTemplate" resultType="int">
+        select count(*) from t_survey_dispatch where svd_template_id = #{templateId}
+    </select>
+
+    <select id="selectCandidateByUser" resultType="java.util.LinkedHashMap">
+        select t.tal_id as candidateId, t.tal_company_id as companyId, u.nick_name as candidateName
+        from t_tal t
+        left join sys_user u on u.user_id = t.tal_user_id
+        where t.tal_user_id = #{userId} and t.tal_company_id = #{companyId}
+        limit 1
+    </select>
+
+    <insert id="insertDispatch" parameterType="map">
+        insert into t_survey_dispatch
+            (svd_template_id, svd_candidate_id, svd_company_id, svd_sent_by, svd_link_token, svd_status)
+        values
+            (#{templateId}, #{candidateId}, #{companyId}, #{sentBy}, #{token}, 0)
+    </insert>
 
 </mapper>
