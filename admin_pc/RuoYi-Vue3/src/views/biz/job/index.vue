@@ -24,11 +24,6 @@
           <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
       </el-form-item>
-      <el-form-item label="风险等级" prop="riskLevel">
-        <el-select v-model="queryParams.riskLevel" placeholder="请选择风险等级" clearable style="width: 160px">
-          <el-option v-for="item in riskLevelOptions" :key="item.value" :label="item.label" :value="item.value" />
-        </el-select>
-      </el-form-item>
       <el-form-item>
         <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
         <el-button icon="Refresh" @click="resetQuery">重置</el-button>
@@ -48,7 +43,12 @@
       <el-table-column label="城市" align="center" prop="city" width="90" />
       <el-table-column label="风险等级" align="center" width="90">
         <template #default="scope">
-          <el-tag :type="riskLevelTag(scope.row.riskLevel)">{{ riskLevelLabel(scope.row.riskLevel) }}</el-tag>
+          <el-tag
+            v-if="scope.row.riskLevel !== null && scope.row.riskLevel !== undefined && scope.row.riskLevel !== ''"
+            :type="riskLevelTag(scope.row.riskLevel)"
+            >{{ riskLevelLabel(scope.row.riskLevel) }}</el-tag
+          >
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="命中风控词" align="center" min-width="160">
@@ -204,7 +204,7 @@ function riskLevelTag(level) {
 }
 
 function riskLevelLabel(level) {
-  return RISK_LEVEL_LABEL_MAP[level] || '未知'
+  return RISK_LEVEL_LABEL_MAP[level] || '-'
 }
 
 /** 后端 riskWords 为 JSON 字符串，统一解析为数组 */
@@ -233,8 +233,7 @@ const queryParams = ref({
   pageSize: 10,
   jobName: undefined,
   companyName: undefined,
-  status: undefined,
-  riskLevel: undefined
+  status: undefined
 })
 
 const auditForm = reactive({ jobId: undefined, result: '1', reason: '' })
@@ -305,7 +304,7 @@ function submitAudit() {
         reason: auditForm.reason
       })
         .then(() => {
-          proxy.$modal.msgSuccess(passing ? '审核通过，岗位已发布' : '已违备，岗位已违规下架')
+          proxy.$modal.msgSuccess(passing ? '审核通过，岗位已发布' : '已驳回，岗位已违规下架')
           auditOpen.value = false
           getList()
         })
@@ -345,6 +344,12 @@ function submitOff() {
   })
 }
 
+/** 查看处理原因 */
+function handleViewReason(row) {
+  reasonRow.value = row
+  reasonOpen.value = true
+}
+
 /** 多选框选中数据 */
 function handleSelectionChange(selection) {
   ids.value = selection.map((item) => item.jobId)
@@ -352,15 +357,10 @@ function handleSelectionChange(selection) {
 
 getList()
 
-const riskLevelOptions = [
-  { value: 'low', label: '低风险' },
-  { value: 'medium', label: '中风险' },
-  { value: 'high', label: '高风险' }
-]
-
 const statusOptions = [
-  { value: 'open', label: '招聘中' },
-  { value: 'closed', label: '已关闭' },
-  { value: 'draft', label: '草稿' }
+  { value: 0, label: '待审核' },
+  { value: 1, label: '已发布' },
+  { value: 2, label: '违规下架' },
+  { value: 3, label: '已下架' }
 ]
 </script>
