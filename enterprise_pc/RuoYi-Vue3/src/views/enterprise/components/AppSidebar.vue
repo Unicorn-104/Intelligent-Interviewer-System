@@ -12,9 +12,10 @@ onMounted(refreshUnread)
 const menus = reactive([
   { label: '招聘总览', to: '/enterprise/dashboard', icon: LayoutDashboard, match: ['EnterpriseDashboard', 'EnterpriseRootDashboard'] },
   { label: '岗位管理', to: '/enterprise/jobs', icon: BriefcaseBusiness,
-    match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'],
+    match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig', 'EnterpriseJobImport'],
     children: [
-      { label: '岗位列表', to: '/enterprise/jobs', match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] }
+      { label: '岗位列表', to: '/enterprise/jobs', match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] },
+      { label: '岗位导入与草稿', to: '/enterprise/jobs/import', match: ['EnterpriseJobImport'] }
     ] },
   { label: '候选人与初筛', to: '/enterprise/candidates', icon: UsersRound,
     match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess', 'EnterpriseScreening', 'EnterpriseTalent', 'EnterpriseSurvey'],

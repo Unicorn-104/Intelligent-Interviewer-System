@@ -99,6 +99,13 @@ export const constantRoutes = [
         meta: { title: '岗位管理' }
       },
       {
+        // 声明在 jobs/:id 之前，避免 import 被当作岗位 id 解析
+        path: 'jobs/import',
+        component: () => import('@/views/enterprise/jobs/import.vue'),
+        name: 'EnterpriseJobImport',
+        meta: { title: '岗位导入与草稿' }
+      },
+      {
         path: 'jobs/:id',
         component: () => import('@/views/enterprise/jobs/detail.vue'),
         name: 'EnterpriseJobDetail',

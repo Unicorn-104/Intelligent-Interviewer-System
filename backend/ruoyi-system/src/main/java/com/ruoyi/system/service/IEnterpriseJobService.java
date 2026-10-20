@@ -38,6 +38,11 @@ public interface IEnterpriseJobService
     /** 更新当前企业岗位信息，保留岗位状态及招聘流程。 */
     public Map<String, Object> updateJob(Long userId, Long posId, Map<String, Object> form);
 
+    /**
+     * 删除草稿岗位（仅允许删除状态为草稿的岗位，已产生业务数据时拒绝删除）
+     */
+    public Map<String, Object> deleteDraftJob(Long userId, Long posId);
+
     /** 发布前读取真实企业信息和部门选项。 */
     public Map<String, Object> publishingOptions(Long userId);
 

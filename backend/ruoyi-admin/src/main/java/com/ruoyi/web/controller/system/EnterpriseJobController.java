@@ -3,6 +3,7 @@ package com.ruoyi.web.controller.system;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -85,6 +86,15 @@ public class EnterpriseJobController extends BaseController
     public AjaxResult update(@PathVariable("posId") Long posId, @RequestBody Map<String, Object> form)
     {
         return success(jobService.updateJob(getUserId(), posId, form));
+    }
+
+    /**
+     * 删除草稿岗位（仅允许删除状态为草稿的岗位）
+     */
+    @DeleteMapping("/{posId}")
+    public AjaxResult remove(@PathVariable("posId") Long posId)
+    {
+        return success(jobService.deleteDraftJob(getUserId(), posId));
     }
 
     /**

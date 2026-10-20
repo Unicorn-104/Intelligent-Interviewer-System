@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.alibaba.fastjson2.JSON;
@@ -226,6 +227,45 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         jd.put("requirements", jobLines(form.get("requirements"), "任职要求"));
         job.put("jdJson", JSON.toJSONString(jd));
         return job;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> deleteDraftJob(Long userId, Long posId)
+    {
+        if (posId == null)
+        {
+            throw new ServiceException("请选择要删除的草稿岗位", ErrorCode.BAD_REQUEST);
+        }
+        Long companyId = resolveCompanyId(userId);
+        Map<String, Object> job = jobMapper.selectJobById(posId, companyId);
+        if (job == null)
+        {
+            throw new ServiceException("岗位不存在或无权访问");
+        }
+        Integer status = job.get("status") == null ? null : ((Number) job.get("status")).intValue();
+        if (status == null || status != 0)
+        {
+            throw new ServiceException("仅支持删除草稿状态的岗位");
+        }
+        try
+        {
+            // 先清除岗位技能关联，再物理删除岗位本体
+            jdMapper.deletePositionSkills(posId);
+            if (jobMapper.deleteJob(posId, companyId) != 1)
+            {
+                throw new ServiceException("岗位删除失败，请稍后重试");
+            }
+        }
+        catch (DataIntegrityViolationException e)
+        {
+            // 岗位已被投递、面试等业务数据引用，禁止删除，事务回滚保证技能关联不被误删
+            throw new ServiceException("该岗位已有关联的投递、面试等业务数据，无法删除");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("posId", posId);
+        result.put("title", job.get("title"));
+        return result;
     }
 
     private record PositionSkill(String name, Integer required) { }

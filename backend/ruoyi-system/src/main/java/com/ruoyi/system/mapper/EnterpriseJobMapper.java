@@ -35,6 +35,11 @@ public interface EnterpriseJobMapper
 
     public int updateJob(Map<String, Object> job);
 
+    /**
+     * 物理删除草稿岗位（限本公司）
+     */
+    public int deleteJob(@Param("posId") Long posId, @Param("companyId") Long companyId);
+
     public Map<String, Object> selectPublishingCompany(@Param("companyId") Long companyId);
 
     /**
