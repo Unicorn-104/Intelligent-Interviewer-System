@@ -9,9 +9,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             rbs.rbs_id AS resumeId,
             IFNULL(u.nick_name, rbs.rbs_resume_name) AS name,
             u.phonenumber AS phone,
+            u.email AS email,
             rbs.rbs_job_direction AS jobName,
-            'web' AS source,
-            rbs.rbs_created_at AS uploadTime
+            rbs.rbs_created_at AS uploadTime,
+            (SELECT tal.tal_matched_score
+             FROM t_tal tal
+             WHERE tal.tal_user_id = rbs.rbs_user_id
+             ORDER BY tal.tal_id DESC LIMIT 1) AS matchScore,
+            (SELECT tal.tal_status
+             FROM t_tal tal
+             WHERE tal.tal_user_id = rbs.rbs_user_id
+             ORDER BY tal.tal_id DESC LIMIT 1) AS statusCode
         FROM t_res_base rbs
         LEFT JOIN sys_user u ON u.user_id = rbs.rbs_user_id
         <where>
@@ -20,9 +28,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             </if>
             <if test="jobName != null and jobName != ''">
                 AND rbs.rbs_job_direction LIKE CONCAT('%', #{jobName}, '%')
-            </if>
-            <if test="source != null and source != ''">
-                AND 'web' = #{source}
             </if>
         </where>
         ORDER BY rbs.rbs_created_at DESC, rbs.rbs_id DESC
@@ -35,14 +40,76 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             u.phonenumber AS phone,
             u.email AS email,
             rbs.rbs_job_direction AS jobName,
-            'web' AS source,
-            CAST(NULL AS CHAR) AS experience,
-            CAST(NULL AS CHAR) AS workExperience,
-            CAST(NULL AS CHAR) AS selfEval,
             rbs.rbs_created_at AS uploadTime
         FROM t_res_base rbs
         LEFT JOIN sys_user u ON u.user_id = rbs.rbs_user_id
         WHERE rbs.rbs_id = #{rbsId}
+    </select>
+
+    <!-- 工作经历 -->
+    <select id="selectWorkList" resultType="java.util.LinkedHashMap">
+        SELECT
+            wrk_id AS workId,
+            wrk_company AS company,
+            wrk_department AS department,
+            wrk_position AS position,
+            DATE_FORMAT(wrk_start_date, '%Y-%m-%d') AS startDate,
+            DATE_FORMAT(wrk_end_date, '%Y-%m-%d') AS endDate,
+            wrk_is_current AS isCurrent,
+            wrk_description AS description
+        FROM t_res_work
+        WHERE wrk_resume_id = #{rbsId}
+        ORDER BY wrk_start_date DESC
+    </select>
+
+    <!-- 教育经历 -->
+    <select id="selectEduList" resultType="java.util.LinkedHashMap">
+        SELECT
+            edu_id AS eduId,
+            edu_school AS school,
+            edu_degree AS degree,
+            edu_major AS major,
+            DATE_FORMAT(edu_start_date, '%Y-%m-%d') AS startDate,
+            DATE_FORMAT(edu_end_date, '%Y-%m-%d') AS endDate,
+            edu_description AS description
+        FROM t_res_education
+        WHERE edu_resume_id = #{rbsId}
+        ORDER BY edu_start_date DESC
+    </select>
+
+    <!-- 技能 -->
+    <select id="selectSkillList" resultType="java.util.LinkedHashMap">
+        SELECT
+            skl_id AS skillId,
+            skl_name AS name,
+            skl_level AS level
+        FROM t_res_skill
+        WHERE skl_resume_id = #{rbsId}
+        ORDER BY skl_level DESC, skl_id ASC
+    </select>
+
+    <!-- 项目经历 -->
+    <select id="selectProjList" resultType="java.util.LinkedHashMap">
+        SELECT
+            prj_id AS projId,
+            prj_name AS name,
+            prj_role AS role,
+            prj_tech_stack AS techStack,
+            DATE_FORMAT(prj_start_date, '%Y-%m-%d') AS startDate,
+            DATE_FORMAT(prj_end_date, '%Y-%m-%d') AS endDate,
+            prj_description AS description
+        FROM t_res_project
+        WHERE prj_resume_id = #{rbsId}
+        ORDER BY prj_start_date DESC
+    </select>
+
+    <!-- 简历库概览：最新候选人状态分布 -->
+    <select id="selectResumeSummary" resultType="java.util.LinkedHashMap">
+        SELECT
+            tal.tal_status AS statusCode,
+            COUNT(*) AS cnt
+        FROM t_tal tal
+        GROUP BY tal.tal_status
     </select>
 
     <delete id="deleteResumeByIds">

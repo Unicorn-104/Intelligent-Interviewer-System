@@ -5,6 +5,7 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -54,6 +55,26 @@ public class BizJobController extends BaseController
         Long posId = body.get("jobId") == null ? null : Long.valueOf(String.valueOf(body.get("jobId")));
         Integer result = body.get("result") == null ? null : Integer.valueOf(String.valueOf(body.get("result")));
         String reason = body.get("reason") == null ? null : String.valueOf(body.get("reason"));
-        return toAjax(jobService.auditJob(posId, result, reason));
+        return toAjax(jobService.auditJob(posId, result, reason, getUserId()));
+    }
+
+    /**
+     * 岗位详情（含 JD）
+     */
+    @PreAuthorize("@ss.hasPermi('biz:job:query')")
+    @GetMapping("/{posId}")
+    public AjaxResult detail(@PathVariable("posId") Long posId)
+    {
+        return AjaxResult.success(jobService.selectAdminJobById(posId));
+    }
+
+    /**
+     * 岗位状态变更历史（时间线，时间正序）
+     */
+    @PreAuthorize("@ss.hasPermi('biz:job:query')")
+    @GetMapping("/{posId}/logs")
+    public AjaxResult logs(@PathVariable("posId") Long posId)
+    {
+        return AjaxResult.success(jobService.selectPosStatusLogs(posId));
     }
 }

@@ -47,6 +47,13 @@ public class BizResumeController extends BaseController
         return success(resumeService.selectAdminResumeById(rbsId));
     }
 
+    @PreAuthorize("@ss.hasPermi('biz:resume:query')")
+    @GetMapping("/summary")
+    public AjaxResult summary()
+    {
+        return success(resumeService.selectResumeSummary());
+    }
+
     @PreAuthorize("@ss.hasPermi('biz:resume:remove')")
     @Log(title = "简历库", businessType = BusinessType.DELETE)
     @DeleteMapping("/{rbsIds}")

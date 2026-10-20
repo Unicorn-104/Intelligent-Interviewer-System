@@ -21,7 +21,13 @@ public interface IBizJobService
     Map<String, Object> selectAdminJobById(Long posId);
 
     /**
-     * 岗位审核：result=1 通过发布(置1)；result=2 违规下架(置2)
+     * 岗位审核/处置：result=1 通过发布(置1)；result=2 违规下架(置2)；
+     * result=3 恢复上架(违规/已下架 → 置1)，并写入状态变更日志
      */
-    int auditJob(Long posId, Integer result, String reason);
+    int auditJob(Long posId, Integer result, String reason, Long operatorId);
+
+    /**
+     * 岗位全部状态变更日志（历史时间线，时间正序）
+     */
+    List<Map<String, Object>> selectPosStatusLogs(Long posId);
 }
