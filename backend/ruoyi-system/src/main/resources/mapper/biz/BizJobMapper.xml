@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.biz.BizJobMapper">
+
+    <select id="selectAdminJobList" resultType="java.util.LinkedHashMap">
+        SELECT
+            pos.pos_id AS jobId,
+            pos.pos_title AS jobName,
+            cmp.cmp_name AS companyName,
+            CASE
+                WHEN pos.pos_salary_min IS NULL AND pos.pos_salary_max IS NULL THEN '面议'
+                WHEN pos.pos_salary_max IS NULL THEN CONCAT(ROUND(pos.pos_salary_min / 1000), 'K起')
+                WHEN pos.pos_salary_min IS NULL THEN CONCAT(ROUND(pos.pos_salary_max / 1000), 'K以下')
+                ELSE CONCAT(ROUND(pos.pos_salary_min / 1000), '-', ROUND(pos.pos_salary_max / 1000), 'K')
+            END AS salary,
+            pos.pos_work_city AS city,
+            pos.pos_status AS status,
+            pos.pos_created_at AS publishTime,
+            CAST(NULL AS CHAR) AS riskLevel,
+            CAST('[]' AS CHAR) AS riskWords
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        <where>
+            <if test="jobName != null and jobName != ''">
+                AND pos.pos_title LIKE CONCAT('%', #{jobName}, '%')
+            </if>
+            <if test="companyName != null and companyName != ''">
+                AND cmp.cmp_name LIKE CONCAT('%', #{companyName}, '%')
+            </if>
+            <if test="status != null">
+                AND pos.pos_status = #{status}
+            </if>
+        </where>
+        ORDER BY pos.pos_created_at DESC, pos.pos_id DESC
+    </select>
+
+    <select id="selectAdminJobById" resultType="java.util.LinkedHashMap">
+        SELECT
+            pos.pos_id AS jobId,
+            pos.pos_title AS jobName,
+            cmp.cmp_name AS companyName,
+            pos.pos_work_city AS city,
+            pos.pos_salary_min AS salaryMin,
+            pos.pos_salary_max AS salaryMax,
+            pos.pos_status AS status,
+            pos.pos_created_at AS publishTime,
+            pos.pos_jd_json AS jdJson
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        WHERE pos.pos_id = #{posId}
+    </select>
+
+    <update id="updateJobStatus">
+        UPDATE t_pos SET pos_status = #{status} WHERE pos_id = #{posId}
+    </update>
+
+</mapper>

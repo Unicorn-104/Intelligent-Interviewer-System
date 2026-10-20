@@ -1,7 +1,7 @@
 import router from '@/router'
 import cache from '@/plugins/cache'
 import { ElMessageBox, } from 'element-plus'
-import { login, loginByAccountPassword, loginByPhonePassword, loginBySms, logout, getInfo } from '@/api/login'
+import { login, loginByAccountPassword, loginBySms, logout, getInfo } from '@/api/login'
 import { getToken, setToken, removeToken } from '@/utils/auth'
 import { isHttp, isEmpty } from "@/utils/validate"
 import useLockStore from '@/store/modules/lock'
@@ -23,16 +23,14 @@ const useUserStore = defineStore(
       // 登录
       login(userInfo) {
         const phone = (userInfo.phone || '').trim()
-        const username = (userInfo.username || '').trim()
+        const account = (userInfo.account || userInfo.username || '').trim()
         const password = userInfo.password
         const code = userInfo.code
         const uuid = userInfo.uuid
         const loginRequest = userInfo.loginType === 'sms'
           ? loginBySms(phone, userInfo.smsCode)
-          : userInfo.loginType === 'phone_password'
-            ? loginByPhonePassword(phone, password)
-            : userInfo.loginType === 'account_password'
-              ? loginByAccountPassword(username, password)
+          : userInfo.loginType === 'account_password'
+              ? loginByAccountPassword(account, password)
             : login(userInfo.username.trim(), password, code, uuid)
         return new Promise((resolve, reject) => {
           loginRequest.then(res => {

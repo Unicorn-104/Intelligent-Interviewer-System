@@ -140,7 +140,7 @@ async function handleSubmit() {
       ? { phone: form.phone, smsCode: form.smsCode, password: form.password }
       : { username: form.username, password: form.password, registerType: 'account_password' }
     await register(payload)
-    ElMessage.success(mode.value === 'phone' ? '注册成功，请使用手机号登录' : '注册成功，请使用账号密码登录')
+    ElMessage.success(mode.value === 'phone' ? '注册成功，请使用短信验证码登录' : '注册成功，请使用账号密码登录')
     await router.push({ path: '/agent/login', query: mode.value === 'account' ? { mode: 'account' } : {} })
   } catch (requestError) {
     error.value = requestError?.message || '注册失败，请检查填写内容后重试'

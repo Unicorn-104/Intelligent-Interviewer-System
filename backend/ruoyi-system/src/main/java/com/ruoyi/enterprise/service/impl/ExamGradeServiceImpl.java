@@ -292,7 +292,7 @@ public class ExamGradeServiceImpl implements IExamGradeService
         {
             return "请在面试安排中心手动邀约面试";
         }
-        // 新增：读取配置中的招聘阶段；旧笔试配置未关联阶段，单次邀约允许不指定阶段。
+        // 从自动流转配置读取招聘阶段；旧配置未指定阶段时沿用单次邀约的可空语义。
         Long stageId = raw instanceof Map ? asLong(((Map<?, ?>) raw).get("stageId")) : null;
         int days = raw instanceof Map ? asInt(((Map<?, ?>) raw).get("startAfterDays"), 3) : 3;
         int duration = raw instanceof Map ? asInt(((Map<?, ?>) raw).get("durationMin"), 45) : 45;
@@ -302,7 +302,7 @@ public class ExamGradeServiceImpl implements IExamGradeService
         {
             Map<String, Object> invite = scheduleService.invite(operatorUserId,
                     asLong(ctx.get("talId")), asLong(ctx.get("positionId")),
-                    stageId, interviewerId, // 修改：补齐第4个参数stageId，恢复后续参数位置。
+                    stageId, interviewerId,
                     start.format(TIME_FORMAT), duration);
             return "已自动创建面试邀约 #" + invite.get("appointmentId")
                     + "（建议时间 " + invite.get("startTime") + "）";

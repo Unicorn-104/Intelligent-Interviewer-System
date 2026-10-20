@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.biz.BizCandidateMapper">
+
+    <select id="selectAdminCandidateList" resultType="java.util.LinkedHashMap">
+        SELECT
+            tal.tal_id AS candidateId,
+            IFNULL(u.nick_name, u.user_name) AS userName,
+            u.phonenumber AS phonenumber,
+            (SELECT pos.pos_title
+             FROM t_process_instance pin
+             INNER JOIN t_pos pos ON pos.pos_id = pin.pin_position_id
+             WHERE pin.pin_id = tal.tal_process_instance_id
+             LIMIT 1) AS jobName,
+            tal.tal_matched_score AS totalScore,
+            CASE tal.tal_status
+                WHEN 0 THEN 'new'
+                WHEN 1 THEN 'screened'
+                WHEN 2 THEN 'interviewing'
+                WHEN 3 THEN 'rejected'
+                WHEN 4 THEN 'passed'
+                WHEN 5 THEN 'passed'
+                WHEN 6 THEN 'archived'
+                WHEN 7 THEN 'archived'
+                WHEN 8 THEN 'rejected'
+                WHEN 9 THEN 'new'
+                ELSE 'new'
+            END AS status,
+            tal.tal_status AS statusCode,
+            tal.tal_updated_at AS updateTime,
+            (SELECT GROUP_CONCAT(tg.tg_name SEPARATOR ',')
+             FROM t_tal_tag tg WHERE tg.tg_candidate_id = tal.tal_id) AS tags
+        FROM t_tal tal
+        INNER JOIN sys_user u ON u.user_id = tal.tal_user_id
+        <where>
+            <if test="userName != null and userName != ''">
+                AND (IFNULL(u.nick_name, u.user_name) LIKE CONCAT('%', #{userName}, '%')
+                     OR u.phonenumber LIKE CONCAT('%', #{userName}, '%'))
+            </if>
+            <if test="status != null and status != ''">
+                AND (
+                    CASE tal.tal_status
+                        WHEN 0 THEN 'new' WHEN 1 THEN 'screened' WHEN 2 THEN 'interviewing'
+                        WHEN 3 THEN 'rejected' WHEN 4 THEN 'passed' WHEN 5 THEN 'passed'
+                        WHEN 6 THEN 'archived' WHEN 7 THEN 'archived' WHEN 8 THEN 'rejected'
+                        WHEN 9 THEN 'new' ELSE 'new'
+                    END = #{status}
+                )
+            </if>
+            <if test="tags != null and tags != ''">
+                AND EXISTS (
+                    SELECT 1 FROM t_tal_tag tg
+                    WHERE tg.tg_candidate_id = tal.tal_id
+                      AND tg.tg_name LIKE CONCAT('%', #{tags}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY tal.tal_updated_at DESC, tal.tal_id DESC
+    </select>
+
+    <select id="selectAdminCandidateById" resultType="java.util.LinkedHashMap">
+        SELECT
+            tal.tal_id AS candidateId,
+            IFNULL(u.nick_name, u.user_name) AS userName,
+            u.phonenumber AS phonenumber,
+            u.email AS email,
+            (SELECT pos.pos_title
+             FROM t_process_instance pin
+             INNER JOIN t_pos pos ON pos.pos_id = pin.pin_position_id
+             WHERE pin.pin_id = tal.tal_process_instance_id LIMIT 1) AS jobName,
+            tal.tal_matched_score AS totalScore,
+            tal.tal_status AS statusCode,
+            tal.tal_company_id AS companyId,
+            tal.tal_resume_id AS resumeId,
+            tal.tal_created_at AS createTime,
+            tal.tal_updated_at AS updateTime
+        FROM t_tal tal
+        INNER JOIN sys_user u ON u.user_id = tal.tal_user_id
+        WHERE tal.tal_id = #{talId}
+    </select>
+
+    <select id="selectCandidateTags" resultType="java.lang.String">
+        SELECT tg_name FROM t_tal_tag WHERE tg_candidate_id = #{talId} ORDER BY tg_id
+    </select>
+
+    <delete id="deleteCandidateTags">
+        DELETE FROM t_tal_tag WHERE tg_candidate_id = #{talId}
+    </delete>
+
+    <insert id="insertCandidateTag">
+        INSERT INTO t_tal_tag (tg_candidate_id, tg_name, tg_source, tg_created_at, tg_updated_at)
+        VALUES (#{talId}, #{name}, 1, NOW(), NOW())
+    </insert>
+
+    <update id="updateCandidateStatus">
+        UPDATE t_tal SET tal_status = #{status}, tal_updated_at = NOW() WHERE tal_id = #{talId}
+    </update>
+
+</mapper>

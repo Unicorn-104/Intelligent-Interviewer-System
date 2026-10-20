@@ -44,8 +44,8 @@
           type="danger"
           plain
           icon="Delete"
-          :disabled="multiple"
-          @click="handleDelete"
+          :disabled="ids.length === 0"
+          @click="handleDelete()"
           v-hasPermi="['biz:resume:remove']"
           >删除</el-button
         ></el-col
@@ -72,9 +72,7 @@
         <template #default="scope">
           <el-button link type="primary" icon="View" @click="handleView(scope.row)">预览</el-button>
           <el-button link type="primary" icon="Download" @click="handleDownload(scope.row)">下载</el-button>
-          <el-button link type="danger" icon="Delete" @click="handleDelete(scope.row)" v-if="!scope.row.processed"
-            >删除</el-button
-          >
+          <el-button link type="danger" icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -120,7 +118,7 @@
 </template>
 
 <script setup name="BizResume">
-import { listResume, getResume, delResume, downloadResume } from '@/api/biz/resume'
+import { listResume, getResume, delResume } from '@/api/biz/resume'
 
 const { proxy } = getCurrentInstance()
 
@@ -141,7 +139,6 @@ const loading = ref(true)
 const detailTitle = ref('')
 const resumeDetail = ref(null)
 const showSearch = ref(true)
-const multiple = ref(true)
 
 function handleQuery() {
   getList()
@@ -186,18 +183,23 @@ function handleView(row) {
     })
 }
 
-/** 下载按钮操作 */
-function handleDownload(row) {
-  downloadResume(row.resumeId)
+/** 下载按钮操作（平台端暂不提供原始文件下载） */
+function handleDownload() {
+  proxy.$modal.msgWarning('简历原始文件暂不支持平台端下载')
 }
 
-/** 删除按钮操作 */
+/** 删除按钮操作：单条传 row，批量传选中 ids */
 function handleDelete(row) {
-  const resumeIds = row.resumeId || ids.value
+  const resumeIds = row ? row.resumeId : ids.value
+  const idStr = Array.isArray(resumeIds) ? resumeIds.join(',') : resumeIds
+  if (!idStr) {
+    proxy.$modal.msgWarning('请先选择要删除的简历')
+    return
+  }
   proxy.$modal
-    .confirm('是否确认删除简历编号为"' + resumeIds + '"的数据项？')
+    .confirm('是否确认删除简历编号为"' + idStr + '"的数据项？')
     .then(() => {
-      return delResume(resumeIds.join(','))
+      return delResume(idStr)
     })
     .then(() => {
       proxy.$modal.msgSuccess('删除成功')

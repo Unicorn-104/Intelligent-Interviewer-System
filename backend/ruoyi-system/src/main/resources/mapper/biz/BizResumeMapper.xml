@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.biz.BizResumeMapper">
+
+    <select id="selectAdminResumeList" resultType="java.util.LinkedHashMap">
+        SELECT
+            rbs.rbs_id AS resumeId,
+            IFNULL(u.nick_name, rbs.rbs_resume_name) AS name,
+            u.phonenumber AS phone,
+            rbs.rbs_job_direction AS jobName,
+            'web' AS source,
+            rbs.rbs_created_at AS uploadTime
+        FROM t_res_base rbs
+        LEFT JOIN sys_user u ON u.user_id = rbs.rbs_user_id
+        <where>
+            <if test="name != null and name != ''">
+                AND (IFNULL(u.nick_name, rbs.rbs_resume_name) LIKE CONCAT('%', #{name}, '%'))
+            </if>
+            <if test="jobName != null and jobName != ''">
+                AND rbs.rbs_job_direction LIKE CONCAT('%', #{jobName}, '%')
+            </if>
+            <if test="source != null and source != ''">
+                AND 'web' = #{source}
+            </if>
+        </where>
+        ORDER BY rbs.rbs_created_at DESC, rbs.rbs_id DESC
+    </select>
+
+    <select id="selectAdminResumeById" resultType="java.util.LinkedHashMap">
+        SELECT
+            rbs.rbs_id AS resumeId,
+            IFNULL(u.nick_name, rbs.rbs_resume_name) AS name,
+            u.phonenumber AS phone,
+            u.email AS email,
+            rbs.rbs_job_direction AS jobName,
+            'web' AS source,
+            CAST(NULL AS CHAR) AS experience,
+            CAST(NULL AS CHAR) AS workExperience,
+            CAST(NULL AS CHAR) AS selfEval,
+            rbs.rbs_created_at AS uploadTime
+        FROM t_res_base rbs
+        LEFT JOIN sys_user u ON u.user_id = rbs.rbs_user_id
+        WHERE rbs.rbs_id = #{rbsId}
+    </select>
+
+    <delete id="deleteResumeByIds">
+        DELETE FROM t_res_base WHERE rbs_id IN
+        <foreach collection="rbsIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+
+</mapper>

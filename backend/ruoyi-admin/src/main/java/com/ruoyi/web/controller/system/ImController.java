@@ -22,14 +22,12 @@ import com.ruoyi.system.service.IImService;
 /**
  * IM即时通讯（消息中心）
  *
- * 企业端专属接口：仅允许企业角色（biz_1 企业管理员 / biz_2 招聘HR / biz_3 面试官）
- * 或超级管理员访问，防止求职者等 C 端角色调用。
+ * 会话收发接口供已登录的求职者与企业用户共用；快捷回复模板仍仅允许企业角色管理。
  *
  * @author ruoyi
  */
 @RestController
 @RequestMapping("/system/im")
-@PreAuthorize("@ss.hasAnyRoles('biz_1,biz_2,biz_3')")
 public class ImController extends BaseController
 {
     @Autowired
@@ -127,6 +125,7 @@ public class ImController extends BaseController
      * 快捷回复模板列表
      */
     @GetMapping("/quick-replies")
+    @PreAuthorize("@ss.hasAnyRoles('biz_1,biz_2,biz_3')")
     public AjaxResult quickReplies()
     {
         return success(imService.selectQuickReplies());
@@ -136,6 +135,7 @@ public class ImController extends BaseController
      * 保存快捷回复模板（id 为空则新增）
      */
     @PostMapping("/quick-replies")
+    @PreAuthorize("@ss.hasAnyRoles('biz_1,biz_2,biz_3')")
     public AjaxResult saveQuickReply(@RequestBody Map<String, Object> body)
     {
         Object id = body.get("id");
@@ -147,6 +147,7 @@ public class ImController extends BaseController
      * 删除快捷回复模板
      */
     @DeleteMapping("/quick-replies/{id}")
+    @PreAuthorize("@ss.hasAnyRoles('biz_1,biz_2,biz_3')")
     public AjaxResult deleteQuickReply(@PathVariable Long id)
     {
         return toAjax(imService.deleteQuickReply(id));

@@ -1,11 +1,11 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { CalendarSync, Sparkles, Clock3, UserRound, ChevronLeft, ChevronRight, CalendarClock, Send, CheckCheck, X, MapPin, Link2, FileText, History, Bell, AlertTriangle } from '@/views/enterprise/components/icons'
+import { ref, computed, onMounted, watch } from 'vue'
+import { CalendarSync, Sparkles, Clock3, UserRound, ChevronLeft, ChevronRight, CalendarClock, X, Link2 } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import CalendarGrid from '@/views/enterprise/components/CalendarGrid.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { api, reserveApi } from '@/views/enterprise/api/contract'
+import { listInterviews, rescheduleInterview, remindInterview, updateInterviewStatus } from '@/api/interview'
 
 const calendar = ref()
 const dayModal = ref(false)
@@ -20,36 +20,160 @@ const adjDur = ref(45)
 const conflictMsg = ref('')
 const conflictType = ref('')
 const forceSave = ref(false)
-const dates = [7,8,9,10,11,12,13]
+
 const dayNames = ['周一','周二','周三','周四','周五','周六','周日']
+// apt_status：0-待确认，1-已确认，2-已取消，3-已完成
+const STATUS_MAP = { 0:'pending', 1:'confirmed', 2:'cancelled', 3:'completed' }
+const statusText = { pending:'待确认', confirmed:'已确认', completed:'已完成', conflict:'冲突', cancelled:'已取消' }
 
-const recommendations = computed(() => {
-  const list = calendar.value?.schedule || []
-  return list
-    .filter(s => s.status !== 'cancelled')
-    .slice()
-    .sort((a,b) => a.day - b.day || a.startMin - b.startMin)
-})
-const waitingList = computed(() => {
-  const list = calendar.value?.schedule || []
-  return list.filter(s => s.status === 'cancelled')
-})
+const all = ref([])
+const initialized = ref(false)
+const weekStart = ref(mondayOf(new Date()))
+const dayIndex = ref(-1)
 
-function notify(msg){toast.value=msg;setTimeout(()=>toast.value='',2200)}
-
-function cancelInterview(){
-  if(!drawer.value) return
-  drawer.value.status = 'cancelled'
-  drawer.value.notify = 'unsent'
-  notify('面试已取消，已移至等待安排')
-  drawer.value = null
+function startOfDay(d){ const x = new Date(d); x.setHours(0,0,0,0); return x }
+function mondayOf(d){ const x = startOfDay(d); const wd = (x.getDay()+6)%7; x.setDate(x.getDate()-wd); return x }
+function parseDT(s){
+  if(!s) return null
+  const [date,time] = String(s).split(' ')
+  const [y,m,dd] = String(date).split('-').map(Number)
+  const [hh,mm] = String(time || '00:00').split(':').map(Number)
+  const d = new Date(y, m-1, dd, hh, mm)
+  return isNaN(d.getTime()) ? null : d
 }
-function confirmInterview(){
+function fmtHM(d){ return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0') }
+
+// 当前展示周内的真实面试块（用 ref 保存，拖拽时可实时移动；数据/周切换时重建）
+const blocks = ref([])
+function rebuildBlocks(){
+  const ws = weekStart.value.getTime()
+  const out = []
+  for(const a of all.value){
+    const start = parseDT(a.startTime)
+    if(!start) continue
+    const dayIdx = Math.round((startOfDay(start).getTime() - ws) / 86400000)
+    if(dayIdx < 0 || dayIdx > 6) continue
+    const end = parseDT(a.endTime)
+    const durMin = end ? Math.max(15, Math.round((end - start) / 60000)) : 45
+    const raw = start.getHours()*60 + start.getMinutes() - 540
+    const startMin = Math.max(0, Math.min(540 - durMin, raw))
+    out.push({
+      id: a.appointmentId, appointmentId: a.appointmentId,
+      day: dayIdx, dayName: dayNames[dayIdx],
+      dateLabel: (start.getMonth()+1) + '月' + start.getDate() + '日',
+      date: start, startMin, durMin,
+      candidate: a.candidateName || '未知候选人',
+      position: a.positionTitle || '—',
+      interviewer: a.interviewerName || '待定',
+      status: STATUS_MAP[a.status] || 'pending',
+      meetingUrl: a.meetingUrl || '',
+      time: fmtHM(start) + '-' + fmtHM(end || new Date(start.getTime() + durMin*60000))
+    })
+  }
+  blocks.value = out
+}
+watch([all, weekStart], rebuildBlocks)
+
+const weekDates = computed(() => Array.from({ length: 7 }, (_, i) => {
+  const d = new Date(weekStart.value); d.setDate(d.getDate() + i); return d.getDate()
+}))
+const todayIndex = computed(() => {
+  const i = Math.round((startOfDay(new Date()).getTime() - weekStart.value.getTime()) / 86400000)
+  return (i >= 0 && i <= 6) ? i : -1
+})
+const weekLabel = computed(() => {
+  const s = weekStart.value, e = new Date(s); e.setDate(e.getDate() + 6)
+  return `${s.getFullYear()}年${s.getMonth()+1}月${s.getDate()}日 – ${e.getMonth()+1}月${e.getDate()}日`
+})
+
+// 同一时间段只保留一场面试（取最早的一场作为日历代表），其余归入「等待安排」
+const slotLayout = computed(() => {
+  const visible = [], waiting = []
+  for(let d = 0; d < 7; d++){
+    const day = blocks.value
+      .filter(b => b.day === d && b.status !== 'cancelled' && !b.pending)
+      .sort((a,b) => a.startMin - b.startMin || a.id - b.id)
+    let repEnd = -1
+    for(const b of day){
+      if(b.startMin < repEnd){ waiting.push(b) }
+      else { visible.push(b); repEnd = b.startMin + b.durMin }
+    }
+  }
+  // 待调整的场次始终留在日历上，避免被去重挤出后「消失」
+  blocks.value.filter(b => b.pending && b.status !== 'cancelled').forEach(b => visible.push(b))
+  return { visible, waiting }
+})
+const visibleBlocks = computed(() => slotLayout.value.visible)
+const recommendations = computed(() => visibleBlocks.value.slice().sort((a,b) => a.day - b.day || a.startMin - b.startMin))
+const waitingList = computed(() => [...blocks.value.filter(s => s.status === 'cancelled'), ...slotLayout.value.waiting])
+
+const dayStats = computed(() => {
+  const list = visibleBlocks.value.filter(b => b.day === dayIndex.value)
+  const c = { total: list.length, pending:0, confirmed:0, cancelled:0, completed:0 }
+  list.forEach(b => { if(c[b.status] !== undefined) c[b.status]++ })
+  return c
+})
+const dayLabel = computed(() => {
+  if(dayIndex.value < 0) return ''
+  const d = new Date(weekStart.value); d.setDate(d.getDate() + dayIndex.value)
+  return `${d.getMonth()+1}月${d.getDate()}日 ${dayNames[dayIndex.value]}`
+})
+// 空闲时间设置：展示当前周的周一~周五日期
+const weekOptions = computed(() => Array.from({ length: 5 }, (_, i) => {
+  const d = new Date(weekStart.value); d.setDate(d.getDate() + i)
+  const pad = n => String(n).padStart(2,'0')
+  return `${dayNames[i]} ${pad(d.getMonth()+1)}/${pad(d.getDate())}`
+}))
+
+function notify(msg){ toast.value = msg; setTimeout(() => toast.value = '', 2200) }
+
+async function load(){
+  try{
+    const res = await listInterviews({ pageNum: 1, pageSize: 200 })
+    all.value = res.rows || []
+  }catch(e){ all.value = [] }
+  if(!initialized.value){ pickInitialWeek(); initialized.value = true }
+}
+function pickInitialWeek(){
+  const items = all.value.map(a => parseDT(a.startTime)).filter(Boolean)
+  if(!items.length){ weekStart.value = mondayOf(new Date()); return }
+  // 选择场次最密集的一周（并列时取离今天最近的一周），保证日历有内容
+  const counts = {}
+  items.forEach(d => { const k = mondayOf(d).getTime(); counts[k] = (counts[k] || 0) + 1 })
+  const nowKey = mondayOf(new Date()).getTime()
+  let bestKey = null, bestCount = -1, bestDist = Infinity
+  Object.keys(counts).forEach(k => {
+    const key = Number(k), count = counts[k], dist = Math.abs(key - nowKey)
+    if(count > bestCount || (count === bestCount && dist < bestDist)){
+      bestKey = key; bestCount = count; bestDist = dist
+    }
+  })
+  weekStart.value = new Date(bestKey)
+}
+function shiftWeek(delta){ const d = new Date(weekStart.value); d.setDate(d.getDate() + delta*7); weekStart.value = d }
+function goToday(){ weekStart.value = mondayOf(new Date()) }
+function openDay(i){ dayIndex.value = i; dayModal.value = true }
+
+// 确认/取消面试安排：真实落库（apt_status 1-已确认 / 2-已取消），刷新后仍保留
+async function confirmInterview(){
   if(!drawer.value) return
-  drawer.value.status = 'confirmed'
-  drawer.value.notify = 'sent'
-  notify('面试已确认，通知已发送')
-  drawer.value = null
+  const id = drawer.value.appointmentId
+  try{
+    await updateInterviewStatus(id, 1)
+    drawer.value = null
+    notify('已确认该面试安排')
+    await load()
+  }catch(e){ /* 拦截器已提示 */ }
+}
+async function cancelInterview(){
+  if(!drawer.value) return
+  const id = drawer.value.appointmentId
+  try{
+    await updateInterviewStatus(id, 2)
+    drawer.value = null
+    notify('已取消该面试安排')
+    await load()
+  }catch(e){ /* 拦截器已提示 */ }
 }
 
 function openAdjust(item){
@@ -67,9 +191,8 @@ function openAdjust(item){
 }
 
 function checkConflict(newStartMin, newDur, self){
-  const list = calendar.value?.schedule || []
   const newEnd = newStartMin + newDur
-  for(const s of list){
+  for(const s of blocks.value){
     if(s.id === self.id) continue
     if(s.day !== self.day) continue
     const sEnd = s.startMin + s.durMin
@@ -84,88 +207,137 @@ function checkConflict(newStartMin, newDur, self){
   return null
 }
 
-function saveAdjust(){
+async function saveAdjust(){
   const newStartMin = (adjHour.value-9)*60 + adjMin.value
-  const newEndMin = newStartMin + adjDur.value
-  if(newEndMin > 540){ notify('结束时间超过18:00'); return }
+  if(newStartMin + adjDur.value > 540){ notify('结束时间超过18:00'); return }
   const result = checkConflict(newStartMin, adjDur.value, drawer.value)
-  if(result && result.type === 'error'){
-    conflictMsg.value = result.msg
-    conflictType.value = 'error'
-    return
-  }
-  if(result && result.type === 'warning' && !forceSave.value){
-    conflictMsg.value = result.msg
-    conflictType.value = 'warning'
-    return
-  }
-  conflictMsg.value = ''
-  const s = 9*60 + newStartMin
-  const e = s + adjDur.value
-  const fmt = m => String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')
-  drawer.value.startMin = newStartMin
-  drawer.value.durMin = adjDur.value
-  drawer.value.time = fmt(s)+'-'+fmt(e)
-  adjustModal.value = false
-  forceSave.value = false
-  notify('面试时间已调整')
+  if(result && result.type === 'error'){ conflictMsg.value = result.msg; conflictType.value = 'error'; return }
+  if(result && result.type === 'warning' && !forceSave.value){ conflictMsg.value = result.msg; conflictType.value = 'warning'; return }
+  // 真实改期：按当前展示周 + 目标星期拼装 yyyy-MM-dd HH:mm:ss
+  const d = new Date(weekStart.value); d.setDate(d.getDate() + drawer.value.day)
+  const pad = n => String(n).padStart(2,'0')
+  const newStartTime = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(adjHour.value)}:${pad(adjMin.value)}:00`
+  try{
+    await rescheduleInterview(drawer.value.appointmentId, newStartTime)
+    adjustModal.value = false
+    forceSave.value = false
+    const name = drawer.value.candidate
+    drawer.value = null
+    notify(`${name} 的面试时间已调整`)
+    await load()
+  }catch(e){ /* 拦截器已提示 */ }
 }
-function confirm(item){reserveApi(api.scheduling.invitations,{applicationId:item.applicationId,interviewerId:2001,templateId:item.stageId,slotId:null,expiresAt:null});item.status='待面试';item.tone='confirmed';notify(`${item.name} 的${item.stage}已确认`)}
-function saveFree(){freeModal.value=false;calendar.value.toggleBlocked();reserveApi(api.scheduling.slots,{positionId:null,startTime:'2026-09-09T09:00:00+08:00',endTime:'2026-09-09T18:00:00+08:00'});notify('空闲时间已更新')}
 
-// 状态 → 中文标签
-const statusText = { pending:'待确认', confirmed:'已确认', completed:'已完成', conflict:'冲突', cancelled:'已取消' }
+function saveFree(){ freeModal.value = false; calendar.value.toggleBlocked(); notify('已更新本地空闲标记') }
+
+// === 拖拽调整：拖动时实时移动并把该块标记为「待调整」（紫色），确认后统一落库并通知，不再每次弹窗 ===
+function clockLabel(item, startMin){
+  const s = 540 + startMin, e = s + (item.durMin || 45)
+  const fmt = m => String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0')
+  return fmt(s) + '-' + fmt(e)
+}
+const pendingList = computed(() => blocks.value.filter(b => b.pending))
+
+// 拖动开始：记录原位并标记为待调整，使其不被日历「同一时段只留一场」的去重挤出（避免拖拽后消失）
+function onDragStart(item){
+  if(item._fromDay === undefined){ item._fromDay = item.day; item._fromStartMin = item.startMin }
+  item.pending = true
+}
+function onDragEnd({ item, moved }){
+  if(!moved){ item.pending = false; item._fromDay = undefined; item._fromStartMin = undefined }
+}
+function cancelPending(){
+  pendingList.value.forEach(b => {
+    if(b._fromDay !== undefined) b.day = b._fromDay
+    if(b._fromStartMin !== undefined) b.startMin = b._fromStartMin
+    b.dayName = dayNames[b.day]
+    b.time = clockLabel(b, b.startMin)
+    b.pending = false
+    b._fromDay = undefined
+    b._fromStartMin = undefined
+  })
+  notify('已放弃未确认的时间调整')
+}
+async function confirmPending(){
+  const list = pendingList.value.slice()
+  if(!list.length) return
+  let ok = 0, fail = 0
+  for(const item of list){
+    const pad = n => String(n).padStart(2,'0')
+    const d = new Date(weekStart.value); d.setDate(d.getDate() + item.day)
+    const total = 540 + item.startMin
+    const newStartTime = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(Math.floor(total/60))}:${pad(total%60)}:00`
+    try{
+      await rescheduleInterview(item.appointmentId, newStartTime)
+      await updateInterviewStatus(item.appointmentId, 1) // 改期后确认为「已确认」
+      await remindInterview(item.appointmentId)
+      ok++
+    }catch(e){ fail++ }
+  }
+  await load()
+  notify(fail ? `已确认 ${ok} 项，${fail} 项冲突未改` : `已确认调整 ${ok} 项面试时间`)
+}
+
+onMounted(load)
 </script>
 
 <template>
   <div class="page interviews-page">
-    <div class="page-heading"><div><h1>面试安排中心</h1><p>9月7日 – 9月13日 · 本周共 19 场面试 · AI 已协调推荐</p></div><button class="btn"><span class="calendar-logos"><b>O</b><b>飞</b><b>钉</b></span><CalendarSync :size="16"/>同步日历</button></div>
+    <div class="page-heading"><div><h1>面试安排中心</h1><p>{{ weekLabel }} · 本周共 {{ blocks.length }} 场面试</p></div><button class="btn"><span class="calendar-logos"><b>O</b><b>飞</b><b>钉</b></span><CalendarSync :size="16"/>同步日历</button></div>
     <div class="schedule-layout">
       <!-- 左侧候选人面板 320px -->
       <aside class="card recommend-card">
-        <div class="section-title"><span><span class="ai"><Sparkles :size="16"/></span>AI 协调结果</span><span class="pill">6 条推荐</span></div>
-        <p class="subtitle">根据候选人与面试官空闲时间智能推荐</p>
+        <div class="section-title"><span><span class="ai"><Sparkles :size="16"/></span>已排面试</span><span class="pill">{{ recommendations.length }} 场</span></div>
+        <p class="subtitle">日历中已安排的本周场次（同一时段仅保留一场）</p>
         <div class="recommend-list">
           <article v-for="item in recommendations" :key="item.id" class="rec-item" @click="drawer=item">
             <div class="rec-top">
               <MiniAvatar :name="item.candidate" :size="36" color="#635b9b"/>
               <div class="rec-main">
-                <div class="rec-name-row"><b>{{ item.candidate }}</b><span class="pill" :class="item.status">{{ statusText[item.status] }}</span></div>
+                <div class="rec-name-row"><b>{{ item.candidate }}</b><span class="pill" :class="item.pending ? 'adjusting' : item.status">{{ item.pending ? '待调整' : statusText[item.status] }}</span></div>
                 <small>{{ item.position }}</small>
               </div>
             </div>
-            <div class="rec-slot"><Clock3 :size="11"/>{{ dayNames[item.day] }} {{ item.time }} · {{ item.stage }} · {{ item.interviewer }}</div>
+            <div class="rec-slot"><Clock3 :size="11"/>{{ item.dayName }} {{ item.time }} · {{ item.interviewer }}</div>
             <div class="rec-foot">
-              <div class="match-bar"><span>AI 匹配 {{ 90 + (item.id % 8) }}%</span><i><em :style="{width:(90 + item.id % 8)+'%'}"/></i></div>
               <div class="rec-btns"><button class="btn sm ghost-primary" @click.stop="openAdjust(item)">调整</button><button class="btn sm primary" @click.stop="drawer=item">详情</button></div>
             </div>
           </article>
-        </div>
-        <!-- 等待安排 -->
-        <div v-if="waitingList.length" class="waiting-section">
-          <div class="waiting-title">等待安排（{{ waitingList.length }}）</div>
-          <div v-for="item in waitingList" :key="item.id" class="rec-item waiting-item">
-            <div class="rec-top">
-              <MiniAvatar :name="item.candidate" :size="30" color="#94a3b8"/>
-              <div class="rec-main">
-                <b style="font-size:12px">{{ item.candidate }}</b>
-                <small>{{ item.position }} · {{ item.interviewer }}</small>
+
+          <!-- 等待安排：时段冲突被挤出日历的场次，可调整/查看详情 -->
+          <div v-if="waitingList.length" class="waiting-section">
+            <div class="waiting-title">等待安排（{{ waitingList.length }}）</div>
+            <article v-for="item in waitingList" :key="item.id" class="rec-item" :class="{ 'is-cancelled': item.status === 'cancelled' }" @click="drawer=item">
+              <div class="rec-top">
+                <MiniAvatar :name="item.candidate" :size="36" :color="item.status === 'cancelled' ? '#94a3b8' : '#635b9b'"/>
+                <div class="rec-main">
+                  <div class="rec-name-row"><b>{{ item.candidate }}</b><span class="pill" :class="item.status">{{ statusText[item.status] }}</span></div>
+                  <small>{{ item.position }}</small>
+                </div>
               </div>
-            </div>
+              <div class="rec-slot"><Clock3 :size="11"/>{{ item.dayName }} {{ item.time }} · {{ item.interviewer }}</div>
+              <div class="rec-foot" v-if="item.status !== 'cancelled'">
+                <div class="rec-btns"><button class="btn sm ghost-primary" @click.stop="openAdjust(item)">调整</button><button class="btn sm primary" @click.stop="drawer=item">详情</button></div>
+              </div>
+            </article>
           </div>
         </div>
-        <button class="all-link">查看全部推荐 <ChevronRight :size="13"/></button>
+        <button class="all-link">查看全部面试安排 <ChevronRight :size="13"/></button>
       </aside>
 
       <!-- 中间日历 -->
       <section class="card calendar-card">
         <div class="calendar-tools">
           <div class="view-tabs"><button v-for="v in ['日','周','月']" :key="v" :class="{active:activeView===v}" @click="activeView=v">{{v}}</button></div>
-          <button class="step"><ChevronLeft :size="15"/></button>
-          <button class="today">今天</button>
-          <button class="step"><ChevronRight :size="15"/></button>
-          <strong>2026年9月7日 – 9月13日</strong>
-          <button class="free-btn" @click="freeModal=true"><CalendarClock :size="15"/>设置我的空闲时间</button>
+          <button class="step" @click="shiftWeek(-1)"><ChevronLeft :size="15"/></button>
+          <button class="today" @click="goToday">今天</button>
+          <button class="step" @click="shiftWeek(1)"><ChevronRight :size="15"/></button>
+          <strong>{{ weekLabel }}</strong>
+          <div class="cal-right">
+            <button v-if="pendingList.length" class="pending-cancel" @click="cancelPending">取消</button>
+            <button v-if="pendingList.length" class="pending-confirm" @click="confirmPending">确认调整（{{ pendingList.length }}）</button>
+            <button class="free-btn" @click="freeModal=true"><CalendarClock :size="15"/>设置我的空闲时间</button>
+          </div>
         </div>
         <!-- 状态图例（替代旧场次图例） -->
         <div class="legend">
@@ -174,9 +346,10 @@ const statusText = { pending:'待确认', confirmed:'已确认', completed:'已�
           <span><i class="lg completed"/>已完成</span>
           <span><i class="lg conflict"/>冲突</span>
           <span><i class="lg cancelled"/>已取消</span>
-          <small>点击面试块查看详情</small>
+          <span><i class="lg adjusting"/>待调整</span>
+          <small>拖动面试块改时间，紫色为待确认调整</small>
         </div>
-        <CalendarGrid ref="calendar" @day-click="dayModal=true" @block-click="drawer=$event"/>
+        <CalendarGrid ref="calendar" :items="visibleBlocks" :week-dates="weekDates" :today-index="todayIndex" @day-click="openDay" @block-click="drawer=$event" @drag-start="onDragStart" @drag-end="onDragEnd"/>
       </section>
     </div>
 
@@ -189,30 +362,17 @@ const statusText = { pending:'待确认', confirmed:'已确认', completed:'已�
               <MiniAvatar :name="drawer.candidate" :size="40" color="#635b9b"/>
               <div>
                 <h3>{{ drawer.candidate }}</h3>
-                <p>{{ drawer.position }} · {{ drawer.stage }}</p>
+                <p>{{ drawer.position }}</p>
               </div>
               <span class="pill" :class="drawer.status">{{ statusText[drawer.status] }}</span>
               <button class="drawer-close" @click="drawer=null"><X :size="16"/></button>
             </div>
           </header>
           <div class="drawer-body">
-            <div class="detail-row"><Clock3 :size="14"/><div><label>面试时间</label><b>{{ dayNames[drawer.day] }} 9月{{ dates[drawer.day] }}日 {{ drawer.time }}</b></div></div>
+            <div class="detail-row"><Clock3 :size="14"/><div><label>面试时间</label><b>{{ drawer.dayName }} {{ drawer.dateLabel }} {{ drawer.time }}</b></div></div>
             <div class="detail-row"><UserRound :size="14"/><div><label>面试官</label><b>{{ drawer.interviewer }}</b></div></div>
-            <div class="detail-row"><MapPin :size="14"/><div><label>面试地点</label><b>会议室 A-302</b></div></div>
-            <div class="detail-row"><Link2 :size="14"/><div><label>会议链接</label><b class="link">zoom.us/j/884-221-903</b></div></div>
-            <div class="detail-row"><FileText :size="14"/><div><label>简历摘要</label><b>5年前端经验，主导过SaaS产品架构，精通Vue3+TypeScript</b></div></div>
-            <div class="detail-row"><Sparkles :size="14"/><div><label>AI 推荐理由</label><b>与面试官陈静历史合作评分高，时间窗口匹配度96%</b></div></div>
-            <div class="detail-row">
-              <Bell :size="14"/>
-              <div>
-                <label>通知状态</label>
-                <b :class="'notify-'+drawer.notify">
-                  <AlertTriangle v-if="drawer.notify==='failed'"/>
-                  {{ drawer.notify==='sent'?'已送达': drawer.notify==='failed'?'发送失败：候选人邮箱无效': drawer.notify==='unsent'?'未发送':'发送中' }}
-                </b>
-              </div>
-            </div>
-            <div class="detail-row"><History :size="14"/><div><label>操作记录</label><b>09:00 AI推荐 · 09:05 调度员分配</b></div></div>
+            <div class="detail-row"><Clock3 :size="14"/><div><label>面试方式</label><b>{{ drawer.meetingUrl ? '视频面试' : '线下面试' }}</b></div></div>
+            <div class="detail-row"><Link2 :size="14"/><div><label>会议链接</label><b v-if="drawer.meetingUrl" class="link">{{ drawer.meetingUrl }}</b><b v-else>暂无</b></div></div>
           </div>
           <footer class="drawer-footer">
             <button class="btn danger-ghost" @click="cancelInterview">取消面试</button>
@@ -223,10 +383,8 @@ const statusText = { pending:'待确认', confirmed:'已确认', completed:'已�
       </div>
     </transition>
 
-    <div class="action-bar"><div><Sparkles :size="16"/><span>AI 协调完成 · 本周 19 场面试，7 场待确认，其余已锁定</span></div><div><button class="btn" @click="notify('已向候选人发送通知')"><Send :size="15"/>通知候选人</button><button class="btn primary" @click="notify('待确认面试已批量确认')"><CheckCheck :size="15"/>批量确认</button></div></div>
-
-    <BaseModal v-if="dayModal" title="当日面试统计" width="410px" @close="dayModal=false"><div class="day-stat"><p>9月9日 周三</p><strong>5<small> 场面试</small></strong><div><span><b>2</b>待确认</span><span><b>2</b>已确认</span><span><b>1</b>冲突</span></div></div><template #footer><button class="btn primary" @click="dayModal=false">知道了</button></template></BaseModal>
-    <BaseModal v-if="freeModal" title="设置我的空闲时间" width="500px" @close="freeModal=false"><div class="free-settings"><p>选择本周可参与面试的时段，未选择的时间将在日历中显示为不可用。</p><div v-for="day in ['周一 09/07','周二 09/08','周三 09/09','周四 09/10','周五 09/11']" :key="day"><label><input type="checkbox" checked/>{{day}}</label><input class="input" value="09:00"/><span>至</span><input class="input" value="18:00"/></div></div><template #footer><button class="btn" @click="freeModal=false">取消</button><button class="btn primary" @click="saveFree">保存空闲时间</button></template></BaseModal>
+    <BaseModal v-if="dayModal" title="当日面试统计" width="410px" @close="dayModal=false"><div class="day-stat"><p>{{ dayLabel }}</p><strong>{{ dayStats.total }}<small> 场面试</small></strong><div><span><b>{{ dayStats.pending }}</b>待确认</span><span><b>{{ dayStats.confirmed }}</b>已确认</span><span><b>{{ dayStats.completed }}</b>已完成</span></div></div><template #footer><button class="btn primary" @click="dayModal=false">知道了</button></template></BaseModal>
+    <BaseModal v-if="freeModal" title="设置我的空闲时间" width="500px" @close="freeModal=false"><div class="free-settings"><p>选择本周可参与面试的时段，未选择的时间将在日历中显示为不可用。</p><div v-for="day in weekOptions" :key="day"><label><input type="checkbox" checked/>{{day}}</label><input class="input" value="09:00"/><span>至</span><input class="input" value="18:00"/></div></div><template #footer><button class="btn" @click="freeModal=false">取消</button><button class="btn primary" @click="saveFree">保存空闲时间</button></template></BaseModal>
 
     <BaseModal v-if="adjustModal" title="调整面试时间" width="380px" @close="adjustModal=false">
       <div class="adjust-form">
@@ -265,19 +423,19 @@ const statusText = { pending:'待确认', confirmed:'已确认', completed:'已�
 </template>
 
 <style scoped>
-.interviews-page{padding-bottom:92px}
+.interviews-page{display:flex;flex-direction:column;height:calc(100vh - 64px);overflow:hidden}
 .calendar-logos{display:flex;gap:3px}
 .calendar-logos b{width:17px;height:17px;color:white;background:#1472de;border-radius:4px;display:grid;place-items:center;font-size:8px}
-.schedule-layout{display:grid;grid-template-columns:320px minmax(700px,1fr);gap:15px}
-.recommend-card,.calendar-card{height:630px}
-.recommend-card{padding:16px;display:flex;flex-direction:column}
+.schedule-layout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:15px;flex:1;min-height:0}
+.recommend-card,.calendar-card{height:100%}
+.recommend-card{padding:16px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .section-title>span:first-child{display:flex;align-items:center;gap:8px}
 .ai{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#2563eb;background:#eaf1ff}
-.subtitle{font-size:10px;color:#9aa8ba;margin:5px 0 12px 38px}
-.recommend-list{display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1;padding-right:2px}
+.subtitle{font-size:10px;color:#9aa8ba;margin:5px 0 12px 38px;flex-shrink:0}
+.recommend-list{display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1;min-height:0;padding-right:2px}
 
 /* 候选人卡片 88-96px */
-.rec-item{padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;transition:border-color .15s,box-shadow .15s}
+.rec-item{padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;transition:border-color .15s,box-shadow .15s;flex-shrink:0;cursor:pointer}
 .rec-item:hover{border-color:#bfdbfe;box-shadow:0 2px 8px rgba(37,99,235,.06)}
 .rec-top{display:flex;align-items:center;gap:10px}
 .rec-main{flex:1;min-width:0}
@@ -285,11 +443,7 @@ const statusText = { pending:'待确认', confirmed:'已确认', completed:'已�
 .rec-name-row b{font-size:13px}
 .rec-main small{display:block;color:#64748b;font-size:10px;margin-top:1px}
 .rec-slot{display:flex;align-items:center;gap:5px;color:#64748b;font-size:10px;margin:8px 0 6px}
-.rec-foot{display:flex;align-items:center;justify-content:space-between}
-.match-bar{flex:1}
-.match-bar>span{font-size:9px;color:#64748b}
-.match-bar i{display:block;height:4px;background:#e2e8f0;border-radius:2px;margin-top:3px;overflow:hidden}
-.match-bar em{display:block;height:100%;background:linear-gradient(90deg,#3b82f6,#2563eb);border-radius:2px}
+.rec-foot{display:flex;align-items:center;justify-content:flex-end}
 .rec-btns{display:flex;gap:6px;align-items:center}
 
 /* 状态pill颜色 */
@@ -298,11 +452,12 @@ const statusText = { pending:'待确认', confirmed:'已确认', completed:'已�
 .pill.completed{background:#e2e8f0;color:#64748b}
 .pill.conflict{background:#fee2e2;color:#991b1b}
 .pill.cancelled{background:#f1f5f9;color:#94a3b8;text-decoration:line-through}
+.pill.adjusting{background:#ede9fe;color:#6d28d9}
 
-.all-link{width:100%;height:32px;border:0;background:transparent;color:#2563eb;font-size:11px;display:flex;gap:5px;align-items:center;justify-content:center;margin-top:8px}
-.waiting-section{margin-top:12px;border-top:1px dashed #e2e8f0;padding-top:10px}
-.waiting-title{font-size:11px;color:#94a3b8;margin-bottom:8px}
-.waiting-item{opacity:.6}
+.all-link{width:100%;height:32px;border:0;background:transparent;color:#2563eb;font-size:11px;display:flex;gap:5px;align-items:center;justify-content:center;margin-top:8px;flex-shrink:0}
+.waiting-section{display:flex;flex-direction:column;gap:10px;margin-top:2px;border-top:1px dashed #e2e8f0;padding-top:12px;flex-shrink:0}
+.waiting-title{font-size:11px;color:#94a3b8;margin-bottom:2px}
+.rec-item.is-cancelled{opacity:.6;background:#f8fafc}
 
 .calendar-card{padding:15px;display:flex;flex-direction:column}
 .calendar-tools{height:37px;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -313,7 +468,10 @@ const statusText = { pending:'待确认', confirmed:'已确认', completed:'已�
 .step{width:31px}
 .today{padding:0 11px;font-size:11px}
 .calendar-tools strong{font-size:13px}
-.free-btn{margin-left:auto;border:0;height:31px;padding:0 12px;border-radius:8px;background:#eef4ff;color:#2563eb;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer}
+.cal-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.free-btn{border:0;height:31px;padding:0 12px;border-radius:8px;background:#eef4ff;color:#2563eb;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer}
+.pending-confirm{height:31px;padding:0 12px;border:0;border-radius:8px;background:#7c3aed;color:#fff;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer}
+.pending-cancel{height:31px;padding:0 12px;border:1px solid #dce4ee;border-radius:8px;background:#fff;color:#63738b;font-size:11px;cursor:pointer}
 
 /* 状态图例 */
 .legend{height:32px;display:flex;align-items:center;gap:14px;color:#64748b;font-size:10px;flex-shrink:0}
@@ -324,12 +482,8 @@ const statusText = { pending:'待确认', confirmed:'已确认', completed:'已�
 .legend .lg.completed{background:#94a3b8}
 .legend .lg.conflict{background:#fff;border:1.5px solid #dc2626}
 .legend .lg.cancelled{background:#f1f5f9;border:1px solid #cbd5e1}
+.legend .lg.adjusting{background:#ede9fe;border:1.5px dashed #7c3aed}
 .legend small{margin-left:auto;color:#94a3b8;font-size:9px}
-
-/* 底部操作栏 */
-.action-bar{position:fixed;z-index:10;left:244px;right:24px;bottom:18px;height:58px;border:1px solid #e2e8f0;border-radius:13px;background:rgba(255,255,255,.97);box-shadow:0 8px 24px rgba(15,23,42,.08);display:flex;align-items:center;justify-content:space-between;padding:0 18px}
-.action-bar>div{display:flex;align-items:center;gap:10px;font-size:11px;color:#475569}
-.action-bar>div:first-child svg{color:#2563eb}
 
 /* 详情抽屉 */
 .drawer-mask{position:fixed;inset:0;background:rgba(15,23,42,.3);z-index:100;display:flex;justify-content:flex-end}

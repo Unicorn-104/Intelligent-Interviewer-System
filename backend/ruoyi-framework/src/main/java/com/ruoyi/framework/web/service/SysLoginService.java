@@ -76,25 +76,21 @@ public class SysLoginService
     }
 
     /**
-     * 手机号密码登录，不要求图形验证码。
+     * 手机号或账号密码登录，不要求图形验证码。
      */
-    public String loginByPhonePassword(String phone, String password)
+    public String loginByAccountPassword(String account, String password)
     {
-        smsCodeService.validatePhone(phone);
-        SysUser user = userService.selectUserByPhone(phone.trim());
-        if (user == null)
+        String identifier = account == null ? null : account.trim();
+        if (smsCodeService.isValidPhone(identifier))
         {
-            throw new UserNotExistsException();
+            SysUser user = userService.selectUserByPhone(identifier);
+            if (user == null)
+            {
+                throw new UserNotExistsException();
+            }
+            identifier = user.getUserName();
         }
-        return authenticateWithPassword(user.getUserName(), password);
-    }
-
-    /**
-     * 账号密码登录，不要求图形验证码。
-     */
-    public String loginByAccountPassword(String username, String password)
-    {
-        return authenticateWithPassword(username == null ? null : username.trim(), password);
+        return authenticateWithPassword(identifier, password);
     }
 
     /**

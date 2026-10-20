@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   FILE_LIMITS,
   isValidAccount,
+  isValidAccountOrPhone,
   isValidPhoneNumber,
   isValidSmsCode,
   validateAvatarFile,
@@ -23,6 +24,13 @@ test('账号校验限制长度与字符范围', () => {
   assert.equal(isValidAccount('a'), false)
   assert.equal(isValidAccount('账号一'), false)
   assert.equal(isValidAccount('account name'), false)
+})
+
+test('密码登录标识支持手机号或账号', () => {
+  assert.equal(isValidAccountOrPhone('13800138000'), true)
+  assert.equal(isValidAccountOrPhone('lin_xiaoyu'), true)
+  assert.equal(isValidAccountOrPhone('账号一'), false)
+  assert.equal(isValidAccountOrPhone(''), false)
 })
 
 test('头像上传校验格式与大小', () => {

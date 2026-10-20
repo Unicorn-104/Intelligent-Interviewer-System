@@ -107,6 +107,18 @@
             apt_start_time = #{startTime}, apt_end_time = #{endTime}, apt_status = 0, apt_updated_at = now()
         where apt_id = #{appointmentId}
     </update>
+    <!-- 确认/取消面试安排：仅未取消(2)、未完成(3)的预约可变更 -->
+    <update id="updateAppointmentStatus">
+        update t_sch_appointment
+        set apt_status = #{status}, apt_updated_at = now()
+        where apt_id = #{appointmentId} and apt_status not in (2, 3)
+    </update>
+    <!-- 发起面试后把候选人流程状态推进为「面试中」(2)；已面试中/已淘汰/已录用保持不变 -->
+    <update id="markCandidateInterviewing">
+        update t_tal
+        set tal_status = 2, tal_updated_at = now()
+        where tal_id = #{candidateId} and tal_status not in (2, 3, 4)
+    </update>
     <insert id="insertReminderMessage">
         insert into t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content, msg_is_read)
         values (#{receiverId}, 0, 1, #{title}, #{content}, 0)

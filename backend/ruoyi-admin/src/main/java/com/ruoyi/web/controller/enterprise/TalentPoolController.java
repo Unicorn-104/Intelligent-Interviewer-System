@@ -1,8 +1,14 @@
 package com.ruoyi.web.controller.enterprise;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,15 +36,96 @@ public class TalentPoolController extends BaseController
     private ITalentPoolService talentPoolService;
 
     /**
-     * UC-03：人才库检索（关键词/标签 + 分页）
+     * UC-03：人才库检索（关键词/标签/岗位方向/归档来源 + 分页）
      */
     @GetMapping("/list")
     public TableDataInfo list(@RequestParam(required = false) String keyword,
             @RequestParam(required = false) String tag,
+            @RequestParam(required = false) String direction,
+            @RequestParam(required = false) Integer archiveSource,
+            @RequestParam(required = false) Integer status,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize)
     {
-        return getDataTable(talentPoolService.listTalents(getUserId(), keyword, tag, pageNum, pageSize));
+        return getDataTable(talentPoolService.listTalents(getUserId(), keyword, tag, direction, archiveSource,
+                status, pageNum, pageSize));
+    }
+
+    /**
+     * UC-03：人才库筛选项（岗位方向 + 标签）
+     */
+    @GetMapping("/options")
+    public AjaxResult options()
+    {
+        return success(talentPoolService.getTalentOptions(getUserId()));
+    }
+
+    /**
+     * UC-03：主动归档 / 取消归档
+     */
+    @PutMapping("/{talId}/archive")
+    public AjaxResult archive(@PathVariable("talId") Long talId, @RequestBody Map<String, Object> body)
+    {
+        Boolean archived = body.get("archived") == null ? Boolean.TRUE
+                : Boolean.valueOf(String.valueOf(body.get("archived")));
+        return success(talentPoolService.archiveTalent(getUserId(), talId, archived));
+    }
+
+    /**
+     * UC-03：批量更新候选人流程状态（候选人管理的状态管理）
+     */
+    @PutMapping("/status")
+    public AjaxResult updateStatus(@RequestBody Map<String, Object> body)
+    {
+        List<Long> talIds = new ArrayList<>();
+        Object raw = body.get("talIds");
+        if (raw instanceof List)
+        {
+            for (Object item : (List<?>) raw)
+            {
+                if (item != null)
+                {
+                    talIds.add(Long.valueOf(String.valueOf(item)));
+                }
+            }
+        }
+        Integer status = body.get("status") == null ? null
+                : Integer.valueOf(String.valueOf(body.get("status")));
+        return success(talentPoolService.updateStatus(getUserId(), talIds, status));
+    }
+
+    /**
+     * UC-03：一键转投递（为候选人创建投递记录）
+     */
+    @PostMapping("/{talId}/reapply")
+    public AjaxResult reapply(@PathVariable("talId") Long talId, @RequestBody Map<String, Object> body)
+    {
+        Long positionId = body.get("positionId") == null ? null
+                : Long.valueOf(String.valueOf(body.get("positionId")));
+        return success(talentPoolService.reapplyTalent(getUserId(), talId, positionId));
+    }
+
+    /**
+     * UC-03：落选关怀通知（批量写入系统消息）
+     */
+    @PostMapping("/care-notify")
+    public AjaxResult careNotify(@RequestBody Map<String, Object> body)
+    {
+        List<Long> talIds = new ArrayList<>();
+        Object raw = body.get("talIds");
+        if (raw instanceof List)
+        {
+            for (Object item : (List<?>) raw)
+            {
+                if (item != null)
+                {
+                    talIds.add(Long.valueOf(String.valueOf(item)));
+                }
+            }
+        }
+        String title = body.get("title") == null ? null : String.valueOf(body.get("title"));
+        String content = body.get("content") == null ? null : String.valueOf(body.get("content"));
+        return success(talentPoolService.careNotify(getUserId(), talIds, title, content));
     }
 
     /**
