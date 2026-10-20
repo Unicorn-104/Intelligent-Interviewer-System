@@ -12,7 +12,92 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/talent_detail_fixture.dart';
 
+import 'package:enterprise_recruiter/features/enterprise/talent/widgets/talent_candidate_actions.dart';
+import 'package:enterprise_recruiter/features/enterprise/talent/widgets/talent_greeting_sheet.dart';
+import 'package:enterprise_recruiter/features/enterprise/talent/widgets/talent_interview_invite_sheet.dart';
+
 void main() {
+  testWidgets('资料卡内展示打招呼与拆分邀约按钮，菜单操作与原面板正常', (tester) async {
+    final source = TalentFakeSource();
+    source.workflow = {
+      'stages': [
+        {'stageId': 41, 'name': '在线笔试', 'sortOrder': 1},
+        {'stageId': 42, 'name': '技术面试', 'sortOrder': 2},
+      ],
+    };
+    source.plan = [
+      {
+        'appointmentId': 81,
+        'candidateId': 11,
+        'positionId': 7,
+        'stageId': 41,
+        'status': 3,
+      },
+    ];
+    await pumpTalentWidget(
+      tester,
+      TalentDetailPage(
+        talent: const {'talentId': 11},
+        source: source,
+        jobContext: talentTestJob,
+      ),
+    );
+    final pageAppBar = tester.widget<AppBar>(find.byType(AppBar));
+    expect(pageAppBar.bottom, isNull);
+    final actions = find.byType(TalentCandidateActions);
+    expect(
+      find.ancestor(of: actions, matching: find.byType(Card)),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('talent-greeting')), findsOneWidget);
+    expect(find.byKey(const Key('talent-invite')), findsOneWidget);
+    expect(find.text('在线笔试'), findsOneWidget);
+    expect(
+      tester.getBottomLeft(find.text('在线笔试')).dy,
+      lessThan(tester.getTopLeft(find.byKey(const Key('talent-greeting'))).dy),
+    );
+    expect(
+      tester
+          .widget<Container>(find.byKey(const ValueKey('talent-flow-line-41')))
+          .color,
+      AppColors.success,
+    );
+
+    expect(find.text('录用'), findsNothing);
+    await tester.tap(find.byKey(const Key('talent-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('录用'), findsOneWidget);
+    expect(find.text('淘汰'), findsOneWidget);
+    expect(find.byType(TalentInterviewInviteSheet), findsNothing);
+    await tester.tap(find.byKey(const Key('talent-hire')));
+    await tester.pumpAndSettle();
+    expect(find.text('录用功能开发中'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('talent-greeting')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TalentGreetingSheet>(find.byType(TalentGreetingSheet))
+          .candidateId,
+      11,
+    );
+    expect(source.greetingCalls, 1);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('talent-invite')));
+    await tester.pumpAndSettle();
+    final invite = tester.widget<TalentInterviewInviteSheet>(
+      find.byType(TalentInterviewInviteSheet),
+    );
+    expect(invite.job!.positionId, talentTestJob.positionId);
+    expect(invite.job!.title, talentTestJob.title);
+    expect(invite.job!.currentStage, source.match.currentStage);
+    expect(source.invites, isEmpty);
+    expect(source.stageInvites, isEmpty);
+    await tester.tap(find.byKey(const Key('invite-close')));
+    await tester.pumpAndSettle();
+    expect(find.byType(TalentInterviewInviteSheet), findsNothing);
+  });
+
   testWidgets('无岗位上下文兼容人才库，简历完整度和缺失字段保留，不发起岗位分析', (tester) async {
     final source = TalentFakeSource();
     await pumpTalentWidget(

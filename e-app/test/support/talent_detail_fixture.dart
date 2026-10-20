@@ -200,6 +200,9 @@ class TalentFakeSource extends TalentDetailDataSource {
   final stageInvites = <List<Map<String, Object?>>>[];
   final reschedules = <Map<String, Object?>>[];
   @override
+  Future<Map<String, dynamic>> loadWorkflowSession(int sessionId) async => {};
+
+  @override
   Future<List<Map<String, dynamic>>> loadCandidatePlan(
     int candidateId,
     int positionId,

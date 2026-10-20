@@ -49,6 +49,22 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 #{jobType}, #{jdJson}, #{status})
     </insert>
 
+    <select id="selectJobForUpdate" resultType="java.util.LinkedHashMap">
+        select pos_id as "posId", pos_status as status, pos_jd_json as "jdJson"
+        from t_pos
+        where pos_id = #{posId} and pos_company_id = #{companyId}
+        for update
+    </select>
+
+    <update id="updateJob">
+        update t_pos
+        set pos_title = #{title}, pos_department = #{dept}, pos_work_city = #{city},
+            pos_salary_min = #{salaryMin}, pos_salary_max = #{salaryMax},
+            pos_experience_required = #{experience}, pos_education_required = #{education},
+            pos_job_type = #{jobType}, pos_jd_json = #{jdJson}, pos_updated_at = now()
+        where pos_id = #{posId} and pos_company_id = #{companyId}
+    </update>
+
     <select id="selectPublishingCompany" resultType="java.util.LinkedHashMap">
         select cmp_id as id, cmp_name as name, cmp_city as city
         from t_cmp where cmp_id = #{companyId} and cmp_status = 1

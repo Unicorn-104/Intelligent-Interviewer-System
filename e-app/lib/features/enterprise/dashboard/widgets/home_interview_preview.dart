@@ -14,12 +14,14 @@ class HomeInterviewPreview extends StatefulWidget {
     this.now,
     this.onViewJob,
     this.onViewCandidate,
+    this.onReschedule,
   });
 
   final HomeInterview interview;
   final VoidCallback onOpen;
   final VoidCallback? onViewJob;
   final VoidCallback? onViewCandidate;
+  final VoidCallback? onReschedule;
   final DateTime Function()? now;
 
   @override
@@ -361,6 +363,28 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                         ),
                       ),
                     );
+                    final actions = Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        if (widget.onReschedule != null)
+                          OutlinedButton(
+                            key: ValueKey(
+                              'job-interview-reschedule-${interview.id}',
+                            ),
+                            onPressed: widget.onReschedule,
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(0, 46),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                            ),
+                            child: const Text('改期'),
+                          ),
+                        button,
+                      ],
+                    );
                     final scale = MediaQuery.textScalerOf(context).scale(1);
                     if (constraints.maxWidth >= 300 * scale) {
                       return Row(
@@ -368,7 +392,10 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                         children: [
                           Expanded(child: details),
                           const SizedBox(width: 8),
-                          button,
+                          if (widget.onReschedule == null)
+                            button
+                          else
+                            Flexible(child: actions),
                         ],
                       );
                     }
@@ -377,7 +404,10 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                       children: [
                         details,
                         const SizedBox(height: 4),
-                        Align(alignment: Alignment.centerRight, child: button),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: widget.onReschedule == null ? button : actions,
+                        ),
                       ],
                     );
                   },

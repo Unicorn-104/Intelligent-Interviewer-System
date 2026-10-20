@@ -9,9 +9,11 @@ class TalentRecommendationSection extends StatelessWidget {
     super.key,
     required this.state,
     required this.onRetry,
+    this.embedded = false,
   });
   final TalentSectionState<Map<String, dynamic>> state;
   final VoidCallback onRetry;
+  final bool embedded;
 
   List<String> _points(Object? raw) {
     if (raw is List) {
@@ -30,7 +32,8 @@ class TalentRecommendationSection extends StatelessWidget {
     final report = state.data;
     return TalentSectionFrame(
       title: '已有推荐报告',
-      ai: true,
+      ai: !embedded,
+      embedded: embedded,
       loading: state.loading,
       error: state.error,
       empty: report == null || report.isEmpty,

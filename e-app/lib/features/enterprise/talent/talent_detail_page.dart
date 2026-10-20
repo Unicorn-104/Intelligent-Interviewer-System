@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
 import 'data/talent_detail_data_source.dart';
 import 'models/talent_detail_view_data.dart';
-import 'widgets/talent_greeting_sheet.dart';
-import 'widgets/talent_interview_invite_sheet.dart';
+import 'widgets/talent_candidate_actions.dart';
 import 'widgets/talent_interview_section.dart';
 import 'widgets/talent_match_analysis_section.dart';
 import 'widgets/talent_recommendation_section.dart';
@@ -31,7 +30,6 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
   final _match = TalentSectionState<TalentMatchData>();
   final _report = TalentSectionState<Map<String, dynamic>>();
   int _interviewRevision = 0;
-  bool _actionOpen = false;
   int? get _id => talentId(widget.talent['talentId']);
   @override
   void initState() {
@@ -99,51 +97,6 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
     _resume.data?['name'] ?? _detail.data?['name'] ?? widget.talent['name'],
     '未知候选人',
   );
-  Future<void> _openAction({required bool invite}) async {
-    final id = _id;
-    if (_actionOpen || id == null) {
-      return;
-    }
-    setState(() => _actionOpen = true);
-    try {
-      final result = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        isDismissible: !invite,
-        enableDrag: !invite,
-        useSafeArea: true,
-        builder: (context) => FractionallySizedBox(
-          heightFactor: 0.9,
-          child: invite
-              ? TalentInterviewInviteSheet(
-                  candidateId: id,
-                  candidateName: _name,
-                  source: widget.source,
-                  job: widget.jobContext,
-                )
-              : TalentGreetingSheet(
-                  candidateId: id,
-                  name: _name,
-                  source: widget.source,
-                  job: widget.jobContext,
-                ),
-        ),
-      );
-      if (!mounted) {
-        return;
-      }
-      if (invite && result == true) {
-        setState(() => _interviewRevision++);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('请在面试安排中核对邀约结果')));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _actionOpen = false);
-      }
-    }
-  }
-
   Widget _basic(BuildContext context) {
     final detail = _detail.data;
     final resume = _resume.data;
@@ -232,6 +185,21 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
             '邮箱',
             talentText(resume?['email'] ?? detail?['email']),
           ),
+          const SizedBox(height: 14),
+          TalentCandidateActions(
+            candidateId: _id,
+            workflowRevision: _interviewRevision,
+            name: _name,
+            source: widget.source,
+            job: widget.jobContext == null
+                ? null
+                : TalentJobContext(
+                    positionId: widget.jobContext!.positionId,
+                    title: widget.jobContext!.title,
+                    currentStage: stage,
+                  ),
+            onInvited: () => setState(() => _interviewRevision++),
+          ),
         ],
       ),
     );
@@ -269,47 +237,6 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(70),
-        child: Container(
-          decoration: const BoxDecoration(
-            color: AppColors.canvas,
-            border: Border(bottom: BorderSide(color: AppColors.hairline)),
-          ),
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  key: const Key('talent-greeting'),
-                  onPressed: _actionOpen || _id == null
-                      ? null
-                      : () => _openAction(invite: false),
-                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                  label: const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('打招呼'),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  key: const Key('talent-invite'),
-                  onPressed: _actionOpen || _id == null
-                      ? null
-                      : () => _openAction(invite: true),
-                  icon: const Icon(Icons.event_available_outlined, size: 18),
-                  label: const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('邀请面试'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     ),
     body: RefreshIndicator(
       onRefresh: _refresh,
@@ -319,14 +246,35 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
         children: [
           _basic(context),
           TalentResumeSection(state: _resume, onRetry: _loadResume),
-          TalentMatchAnalysisSection(
-            detail: _detail,
-            match: _match,
-            job: widget.jobContext,
-            onDetailRetry: _loadDetail,
-            onMatchRetry: _loadMatch,
+          TalentSectionFrame(
+            key: const Key('talent-ai-analysis-card'),
+            title: 'AI分析结果',
+            ai: true,
+            onRetry: _loadAll,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TalentMatchAnalysisSection(
+                  detail: _detail,
+                  match: _match,
+                  job: widget.jobContext,
+                  onDetailRetry: _loadDetail,
+                  onMatchRetry: _loadMatch,
+                  embedded: true,
+                ),
+                const Divider(
+                  height: 24,
+                  thickness: 1,
+                  color: AppColors.hairline,
+                ),
+                TalentRecommendationSection(
+                  state: _report,
+                  onRetry: _loadReport,
+                  embedded: true,
+                ),
+              ],
+            ),
           ),
-          TalentRecommendationSection(state: _report, onRetry: _loadReport),
           TalentInterviewSection(
             candidateId: _id,
             source: widget.source,

@@ -80,6 +80,13 @@ public class EnterpriseJobController extends BaseController
         return success(jobService.createJob(getUserId(), form));
     }
 
+    /** 更新当前企业已有岗位，不改变招聘状态与流程。 */
+    @PutMapping("/{posId}")
+    public AjaxResult update(@PathVariable("posId") Long posId, @RequestBody Map<String, Object> form)
+    {
+        return success(jobService.updateJob(getUserId(), posId, form));
+    }
+
     /**
      * 岗位详情聚合
      */
