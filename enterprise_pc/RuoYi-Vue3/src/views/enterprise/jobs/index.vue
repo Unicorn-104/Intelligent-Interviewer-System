@@ -1,10 +1,9 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Upload, Plus, Sparkles, GraduationCap, CalendarClock, Users, WandSparkles, ChevronRight } from '@/views/enterprise/components/icons'
+import { Search, Plus, Sparkles, GraduationCap, CalendarClock, Users, WandSparkles, ChevronRight } from '@/views/enterprise/components/icons'
 import JobCard from '@/views/enterprise/components/JobCard.vue'
 import PublishJobModal from '@/views/enterprise/components/PublishJobModal.vue'
-import ImportJobModal from '@/views/enterprise/components/ImportJobModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listJobs, jobDepartments, changeJobStatus } from '@/api/system/job'
 
@@ -18,7 +17,6 @@ const statusFilter = ref('')
 const departments = ref([])
 const selectedId = ref(null)
 const publishOpen = ref(false)
-const importOpen = ref(false)
 const toast = ref('')
 const jobListEl = ref(null)
 const pageSize = ref(3)
@@ -119,7 +117,7 @@ onUnmounted(() => resizeObserver?.disconnect())
   <div class="page jobs-page">
     <div class="page-heading">
       <div><h1>岗位管理</h1><p>集中管理招聘岗位，AI 实时解析岗位画像</p></div>
-      <div class="heading-actions"><button class="btn ghost-primary" @click="importOpen = true"><Upload :size="16"/>导入岗位文件</button><button class="btn primary" @click="publishOpen = true"><Plus :size="16"/>发布新岗位</button></div>
+      <div class="heading-actions"><button class="btn primary" @click="publishOpen = true"><Plus :size="16"/>发布新岗位</button></div>
     </div>
 
     <div class="jobs-layout">
@@ -152,7 +150,6 @@ onUnmounted(() => resizeObserver?.disconnect())
       </section>
     </div>
     <PublishJobModal v-if="publishOpen" @close="publishOpen = false" @submitted="(s) => { publishOpen = false; fetchJobs(); notify(s === 0 ? '草稿已保存' : '岗位发布成功') }" />
-    <ImportJobModal v-if="importOpen" @close="importOpen = false" @done="importOpen = false; fetchJobs(); notify('文件解析完成，岗位画像已生成')" />
     <ToastMessage :message="toast" />
   </div>
 </template>
