@@ -7,6 +7,17 @@ import 'support/jd_http_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('候选人分析不显示后端SQL与内部路径，普通业务提示保留', () {
+    const raw =
+        '### Error querying database. java.sql.SQLSyntaxErrorException: '
+        'select bnd_company_id limit 1 LIMIT ?; mapper/system/DashboardMapper.xml';
+    final message = talentError(const ApiException(raw));
+    expect(message, '分析数据查询失败，请稍后重试；如持续出现，请更新服务器后端');
+    expect(message, isNot(contains('DashboardMapper')));
+    expect(message, isNot(contains('SQL')));
+    expect(talentError(const ApiException('当前账号未绑定企业')), '当前账号未绑定企业');
+    expect(talentError(const ApiException('模型调用超时，请稍后重试')), '模型调用超时，请稍后重试');
+  });
   late JdHttpFixture http;
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});

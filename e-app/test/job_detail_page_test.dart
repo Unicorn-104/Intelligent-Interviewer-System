@@ -216,6 +216,47 @@ void main() {
     expect(source.screenCalls, 1);
   });
 
+  testWidgets('AI后台分析轮询只读进度，不重复提交，完成后刷新结果', (tester) async {
+    final source = DetailFakeSource()..asyncScreening = true;
+    source.screeningStatuses = [
+      {'taskId': 1, 'processing': true, 'state': 'processing'},
+      {'taskId': 1, 'processing': false, 'state': 'completed'},
+    ];
+    await pumpDetail(tester, source, initialTab: 1);
+    await tester.tap(find.byKey(const Key('job-rescreen')));
+    await tester.pump();
+    expect(find.text('筛选中…'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('job-rescreen')));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(source.screenCalls, 1);
+    expect(source.statusCalls, 2);
+    expect(source.scoreCalls, 2);
+    expect(find.text('AI辅助筛选'), findsOneWidget);
+  });
+
+  testWidgets('AI后台失败保留名单并显示错误，不自动重发任务', (tester) async {
+    final source = DetailFakeSource()..asyncScreening = true;
+    source.screeningStatuses = [
+      {
+        'taskId': 1,
+        'processing': false,
+        'state': 'failed',
+        'error': '模型暂不可用，原有结果未变更',
+      },
+    ];
+    await pumpDetail(tester, source, initialTab: 1);
+    await tester.tap(find.byKey(const Key('job-rescreen')));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(source.screenCalls, 1);
+    expect(source.statusCalls, 1);
+    expect(find.text('候选人甲'), findsOneWidget);
+    expect(find.text('模型暂不可用，原有结果未变更'), findsOneWidget);
+  });
+
   testWidgets('JD 与招聘流程折叠状态跨 Tab 保持', (tester) async {
     final source = DetailFakeSource();
     await pumpDetail(tester, source);

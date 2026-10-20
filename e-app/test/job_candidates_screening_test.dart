@@ -41,7 +41,7 @@ class ScreeningSource extends JobDetailDataSource {
     return resume;
   }
 
-  bool failure = false, screenFailure = false;
+  bool failure = false, screenFailure = false, legacyResponse = false;
   Completer<void>? readGate, screenGate;
 
   @override
@@ -67,7 +67,7 @@ class ScreeningSource extends JobDetailDataSource {
     starts++;
     await screenGate?.future;
     if (screenFailure) throw const ApiException('筛选刷新失败，请重试');
-    return {'taskId': id};
+    return {'taskId': id, if (!legacyResponse) 'processing': false};
   }
 }
 
@@ -343,6 +343,16 @@ void main() {
     expect(find.text('96.0'), findsOneWidget);
     expect(source.reads, 2);
     expect(source.starts, 0);
+  });
+
+  testWidgets('旧版服务器响应明确提示部署新版，不声称AI分析成功', (tester) async {
+    final source = ScreeningSource()..legacyResponse = true;
+    await mountCandidates(tester, source);
+    await tester.tap(find.byKey(const Key('job-rescreen')));
+    await tester.pumpAndSettle();
+    expect(find.text('服务器尚未部署新版AI筛选服务，请先更新服务器后端'), findsOneWidget);
+    expect(source.starts, 1);
+    expect(source.reads, 1);
   });
 
   testWidgets('点击直接刷新筛选，执行中阻止重复并刷新同一份名单', (tester) async {

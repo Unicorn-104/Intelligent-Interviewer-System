@@ -112,10 +112,9 @@ void main() {
     expect(find.text('缺失：项目结束时间'), findsOneWidget);
     expect(source.matchCalls, 0);
     expect(source.invites, isEmpty);
-    await scrollTalentTo(tester, find.text('通用评分，非岗位维度'));
-    expect(find.text('88 分'), findsOneWidget);
-    await scrollTalentTo(tester, find.text('岗位技能分析'));
-    expect(find.text('选择岗位后查看'), findsOneWidget);
+    await scrollTalentTo(tester, find.text('综合匹配度'));
+    expect(find.text('91.0'), findsOneWidget);
+    expect(find.text('合成测试岗位'), findsOneWidget);
   });
   testWidgets('简历失败独立重试，基本资料和报告不被清空', (tester) async {
     final source = TalentFakeSource()..resumeFails = true;
@@ -140,10 +139,11 @@ void main() {
     expect(source.resumeCalls, 2);
     expect(source.detailCalls, 1);
     await scrollTalentTo(tester, find.byType(TalentRecommendationSection));
-    expect(find.text('候选人已有报告，未提供岗位归属信息'), findsOneWidget);
-    expect(find.text('报告正文：合成报告正文'), findsOneWidget);
+    expect(find.text('推荐理由'), findsOneWidget);
+    expect(find.textContaining('合成推荐理由：具备Dart项目经验'), findsOneWidget);
+    expect(source.reportCalls, 0);
   });
-  testWidgets('岗位分析失败保留通用评分，重试仅加载岗位分析', (tester) async {
+  testWidgets('岗位分析失败不冒用历史评分，重试仅加载岗位分析', (tester) async {
     final source = TalentFakeSource()
       ..matchFails = true
       ..resume = {};
@@ -155,7 +155,7 @@ void main() {
         jobContext: talentTestJob,
       ),
     );
-    expect(find.text('88 分'), findsOneWidget);
+    expect(find.text('88 分'), findsNothing);
     final match = find.byType(TalentMatchAnalysisSection);
     final retry = find.descendant(of: match, matching: find.text('重试'));
     await scrollTalentTo(tester, retry);
@@ -164,10 +164,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(source.matchCalls, 2);
     expect(source.detailCalls, 1);
-    expect(find.text('技能重合度：75%'), findsOneWidget);
-    expect(find.text('项目：暂无分析'), findsOneWidget);
-    expect(find.text('学历：暂无分析'), findsOneWidget);
-    expect(find.text('行业：暂无分析'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('radar-score-skillMatch')),
+      findsOneWidget,
+    );
+    expect(find.text('75.0'), findsOneWidget);
+    expect(find.text('— 资料不足或不适用，不计入综合分'), findsOneWidget);
   });
   testWidgets('无必备技能时不展示服务返回的零分，无报告显示空态', (tester) async {
     final source = TalentFakeSource()
@@ -185,10 +187,10 @@ void main() {
         jobContext: talentTestJob,
       ),
     );
-    expect(find.text('暂无岗位技能依据'), findsOneWidget);
+    expect(find.text('尚未分析，请在求职者列表点击AI辅助筛选'), findsOneWidget);
     expect(find.text('技能重合度：0%'), findsNothing);
     await scrollTalentTo(tester, find.byType(TalentRecommendationSection));
-    expect(find.text('暂无候选人推荐报告'), findsOneWidget);
+    expect(find.text('暂无推荐理由'), findsOneWidget);
     expect(source.invites, isEmpty);
   });
   testWidgets('简历加载中独立显示，退出后迟到响应不更新已销毁页面', (tester) async {
@@ -246,7 +248,7 @@ void main() {
     expect(find.text('合成报告失败'), findsOneWidget);
     expect(find.text('重试'), findsOneWidget);
     state.error = null;
-    state.data = {'content': '实际内容'};
+    state.data = {'source': 'llm', 'recommendation': '实际推荐理由'};
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -255,7 +257,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('报告正文：实际内容'), findsOneWidget);
+    expect(find.text('实际推荐理由'), findsOneWidget);
     expect(find.textContaining('报告状态：'), findsNothing);
     expect(find.textContaining('发送时间：'), findsNothing);
   });

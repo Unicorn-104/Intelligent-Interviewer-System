@@ -15,104 +15,40 @@ class TalentRecommendationSection extends StatelessWidget {
   final VoidCallback onRetry;
   final bool embedded;
 
-  List<String> _points(Object? raw) {
-    if (raw is List) {
-      return raw.map(talentReportValue).toList();
-    }
-    if (raw is Map) {
-      return raw.entries
-          .map((entry) => '${entry.key}：${talentReportValue(entry.value)}')
-          .toList();
-    }
-    return [talentReportValue(raw)];
-  }
-
   @override
   Widget build(BuildContext context) {
     final report = state.data;
+    final reason = report?['source'] == 'llm'
+        ? talentText(report?['recommendation'], '')
+        : '';
+    final warnings = report?['sourceWarnings'];
     return TalentSectionFrame(
-      title: '已有推荐报告',
+      title: '推荐理由',
       ai: !embedded,
       embedded: embedded,
       loading: state.loading,
       error: state.error,
-      empty: report == null || report.isEmpty,
-      emptyText: '暂无候选人推荐报告',
+      empty: reason.isEmpty,
+      emptyText: '暂无推荐理由',
       onRetry: onRetry,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            '候选人已有报告，未提供岗位归属信息',
-            style: TextStyle(fontSize: 12, color: AppColors.muted),
-          ),
-          if (report != null && report.containsKey('matchPoints')) ...[
+          TalentExpandableText(text: reason, maxLines: 4),
+          if (warnings is List && warnings.isNotEmpty) ...[
             const SizedBox(height: 8),
-            const Text(
-              '匹配要点',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.brand,
-                fontWeight: FontWeight.w600,
-              ),
+            TalentExpandableText(
+              text: warnings.map((value) => '$value').join('；'),
+              maxLines: 2,
             ),
-            if (_points(report['matchPoints']).isEmpty)
-              const Text(
-                '暂无匹配要点',
-                style: TextStyle(fontSize: 12, color: AppColors.muted),
-              ),
-            for (final point in _points(report['matchPoints']))
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 5),
-                      child: Icon(
-                        Icons.circle,
-                        size: 6,
-                        color: AppColors.interactive,
-                      ),
-                    ),
-                    const SizedBox(width: 7),
-                    Expanded(
-                      child: TalentExpandableText(text: point, maxLines: 2),
-                    ),
-                  ],
-                ),
-              ),
           ],
-          if (report != null && report.containsKey('content'))
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: TalentExpandableText(
-                text: '报告正文：${talentReportValue(report['content'])}',
-                maxLines: 4,
-              ),
+          if (report?['generatedAt'] != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              talentText(report?['generatedAt']),
+              style: const TextStyle(fontSize: 11, color: AppColors.muted),
             ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: [
-              if (report != null && report.containsKey('status'))
-                Text(
-                  '报告状态：${talentReportValue(report['status'])}',
-                  style: const TextStyle(fontSize: 11, color: AppColors.muted),
-                ),
-              if (report != null && report.containsKey('sentAt'))
-                Text(
-                  '发送时间：${talentReportValue(report['sentAt'])}',
-                  style: const TextStyle(fontSize: 11, color: AppColors.muted),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '接口未提供稳定的风险点或待核实点字段',
-            style: TextStyle(fontSize: 11, color: AppColors.muted),
-          ),
+          ],
         ],
       ),
     );

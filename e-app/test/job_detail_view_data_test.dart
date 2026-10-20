@@ -33,6 +33,18 @@ void main() {
     expect(ranked.map((row) => row.score), [90, 72, 60]);
   });
 
+  test('未分析的岗位评分不回退为旧的通用分数', () {
+    final rows = rankJobCandidates(
+      [
+        {'talId': 11, 'matchScore': 95},
+      ],
+      [
+        {'resultId': 11, 'totalScore': null, 'source': 'not_analyzed'},
+      ],
+    );
+    expect(rows.single.score, isNull);
+  });
+
   test('流程保存映射保留现有配置字段', () {
     final body = jobWorkflowSaveBody({
       'template': {'name': '流程'},

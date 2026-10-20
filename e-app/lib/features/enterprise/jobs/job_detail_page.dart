@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_exception.dart';
+
 import '../../../theme/app_theme.dart';
 import '../talent/talent_detail_page.dart';
 import '../talent/models/talent_detail_view_data.dart';
@@ -261,6 +263,25 @@ class _JobDetailPageState extends State<JobDetailPage>
       if (jobPositiveId(summary['taskId']) != _positionId) {
         setState(() => _scores.error = '筛选已响应，但没有返回可核对的任务标识。请刷新评分，避免重复提交。');
         return;
+      }
+      if (summary['processing'] is! bool) {
+        throw const ApiException('服务器尚未部署新版AI筛选服务，请先更新服务器后端');
+      }
+      var progress = summary;
+      final deadline = DateTime.now().add(const Duration(minutes: 12));
+      while (progress['processing'] == true) {
+        if (DateTime.now().isAfter(deadline)) {
+          throw const ApiException('分析仍在后台进行，请稍后刷新结果；无需重复提交');
+        }
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+        progress = await widget.source.loadScreeningStatus(_positionId);
+        if (jobPositiveId(progress['taskId']) != _positionId) {
+          throw const ApiException('筛选进度标识不一致，请稍后刷新结果');
+        }
+      }
+      if (progress['state'] == 'failed') {
+        throw ApiException(talentText(progress['error'], 'AI筛选失败，原有结果未变更'));
       }
       await Future.wait([_loadDetail(), _loadScores()]);
     } catch (error) {

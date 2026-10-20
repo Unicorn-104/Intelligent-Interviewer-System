@@ -146,7 +146,19 @@ class TalentDetailDataSource {
 }
 
 String talentError(Object error) => switch (error) {
-  ApiException() => error.message,
+  ApiException() => _candidateApiMessage(error),
   FormatException() => error.message.toString(),
   _ => '请求失败，请稍后重试',
 };
+
+String _candidateApiMessage(ApiException error) {
+  final raw = error.message.toLowerCase();
+  if (raw.contains('error querying database') ||
+      raw.contains('sqlsyntaxerrorexception') ||
+      raw.contains('badsqlgrammarexception') ||
+      raw.contains('bad sql grammar') ||
+      raw.contains('### sql:')) {
+    return '分析数据查询失败，请稍后重试；如持续出现，请更新服务器后端';
+  }
+  return error.message;
+}
