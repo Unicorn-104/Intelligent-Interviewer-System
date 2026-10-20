@@ -19,5 +19,15 @@ public interface BizResumeMapper
 
     Map<String, Object> selectAdminResumeById(@Param("rbsId") Long rbsId);
 
+    List<Map<String, Object>> selectWorkList(@Param("rbsId") Long rbsId);
+
+    List<Map<String, Object>> selectEduList(@Param("rbsId") Long rbsId);
+
+    List<Map<String, Object>> selectSkillList(@Param("rbsId") Long rbsId);
+
+    List<Map<String, Object>> selectProjList(@Param("rbsId") Long rbsId);
+
+    List<Map<String, Object>> selectResumeSummary();
+
     int deleteResumeByIds(@Param("rbsIds") Long[] rbsIds);
 }
