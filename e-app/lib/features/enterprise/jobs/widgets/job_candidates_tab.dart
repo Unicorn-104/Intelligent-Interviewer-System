@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../widgets/page_states.dart';
 import '../../../../widgets/skeleton_list.dart';
+import '../../talent/widgets/talent_status_badge.dart';
+import '../../talent/widgets/talent_candidate_actions.dart';
+import '../../talent/data/talent_detail_data_source.dart';
+import '../../talent/models/talent_detail_view_data.dart';
 import '../models/job_detail_view_data.dart';
 
 class JobCandidatesTab extends StatelessWidget {
@@ -15,6 +19,10 @@ class JobCandidatesTab extends StatelessWidget {
     required this.onReloadScores,
     required this.onScreen,
     required this.onOpen,
+    required this.loadResume,
+    required this.actionsSource,
+    required this.job,
+    this.workflowRevision = 0,
   });
   final JobSectionState<JobDetailViewData> detail;
   final JobSectionState<List<Map<String, dynamic>>> scores;
@@ -23,6 +31,10 @@ class JobCandidatesTab extends StatelessWidget {
   final Future<void> Function() onReloadScores;
   final VoidCallback onScreen;
   final ValueChanged<Map<String, dynamic>> onOpen;
+  final Future<Map<String, dynamic>> Function(int) loadResume;
+  final TalentDetailDataSource actionsSource;
+  final TalentJobContext job;
+  final int workflowRevision;
 
   @override
   Widget build(BuildContext context) {
@@ -116,6 +128,10 @@ class JobCandidatesTab extends StatelessWidget {
                 'job-candidate-${ranked[index].candidate['talId'] ?? index}',
               ),
               candidate: ranked[index].candidate,
+              loadResume: loadResume,
+              actionsSource: actionsSource,
+              job: job,
+              workflowRevision: workflowRevision,
               score: ranked[index].score,
               onOpen: () => onOpen(ranked[index].candidate),
             ),
@@ -127,38 +143,283 @@ class JobCandidatesTab extends StatelessWidget {
   }
 }
 
-class JobCandidateCard extends StatelessWidget {
+class JobCandidateCard extends StatefulWidget {
   const JobCandidateCard({
     super.key,
     required this.candidate,
     required this.score,
     required this.onOpen,
+    required this.loadResume,
+    required this.actionsSource,
+    required this.job,
+    this.workflowRevision = 0,
   });
   final Map<String, dynamic> candidate;
   final num? score;
   final VoidCallback onOpen;
+  final Future<Map<String, dynamic>> Function(int) loadResume;
+  final TalentDetailDataSource actionsSource;
+  final TalentJobContext job;
+  final int workflowRevision;
+
+  @override
+  State<JobCandidateCard> createState() => _JobCandidateCardState();
+}
+
+class _JobCandidateCardState extends State<JobCandidateCard> {
+  late Future<Map<String, dynamic>> _resume;
+  int? get _id => jobPositiveId(widget.candidate['talId']);
+
+  @override
+  void initState() {
+    super.initState();
+    _resume = _loadResume();
+  }
+
+  @override
+  void didUpdateWidget(covariant JobCandidateCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.candidate['talId'] != widget.candidate['talId']) {
+      _resume = _loadResume();
+    }
+  }
+
+  Future<Map<String, dynamic>> _loadResume() async =>
+      _id == null ? <String, dynamic>{} : await widget.loadResume(_id!);
+
+  void _unavailable(String action) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('$action功能开发中')));
+  }
+
+  Widget _badge(String text, Color color) => Container(
+    constraints: const BoxConstraints(minHeight: 22),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .08),
+      borderRadius: BorderRadius.circular(4),
+    ),
+    child: Text(text, style: TextStyle(color: color, fontSize: 11)),
+  );
+
+  String _education(Map<String, dynamic>? resume) {
+    final raw = resume?['educationList'];
+    if (raw is! List) return '学校未填写 · 学历未填写';
+    // 与完整资料页一致，使用接口按结束时间倒序返回的最近一条教育记录。
+    final entries = raw.whereType<Map>();
+    if (entries.isEmpty) return '学校未填写 · 学历未填写';
+    final education = entries.first;
+    return '${jobValue(education['school'], fallback: '学校未填写')} · ${talentDegree(education['degree'])}';
+  }
+
+  Widget _educationLine() => FutureBuilder<Map<String, dynamic>>(
+    future: _resume,
+    builder: (context, snapshot) => Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Text(
+            snapshot.connectionState != ConnectionState.done
+                ? '教育信息加载中…'
+                : snapshot.hasError
+                ? '教育信息暂不可用'
+                : _education(snapshot.data),
+            key: ValueKey('job-candidate-education-$_id'),
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        if (snapshot.hasError)
+          IconButton(
+            key: ValueKey('job-candidate-education-retry-$_id'),
+            tooltip: '重试教育信息',
+            icon: const Icon(Icons.refresh, size: 18),
+            onPressed: () {
+              final request = _loadResume();
+              setState(() {
+                _resume = request;
+              });
+            },
+          ),
+      ],
+    ),
+  );
+
+  Widget _identity() {
+    final status = jobValue(widget.candidate['statusLabel'], fallback: '状态未提供');
+    final stage = jobValue(widget.candidate['currentStage'], fallback: '');
+    final (_, statusColor) = TalentStatusBadge.visualFor(
+      widget.candidate['statusCode'],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+            child: Text(
+              jobValue(widget.candidate['name'], fallback: '姓名未填写'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
+          _badge(status, statusColor),
+          if (stage.isNotEmpty && stage != status)
+            _badge(stage, AppColors.interactive),
+        ],
+      ),
+    );
+  }
+
+  Widget _scoring() => Tooltip(
+    message: '调整评分 · 功能开发中',
+    child: InkWell(
+      key: ValueKey('job-candidate-adjust-$_id'),
+      onTap: _id == null ? null : () => _unavailable('评分调整'),
+      borderRadius: BorderRadius.circular(4),
+      child: _CandidateScore(score: widget.score),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => Card(
+    clipBehavior: Clip.antiAlias,
+    child: Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(right: 44),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _identity(),
+                          const SizedBox(height: 4),
+                          _educationLine(),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _scoring(),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                TalentCandidateActions(
+                  keyPrefix: 'job-candidate-$_id',
+                  workflowRevision: widget.workflowRevision,
+                  candidateId: _id,
+                  name: jobValue(widget.candidate['name'], fallback: '姓名未填写'),
+                  source: widget.actionsSource,
+                  job: TalentJobContext(
+                    positionId: widget.job.positionId,
+                    title: widget.job.title,
+                    currentStage: widget.candidate['currentStage']?.toString(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: 44,
+          child: Material(
+            color: AppColors.hairline,
+            child: InkWell(
+              key: ValueKey('job-candidate-expand-$_id'),
+              onTap: _id == null ? null : widget.onOpen,
+              child: Semantics(
+                button: true,
+                enabled: _id != null,
+                label: _id == null ? '候选人ID缺失，无法查看详情' : '展开求职者详细信息',
+                child: const Center(
+                  child: Icon(
+                    Icons.chevron_right,
+                    size: 24,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _CandidateScore extends StatelessWidget {
+  const _CandidateScore({required this.score});
+  final num? score;
 
   @override
   Widget build(BuildContext context) {
-    final validId = jobPositiveId(candidate['talId']) != null;
-    return Card(
-      child: ListTile(
-        isThreeLine: true,
-        title: Text(jobValue(candidate['name'], fallback: '姓名未填写')),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final color = score == null
+        ? AppColors.textMuted
+        : score! >= 85
+        ? AppColors.success
+        : score! >= 70
+        ? AppColors.interactive
+        : AppColors.warning;
+    return Semantics(
+      label: '通用评分：${score ?? '暂无评分'}',
+      excludeSemantics: true,
+      child: SizedBox.square(
+        dimension: 56,
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            Text('阶段：${jobValue(candidate['currentStage'], fallback: '未提供')}'),
-            Text('状态：${jobValue(candidate['statusLabel'], fallback: '未提供')}'),
-            Text(
-              '通用评分：${score ?? '暂无评分'}',
-              style: const TextStyle(color: AppColors.textSecondary),
+            SizedBox.expand(
+              child: CircularProgressIndicator(
+                value: score == null ? 0 : score!.clamp(0, 100) / 100,
+                strokeWidth: 4,
+                backgroundColor: AppColors.hairline,
+                color: color,
+              ),
             ),
-            if (!validId) const Text('候选人ID缺失，无法查看详情'),
+            Padding(
+              padding: const EdgeInsets.all(7),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      score?.toStringAsFixed(1) ?? '—',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: color,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Icon(
+                      Icons.edit_outlined,
+                      size: 14,
+                      color: AppColors.interactive,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
-        trailing: validId ? const Icon(Icons.chevron_right) : null,
-        onTap: validId ? onOpen : null,
       ),
     );
   }

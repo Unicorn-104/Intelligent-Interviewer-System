@@ -410,6 +410,15 @@ class _JobDetailPageState extends State<JobDetailPage>
           child: JobCandidatesTab(
             detail: _detail,
             scores: _scores,
+            loadResume: widget.source.loadCandidateResume,
+            actionsSource: widget.source.candidateActionsSource,
+            workflowRevision: _workflow.request,
+            job: TalentJobContext(
+              positionId: _positionId,
+              title: jobValue(
+                _detail.data?.job['title'] ?? widget.job['title'],
+              ),
+            ),
             screening: _screening,
             onReloadDetail: _loadDetail,
             onReloadScores: _loadScores,

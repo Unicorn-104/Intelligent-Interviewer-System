@@ -2,12 +2,19 @@ import '../../../../api/jd_api.dart' as jd;
 import '../../../../api/jobs_api.dart' as jobs;
 import '../../../../api/schedule_api.dart' as schedule;
 import '../../../../api/screening_api.dart' as screening;
+import '../../../../api/talent_api.dart' as talent;
 import '../../../../core/network/api_exception.dart';
+import '../../talent/data/talent_detail_data_source.dart';
 
 /// An injectable adapter over existing APIs. Reading never starts screening.
 class JobDetailDataSource {
   const JobDetailDataSource();
 
+  TalentDetailDataSource get candidateActionsSource =>
+      const TalentDetailDataSource();
+
+  Future<Map<String, dynamic>> loadCandidateResume(int candidateId) =>
+      talent.getTalentParsedResume(candidateId);
   Future<Map<String, dynamic>> loadDetail(int id) => jobs.getJobDetail(id);
   Future<Map<String, dynamic>> loadEditingOptions(int id) async {
     final results = await Future.wait([

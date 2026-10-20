@@ -1,4 +1,5 @@
 import '../../../../api/jobs_api.dart' as jobs;
+import '../../../../api/interview_room_api.dart' as rooms;
 import '../../../../api/jd_api.dart' as jd;
 import '../../../../api/schedule_api.dart' as schedule;
 import '../../../../api/screening_api.dart' as screening;
@@ -80,6 +81,8 @@ class TalentDetailDataSource {
 
   Future<List<Map<String, dynamic>>> loadJobs({int pageNum = 1}) =>
       jobs.listJobs(status: 1, pageNum: pageNum, pageSize: 20);
+  Future<Map<String, dynamic>> loadWorkflowSession(int sessionId) =>
+      rooms.getSessionContext(sessionId);
   Future<Map<String, dynamic>> loadWorkflow(int positionId) =>
       jobs.getJobWorkflow(positionId);
   Future<List<Map<String, dynamic>>> loadAvailability(int id, {String? to}) =>
