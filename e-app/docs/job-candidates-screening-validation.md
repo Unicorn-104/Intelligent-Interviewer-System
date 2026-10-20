@@ -91,3 +91,5 @@ initialTab 0仍为基础信息，1为求职者；旧值2映射到求职者，避
 操作按钮上方增加共用招聘流程进度，已参加记录经阶段与身份核实后标绿，支持横向滚动、边缘省略号和条件显示的左右按钮；实际数据、参加判定与验证边界见[candidate-workflow-progress-validation.md](candidate-workflow-progress-validation.md)。原有工作区成果保留，未修改后端或数据库。
 
 本次流程条验证：格式与静态分析通过，相关42项测试及完整517项Flutter测试通过，Debug构建成功并覆盖安装Pixel_10a。设备当前登录态已失效，停在登录页，两处真实候选人流程条设备验收待登录后补充；未执行任何业务写入。未修改后端/数据库，未提交或推送。
+
+流程节点现可点击查看对应阶段真实会话的AI总结报告；本轮未开始时中央提示“本轮还未进行面试”并自动关闭。场次归属、报告状态及验证边界见[candidate-workflow-progress-validation.md](candidate-workflow-progress-validation.md)。未新增后端或数据库改动。

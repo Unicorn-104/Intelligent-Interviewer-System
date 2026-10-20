@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../../../../theme/app_theme.dart';
 import '../data/talent_detail_data_source.dart';
+import '../data/talent_stage_report_loader.dart';
+import 'talent_stage_report_sheet.dart';
 import '../models/talent_detail_view_data.dart';
 import '../models/talent_workflow_progress.dart';
 
@@ -30,6 +33,10 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
   String? _error;
   List<TalentWorkflowStage> _stages = [];
   int _request = 0;
+  bool _openingStage = false;
+  int? _openingStageId;
+  OverlayEntry? _hint;
+  Timer? _hintTimer;
   double _lastViewport = -1, _lastContent = -1;
 
   @override
@@ -53,11 +60,13 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
 
   @override
   void dispose() {
+    _hideHint();
     _scroll.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    _hideHint();
     final request = ++_request;
     final candidateId = widget.candidateId;
     final job = widget.job;
@@ -332,6 +341,109 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
     );
   }
 
+  void _hideHint() {
+    _hintTimer?.cancel();
+    _hintTimer = null;
+    _hint?.remove();
+    _hint?.dispose();
+    _hint = null;
+  }
+
+  void _showHint(String text) {
+    _hideHint();
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    _hint = OverlayEntry(
+      builder: (_) => Positioned.fill(
+        child: IgnorePointer(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Material(
+                  color: AppColors.brandDeep,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                    child: Text(
+                      text,
+                      key: const Key('talent-stage-report-hint'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.canvas,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(_hint!);
+    _hintTimer = Timer(const Duration(seconds: 2), _hideHint);
+  }
+
+  Future<void> _openStage(TalentWorkflowStage stage) async {
+    final candidateId = widget.candidateId;
+    final job = widget.job;
+    if (_openingStage || candidateId == null || job == null) return;
+    final generation = _request;
+    _hideHint();
+    setState(() {
+      _openingStage = true;
+      _openingStageId = stage.id;
+    });
+    try {
+      final sessions = await loadTalentStageSessions(
+        source: widget.source,
+        candidateId: candidateId,
+        positionId: job.positionId,
+        stageId: stage.id,
+      );
+      if (!mounted || generation != _request) return;
+      setState(() => _openingStageId = null);
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: AppColors.canvas,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+        ),
+        builder: (_) => FractionallySizedBox(
+          heightFactor: .85,
+          child: TalentStageReportSheet(
+            stageName: stage.name,
+            candidateId: candidateId,
+            positionId: job.positionId,
+            sessions: sessions,
+            source: widget.source,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted && generation == _request) {
+        _showHint(
+          error is TalentStageReportNotice ? error.message : talentError(error),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _openingStage = false;
+          _openingStageId = null;
+        });
+      }
+    }
+  }
+
   Widget _ellipsis(String key) => IgnorePointer(
     child: Container(
       key: ValueKey(key),
@@ -352,81 +464,94 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
         : AppColors.textMuted;
     return SizedBox(
       width: width,
-      child: Column(
-        children: [
-          SizedBox(
-            width: double.infinity,
-            height: 24,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                if (index > 0)
-                  Positioned(
-                    left: 0,
-                    right: width / 2,
-                    top: 11,
-                    child: Container(
-                      key: ValueKey('talent-flow-line-in-${stage.id}'),
-                      height: 2,
-                      color: _stages[index - 1].attended
-                          ? AppColors.success
-                          : AppColors.hairline,
+      child: InkWell(
+        key: ValueKey('talent-flow-stage-${stage.id}'),
+        onTap: _openingStage ? null : () => _openStage(stage),
+        borderRadius: BorderRadius.circular(4),
+        child: Column(
+          children: [
+            SizedBox(
+              width: double.infinity,
+              height: 24,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (index > 0)
+                    Positioned(
+                      left: 0,
+                      right: width / 2,
+                      top: 11,
+                      child: Container(
+                        key: ValueKey('talent-flow-line-in-${stage.id}'),
+                        height: 2,
+                        color: _stages[index - 1].attended
+                            ? AppColors.success
+                            : AppColors.hairline,
+                      ),
                     ),
-                  ),
-                if (index < _stages.length - 1)
-                  Positioned(
-                    left: width / 2,
-                    right: 0,
-                    top: 11,
-                    child: Container(
-                      key: ValueKey('talent-flow-line-${stage.id}'),
-                      height: 2,
-                      color: stage.attended
-                          ? AppColors.success
-                          : AppColors.hairline,
+                  if (index < _stages.length - 1)
+                    Positioned(
+                      left: width / 2,
+                      right: 0,
+                      top: 11,
+                      child: Container(
+                        key: ValueKey('talent-flow-line-${stage.id}'),
+                        height: 2,
+                        color: stage.attended
+                            ? AppColors.success
+                            : AppColors.hairline,
+                      ),
                     ),
-                  ),
-                Container(
-                  key: ValueKey('talent-flow-dot-${stage.id}'),
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: .12),
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Container(
-                    width: 10,
-                    height: 10,
+                  Container(
+                    key: ValueKey('talent-flow-dot-${stage.id}'),
+                    width: 20,
+                    height: 20,
                     decoration: BoxDecoration(
-                      color: stage.attended || stage.current
-                          ? color
-                          : AppColors.canvas,
+                      color: color.withValues(alpha: .12),
                       shape: BoxShape.circle,
-                      border: Border.all(color: color),
                     ),
+                    alignment: Alignment.center,
+                    child: _openingStageId == stage.id
+                        ? SizedBox.square(
+                            dimension: 10,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: color,
+                            ),
+                          )
+                        : Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: stage.attended || stage.current
+                                  ? color
+                                  : AppColors.canvas,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: color),
+                            ),
+                          ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Tooltip(
-            message:
-                '${stage.name} · ${stage.attended
-                    ? '已参加'
-                    : stage.current
-                    ? '当前阶段，参加情况未核实'
-                    : '暂无已参加记录'}',
-            child: Text(
-              stage.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, height: 1.15, color: color),
+            const SizedBox(height: 4),
+            Tooltip(
+              message:
+                  '${stage.name} · ${stage.attended
+                      ? '已参加'
+                      : stage.current
+                      ? '当前阶段，参加情况未核实'
+                      : '暂无已参加记录'}',
+              child: Text(
+                stage.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, height: 1.15, color: color),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
