@@ -27,7 +27,6 @@ const STATUS_MAP = { 0:'pending', 1:'confirmed', 2:'cancelled', 3:'completed' }
 const statusText = { pending:'待确认', confirmed:'已确认', completed:'已完成', conflict:'冲突', cancelled:'已取消' }
 
 const all = ref([])
-const initialized = ref(false)
 const weekStart = ref(mondayOf(new Date()))
 const dayIndex = ref(-1)
 
@@ -132,23 +131,6 @@ async function load(){
     const res = await listInterviews({ pageNum: 1, pageSize: 200 })
     all.value = res.rows || []
   }catch(e){ all.value = [] }
-  if(!initialized.value){ pickInitialWeek(); initialized.value = true }
-}
-function pickInitialWeek(){
-  const items = all.value.map(a => parseDT(a.startTime)).filter(Boolean)
-  if(!items.length){ weekStart.value = mondayOf(new Date()); return }
-  // 选择场次最密集的一周（并列时取离今天最近的一周），保证日历有内容
-  const counts = {}
-  items.forEach(d => { const k = mondayOf(d).getTime(); counts[k] = (counts[k] || 0) + 1 })
-  const nowKey = mondayOf(new Date()).getTime()
-  let bestKey = null, bestCount = -1, bestDist = Infinity
-  Object.keys(counts).forEach(k => {
-    const key = Number(k), count = counts[k], dist = Math.abs(key - nowKey)
-    if(count > bestCount || (count === bestCount && dist < bestDist)){
-      bestKey = key; bestCount = count; bestDist = dist
-    }
-  })
-  weekStart.value = new Date(bestKey)
 }
 function shiftWeek(delta){ const d = new Date(weekStart.value); d.setDate(d.getDate() + delta*7); weekStart.value = d }
 function goToday(){ weekStart.value = mondayOf(new Date()) }
