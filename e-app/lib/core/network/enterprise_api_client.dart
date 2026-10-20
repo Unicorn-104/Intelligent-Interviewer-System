@@ -10,8 +10,8 @@ import 'api_exception.dart';
 /// P7 联调统一 HTTP 客户端（dio 封装，新增文件，不动现有 ApiClient）。
 ///
 /// 职责：
-/// 1. baseUrl：复用 AppConfig.apiBaseUrl（默认 http://10.0.2.2:8080，
-///    Android 模拟器访问宿主机后端；真机/Web 可通过 --dart-define=API_BASE_URL 覆盖）；
+/// 1. baseUrl：复用 AppConfig.apiBaseUrl（默认连接服务器 /prod-api，
+///    其他环境可通过 --dart-define=API_BASE_URL 覆盖）；
 /// 2. 超时：复用 AppConfig.requestTimeout（15s）；
 /// 3. Token 注入：优先读取 FlutterSecureStorage（键名与 auth_controller 一致
 ///    `enterprise_access_token`）；无登录态时回退到 `--dart-define=DEV_TOKEN`
