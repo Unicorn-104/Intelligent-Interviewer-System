@@ -95,3 +95,15 @@ export function addCandidateTag(data) {
 export function batchUpdateTag(data) {
   return request({ url: '/biz/candidate/batchTag', method: 'put', data: data })
 }
+// 候选人状态变更历史
+export function getCandidateLogs(id) {
+  return request({ url: '/biz/candidate/' + id + '/logs', method: 'get' })
+}
+// 候选人统计概览
+export function getCandidateSummary() {
+  return request({ url: '/biz/candidate/summary', method: 'get' })
+}
+// 批量打标签
+export function batchTags(data) {
+  return request({ url: '/biz/candidate/batchTags', method: 'put', data: data })
+}

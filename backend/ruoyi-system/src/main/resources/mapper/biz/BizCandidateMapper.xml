@@ -15,6 +15,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
              WHERE pin.pin_id = tal.tal_process_instance_id
              LIMIT 1) AS jobName,
             tal.tal_matched_score AS totalScore,
+            tal.tal_current_round AS currentRound,
             CASE tal.tal_status
                 WHEN 0 THEN 'new'
                 WHEN 1 THEN 'screened'
@@ -71,9 +72,34 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
              INNER JOIN t_pos pos ON pos.pos_id = pin.pin_position_id
              WHERE pin.pin_id = tal.tal_process_instance_id LIMIT 1) AS jobName,
             tal.tal_matched_score AS totalScore,
+            tal.tal_current_round AS currentRound,
+            CASE tal.tal_status
+                WHEN 0 THEN 'new'
+                WHEN 1 THEN 'screened'
+                WHEN 2 THEN 'interviewing'
+                WHEN 3 THEN 'rejected'
+                WHEN 4 THEN 'passed'
+                WHEN 5 THEN 'passed'
+                WHEN 6 THEN 'archived'
+                WHEN 7 THEN 'archived'
+                WHEN 8 THEN 'rejected'
+                WHEN 9 THEN 'new'
+                ELSE 'new'
+            END AS status,
             tal.tal_status AS statusCode,
             tal.tal_company_id AS companyId,
             tal.tal_resume_id AS resumeId,
+            (SELECT MAX(apt.apt_start_time)
+             FROM t_sch_appointment apt
+             WHERE apt.apt_candidate_id = tal.tal_id) AS latestInterviewTime,
+            (SELECT erc.erc_total_score
+             FROM t_exam_record erc
+             WHERE erc.erc_candidate_id = tal.tal_id
+             ORDER BY erc.erc_id DESC LIMIT 1) AS examScore,
+            (SELECT erc.erc_pass_status
+             FROM t_exam_record erc
+             WHERE erc.erc_candidate_id = tal.tal_id
+             ORDER BY erc.erc_id DESC LIMIT 1) AS examPass,
             tal.tal_created_at AS createTime,
             tal.tal_updated_at AS updateTime
         FROM t_tal tal
@@ -97,5 +123,45 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <update id="updateCandidateStatus">
         UPDATE t_tal SET tal_status = #{status}, tal_updated_at = NOW() WHERE tal_id = #{talId}
     </update>
+
+    <insert id="insertTalStatusLog">
+        INSERT INTO t_tal_status_log
+            (tsl_candidate_id, tsl_from_status, tsl_to_status, tsl_reason, tsl_operator_id)
+        VALUES
+            (#{talId}, #{fromStatus}, #{toStatus}, #{reason}, #{operatorId})
+    </insert>
+
+    <!-- 回填 t_tal AFTER UPDATE 触发器刚写入的最近一条日志：补充人工原因与操作人，不重复插入 -->
+    <update id="updateTalStatusLogMeta">
+        UPDATE t_tal_status_log
+        <set>
+            <if test="reason != null and reason != ''">tsl_reason = #{reason},</if>
+            <if test="operatorId != null">tsl_operator_id = #{operatorId},</if>
+        </set>
+        WHERE tsl_candidate_id = #{talId}
+        ORDER BY tsl_id DESC
+        LIMIT 1
+    </update>
+
+    <select id="selectTalStatusLogs" resultType="java.util.LinkedHashMap">
+        SELECT
+            tsl_from_status AS fromStatus,
+            tsl_to_status AS toStatus,
+            tsl_reason AS reason,
+            tsl_operator_id AS operatorId,
+            tsl_created_at AS auditTime
+        FROM t_tal_status_log
+        WHERE tsl_candidate_id = #{talId}
+        ORDER BY tsl_id ASC
+    </select>
+
+    <select id="selectCandidateSummary" resultType="java.util.LinkedHashMap">
+        SELECT
+            tal_status AS statusCode,
+            COUNT(*) AS cnt,
+            ROUND(AVG(tal_matched_score), 1) AS avgScore
+        FROM t_tal
+        GROUP BY tal_status
+    </select>
 
 </mapper>

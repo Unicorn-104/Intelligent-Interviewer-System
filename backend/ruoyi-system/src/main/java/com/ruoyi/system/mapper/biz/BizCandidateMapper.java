@@ -6,7 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * 平台运营 - 候选人监管 数据层（跨企业视角）
+ * 平台运营 - 候选人监管 数据层（跨公司视角）
  *
  * @author TQY
  */
@@ -41,7 +41,30 @@ public interface BizCandidateMapper
     int insertCandidateTag(@Param("talId") Long talId, @Param("name") String name);
 
     /**
-     * 更新候选人状态
+     * 更新候选人状态（并由 Service 写状态变更日志）
      */
     int updateCandidateStatus(@Param("talId") Long talId, @Param("status") Integer status);
+
+    /**
+     * 回填触发器刚写入的最近一条状态日志的人工原因与操作人（触发器已自动建记录，不重复插入）
+     */
+    int updateTalStatusLogMeta(@Param("talId") Long talId, @Param("reason") String reason,
+                              @Param("operatorId") Long operatorId);
+
+    /**
+     * 写入候选人状态变更日志
+     */
+    int insertTalStatusLog(@Param("talId") Long talId, @Param("fromStatus") Integer fromStatus,
+                           @Param("toStatus") Integer toStatus, @Param("reason") String reason,
+                           @Param("operatorId") Long operatorId);
+
+    /**
+     * 候选人全部状态变更日志（时间正序）
+     */
+    List<Map<String, Object>> selectTalStatusLogs(@Param("talId") Long talId);
+
+    /**
+     * 候选人统计概览：各状态人数、平均匹配分
+     */
+    List<Map<String, Object>> selectCandidateSummary();
 }
