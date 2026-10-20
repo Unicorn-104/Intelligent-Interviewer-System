@@ -18,10 +18,20 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             pos.pos_work_city AS city,
             pos.pos_status AS status,
             pos.pos_created_at AS publishTime,
-            CAST(NULL AS CHAR) AS riskLevel,
-            CAST('[]' AS CHAR) AS riskWords
+            pos.pos_jd_json AS jdJson,
+            log.psl_reason AS reason,
+            log.psl_created_at AS auditTime
         FROM t_pos pos
         INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        LEFT JOIN (
+            SELECT l.psl_pos_id, l.psl_reason, l.psl_created_at
+            FROM t_pos_status_log l
+            INNER JOIN (
+                SELECT psl_pos_id, MAX(psl_id) AS max_id
+                FROM t_pos_status_log
+                GROUP BY psl_pos_id
+            ) m ON m.max_id = l.psl_id
+        ) log ON log.psl_pos_id = pos.pos_id
         <where>
             <if test="jobName != null and jobName != ''">
                 AND pos.pos_title LIKE CONCAT('%', #{jobName}, '%')
@@ -33,7 +43,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 AND pos.pos_status = #{status}
             </if>
         </where>
-        ORDER BY pos.pos_created_at DESC, pos.pos_id DESC
+        ORDER BY cmp.cmp_name ASC, pos.pos_created_at DESC, pos.pos_id DESC
     </select>
 
     <select id="selectAdminJobById" resultType="java.util.LinkedHashMap">
@@ -55,5 +65,34 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <update id="updateJobStatus">
         UPDATE t_pos SET pos_status = #{status} WHERE pos_id = #{posId}
     </update>
+
+    <insert id="insertPosStatusLog">
+        INSERT INTO t_pos_status_log
+            (psl_pos_id, psl_from_status, psl_to_status, psl_reason, psl_operator_id)
+        VALUES
+            (#{posId}, #{fromStatus}, #{toStatus}, #{reason}, #{operatorId})
+    </insert>
+
+    <select id="selectLatestPosLog" resultType="java.util.LinkedHashMap">
+        SELECT
+            psl_reason AS reason,
+            psl_created_at AS auditTime
+        FROM t_pos_status_log
+        WHERE psl_pos_id = #{posId}
+        ORDER BY psl_id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectPosStatusLogs" resultType="java.util.LinkedHashMap">
+        SELECT
+            psl_from_status AS fromStatus,
+            psl_to_status AS toStatus,
+            psl_reason AS reason,
+            psl_operator_id AS operatorId,
+            psl_created_at AS auditTime
+        FROM t_pos_status_log
+        WHERE psl_pos_id = #{posId}
+        ORDER BY psl_id ASC
+    </select>
 
 </mapper>
