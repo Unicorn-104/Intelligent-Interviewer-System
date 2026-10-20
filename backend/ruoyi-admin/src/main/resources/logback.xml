@@ -73,6 +73,8 @@
 	
 	<!-- 系统模块日志级别控制  -->
 	<logger name="com.ruoyi" level="info" />
+    <!-- AI reports contain resume evidence; never log bound SQL parameters. -->
+    <logger name="com.ruoyi.enterprise.mapper.ScreeningMapper" level="info" />
 	<!-- Spring日志级别控制  -->
 	<logger name="org.springframework" level="warn" />
 

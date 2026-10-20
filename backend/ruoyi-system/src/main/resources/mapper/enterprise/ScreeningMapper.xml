@@ -14,12 +14,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectCandidatesByPosition" resultType="java.util.LinkedHashMap">
-        select t.tal_id as talentId, t.tal_status as status, t.tal_resume_id as resumeId,
+        select distinct t.tal_id as talentId, t.tal_status as status, r.rbs_id as resumeId, r.rbs_file_path as fileReference, r.rbs_user_id as resumeUserId, date_format(r.rbs_updated_at, '%Y-%m-%d %H:%i:%s') as resumeVersion,
                u.nick_name as name, u.phonenumber as phone
         from t_process_instance p
-        join t_tal t on t.tal_process_instance_id = p.pin_id
+        join t_tal t on t.tal_id = p.pin_candidate_id
         left join sys_user u on u.user_id = t.tal_user_id
-        where p.pin_position_id = #{positionId}
+        left join t_res_base r on r.rbs_id = t.tal_resume_id and r.rbs_user_id = t.tal_user_id
+        where t.tal_company_id = (select pos_company_id from t_pos where pos_id = #{positionId})
+          and p.pin_position_id = #{positionId}
         order by t.tal_id
     </select>
 
@@ -38,26 +40,29 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <select id="selectTaskList" resultType="java.util.LinkedHashMap">
         select p.pin_position_id as taskId, pos.pos_title as positionName,
-               count(distinct p.pin_id) as candidateCount,
+               count(distinct t.tal_id) as candidateCount,
                sum(case when t.tal_status = 1 then 1 else 0 end) as passedCount
         from t_process_instance p
         join t_pos pos on pos.pos_id = p.pin_position_id
-        left join t_tal t on t.tal_process_instance_id = p.pin_id
+        left join t_tal t on t.tal_id = p.pin_candidate_id
+        where pos.pos_company_id = #{companyId} and t.tal_company_id = #{companyId}
         group by p.pin_position_id, pos.pos_title
         order by p.pin_position_id desc
     </select>
 
     <select id="selectResultsByPosition" resultType="java.util.LinkedHashMap">
-        select t.tal_id as resultId, t.tal_matched_score as totalScore, t.tal_status as status,
+        select distinct t.tal_id as resultId, t.tal_matched_score as totalScore, t.tal_status as status,
                u.nick_name as name, u.phonenumber as phone,
                (select group_concat(skl_name separator ',')
                 from t_res_skill s where s.skl_resume_id = t.tal_resume_id) as skills,
                (select group_concat(tg_name separator ',')
                 from t_tal_tag g where g.tg_candidate_id = t.tal_id) as tags
         from t_process_instance p
-        join t_tal t on t.tal_process_instance_id = p.pin_id
+        join t_tal t on t.tal_id = p.pin_candidate_id
         left join sys_user u on u.user_id = t.tal_user_id
-        where p.pin_position_id = #{positionId}
+        left join t_res_base r on r.rbs_id = t.tal_resume_id and r.rbs_user_id = t.tal_user_id
+        where t.tal_company_id = (select pos_company_id from t_pos where pos_id = #{positionId})
+          and p.pin_position_id = #{positionId}
         order by t.tal_matched_score desc, t.tal_id
     </select>
 
@@ -76,4 +81,76 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where tal_id = #{talId}
     </update>
 
+    <select id="selectPosition" resultType="java.util.LinkedHashMap">
+        select pos_id as positionId, pos_title as title, date_format(pos_updated_at, '%Y-%m-%d %H:%i:%s') as positionVersion, pos_experience_required as experience,
+               pos_education_required as education, cast(pos_jd_json as char) as description
+        from t_pos where pos_id = #{positionId} and pos_company_id = #{companyId}
+    </select>
+    <select id="selectOwnedCandidate" resultType="java.util.LinkedHashMap">
+        select tal_id as talentId from t_tal where tal_id = #{talId} and tal_company_id = #{companyId}
+    </select>
+    <select id="selectEducationEvidence" resultType="java.util.LinkedHashMap">
+        select edu_major as major, case edu_degree when 1 then '中专' when 2 then '大专'
+               when 3 then '本科' when 4 then '硕士' when 5 then '博士' else '未提供' end as degree,
+               edu_description as description, cast(edu_start_date as char) as startDate,
+               cast(edu_end_date as char) as endDate
+        from t_res_education where edu_resume_id = #{resumeId} order by edu_id
+    </select>
+    <select id="selectWorkEvidence" resultType="java.util.LinkedHashMap">
+        select wrk_position as position, wrk_description as description,
+               cast(wrk_start_date as char) as startDate, cast(wrk_end_date as char) as endDate,
+               wrk_is_current as isCurrent
+        from t_res_work where wrk_resume_id = #{resumeId} order by wrk_id
+    </select>
+    <select id="selectProjectEvidence" resultType="java.util.LinkedHashMap">
+        select prj_name as name, prj_role as role, prj_description as description, prj_tech_stack as techStack,
+               cast(prj_start_date as char) as startDate, cast(prj_end_date as char) as endDate
+        from t_res_project where prj_resume_id = #{resumeId} order by prj_id
+    </select>
+    <select id="selectAnalysis" resultType="java.util.LinkedHashMap">
+        select cast(asr_report as char) as report, date_format(asr_updated_at, '%Y-%m-%d %H:%i:%s') as generatedAt
+        from t_ai_screening_result where asr_company_id = #{companyId} and asr_position_id = #{positionId}
+          and asr_candidate_id = #{talId}
+    </select>
+    <select id="selectLatestAnalysis" resultType="java.util.LinkedHashMap">
+        select cast(asr_report as char) as report, date_format(asr_updated_at, '%Y-%m-%d %H:%i:%s') as generatedAt
+        from t_ai_screening_result where asr_company_id = #{companyId} and asr_candidate_id = #{talId}
+        order by asr_updated_at desc, asr_position_id desc limit 1
+    </select>
+    <insert id="saveAnalysis">
+        insert into t_ai_screening_result (asr_company_id, asr_position_id, asr_candidate_id, asr_resume_id, asr_report)
+        values (#{companyId}, #{positionId}, #{resultId}, #{resumeId}, #{report})
+        on duplicate key update asr_resume_id = values(asr_resume_id), asr_report = values(asr_report), asr_updated_at = now()
+    </insert>
+    <insert id="initTask">
+        insert ignore into t_ai_screening_task (ast_company_id, ast_position_id, ast_run_id, ast_state)
+        values (#{companyId}, #{positionId}, '', 'idle')
+    </insert>
+    <update id="claimTask">
+        update t_ai_screening_task set ast_run_id = #{runId}, ast_state = 'processing',
+               ast_candidate_count = #{candidateCount}, ast_completed_count = 0, ast_passed_count = 0,
+               ast_error = null, ast_updated_at = now()
+        where ast_company_id = #{companyId} and ast_position_id = #{positionId}
+          and (ast_state != 'processing' or ast_updated_at &lt; date_sub(now(), interval 15 minute))
+    </update>
+    <sql id="taskFields">
+        ast_position_id as taskId, ast_run_id as runId, ast_state as state,
+        ast_candidate_count as candidateCount, ast_completed_count as completedCount,
+        ast_passed_count as passedCount, ast_error as error,
+        date_format(ast_updated_at, '%Y-%m-%d %H:%i:%s') as updatedAt,
+        case when ast_state = 'processing' then 1 else 0 end as processing
+    </sql>
+    <select id="selectTaskStatus" resultType="java.util.LinkedHashMap">
+        select <include refid="taskFields"/> from t_ai_screening_task
+        where ast_company_id = #{companyId} and ast_position_id = #{positionId}
+    </select>
+    <select id="lockTask" resultType="java.util.LinkedHashMap">
+        select <include refid="taskFields"/> from t_ai_screening_task
+        where ast_company_id = #{companyId} and ast_position_id = #{positionId} for update
+    </select>
+    <update id="updateTask">
+        update t_ai_screening_task set ast_state = #{state}, ast_completed_count = #{completed},
+               ast_passed_count = #{passed}, ast_error = #{error}, ast_updated_at = now()
+        where ast_company_id = #{companyId} and ast_position_id = #{positionId} and ast_run_id = #{runId}
+    </update>
 </mapper>

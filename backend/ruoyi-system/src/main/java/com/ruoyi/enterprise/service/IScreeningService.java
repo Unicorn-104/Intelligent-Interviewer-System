@@ -14,7 +14,7 @@ import java.util.Map;
 public interface IScreeningService
 {
     /**
-     * 触发筛选任务（UC-04/UC-05 步骤1-4）：硬性过滤 + 加权评分并落库
+     * 触发筛选并等待实际结果，保留既有PC调用的完成语义
      *
      * @return 任务汇总（任务ID=岗位ID、候选人数、通过数、Top N）
      */
@@ -49,4 +49,8 @@ public interface IScreeningService
      * HR 复核（UC-06）：确认通过（tal_status→初筛通过，触发器自动写状态日志）/ 调整评分
      */
     public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore);
+    Map<String, Object> getTaskStatus(Long userId, Long taskId);
+
+    /** APP后台分析入口，立即返回任务进度，不阻塞HTTP连接。 */
+    Map<String, Object> triggerScreeningAsync(Long userId, Long positionId, Integer topN);
 }
