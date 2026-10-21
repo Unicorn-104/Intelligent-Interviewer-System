@@ -227,10 +227,28 @@ public class ConferenceController extends BaseController
      */
     @GetMapping("/session/{sessionId}/captions")
     public AjaxResult captions(@PathVariable Long sessionId,
-            @RequestParam(required = false) Integer afterSequence,
+            @RequestParam(required = false) Long afterSequence,
             @RequestParam(required = false) Integer limit)
     {
         return success(conferenceService.getCaptions(getUserId(), sessionId, afterSequence, limit));
+    }
+
+    /**
+     * 实时字幕可用状态（仅 AI 面试且识别服务已配置时启用）
+     */
+    @GetMapping("/session/{sessionId}/asr/status")
+    public AjaxResult asrStatus(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.getAsrStatus(getUserId(), sessionId));
+    }
+
+    /**
+     * 签发实时字幕一次性 WebSocket 票据
+     */
+    @PostMapping("/session/{sessionId}/asr/ticket")
+    public AjaxResult asrTicket(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.issueAsrTicket(getUserId(), sessionId));
     }
 
     /**

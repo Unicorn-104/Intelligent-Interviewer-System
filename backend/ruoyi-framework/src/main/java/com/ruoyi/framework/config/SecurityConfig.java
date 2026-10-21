@@ -105,6 +105,8 @@ public class SecurityConfig
                     .requestMatchers(HttpMethod.GET, "/", "/*.html", "/**.html", "/**.css", "/**.js", "/profile/**").permitAll()
                     .requestMatchers(
                         "/swagger-ui.html", "/v3/api-docs/**", "/swagger-ui/**", "/druid/**").permitAll()
+                    // 实时字幕 WebSocket 握手（鉴权通过一次性票据在处理器内部完成）
+                    .requestMatchers("/ws/**").permitAll()
                     // 除上面外的所有请求全部需要鉴权认证
                     .anyRequest().authenticated();
             })

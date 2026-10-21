@@ -8,3 +8,17 @@ app:
       api-url: https://api.deepseek.com/chat/completions
       model: deepseek-chat
       api-key: ""
+  # 实时字幕（仅 AI 面试模式 1-3 启用，模式 4 纯人工面试不转写）
+  asr:
+    enabled: true
+    provider: tencent
+    degrade-message: 实时字幕暂不可用，已降级为静音模式
+    tencent:
+      # 腾讯云语音识别 AppID（控制台「语音识别」产品页获取，等待补充）
+      app-id: ""
+      secret-id: ""
+      secret-key: ""
+      engine-model-type: 16k_zh
+      ws-base-url: wss://asr.cloud.tencent.com/asr/v2
+      expire-seconds: 300
+      vad-silence-time: 1000

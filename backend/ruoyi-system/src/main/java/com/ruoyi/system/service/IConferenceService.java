@@ -10,6 +10,9 @@ import java.util.Map;
  */
 public interface IConferenceService
 {
+    /** 实时字幕一次性票据缓存前缀 */
+    public static final String ASR_TICKET_CACHE_PREFIX = "conference:asr:ticket:";
+
     /**
      * 当前用户进行中 / 待开始的面试场次上下文（无场次时返回空 Map）
      */
@@ -123,7 +126,22 @@ public interface IConferenceService
     /**
      * 增量拉取字幕
      */
-    public List<Map<String, Object>> getCaptions(Long userId, Long sessionId, Integer afterSequence, Integer limit);
+    public List<Map<String, Object>> getCaptions(Long userId, Long sessionId, Long afterSequence, Integer limit);
+
+    /**
+     * 实时字幕可用状态（仅 AI 面试且服务已配置时启用）
+     */
+    public Map<String, Object> getAsrStatus(Long userId, Long sessionId);
+
+    /**
+     * 签发实时字幕一次性 WebSocket 票据
+     */
+    public Map<String, Object> issueAsrTicket(Long userId, Long sessionId);
+
+    /**
+     * 写入一条实时字幕稳定句（由 WebSocket 代理调用）
+     */
+    public int appendAsrCaption(Long sessionId, String role, String content);
 
     /**
      * 增量拉取提词器建议
