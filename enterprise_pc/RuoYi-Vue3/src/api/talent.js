@@ -25,6 +25,32 @@ export function getTalentDetail(talId) {
   })
 }
 
+// 待初筛岗位：各岗位尚未经过 AI 初筛的投递数量
+export function listUnscreenedPositions() {
+  return request({
+    url: '/enterprise/talent/unscreened/positions',
+    method: 'get'
+  })
+}
+
+// 待初筛投递人选（岗位/关键词 + 分页）
+export function listUnscreenedApplicants(query) {
+  return request({
+    url: '/enterprise/talent/unscreened/applicants',
+    method: 'get',
+    params: query
+  })
+}
+
+// 对指定岗位的待初筛投递发起 AI 初筛
+export function screenUnscreenedApplicants(data) {
+  return request({
+    url: '/enterprise/talent/unscreened/screen',
+    method: 'post',
+    data
+  })
+}
+
 // 简历智能解析结果（结构化字段 + 完整度检查）
 export function getTalentResume(talId) {
   return request({

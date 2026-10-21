@@ -61,6 +61,39 @@ public class TalentPoolController extends BaseController
     }
 
     /**
+     * 待初筛：各岗位尚未经过 AI 初筛的投递数量
+     */
+    @GetMapping("/unscreened/positions")
+    public AjaxResult unscreenedPositions()
+    {
+        return success(talentPoolService.getUnscreenedPositions(getUserId()));
+    }
+
+    /**
+     * 待初筛：投递人选列表（岗位/关键词 + 分页）
+     */
+    @GetMapping("/unscreened/applicants")
+    public TableDataInfo unscreenedApplicants(@RequestParam(required = false) Long positionId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "10") Integer pageSize)
+    {
+        return getDataTable(talentPoolService.listUnscreenedApplicants(getUserId(), positionId, keyword,
+                pageNum, pageSize));
+    }
+
+    /**
+     * 待初筛：对指定岗位的待初筛投递发起 AI 初筛
+     */
+    @PostMapping("/unscreened/screen")
+    public AjaxResult screenUnscreened(@RequestBody Map<String, Object> body)
+    {
+        Long positionId = body.get("positionId") == null ? null
+                : Long.valueOf(String.valueOf(body.get("positionId")));
+        return success(talentPoolService.screenUnscreenedPosition(getUserId(), positionId));
+    }
+
+    /**
      * UC-03：主动归档 / 取消归档
      */
     @PutMapping("/{talId}/archive")

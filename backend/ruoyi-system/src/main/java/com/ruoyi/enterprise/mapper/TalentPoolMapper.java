@@ -53,6 +53,19 @@ public interface TalentPoolMapper
     /** 候选人标签列表 */
     public List<Map<String, Object>> selectTalentTags(@Param("talId") Long talId);
 
+    /** 待初筛岗位列表：各岗位下投递状态为待筛选且尚无 AI 匹配评分的候选人数（按人去重） */
+    public List<Map<String, Object>> selectUnscreenedPositions(@Param("companyId") Long companyId);
+
+    /** 企业下待初筛人选总数（同一人投递多个岗位只算一次） */
+    public Integer selectUnscreenedCandidateCount(@Param("companyId") Long companyId);
+
+    /** 待初筛投递人选的检索列表（岗位/关键词 + 分页） */
+    public List<Map<String, Object>> selectUnscreenedApplicants(@Param("companyId") Long companyId,
+            @Param("positionId") Long positionId, @Param("keyword") String keyword);
+
+    /** 校验岗位归属企业，返回岗位ID；不属于该企业时返回 null */
+    public Long selectPositionOfCompany(@Param("positionId") Long positionId, @Param("companyId") Long companyId);
+
     /** 教育经历列表（UC-02 解析字段） */
     public List<Map<String, Object>> selectEducation(@Param("resumeId") Long resumeId);
 
