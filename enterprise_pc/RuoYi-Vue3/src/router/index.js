@@ -124,6 +124,12 @@ export const constantRoutes = [
         meta: { title: '候选人管理' }
       },
       {
+        path: 'candidates/unscreened',
+        component: () => import('@/views/enterprise/candidates/unscreened.vue'),
+        name: 'EnterpriseCandidateUnscreened',
+        meta: { title: '待初筛投递' }
+      },
+      {
         path: 'candidates/:id/process',
         component: () => import('@/views/enterprise/candidates/process.vue'),
         name: 'EnterpriseCandidateProcess',

@@ -10,6 +10,7 @@ import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import { getCurrentSession, getSessionContext, getProgress, listCaptions, listCopilot, heartbeat, handleCopilot, finishSession, joinInterviewer, transferPrimary, getLiveKitToken, startRecording, stopRecording } from '@/api/system/conference'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, savePreferredDevice } from '@/utils/media'
+import { useRealtimeAsr } from './useRealtimeAsr'
 import { Room, RoomEvent, Track } from 'livekit-client'
 import useUserStore from '@/store/modules/user'
 
@@ -97,6 +98,19 @@ let joinRecorded = false
 
 // 当前进行中的面试场次（未取到时为 null）
 const sessionId = ref(null)
+// 字幕增量游标：取已拉取到的最大 dlg_id，供轮询与 WS 稳定句去重
+let captionSeq = 0
+let captionPollId = null
+// 实时字幕：仅 AI 面试（模式 1-3）启用，模式 4 由后端返回不可用并展示降级提示
+const asr = useRealtimeAsr({
+  getSessionId: () => sessionId.value,
+  getMicEnabled: () => MIC_ON.value && joined.value && sessionRole.value !== 'OBSERVER',
+  // 直接复用 LiveKit 已发布的麦克风轨，避免二次占用设备
+  getMicTrack: () => room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack || null,
+  onFinal: (item) => appendCaptions([{ sequence: item.sequence, role: item.role, content: item.text }])
+})
+// 供模板直接读取的顶层 ref（模板仅自动解包顶层 ref）
+const asrStatus = asr.status
 // 候选人信息与面试官姓名 / 面试轮次：进入场次后由接口回填，未取到时展示空态
 const candidate = ref({ name: '', position: '' })
 const interviewerName = ref('')
@@ -182,6 +196,58 @@ function fmtClock(total) {
   const s = String(v % 60).padStart(2, '0')
   return `${m}:${s}`
 }
+
+// 字幕角色文案：1-AI，2-HR，3-候选人
+function captionWho(role) {
+  return role === 1 ? 'AI' : role === 2 ? 'HR' : '候选人'
+}
+
+// 追加字幕并按 dlg_id 去重，仅保留最近 12 条
+function appendCaptions(list) {
+  if (!Array.isArray(list) || !list.length) return
+  const next = captions.value.slice()
+  list.forEach((item) => {
+    const seq = Number(item.sequence) || 0
+    if (seq && seq <= captionSeq) return
+    if (seq) captionSeq = seq
+    next.push({ who: captionWho(Number(item.role)), text: item.content })
+  })
+  captions.value = next.slice(-12)
+}
+
+// 对方发言通过增量接口轮询获取（WS 只回推本人的稳定句）
+async function pollCaptions() {
+  if (!sessionId.value) return
+  try {
+    const res = await listCaptions(sessionId.value, { afterSequence: captionSeq, limit: 50 })
+    appendCaptions(res.data)
+  } catch (e) {
+    // 轮询异常时等待下一次
+  }
+}
+
+// 按字幕开关与麦克风状态同步识别流（模式 4 / 未配置时后端返回 enabled=false）
+async function syncAsr() {
+  if (!sessionId.value) return
+  await asr.refresh()
+  if (CAPTION_ON.value && asr.status.value.enabled) await asr.start()
+  else asr.stop()
+}
+
+async function toggleCaption() {
+  CAPTION_ON.value = !CAPTION_ON.value
+  await syncAsr()
+}
+
+// 切换音频设备后按新设备重建识别流采集
+async function restartAsr() {
+  if (!CAPTION_ON.value || !sessionId.value) return
+  await asr.refresh()
+  if (asr.status.value.enabled) await asr.restart()
+}
+
+// 无字幕时的占位文案：字幕不可用时展示具体降级原因
+const captionEmptyText = computed(() => asr.status.value.reason || '暂无字幕')
 
 // 连接 LiveKit 房间：向后端换取入会令牌后直连信令服务器，远端轨道到达即回填宫格
 async function connectLiveKit() {
@@ -300,6 +366,8 @@ async function openMedia() {
     mediaError.value = ''
   }
   if (mediaError.value) notify(mediaError.value)
+  // 麦克风就绪后按需启动实时字幕识别流
+  await syncAsr()
 }
 
 // 会议设置：真实切换摄像头/麦克风（外接设备即在此选择）
@@ -330,6 +398,7 @@ async function applyDevice(kind) {
     if (deviceId) savePreferredDevice(kind, deviceId)
     else clearPreferredDevice(kind)
     notify('已保存设备偏好，下次开启时生效')
+    if (!isVideo) await restartAsr()
     return
   }
   try {
@@ -348,6 +417,8 @@ async function applyDevice(kind) {
     setMicId.value = track.mediaStreamTrack.getSettings().deviceId || deviceId
   }
   notify('已切换设备')
+  // 字幕识别流按新音频设备重新采集
+  if (!isVideo) await restartAsr()
 }
 
 // 宫格 tile 的 srcObject 由 watch(tiles) 统一维护，无需单独绑定主画面
@@ -471,6 +542,8 @@ async function toggleMic() {
   await room.localParticipant.setMicrophoneEnabled(on)
   MIC_ON.value = on
   notify(on ? '麦克风已开启' : '麦克风已静音')
+  // 静音不产生有效语音，关闭识别流；重新开启时再恢复
+  await syncAsr()
 }
 
 async function toggleCam() {
@@ -619,12 +692,7 @@ async function initSession() {
   }
   try {
     const c = await listCaptions(sessionId.value, { afterSequence: 0, limit: 50 })
-    if (Array.isArray(c.data)) {
-      captions.value = c.data.slice(-12).map((item) => ({
-        who: item.role === 1 ? 'AI' : item.role === 2 ? 'HR' : '候选人',
-        text: item.content
-      }))
-    }
+    appendCaptions(c.data)
   } catch (e) {
     // 后端未就绪时保持空态
   }
@@ -644,6 +712,10 @@ async function initSession() {
   }
   // 心跳保活：仅在确认存在真实场次后才需要
   heartbeatId = setInterval(() => heartbeat(sessionId.value).catch(() => {}), 15000)
+  // 字幕轮询获取对方发言；本人发言由 WS 稳定句即时回推
+  if (!captionPollId) captionPollId = setInterval(pollCaptions, 1500)
+  // 先拉字幕可用状态（模式 4 / 未配置时展示降级原因），识别流待麦克风就绪后再启动
+  await asr.refresh()
 }
 
 onMounted(async () => {
@@ -660,6 +732,8 @@ onBeforeUnmount(() => {
   clearInterval(timerId)
   clearInterval(heartbeatId)
   clearInterval(rttId)
+  clearInterval(captionPollId)
+  asr.stop()
   disconnectRoom()
 })
 </script>
@@ -834,7 +908,7 @@ onBeforeUnmount(() => {
               <span>{{ item.who }}</span>
               <p>{{ item.text }}</p>
             </div>
-            <p v-if="!captions.length" class="empty">暂无字幕</p>
+            <p v-if="!captions.length" class="empty">{{ captionEmptyText }}</p>
           </div>
         </section>
       </aside>
@@ -857,7 +931,7 @@ onBeforeUnmount(() => {
       <button class="ctl" :class="{ on: !enlargedKey }" @click="enlargedKey = null">
         <Copy :size="20" /><span>宫格视图</span>
       </button>
-      <button class="ctl" :class="{ on: CAPTION_ON }" @click="CAPTION_ON = !CAPTION_ON">
+      <button class="ctl" :class="{ on: CAPTION_ON && asrStatus.enabled }" :disabled="!asrStatus.enabled" :title="asrStatus.enabled ? '实时字幕' : (asrStatus.reason || '实时字幕不可用')" @click="toggleCaption">
         <MessageSquareText :size="20" /><span>字幕</span>
       </button>
       <button class="ctl" @click="openSettings">

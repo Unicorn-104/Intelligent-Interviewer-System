@@ -39,4 +39,11 @@ public interface ScreeningMapper
 
     /** 更新候选人流程状态（UC-06 复核确认，状态日志由数据库触发器写入） */
     public int updateTalStatus(@Param("talId") Long talId, @Param("status") Integer status);
+
+    /** 某岗位待初筛的投递申请（app_status = 0） */
+    public List<Map<String, Object>> selectPendingApplications(@Param("positionId") Long positionId);
+
+    /** 回写投递记录的 AI 初筛结果（评分 + 投递状态：1-初筛通过，2-初筛淘汰） */
+    public int updateApplicationScreened(@Param("applicationId") Long applicationId, @Param("score") Double score,
+            @Param("status") Integer status);
 }

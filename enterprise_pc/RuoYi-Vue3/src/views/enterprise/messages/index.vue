@@ -354,6 +354,8 @@ const linkForm = ref({ peerUserId: null, positionId: null, durationMinutes: 45, 
 
 // 面试模式与面试官人数严格联动
 const MODE_HINT = { 1: '纯AI 无需面试官，本企业成员可凭链接旁听', 2: '需选择 1 位面试官', 3: '需选择至少 2 位面试官', 4: '需选择至少 1 位面试官' }
+// 发送链接时固定写明面试方式，候选人端据此进入对应流程
+const MODE_LABEL = { 1: '纯AI面试', 2: 'AI+单面试官', 3: 'AI+多面试官', 4: '无AI纯人工' }
 const needInterviewers = computed(() => linkForm.value.mode !== 1)
 
 // 当前会话对方用户 ID（新会话态取 newChat）
@@ -461,8 +463,9 @@ async function sendLinkToChat() {
   try {
     const company = linkResult.value.companyName || '公司'
     const position = linkResult.value.positionTitle || '岗位'
+    const modeLabel = MODE_LABEL[linkResult.value.mode ?? linkForm.value.mode] || '视频面试'
     // 以普通文本消息发送（type=1），与日常聊天一致，链接在气泡内可点击
-    const body = { type: 1, content: `【面试邀请】${company} ${position} 视频面试，请点击链接进入：${linkUrl.value}` }
+    const body = { type: 1, content: `【面试邀请·${modeLabel}】${company} ${position} 视频面试，请点击链接进入：${linkUrl.value}` }
     if (activeId.value != null) body.sessionId = activeId.value
     else body.peerId = newChat.value.peerId
     await sendMessage(body)

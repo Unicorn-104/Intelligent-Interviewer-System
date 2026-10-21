@@ -49,4 +49,12 @@ public interface IScreeningService
      * HR 复核（UC-06）：确认通过（tal_status→初筛通过，触发器自动写状态日志）/ 调整评分
      */
     public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore);
+
+    /**
+     * 对某岗位尚未初筛的投递申请执行 AI 初筛：通过者回写评分，淘汰者标记投递状态
+     *
+     * @param positionId 岗位ID（调用方已完成企业归属校验）
+     * @return 初筛汇总（候选人数、通过数、淘汰数）
+     */
+    public Map<String, Object> screenPendingApplications(Long positionId);
 }

@@ -20,6 +20,7 @@ import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.system.config.AsrProperties;
 import com.ruoyi.system.mapper.ConferenceMapper;
 import com.ruoyi.system.service.IConferenceService;
 import com.ruoyi.system.service.ILiveKitEgressService;
@@ -77,6 +78,9 @@ public class ConferenceServiceImpl implements IConferenceService
     @Autowired
     private ILiveKitEgressService liveKitEgressService;
 
+    @Autowired
+    private AsrProperties asrProperties;
+
     @Override
     public Map<String, Object> getCurrentSession(Long userId)
     {
@@ -131,9 +135,12 @@ public class ConferenceServiceImpl implements IConferenceService
         }
         int status = toInt(ctx.get("status"));
         boolean valid = status <= 1;
+        int mode = toInt(ctx.get("mode"));
         result.put("valid", valid);
         result.put("status", status);
         result.put("reason", valid ? null : "finished");
+        result.put("mode", mode);
+        result.put("modeName", modeName(mode));
         result.put("companyName", ctx.get("companyName"));
         result.put("positionTitle", ctx.get("positionTitle"));
         result.put("candidateName", ctx.get("candidateName"));
@@ -634,14 +641,120 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     @Override
-    public List<Map<String, Object>> getCaptions(Long userId, Long sessionId, Integer afterSequence, Integer limit)
+    public List<Map<String, Object>> getCaptions(Long userId, Long sessionId, Long afterSequence, Integer limit)
     {
         requireAccess(userId, sessionId);
         Map<String, Object> params = new HashMap<>();
         params.put("sessionId", sessionId);
-        params.put("afterSequence", afterSequence == null ? 0 : afterSequence);
+        params.put("afterSequence", afterSequence == null ? 0L : afterSequence);
         params.put("limit", normalizeLimit(limit, 50));
         return conferenceMapper.selectCaptions(params);
+    }
+
+    @Override
+    public Map<String, Object> getAsrStatus(Long userId, Long sessionId)
+    {
+        Map<String, Object> ctx = requireAccess(userId, sessionId);
+        int mode = toInt(ctx.get("mode"));
+        int status = toInt(ctx.get("status"));
+        boolean aiInterview = mode >= MODE_AI_ONLY && mode <= MODE_AI_MULTI;
+        String reason = null;
+        if (!aiInterview)
+        {
+            reason = "该面试未启用 AI 实时字幕";
+        }
+        else if (status >= 2)
+        {
+            reason = "面试已结束";
+        }
+        else if (!asrProperties.isReady())
+        {
+            reason = asrProperties.getUnavailableReason();
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("enabled", reason == null);
+        result.put("reason", reason);
+        result.put("mode", mode);
+        result.put("aiInterview", aiInterview);
+        result.put("provider", asrProperties.getProvider());
+        result.put("sampleRate", 16000);
+        result.put("channels", 1);
+        result.put("format", "pcm16le");
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> issueAsrTicket(Long userId, Long sessionId)
+    {
+        Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
+        int mode = toInt(ctx.get("mode"));
+        int status = toInt(ctx.get("status"));
+        if (mode < MODE_AI_ONLY || mode > MODE_AI_MULTI)
+        {
+            throw new ServiceException("该面试未启用 AI 实时字幕");
+        }
+        if (status >= 2)
+        {
+            throw new ServiceException("面试已结束，无法开启实时字幕");
+        }
+        if (!asrProperties.isReady())
+        {
+            throw new ServiceException(asrProperties.getUnavailableReason());
+        }
+        String role = String.valueOf(ctx.get("role"));
+        if (!"CANDIDATE".equals(role) && !"HR".equals(role))
+        {
+            throw new ServiceException("当前角色不可发送语音字幕");
+        }
+        String ticket = UUID.randomUUID().toString().replace("-", "");
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("sessionId", sessionId);
+        payload.put("userId", userId);
+        payload.put("role", role);
+        redisCache.setCacheObject(ASR_TICKET_CACHE_PREFIX + ticket, JSON.toJSONString(payload), 60,
+                TimeUnit.SECONDS);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("ticket", ticket);
+        result.put("wsPath", "/ws/conference-asr");
+        result.put("expiresInSeconds", 60);
+        result.put("sampleRate", 16000);
+        result.put("channels", 1);
+        result.put("format", "pcm16le");
+        result.put("provider", asrProperties.getProvider());
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public int appendAsrCaption(Long sessionId, String role, String content)
+    {
+        if (StringUtils.isEmpty(content))
+        {
+            return 0;
+        }
+        String text = content.trim();
+        if (text.length() > 2000)
+        {
+            text = text.substring(0, 2000);
+        }
+        if (text.length() == 0)
+        {
+            return 0;
+        }
+        // 同一场次的两位发言人可能并发写入，锁定场次行后再取下一个序号，避免序号冲突
+        conferenceMapper.lockSessionForUpdate(sessionId);
+        Integer nextOrder = conferenceMapper.selectNextDialogueOrder(sessionId);
+        Map<String, Object> params = new HashMap<>();
+        params.put("sessionId", sessionId);
+        params.put("order", nextOrder == null ? 1 : nextOrder);
+        params.put("role", "HR".equals(role) ? 2 : ROLE_CANDIDATE);
+        params.put("type", 1);
+        params.put("content", text);
+        params.put("intent", "asr");
+        conferenceMapper.insertDialogue(params);
+        Object id = params.get("id");
+        return id == null ? 0 : toInt(id);
     }
 
     @Override
@@ -1440,6 +1553,26 @@ public class ConferenceServiceImpl implements IConferenceService
             return 0;
         }
         return value instanceof Number ? ((Number) value).intValue() : Integer.parseInt(value.toString());
+    }
+
+    /**
+     * 面试方式展示名（用于邀请链接页区分纯 AI / 含人工面试官）
+     */
+    private String modeName(int mode)
+    {
+        switch (mode)
+        {
+            case MODE_AI_ONLY:
+                return "纯AI面试";
+            case MODE_AI_ONE:
+                return "AI+单面试官";
+            case MODE_AI_MULTI:
+                return "AI+多面试官";
+            case MODE_HUMAN_ONLY:
+                return "无AI纯人工";
+            default:
+                return "AI面试";
+        }
     }
 
     /**
