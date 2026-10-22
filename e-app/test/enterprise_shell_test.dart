@@ -42,12 +42,6 @@ Future<void> verifyBatch(
         findsOneWidget,
       );
     }
-    if (label == '候选人管理') {
-      expect(
-        find.descendant(of: entry, matching: find.text('人才库')),
-        findsOneWidget,
-      );
-    }
     await tester.tap(entry);
     await pumpFrames(tester);
     if (allDemo) expect(find.textContaining('演示数据'), findsWidgets);
@@ -61,33 +55,38 @@ Future<void> verifyBatch(
 }
 
 void main() {
-  testWidgets('第一批七个入口可打开并返回', (tester) async {
-    await verifyBatch(tester, [
-      '招聘概览',
-      '候选人管理',
-      '面试日程',
-      '终审',
-      'Offer',
-      '通知',
-      '公告',
-    ]);
+  testWidgets('第一批六个入口可打开并返回', (tester) async {
+    await verifyBatch(tester, ['招聘概览', '面试日程', '终审', 'Offer', '通知', '公告']);
   });
 
   testWidgets('第二批三个入口可打开并返回且保留演示标识', (tester) async {
     await verifyBatch(tester, ['筛选任务', '短名单', '招呼语'], allDemo: true);
   });
 
-  testWidgets('第三批八个入口可打开并返回且全部标注演示数据', (tester) async {
+  testWidgets('第三批六个入口可打开并返回且全部标注演示数据', (tester) async {
     await verifyBatch(tester, [
       '工作台',
       '设备检测',
-      '录播',
       '预加载',
-      '改期审批',
       '模板',
       '调研',
       'AI 助手',
     ], allDemo: true);
+  });
+
+  testWidgets('更多功能不再保留已迁移至我的的三个入口', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: EnterpriseModuleShell(onLogout: () {}),
+      ),
+    );
+    await tester.tap(find.byTooltip('更多功能'));
+    await pumpFrames(tester);
+    for (final label in ['候选人管理', '人才库', '录播', '改期审批']) {
+      expect(find.byKey(ValueKey('feature-$label')), findsNothing);
+    }
   });
 
   testWidgets('四 Tab 保留导航栈，系统返回只退出当前详情，重复点击回到首屏', (tester) async {

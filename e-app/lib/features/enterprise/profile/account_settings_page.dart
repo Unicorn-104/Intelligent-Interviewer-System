@@ -13,10 +13,12 @@ class AccountSettingsPage extends StatefulWidget {
     super.key,
     required this.onLogout,
     required this.profile,
+    this.initialSection = -1,
     this.source = const ProfileDataSource(),
   });
   final VoidCallback onLogout;
   final EnterpriseProfile profile;
+  final int initialSection;
   final ProfileDataSource source;
   @override
   State<AccountSettingsPage> createState() => AccountSettingsPageState();
@@ -27,11 +29,12 @@ class AccountSettingsPageState extends State<AccountSettingsPage> {
   ProfilePreferences _preferences = const ProfilePreferences();
   String? _error, _preferencesError;
   bool _loading = true, _actionOpen = false;
-  int _request = 0, _tab = 0;
+  int _request = 0, _tab = -1;
   @override
   void initState() {
     super.initState();
     _profile = widget.profile;
+    _tab = widget.initialSection;
     _loadInitialPreferences();
   }
 
@@ -167,22 +170,47 @@ class AccountSettingsPageState extends State<AccountSettingsPage> {
       ),
     );
     if (mounted && confirmed == true) {
-      Navigator.pop(context);
-      widget.onLogout();
+      setState(() => _tab = -1);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pop(context);
+        widget.onLogout();
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: !_actionOpen,
+    canPop: !_actionOpen && _tab == -1,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop && !_actionOpen && _tab != -1) setState(() => _tab = -1);
+    },
     child: Scaffold(
+      backgroundColor: _tab == -1 ? AppColors.canvas : AppColors.background,
       appBar: AppBar(
-        title: const Text('设置'),
+        centerTitle: true,
+        backgroundColor: _tab == -1 ? AppColors.canvas : AppColors.background,
+        title: Text(
+          _tab == -1 ? '设置' : ['账号与安全', '通用设置', '通知与提醒'][_tab],
+          style: const TextStyle(
+            color: AppColors.ink,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         leading: IconButton(
           key: const Key('profile-settings-back'),
           tooltip: '返回',
-          onPressed: _actionOpen ? null : () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back),
+          onPressed: _actionOpen
+              ? null
+              : () {
+                  if (_tab == -1) {
+                    Navigator.pop(context);
+                  } else {
+                    setState(() => _tab = -1);
+                  }
+                },
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 21),
         ),
       ),
       body: _body(context),
@@ -227,6 +255,7 @@ class AccountSettingsPageState extends State<AccountSettingsPage> {
       );
     }
     final profile = _profile!;
+    if (_tab == -1) return _settingsMenu(profile);
     return RefreshIndicator(
       onRefresh: reload,
       child: ListView(
@@ -260,6 +289,132 @@ class AccountSettingsPageState extends State<AccountSettingsPage> {
       ),
     );
   }
+
+  Widget _settingsMenu(EnterpriseProfile profile) => ListView(
+    key: const Key('profile-settings-scroll'),
+    padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+    children: [
+      _menuRow(
+        '账号与安全中心',
+        key: const Key('profile-tab-0'),
+        onTap: () => setState(() => _tab = 0),
+      ),
+      const SizedBox(height: 12),
+      _menuRow(
+        '通知与提醒',
+        key: const Key('profile-tab-2'),
+        onTap: () => setState(() => _tab = 2),
+      ),
+      _menuRow('隐私保护', onTap: () => _message('隐私保护功能开发中')),
+      _menuRow(
+        '通用设置',
+        key: const Key('profile-tab-1'),
+        onTap: () => setState(() => _tab = 1),
+      ),
+      _menuRow('消息设置', onTap: () => setState(() => _tab = 2)),
+      _menuRow('无障碍使用', onTap: () => _message('无障碍使用设置功能开发中，页面支持系统字号')),
+      _menuRow('个人信息清单', onTap: () => _showInformation(profile)),
+      _menuRow('第三方共享清单', onTap: () => _message('第三方共享清单功能开发中')),
+      _menuRow(
+        '关于智能面试官',
+        onTap: () => showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('智能面试官 · 企业端'),
+            content: const Text('管理招聘岗位、沟通求职者与安排面试。\nAI 分析结果仅供招聘人员参考。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('知道了'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const Divider(height: 32, color: AppColors.hairline),
+      _menuRow('当前身份', detail: '企业招聘者'),
+      const SizedBox(height: 20),
+      SizedBox(
+        width: double.infinity,
+        child: TextButton(
+          key: const Key('profile-logout'),
+          onPressed: _actionOpen ? null : _logout,
+          style: TextButton.styleFrom(
+            minimumSize: const Size(0, 50),
+            foregroundColor: AppColors.bodySoft,
+            backgroundColor: AppColors.background,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          child: const Text('退出登录', style: TextStyle(fontSize: 16)),
+        ),
+      ),
+    ],
+  );
+
+  Widget _menuRow(
+    String label, {
+    Key? key,
+    String? detail,
+    VoidCallback? onTap,
+  }) => ListTile(
+    key: key,
+    contentPadding: EdgeInsets.zero,
+    minVerticalPadding: 20,
+    title: Text(
+      label,
+      style: const TextStyle(fontSize: 16, color: AppColors.ink),
+    ),
+    trailing: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (detail != null)
+          Text(
+            detail,
+            style: const TextStyle(fontSize: 13, color: AppColors.muted),
+          ),
+        if (onTap != null)
+          const Icon(Icons.chevron_right, size: 22, color: AppColors.muted),
+      ],
+    ),
+    onTap: _actionOpen ? null : onTap,
+  );
+
+  Future<void> _showInformation(EnterpriseProfile profile) => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('个人信息清单'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _detail('姓名', profile.name),
+            _detail('所属部门', profile.department),
+            _detail(
+              '手机号',
+              profile.phone.isEmpty ? '未填写' : _maskedPhone(profile.phone),
+            ),
+            _detail(
+              '邮箱',
+              profile.email.isEmpty ? '未填写' : _maskedEmail(profile.email),
+            ),
+            const Text(
+              '此处仅展示当前账号已有资料；编辑资料可查看与修改联系方式。',
+              style: TextStyle(fontSize: 12, color: AppColors.muted),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+      ],
+    ),
+  );
 
   Widget _tabs() => Container(
     padding: const EdgeInsets.all(4),

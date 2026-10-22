@@ -1296,3 +1296,36 @@ CREATE TABLE IF NOT EXISTS t_ai_screening_result (
 -- 27项常规/数据库验证通过；实际MyBatis SELECT、JSON写入、进度更新及事务回滚访问服务器数据库
 -- 字段类型/默认值/可空约束/主键/索引与本机预期结构一致；本轮未重复调用大模型
 -- 两张AI表最终无测试遗留记录，真实分析报告待新版后端任务运行后生成
+
+
+-- ============================================================================
+-- 2026-10-21 企业端增量独立评分（仅独立执行本段，不执行整份历史脚本）
+-- 默认增量：按企业+岗位+求职者去重；有记录（含资料不足/空分）的求职者不重复调用模型。
+-- 全量：显式 fullAnalysis=true，逐人覆盖；每位求职者结果与进度独立事务提交。
+-- 新增求职者不会因刷新/GET自动调用模型，须点击AI辅助筛选；支持后续增量补齐。
+-- 无其他求职者简历/排名/分数进入模型输入；一条请求仅一份简历与岗位要求。
+-- 不复制旧 t_ai_screening_result 的批量评分，避免误标为独立评分；旧表原样保留。
+-- 读接口仅使用新独立评分表；旧批量评分不可证明未做横向比较，不继续作为独立AI结果展示。
+-- 不改任何现有业务表或权限，不预填/伪造AI分数；已有两表结构不变。
+-- 幂等：IF NOT EXISTS；新表已有记录不覆盖。首轮增量将对未有独立记录者逐人分析。
+CREATE TABLE IF NOT EXISTS t_ai_candidate_analysis (
+    asr_company_id BIGINT NOT NULL COMMENT '企业ID',
+    asr_position_id BIGINT NOT NULL COMMENT '岗位ID',
+    asr_candidate_id BIGINT NOT NULL COMMENT '求职者人才ID',
+    asr_resume_id BIGINT DEFAULT NULL COMMENT '分析使用的简历ID',
+    asr_report JSON NOT NULL COMMENT '独立六维评分、证据、推荐理由及版本信息',
+    asr_updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '最近分析时间',
+    PRIMARY KEY (asr_company_id, asr_position_id, asr_candidate_id),
+    KEY idx_aca_candidate_updated (asr_company_id, asr_candidate_id, asr_updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='求职者与岗位独立AI匹配结果';
+-- 回滚：先停止筛选任务、回退本模块代码；旧批量表内容未修改。
+-- 只有确认不再需要新结果时才人工执行：DROP TABLE t_ai_candidate_analysis;
+-- 结果保存按人提交：中途失败保留已完成结果，增量重试不重复分析已完成者。
+-- 全量中途失败同样保留已完成的新结果，其余人的旧独立结果不变；再次全量可重算全部。
+-- 岗位/已有简历更新不自动重算；需主动选择全量分析。刷新为纯数据库读取。
+
+-- 2026-10-21 增量筛选交互与评分口径调整（仅行为记录，本段无DDL/DML）
+-- 默认优先读取现有记录；已有结果（即使简历更新）不会自动调用模型，手动全量才重算。
+-- 点击增量先GET读取缓存再补齐缺少结果者，进入页面自动GET，不自动分析。
+-- 缺少材料的维度记0，综合分按固定六维权重计算；历史报告在GET时归一化，不写库、不调用模型。
+-- 内嵌下拉菜单保留全量分析与耗时确认；移除求职者页独立刷新按钮。
