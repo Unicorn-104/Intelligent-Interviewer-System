@@ -13,16 +13,18 @@
         </template>
 
         <template v-else-if="valid">
-          <span class="cj-badge">视频面试邀请</span>
+          <span class="cj-badge">{{ info.modeName || '视频面试' }}邀请</span>
           <h1>{{ info.companyName || '企业' }} · {{ info.positionTitle || '岗位面试' }}</h1>
           <div class="cj-info">
             <div class="cj-row"><span>应聘岗位</span><b>{{ info.positionTitle || '—' }}</b></div>
+            <div class="cj-row"><span>面试方式</span><b>{{ info.modeName || '—' }}</b></div>
             <div class="cj-row"><span>面试时间</span><b>{{ timeText }}</b></div>
-            <div class="cj-row"><span>面试官</span><b>{{ info.interviewerName || '—' }}</b></div>
+            <div class="cj-row"><span>面试官</span><b>{{ interviewerText }}</b></div>
           </div>
           <p class="cj-tip">{{ info.expiresTip || '面试结束前均可通过本链接进入' }}</p>
+          <p v-if="info.mode === 1" class="cj-tip">本场为纯 AI 面试，无人工面试官，登录后即可直接开始。</p>
           <div class="cj-actions">
-            <button class="cj-primary" @click="asCandidate">我是求职者</button>
+            <button class="cj-primary" @click="asCandidate">以求职者身份登录并进入</button>
             <button class="cj-ghost" @click="asInterviewer">我是面试官 / HR</button>
           </div>
         </template>
@@ -50,6 +52,8 @@ const info = ref(null)
 
 const valid = computed(() => info.value?.valid === true)
 const finished = computed(() => info.value?.reason === 'finished')
+// 纯 AI 面试没有人工面试官，避免把发起人误展示为面试官
+const interviewerText = computed(() => (info.value?.mode === 1 ? 'AI 面试官（无人工面试官）' : (info.value?.interviewerName || '—')))
 const timeText = computed(() => {
   const start = info.value?.appointmentStartAt
   if (!start) return '待定'

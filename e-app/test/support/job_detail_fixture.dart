@@ -69,6 +69,8 @@ final class DetailFakeSource extends JobDetailDataSource {
   int workflowCalls = 0;
   int scoreCalls = 0;
   int screenCalls = 0;
+  int scoreCallsAtStart = 0;
+  int fullScreenCalls = 0;
   int statusCalls = 0;
   bool asyncScreening = false;
   List<Map<String, dynamic>> screeningStatuses = [];
@@ -119,12 +121,19 @@ final class DetailFakeSource extends JobDetailDataSource {
   @override
   Future<Map<String, dynamic>> startScreening(int id) async {
     screenCalls++;
+    scoreCallsAtStart = scoreCalls;
     return {
       'taskId': id,
       'candidateCount': 2,
       'passedCount': 1,
       'processing': asyncScreening,
     };
+  }
+
+  @override
+  Future<Map<String, dynamic>> startFullScreening(int id) async {
+    fullScreenCalls++;
+    return {'taskId': id, 'candidateCount': 2, 'processing': asyncScreening};
   }
 
   @override

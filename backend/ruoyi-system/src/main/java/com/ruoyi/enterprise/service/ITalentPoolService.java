@@ -53,4 +53,20 @@ public interface ITalentPoolService
      * 简历解析结果（UC-02 步骤4-5）：结构化字段 + 完整度检查
      */
     public Map<String, Object> getTalentResume(Long userId, Long talId);
+
+    /**
+     * 待初筛岗位：各岗位下尚未经过 AI 初筛的投递数量
+     */
+    public Map<String, Object> getUnscreenedPositions(Long userId);
+
+    /**
+     * 待初筛投递人选（岗位/关键词 + 分页）
+     */
+    public List<Map<String, Object>> listUnscreenedApplicants(Long userId, Long positionId, String keyword,
+            Integer pageNum, Integer pageSize);
+
+    /**
+     * 对某岗位的待初筛投递执行 AI 初筛
+     */
+    public Map<String, Object> screenUnscreenedPosition(Long userId, Long positionId);
 }

@@ -12,16 +12,19 @@ onMounted(refreshUnread)
 const menus = reactive([
   { label: '招聘总览', to: '/enterprise/dashboard', icon: LayoutDashboard, match: ['EnterpriseDashboard', 'EnterpriseRootDashboard'] },
   { label: '岗位管理', to: '/enterprise/jobs', icon: BriefcaseBusiness,
-    match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'],
+    match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig', 'EnterpriseJobImport'],
     children: [
-      { label: '岗位列表', to: '/enterprise/jobs', match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] }
+      { label: '岗位列表', to: '/enterprise/jobs', match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] },
+      { label: '岗位导入与草稿', to: '/enterprise/jobs/import', match: ['EnterpriseJobImport'] }
     ] },
   { label: '候选人与初筛', to: '/enterprise/candidates', icon: UsersRound,
-    match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess', 'EnterpriseScreening', 'EnterpriseTalent'],
+    match: ['EnterpriseCandidates', 'EnterpriseCandidateUnscreened', 'EnterpriseCandidateProcess', 'EnterpriseScreening', 'EnterpriseTalent', 'EnterpriseSurvey'],
     children: [
       { label: '候选人列表', to: '/enterprise/candidates', match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
+      { label: '待初筛投递', to: '/enterprise/candidates/unscreened', match: ['EnterpriseCandidateUnscreened'] },
       { label: 'AI 初筛', to: '/enterprise/screening', match: ['EnterpriseScreening'] },
-      { label: '人才库', to: '/enterprise/talent', match: ['EnterpriseTalent'] }
+      { label: '人才库', to: '/enterprise/talent', match: ['EnterpriseTalent'] },
+      { label: '满意度调研', to: '/enterprise/survey', match: ['EnterpriseSurvey'] }
     ] },
   { label: '面试与笔试', to: '/enterprise/interviews', icon: CalendarDays,
     match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation', 'EnterpriseExam', 'EnterpriseExamProctor', 'EnterpriseExamProctorRoom'],

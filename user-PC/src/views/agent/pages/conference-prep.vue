@@ -162,7 +162,7 @@
       </div>
       <div class="cp-footer-actions">
         <button v-if="netRisk" class="cp-risk" :disabled="!canIgnore" @click="ignoreRisk">忽略风险，继续进入</button>
-        <button class="cp-start" :disabled="!canStart" @click="enter">进入等候室</button>
+        <button class="cp-start" :disabled="!canStart" @click="enter">{{ sessionMode === 1 ? '进入 AI 面试' : '进入等候室' }}</button>
       </div>
     </footer>
 
@@ -206,7 +206,7 @@
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getCurrentSession, getSessionContext, reportParticipantState, submitConsent } from '@/api/system/conference'
+import { getCurrentSession, getSessionContext, reportParticipantState, startSession, submitConsent } from '@/api/system/conference'
 import { describeMediaNotice, queryMediaPermission, requestMedia, savePreferredDevice } from '@/utils/media'
 import useUserStore from '@/store/modules/user'
 
@@ -246,6 +246,8 @@ const showConsent = ref(false)
 const showNotice = ref(false)
 const toast = ref('')
 const sessionId = ref(null)
+// 面试模式：1-纯AI（无人工面试官，无需等候室）2-AI+单面试官 3-AI+多面试官 4-无AI纯人工
+const sessionMode = ref(null)
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
@@ -532,12 +534,22 @@ function ignoreRisk() {
   setTimeout(enter, 600)
 }
 
-function enter() {
+async function enter() {
   if (!canStart.value) return
   localStorage.setItem('interviewReady', '1')
   stream?.getTracks().forEach((track) => track.stop())
   // 进入等候室即标记本人已就绪（开始面试改由 HR 触发）
   reportEnv(1)
+  // 纯 AI 面试没有人工面试官，跳过等候室：候选人自启动场次后直接进入 AI 面试页
+  if (sessionMode.value === 1 && sessionId.value) {
+    try {
+      await startSession(sessionId.value)
+    } catch (error) {
+      // 场次已开始时重复启动会失败，不影响进入面试页
+    }
+    router.replace('/agent/conference-ai?sessionId=' + sessionId.value)
+    return
+  }
   router.replace('/agent/conference-waiting?sessionId=' + (sessionId.value || ''))
 }
 
@@ -564,9 +576,16 @@ function fillInterview(data) {
   if (data.positionTitle) interview.value.positionTitle = data.positionTitle
   const time = formatAppointment(data.appointmentStartAt, data.appointmentEndAt)
   if (time) interview.value.time = time
-  if (data.interviewerName) interview.value.interviewer = data.interviewerName
   if (data.durationMinutes) interview.value.duration = `${data.durationMinutes} 分钟`
-  if (data.mode != null) interview.value.mode = modeLabel(Number(data.mode))
+  if (data.mode != null) {
+    const mode = Number(data.mode)
+    sessionMode.value = mode
+    interview.value.mode = modeLabel(mode)
+    // 纯 AI 面试没有人工面试官，避免展示发起人姓名造成误解
+    interview.value.interviewer = mode === 1 ? 'AI 面试官（无人工面试官）' : (data.interviewerName || '—')
+  } else if (data.interviewerName) {
+    interview.value.interviewer = data.interviewerName
+  }
   if (data.roundNo || data.totalRounds) {
     interview.value.round = `第 ${data.roundNo || 1} 轮 / 共 ${data.totalRounds || 1} 轮`
   }

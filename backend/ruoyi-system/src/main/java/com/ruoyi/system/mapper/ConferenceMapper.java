@@ -92,6 +92,11 @@ public interface ConferenceMapper
     public Integer selectNextDialogueOrder(@Param("sessionId") Long sessionId);
 
     /**
+     * 锁定场次行，用于串行化同一场次的实时字幕序号
+     */
+    public Long lockSessionForUpdate(@Param("sessionId") Long sessionId);
+
+    /**
      * 新增一条对话 / 字幕记录
      */
     public int insertDialogue(Map<String, Object> params);

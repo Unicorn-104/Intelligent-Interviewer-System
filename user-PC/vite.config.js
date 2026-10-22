@@ -58,6 +58,12 @@ export default defineConfig(({ mode, command }) => {
          '^/v3/api-docs/(.*)': {
           target: VITE_BACKEND_TARGET,
           changeOrigin: true,
+        },
+        // 实时字幕 WebSocket 后端代理
+        '/ws': {
+          target: VITE_BACKEND_TARGET,
+          ws: true,
+          changeOrigin: true
         }
       }
     },

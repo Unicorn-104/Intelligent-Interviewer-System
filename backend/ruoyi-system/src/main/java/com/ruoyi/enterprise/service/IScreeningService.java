@@ -56,4 +56,12 @@ public interface IScreeningService
 
     /** APP后台增量分析入口，立即返回任务进度，不阻塞HTTP连接。 */
     Map<String, Object> triggerScreeningAsync(Long userId, Long positionId, Integer topN);
+
+    /**
+     * 对某岗位尚未初筛的投递申请执行 AI 初筛：通过者回写评分，淘汰者标记投递状态
+     *
+     * @param positionId 岗位ID（调用方已完成企业归属校验）
+     * @return 初筛汇总（候选人数、通过数、淘汰数）
+     */
+    public Map<String, Object> screenPendingApplications(Long positionId);
 }

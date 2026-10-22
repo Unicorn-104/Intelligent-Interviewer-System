@@ -99,6 +99,13 @@ export const constantRoutes = [
         meta: { title: '岗位管理' }
       },
       {
+        // 声明在 jobs/:id 之前，避免 import 被当作岗位 id 解析
+        path: 'jobs/import',
+        component: () => import('@/views/enterprise/jobs/import.vue'),
+        name: 'EnterpriseJobImport',
+        meta: { title: '岗位导入与草稿' }
+      },
+      {
         path: 'jobs/:id',
         component: () => import('@/views/enterprise/jobs/detail.vue'),
         name: 'EnterpriseJobDetail',
@@ -117,6 +124,12 @@ export const constantRoutes = [
         meta: { title: '候选人管理' }
       },
       {
+        path: 'candidates/unscreened',
+        component: () => import('@/views/enterprise/candidates/unscreened.vue'),
+        name: 'EnterpriseCandidateUnscreened',
+        meta: { title: '待初筛投递' }
+      },
+      {
         path: 'candidates/:id/process',
         component: () => import('@/views/enterprise/candidates/process.vue'),
         name: 'EnterpriseCandidateProcess',
@@ -133,6 +146,12 @@ export const constantRoutes = [
         component: () => import('@/views/enterprise/talent/index.vue'),
         name: 'EnterpriseTalent',
         meta: { title: '人才库' }
+      },
+      {
+        path: 'survey',
+        component: () => import('@/views/enterprise/survey/index.vue'),
+        name: 'EnterpriseSurvey',
+        meta: { title: '满意度调研' }
       },
       {
         path: 'conference/active',

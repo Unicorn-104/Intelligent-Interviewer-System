@@ -35,6 +35,12 @@ export default defineConfig(({ mode, command }) => {
           changeOrigin: true,
           // 企业端已迁移到 /api/v1 版本前缀，后端同时兼容旧路径
           rewrite: (p) => p.replace(/^\/dev-api/, '/api/v1')
+        },
+        // 实时字幕 WebSocket 后端代理
+        '/ws': {
+          target: 'ws://localhost:8080',
+          ws: true,
+          changeOrigin: true
         }
       }
     },

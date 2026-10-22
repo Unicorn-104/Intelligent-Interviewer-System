@@ -20,8 +20,8 @@
 
     <section class="ca-stage">
       <div ref="stageRef" class="ca-video">
-        <!-- 面试官宫格：多位面试官画面并排占据主区，本人画面仍以小窗独立呈现 -->
-        <div class="ca-grid" :class="`g${Math.min(interviewers.length || 1, 6)}`">
+        <!-- 面试官宫格：多位面试官画面并排占据主区，本人画面仍以小窗独立呈现；纯 AI 面试没有人工面试官，不渲染宫格 -->
+        <div v-if="interviewMode !== 1" class="ca-grid" :class="`g${Math.min(interviewers.length || 1, 6)}`">
           <div v-for="p in interviewers" :key="p.userId" class="ca-tile">
             <video
               v-show="tileStream(p.userId)"
@@ -42,12 +42,13 @@
           </div>
         </div>
 
-        <!-- AI 画中画：无AI 纯人工模式隐藏 -->
+        <!-- AI 画中画：无AI 纯人工模式隐藏；纯 AI 面试时居中作为主画面 -->
         <div
           v-if="showAiPanel"
           ref="aiRef"
           class="ca-ai-pip"
-          :style="aiStyle"
+          :class="{ solo: interviewMode === 1 }"
+          :style="interviewMode === 1 ? null : aiStyle"
           @mousedown.prevent="startDragAi"
         >
           <div class="ca-orb">
@@ -61,10 +62,10 @@
         <!-- 当前题目：无AI 模式隐藏 -->
         <div v-if="showAiPanel" class="ca-question">
           <div class="ca-q-head">
-            <span class="ca-q-index">{{ progress.total ? `第 ${progress.current} 题 / 共 ${progress.total} 题` : '面试准备中' }}</span>
+            <span class="ca-q-index">{{ progress.total ? `第 ${progress.current} 题 / 共 ${progress.total} 题` : (interviewMode === 1 ? 'AI 面试进行中' : '面试准备中') }}</span>
             <div class="ca-q-bar"><u :style="{ width: (progress.total ? progress.current / progress.total * 100 : 0) + '%' }" /></div>
           </div>
-          <p class="ca-q-text">{{ questionText || '等待面试官出题…' }}</p>
+          <p class="ca-q-text">{{ questionText || (interviewMode === 1 ? 'AI 面试官正在准备题目…' : '等待面试官出题…') }}</p>
         </div>
 
         <div class="ca-self" :style="selfStyle" @mousedown.prevent="startDrag">
@@ -83,7 +84,7 @@
             <p v-for="(item, index) in captions" :key="index" :class="{ me: item.who === '我' }">
               <b>{{ item.who }}</b>{{ item.text }}
             </p>
-            <p v-if="!captions.length" class="ca-cap-empty">暂无字幕</p>
+            <p v-if="!captions.length" class="ca-cap-empty">{{ captionEmptyText }}</p>
           </div>
         </div>
       </div>
@@ -96,7 +97,7 @@
       <button class="ca-ctl" :class="{ off: !camOn }" @click="toggleCam">
         <Icon name="video" :size="20" /><span>摄像头</span>
       </button>
-      <button class="ca-ctl" :class="{ on: captionOn }" @click="captionOn = !captionOn">
+      <button class="ca-ctl" :class="{ on: captionOn && asrStatus.enabled }" :disabled="!asrStatus.enabled" :title="asrStatus.enabled ? '实时字幕' : (asrStatus.reason || '实时字幕不可用')" @click="toggleCaption">
         <Icon name="caption" :size="20" /><span>字幕</span>
       </button>
       <button class="ca-ctl" :class="{ on: sharing }" @click="toggleShare">
@@ -154,6 +155,7 @@ import { computed, defineComponent, h, onBeforeUnmount, onMounted, nextTick, ref
 import { useRoute } from 'vue-router'
 import { getCurrentSession, getSessionContext, getProgress, listCaptions, heartbeat, finishSession, updateMedia, getLiveKitToken } from '@/api/system/conference'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, savePreferredDevice } from '@/utils/media'
+import { useRealtimeAsr } from './useRealtimeAsr'
 import { Room, RoomEvent, Track } from 'livekit-client'
 
 const PATHS = {
@@ -217,6 +219,18 @@ const clock = computed(() => {
 })
 
 const captions = ref([])
+// 字幕增量游标：已拉取到的最大 dlg_id，供轮询与 WS 稳定句去重
+let captionSeq = 0
+let captionPollId = null
+// 实时字幕：仅 AI 面试（模式 1-3）启用，纯人工面试由后端返回不可用
+const asr = useRealtimeAsr({
+  getSessionId: () => sessionId.value,
+  getMicEnabled: () => micOn.value,
+  // 直接复用 LiveKit 已发布的麦克风轨，避免二次占用设备
+  getMicTrack: () => room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack || null,
+  onFinal: (item) => appendCaptions([{ sequence: item.sequence, role: item.role, content: item.text }])
+})
+const asrStatus = asr.status
 
 const selfStyle = computed(() =>
   selfPos.value.x === null ? { right: '16px', bottom: '16px' } : { left: `${selfPos.value.x}px`, top: `${selfPos.value.y}px` }
@@ -300,6 +314,8 @@ function startDrag(event) {
 
 // 拖动 AI 画中画，调整其在主画面中的位置
 function startDragAi(event) {
+  // 纯 AI 面试时 AI 面板居中作为主画面，不允许拖动
+  if (interviewMode.value === 1) return
   const stage = stageRef.value?.getBoundingClientRect()
   const box = aiRef.value?.getBoundingClientRect()
   if (!stage || !box) return
@@ -435,6 +451,8 @@ async function openCamera() {
   } else if (failures.length === 2) {
     notify('未获得摄像头与麦克风权限，请在浏览器地址栏允许访问后重新进入面试')
   }
+  // 麦克风就绪后按需启动实时字幕识别流
+  await syncAsr()
 }
 
 // 应用场次上下文：回填顶部信息、面试官列表与面试模式
@@ -480,6 +498,8 @@ async function toggleMic() {
   await room.localParticipant.setMicrophoneEnabled(on)
   micOn.value = on
   notify(on ? '麦克风已开启' : '麦克风已静音')
+  // 静音不产生有效语音，关闭识别流；重新开启时再恢复
+  await syncAsr()
 }
 
 async function toggleCam() {
@@ -573,6 +593,57 @@ function scrollCaptions() {
   })
 }
 
+// 字幕角色文案：1-AI，2-HR，3-我
+const CAPTION_ROLE = { 1: 'AI', 2: 'HR', 3: '我' }
+
+// 追加字幕并按 dlg_id 去重
+function appendCaptions(list) {
+  if (!Array.isArray(list) || !list.length) return
+  const next = captions.value.slice()
+  list.forEach((item) => {
+    const seq = Number(item.sequence) || 0
+    if (seq && seq <= captionSeq) return
+    if (seq) captionSeq = seq
+    next.push({ who: CAPTION_ROLE[Number(item.role)] || 'AI', text: item.content })
+  })
+  captions.value = next.slice(-40)
+  scrollCaptions()
+}
+
+// 对方发言通过增量接口轮询获取（WS 只回推本人的稳定句）
+async function pollCaptions() {
+  if (!sessionId.value) return
+  try {
+    const res = await listCaptions(sessionId.value, { afterSequence: captionSeq, limit: 50 })
+    appendCaptions(res.data)
+  } catch (error) {
+    // 轮询异常时等待下一次
+  }
+}
+
+// 按字幕开关与麦克风状态同步识别流（模式 4 / 未配置时后端返回 enabled=false）
+async function syncAsr() {
+  if (!sessionId.value) return
+  await asr.refresh()
+  if (captionOn.value && asr.status.value.enabled) await asr.start()
+  else asr.stop()
+}
+
+async function toggleCaption() {
+  captionOn.value = !captionOn.value
+  await syncAsr()
+}
+
+// 切换音频设备后按新设备重建识别流采集
+async function restartAsr() {
+  if (!captionOn.value || !sessionId.value) return
+  await asr.refresh()
+  if (asr.status.value.enabled) await asr.restart()
+}
+
+// 无字幕时的占位文案：字幕不可用时展示具体降级原因
+const captionEmptyText = computed(() => asrStatus.value.reason || '暂无字幕')
+
 // 会议设置：真实切换摄像头/麦克风（外接设备即在此选择）
 const showSettings = ref(false)
 const cameraDevices = ref([])
@@ -601,6 +672,7 @@ async function applyDevice(kind) {
     if (deviceId) savePreferredDevice(kind, deviceId)
     else clearPreferredDevice(kind)
     notify('已保存设备偏好，下次开启时生效')
+    if (!isVideo) await restartAsr()
     return
   }
   try {
@@ -619,6 +691,8 @@ async function applyDevice(kind) {
     setMicId.value = track.mediaStreamTrack.getSettings().deviceId || deviceId
   }
   notify('已切换设备')
+  // 字幕识别流按新音频设备重新采集
+  if (!isVideo) await restartAsr()
 }
 
 onMounted(async () => {
@@ -660,21 +734,23 @@ async function initSession() {
   }
   try {
     const c = await listCaptions(sessionId.value, { afterSequence: 0, limit: 50 })
-    if (Array.isArray(c.data)) {
-      const roleMap = { 1: 'AI', 2: 'HR', 3: '我' }
-      captions.value = c.data.map((item) => ({ who: roleMap[item.role] || 'AI', text: item.content }))
-      scrollCaptions()
-    }
+    appendCaptions(c.data)
   } catch (error) {
     // 后端未就绪时保持空态
   }
   heartbeatId = setInterval(() => heartbeat(sessionId.value).catch(() => {}), 15000)
+  // 字幕轮询获取面试官发言；本人发言由 WS 稳定句即时回推
+  if (!captionPollId) captionPollId = setInterval(pollCaptions, 1500)
+  // 先拉字幕可用状态（纯人工面试 / 未配置时展示降级原因），识别流待麦克风就绪后再启动
+  await asr.refresh()
 }
 
 onBeforeUnmount(() => {
   clearInterval(timerId)
   clearInterval(heartbeatId)
+  clearInterval(captionPollId)
   clearTimeout(toastTimer)
+  asr.stop()
   if (screenTrack) {
     screenTrack.onended = null
     screenTrack.stop()
@@ -750,6 +826,14 @@ onBeforeUnmount(() => {
 .ca-ai-pip-meta { margin-top: 8px; }
 .ca-ai-pip-meta b { display: block; font-size: 12px; }
 .ca-ai-pip-meta small { display: block; margin-top: 2px; color: #8394AC; font-size: 11px; }
+/* 纯 AI 面试：没有人工面试官，AI 作为唯一面试官居中展示 */
+.ca-ai-pip.solo { left: 50%; top: 50%; transform: translate(-50%, -50%); width: 260px; padding: 26px; cursor: default; }
+.ca-ai-pip.solo .ca-orb { width: 150px; height: 150px; }
+.ca-ai-pip.solo .ca-orb-core { width: 104px; height: 104px; font-size: 22px; }
+.ca-ai-pip.solo .ca-orb-core::after { width: 104px; height: 104px; }
+.ca-ai-pip.solo .ca-ring { inset: 4px; }
+.ca-ai-pip.solo .ca-ai-pip-meta b { font-size: 14px; }
+.ca-ai-pip.solo .ca-ai-pip-meta small { font-size: 12px; }
 .ca-orb { position: relative; width: 136px; height: 136px; margin: 0 auto; display: grid; place-items: center; }
 .ca-orb-core { width: 96px; height: 96px; display: grid; place-items: center; border-radius: 50%; color: #fff; font-size: 24px; font-weight: 800; letter-spacing: 1px; background: linear-gradient(150deg, #2B7FFF, #1A3C6E); box-shadow: 0 0 40px rgba(43, 127, 255, .55); }
 .ca-orb-core::after { content: ''; position: absolute; width: 96px; height: 96px; border-radius: 50%; background: linear-gradient(150deg, rgba(43, 127, 255, .5), transparent 70%); animation: ca-spin 6s linear infinite; }

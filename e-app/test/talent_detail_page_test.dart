@@ -169,7 +169,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('75.0'), findsOneWidget);
-    expect(find.text('— 资料不足或不适用，不计入综合分'), findsOneWidget);
+    expect(find.text('未提供相关材料的维度按0分计入综合分'), findsOneWidget);
   });
   testWidgets('无必备技能时不展示服务返回的零分，无报告显示空态', (tester) async {
     final source = TalentFakeSource()

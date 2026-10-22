@@ -1,5 +1,7 @@
 package com.ruoyi.enterprise.service.impl;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -31,6 +33,13 @@ import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
 @Service
 public class ScreeningServiceImpl implements IScreeningService
 {
+    /** 仅供 dev 的待投递初筛兼容入口使用，不参与真实大模型六维评分。 */
+    private static final double SKILL_WEIGHT = 0.30;
+    private static final double PROJECT_WEIGHT = 0.30;
+    private static final double EDUCATION_WEIGHT = 0.20;
+    private static final double INDUSTRY_WEIGHT = 0.20;
+    private static final double BASE_SEMANTIC_SCORE = 70.0;
+
     @Autowired private ScreeningMapper screeningMapper;
     @Autowired private DashboardMapper dashboardMapper;
     @Autowired private ScreeningAiEvaluator evaluator;
@@ -268,6 +277,78 @@ public class ScreeningServiceImpl implements IScreeningService
         result.remove("runId");
         result.put("processing", "processing".equals(task.get("state")));
         return result;
+    }
+
+    @Override
+    public Map<String, Object> screenPendingApplications(Long positionId)
+    {
+        if (positionId == null)
+        {
+            throw new ServiceException("岗位ID不能为空");
+        }
+        List<String> requiredSkills = screeningMapper.selectPositionSkills(positionId);
+        if (requiredSkills.isEmpty())
+        {
+            throw new ServiceException("该岗位尚未生成技能标签画像，请先在岗位详情解析 JD");
+        }
+        List<Map<String, Object>> applications = screeningMapper.selectPendingApplications(positionId);
+        int passedCount = 0;
+        int rejectedCount = 0;
+        for (Map<String, Object> application : applications)
+        {
+            Long applicationId = Long.valueOf(String.valueOf(application.get("applicationId")));
+            Long talId = Long.valueOf(String.valueOf(application.get("talentId")));
+            List<String> candidateSkills = screeningMapper.selectCandidateSkills(talId);
+            double skillScore = computeOverlapScore(requiredSkills, candidateSkills);
+            if (skillScore <= 0)
+            {
+                // UC-04：无任何必备技能重合，判定初筛淘汰
+                screeningMapper.updateApplicationScreened(applicationId, 0D, 2);
+                rejectedCount++;
+                continue;
+            }
+            double total = skillScore * SKILL_WEIGHT
+                    + BASE_SEMANTIC_SCORE * PROJECT_WEIGHT
+                    + BASE_SEMANTIC_SCORE * EDUCATION_WEIGHT
+                    + BASE_SEMANTIC_SCORE * INDUSTRY_WEIGHT;
+            double score = round(total);
+            screeningMapper.updateMatchedScore(talId, score);
+            screeningMapper.updateApplicationScreened(applicationId, score, 1);
+            passedCount++;
+        }
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("positionId", positionId);
+        summary.put("candidateCount", applications.size());
+        summary.put("passedCount", passedCount);
+        summary.put("rejectedCount", rejectedCount);
+        return summary;
+    }
+
+    /** 保持待投递初筛入口原有的必备技能命中规则。 */
+    private double computeOverlapScore(List<String> requiredSkills, List<String> candidateSkills)
+    {
+        if (requiredSkills.isEmpty())
+        {
+            return 0;
+        }
+        int overlap = 0;
+        for (String required : requiredSkills)
+        {
+            for (String skill : candidateSkills)
+            {
+                if (required.equalsIgnoreCase(skill))
+                {
+                    overlap++;
+                    break;
+                }
+            }
+        }
+        return overlap * 100.0 / requiredSkills.size();
+    }
+
+    private double round(double value)
+    {
+        return BigDecimal.valueOf(value).setScale(1, RoundingMode.HALF_UP).doubleValue();
     }
 
     @Override

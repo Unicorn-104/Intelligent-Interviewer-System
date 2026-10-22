@@ -31,6 +31,23 @@ class ScreeningControllerTest
         }
     }
 
+    @Test void explicitFullModeUsesNewOverloadAndDefaultStaysIncremental() throws Exception
+    {
+        var service = mock(IScreeningService.class);
+        var controller = new ScreeningController(); ReflectionTestUtils.setField(controller, "screeningService", service);
+        when(service.triggerScreeningAsync(3L, 7L, 20, true)).thenReturn(Map.of("taskId", 7L, "processing", true));
+        try (var security = mockStatic(SecurityUtils.class))
+        {
+            LoginUser login = new LoginUser(); login.setUserId(3L);
+            security.when(SecurityUtils::getLoginUser).thenReturn(login);
+            MockMvcBuilders.standaloneSetup(controller).build().perform(post("/enterprise/screening/tasks/async")
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"positionId\":7,\"fullAnalysis\":true}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.processing").value(true));
+            verify(service).triggerScreeningAsync(3L, 7L, 20, true);
+            verify(service, never()).triggerScreeningAsync(any(), any(), any());
+        }
+    }
+
     @Test void legacyEndpointKeepsSynchronousCompletionContract() throws Exception
     {
         var service = mock(IScreeningService.class);

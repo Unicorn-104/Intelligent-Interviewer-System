@@ -14,5 +14,7 @@ public interface IBizResumeService
 
     Map<String, Object> selectAdminResumeById(Long rbsId);
 
+    List<Map<String, Object>> selectResumeSummary();
+
     int deleteResumeByIds(Long[] rbsIds);
 }

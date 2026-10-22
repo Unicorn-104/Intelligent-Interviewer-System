@@ -154,6 +154,22 @@ export function listCaptions(sessionId, params) {
   })
 }
 
+// 实时字幕可用状态（仅 AI 面试且服务已配置时启用）
+export function getAsrStatus(sessionId) {
+  return call({
+    url: '/system/conference/session/' + sessionId + '/asr/status',
+    method: 'get'
+  })
+}
+
+// 签发实时字幕一次性 WebSocket 票据
+export function issueAsrTicket(sessionId) {
+  return call({
+    url: '/system/conference/session/' + sessionId + '/asr/ticket',
+    method: 'post'
+  })
+}
+
 // 增量拉取提词器建议
 export function listCopilot(sessionId, params) {
   return call({

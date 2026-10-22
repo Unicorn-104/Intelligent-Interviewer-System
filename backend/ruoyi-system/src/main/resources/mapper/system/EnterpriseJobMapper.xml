@@ -65,6 +65,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where pos_id = #{posId} and pos_company_id = #{companyId}
     </update>
 
+    <delete id="deleteJob">
+        delete from t_pos where pos_id = #{posId} and pos_company_id = #{companyId}
+    </delete>
+
     <select id="selectPublishingCompany" resultType="java.util.LinkedHashMap">
         select cmp_id as id, cmp_name as name, cmp_city as city
         from t_cmp where cmp_id = #{companyId} and cmp_status = 1

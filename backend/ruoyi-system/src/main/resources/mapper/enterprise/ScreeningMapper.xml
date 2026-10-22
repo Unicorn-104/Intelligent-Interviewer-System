@@ -158,4 +158,20 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                ast_passed_count = #{passed}, ast_error = #{error}, ast_updated_at = now()
         where ast_company_id = #{companyId} and ast_position_id = #{positionId} and ast_run_id = #{runId}
     </update>
+
+    <!-- 某岗位待初筛的投递申请（尚未产生 AI 初筛结果） -->
+    <select id="selectPendingApplications" resultType="java.util.LinkedHashMap">
+        select a.app_id as applicationId, a.app_candidate_id as talentId
+        from t_app_record a
+        where a.app_position_id = #{positionId} and a.app_status = 0
+        order by a.app_id
+    </select>
+
+    <!-- 回写投递记录的初筛结果：1-初筛通过，2-初筛淘汰 -->
+    <update id="updateApplicationScreened">
+        update t_app_record
+        set app_matched_score = #{score}, app_status = #{status}, app_updated_at = now()
+        where app_id = #{applicationId}
+    </update>
+
 </mapper>

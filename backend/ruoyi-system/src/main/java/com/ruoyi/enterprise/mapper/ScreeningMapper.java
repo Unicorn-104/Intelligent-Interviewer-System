@@ -58,4 +58,11 @@ public interface ScreeningMapper
     int updateTask(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
             @Param("runId") String runId, @Param("state") String state, @Param("completed") int completed,
             @Param("passed") int passed, @Param("error") String error);
+
+    /** 某岗位待初筛的投递申请（app_status = 0） */
+    public List<Map<String, Object>> selectPendingApplications(@Param("positionId") Long positionId);
+
+    /** 回写投递记录的 AI 初筛结果（评分 + 投递状态：1-初筛通过，2-初筛淘汰） */
+    public int updateApplicationScreened(@Param("applicationId") Long applicationId, @Param("score") Double score,
+            @Param("status") Integer status);
 }

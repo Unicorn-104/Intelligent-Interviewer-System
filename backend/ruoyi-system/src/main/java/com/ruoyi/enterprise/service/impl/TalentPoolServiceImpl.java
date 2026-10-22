@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.TalentPoolMapper;
+import com.ruoyi.enterprise.service.IScreeningService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
 import com.ruoyi.system.mapper.DashboardMapper;
 
@@ -28,6 +29,9 @@ public class TalentPoolServiceImpl implements ITalentPoolService
 
     @Autowired
     private DashboardMapper dashboardMapper;
+
+    @Autowired
+    private IScreeningService screeningService;
 
     @Override
     public List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
@@ -232,6 +236,43 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         result.put("integrity", filled * 20);
         result.put("missingFields", missingFields);
         return result;
+    }
+
+    @Override
+    public Map<String, Object> getUnscreenedPositions(Long userId)
+    {
+        Long companyId = resolveCompanyId(userId);
+        List<Map<String, Object>> rows = talentPoolMapper.selectUnscreenedPositions(companyId);
+        Integer candidateCount = talentPoolMapper.selectUnscreenedCandidateCount(companyId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("rows", rows);
+        result.put("positionCount", rows.size());
+        result.put("candidateCount", candidateCount == null ? 0 : candidateCount);
+        return result;
+    }
+
+    @Override
+    public List<Map<String, Object>> listUnscreenedApplicants(Long userId, Long positionId, String keyword,
+            Integer pageNum, Integer pageSize)
+    {
+        Long companyId = resolveCompanyId(userId);
+        PageUtils.startPage(pageNum, pageSize);
+        return talentPoolMapper.selectUnscreenedApplicants(companyId, positionId, keyword);
+    }
+
+    @Override
+    public Map<String, Object> screenUnscreenedPosition(Long userId, Long positionId)
+    {
+        if (positionId == null)
+        {
+            throw new ServiceException("请先选择要初筛的岗位");
+        }
+        Long companyId = resolveCompanyId(userId);
+        if (talentPoolMapper.selectPositionOfCompany(positionId, companyId) == null)
+        {
+            throw new ServiceException("岗位不存在或无权访问");
+        }
+        return screeningService.screenPendingApplications(positionId);
     }
 
     /** 解析当前用户所属公司（未绑定默认公司1，与 EnterpriseSettingsServiceImpl 一致） */

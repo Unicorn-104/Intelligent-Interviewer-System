@@ -175,7 +175,7 @@ void main() {
   testWidgets('仅保留两个 Tab，求职者页合入 AI 能力且进入时不自动筛选', (tester) async {
     final source = DetailFakeSource(
       scoreResult: [
-        {'resultId': 1, 'totalScore': 88},
+        {'resultId': 11, 'totalScore': 88},
       ],
     );
     await pumpDetail(tester, source);
@@ -188,10 +188,12 @@ void main() {
     await tester.tap(find.text('求职者'));
     await tester.pumpAndSettle();
     expect(find.byType(JobCandidatesTab), findsOneWidget);
-    expect(find.text('AI辅助筛选'), findsOneWidget);
+    expect(find.text('增量分析'), findsOneWidget);
     expect(find.byKey(const Key('job-rescreen')), findsOneWidget);
     expect(source.screenCalls, 0);
     expect(source.scoreCalls, 1);
+    expect(find.text('88.0'), findsOneWidget);
+    expect(find.byKey(const Key('job-refresh-analysis')), findsNothing);
   });
 
   testWidgets('AI 评分失败保留同批候选人并显示重试，不清空名单', (tester) async {
@@ -202,7 +204,7 @@ void main() {
     expect(find.text('加载筛选结果失败，重试'), findsOneWidget);
     expect(find.text('通用评分，非岗位维度'), findsNothing);
     expect(find.text('AI 结果仅供参考'), findsNothing);
-    expect(find.text('AI辅助筛选'), findsOneWidget);
+    expect(find.text('增量分析'), findsOneWidget);
   });
 
   testWidgets('AI辅助筛选点击即执行，不弹出确认框', (tester) async {
@@ -216,6 +218,75 @@ void main() {
     expect(source.screenCalls, 1);
   });
 
+  testWidgets('增量分析先读取已有结果，完整时不调用模型且下拉菜单在按钮内', (tester) async {
+    final source = DetailFakeSource(
+      scoreResult: [
+        {'resultId': 11, 'source': 'llm', 'totalScore': 88},
+        {'resultId': 12, 'source': 'llm', 'totalScore': 79},
+      ],
+    );
+    await pumpDetail(tester, source, initialTab: 1);
+    expect(source.scoreCalls, 1);
+    expect(source.screenCalls, 0);
+    expect(find.byKey(const Key('job-refresh-analysis')), findsNothing);
+    expect(find.text('刷新结果'), findsNothing);
+    expect(find.text('88.0'), findsOneWidget);
+
+    final button = find.byKey(const Key('job-rescreen'));
+    final menu = find.byKey(const Key('job-analysis-menu'));
+    expect(
+      tester.getTopLeft(menu).dx,
+      greaterThan(tester.getTopLeft(button).dx),
+    );
+    expect(
+      tester.getTopRight(menu).dx,
+      lessThan(tester.getTopRight(button).dx + 64),
+    );
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(source.scoreCalls, 2);
+    expect(source.scoreCallsAtStart, 0);
+    expect(source.screenCalls, 0);
+    expect(find.text('已读取已有分析结果，没有待补充的求职者'), findsOneWidget);
+  });
+
+  testWidgets('增量分析优先刷新数据库，存在未分析求职者时才启动任务', (tester) async {
+    final source = DetailFakeSource();
+    await pumpDetail(tester, source, initialTab: 1);
+    expect(source.scoreCalls, 1);
+    await tester.tap(find.byKey(const Key('job-rescreen')));
+    await tester.pumpAndSettle();
+    expect(source.scoreCalls, 3);
+    expect(source.scoreCallsAtStart, 2);
+    expect(source.screenCalls, 1);
+  });
+
+  testWidgets('已有结果加载失败时增量按钮不擅自触发模型', (tester) async {
+    final source = DetailFakeSource(scoreFailure: true);
+    await pumpDetail(tester, source, initialTab: 1);
+    await tester.tap(find.byKey(const Key('job-rescreen')));
+    await tester.pumpAndSettle();
+    expect(source.scoreCalls, 2);
+    expect(source.screenCalls, 0);
+    expect(source.fullScreenCalls, 0);
+  });
+
+  testWidgets('全量分析需二次确认并调用独立全量入口', (tester) async {
+    final source = DetailFakeSource();
+    await pumpDetail(tester, source, initialTab: 1);
+    await tester.tap(find.byKey(const Key('job-analysis-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全量分析（耗时较长）'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('会耗费大量时间和模型调用额度'), findsOneWidget);
+    expect(source.fullScreenCalls, 0);
+    await tester.tap(find.byKey(const Key('job-full-analysis-confirm')));
+    await tester.pumpAndSettle();
+    expect(source.fullScreenCalls, 1);
+    expect(source.screenCalls, 0);
+  });
+
   testWidgets('AI后台分析轮询只读进度，不重复提交，完成后刷新结果', (tester) async {
     final source = DetailFakeSource()..asyncScreening = true;
     source.screeningStatuses = [
@@ -225,15 +296,15 @@ void main() {
     await pumpDetail(tester, source, initialTab: 1);
     await tester.tap(find.byKey(const Key('job-rescreen')));
     await tester.pump();
-    expect(find.text('筛选中…'), findsOneWidget);
+    expect(find.text('分析中…'), findsOneWidget);
     await tester.tap(find.byKey(const Key('job-rescreen')));
     await tester.pump(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(source.screenCalls, 1);
     expect(source.statusCalls, 2);
-    expect(source.scoreCalls, 2);
-    expect(find.text('AI辅助筛选'), findsOneWidget);
+    expect(source.scoreCalls, 3);
+    expect(find.text('增量分析'), findsOneWidget);
   });
 
   testWidgets('AI后台失败保留名单并显示错误，不自动重发任务', (tester) async {
@@ -315,7 +386,7 @@ void main() {
     await pumpDetail(tester, source, initialTab: 2);
     expect(find.byType(JobInterviewsPage), findsNothing);
     expect(find.byType(JobCandidatesTab), findsOneWidget);
-    expect(find.text('AI辅助筛选'), findsOneWidget);
+    expect(find.text('增量分析'), findsOneWidget);
     expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 1);
     await tester.tap(find.text('基础信息'));
     await tester.pumpAndSettle();

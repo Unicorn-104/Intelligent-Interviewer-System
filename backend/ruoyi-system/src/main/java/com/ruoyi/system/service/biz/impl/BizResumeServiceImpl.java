@@ -33,7 +33,17 @@ public class BizResumeServiceImpl implements IBizResumeService
         {
             throw new ServiceException("简历不存在");
         }
+        resume.put("workList", resumeMapper.selectWorkList(rbsId));
+        resume.put("eduList", resumeMapper.selectEduList(rbsId));
+        resume.put("skillList", resumeMapper.selectSkillList(rbsId));
+        resume.put("projList", resumeMapper.selectProjList(rbsId));
         return resume;
+    }
+
+    @Override
+    public List<Map<String, Object>> selectResumeSummary()
+    {
+        return resumeMapper.selectResumeSummary();
     }
 
     @Override

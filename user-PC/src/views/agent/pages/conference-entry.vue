@@ -19,6 +19,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { joinByRoomToken } from '@/api/system/conference'
+import { getToken } from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,6 +33,11 @@ onMounted(async () => {
   const token = route.query.token || ''
   if (!token) {
     status.value = 'error'
+    return
+  }
+  // 面试链接不允许绕过身份校验直接进入准备页：未登录时先登录，登录后回到本页按链接校验候选人身份
+  if (!getToken()) {
+    router.replace({ path: '/agent/login', query: { redirect: route.fullPath } })
     return
   }
   try {

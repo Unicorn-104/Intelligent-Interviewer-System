@@ -273,4 +273,63 @@ class ScreeningServiceImplTest
         assertThrows(ServiceException.class, () -> service.reviewResult(3L, 11L, true, Double.NaN));
         verify(mapper, never()).updateMatchedScore(anyLong(), any());
     }
+
+    @Test void pendingApplicationsRetainLegacyScoresAndStatusUpdatesWithoutCallingModel()
+    {
+        when(mapper.selectPositionSkills(7L)).thenReturn(List.of("Java", "SQL", "Docker"));
+        when(mapper.selectPendingApplications(7L)).thenReturn(List.of(
+                Map.of("applicationId", 101L, "talentId", 11L),
+                Map.of("applicationId", 102L, "talentId", 12L)));
+        when(mapper.selectCandidateSkills(11L)).thenReturn(List.of("java", "JAVA"));
+        when(mapper.selectCandidateSkills(12L)).thenReturn(List.of("Python"));
+
+        Map<String, Object> result = service.screenPendingApplications(7L);
+
+        assertEquals(Map.of("positionId", 7L, "candidateCount", 2, "passedCount", 1, "rejectedCount", 1), result);
+        verify(mapper).updateMatchedScore(11L, 59.0);
+        verify(mapper).updateApplicationScreened(101L, 59.0, 1);
+        verify(mapper).updateApplicationScreened(102L, 0.0, 2);
+        verify(mapper, never()).updateMatchedScore(eq(12L), any());
+        verify(mapper, never()).saveAnalysis(anyMap());
+        verifyNoInteractions(evaluator);
+    }
+
+    @Test void pendingApplicationsKeepOneDecimalRounding()
+    {
+        when(mapper.selectPositionSkills(7L)).thenReturn(List.of("Java", "SQL", "Docker", "Redis",
+                "Spring", "Linux", "Git"));
+        when(mapper.selectPendingApplications(7L)).thenReturn(List.of(
+                Map.of("applicationId", 101L, "talentId", 11L)));
+
+        service.screenPendingApplications(7L);
+
+        verify(mapper).updateMatchedScore(11L, 53.3);
+        verify(mapper).updateApplicationScreened(101L, 53.3, 1);
+        verifyNoInteractions(evaluator);
+    }
+
+    @Test void pendingApplicationsRequirePositionAndSkillsBeforeWritingResults()
+    {
+        assertThrows(ServiceException.class, () -> service.screenPendingApplications(null));
+        verify(mapper, never()).selectPendingApplications(anyLong());
+        when(mapper.selectPositionSkills(7L)).thenReturn(List.of());
+
+        assertThrows(ServiceException.class, () -> service.screenPendingApplications(7L));
+
+        verify(mapper, never()).selectPendingApplications(anyLong());
+        verify(mapper, never()).updateApplicationScreened(anyLong(), any(), anyInt());
+        verifyNoInteractions(evaluator);
+    }
+
+    @Test void noPendingApplicationsReturnsEmptySummaryWithoutWritingScores()
+    {
+        when(mapper.selectPendingApplications(7L)).thenReturn(List.of());
+
+        Map<String, Object> result = service.screenPendingApplications(7L);
+
+        assertEquals(Map.of("positionId", 7L, "candidateCount", 0, "passedCount", 0, "rejectedCount", 0), result);
+        verify(mapper, never()).updateApplicationScreened(anyLong(), any(), anyInt());
+        verify(mapper, never()).updateMatchedScore(anyLong(), any());
+        verifyNoInteractions(evaluator);
+    }
 }

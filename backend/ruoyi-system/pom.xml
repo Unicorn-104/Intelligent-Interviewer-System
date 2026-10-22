@@ -29,6 +29,12 @@
             <artifactId>spring-webmvc</artifactId>
         </dependency>
 
+        <!-- 实时字幕 WebSocket 代理 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>net.sourceforge.tess4j</groupId>
             <artifactId>tess4j</artifactId>

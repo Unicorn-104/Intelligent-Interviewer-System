@@ -331,24 +331,28 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where mst_session_id = #{sessionId}
     </update>
 
+    <select id="lockSessionForUpdate" parameterType="Long" resultType="long">
+        select ses_id from t_int_session where ses_id = #{sessionId} for update
+    </select>
+
     <select id="selectNextDialogueOrder" parameterType="Long" resultType="int">
         select ifnull(max(dlg_order), 0) + 1 from t_int_dialogue where dlg_session_id = #{sessionId}
     </select>
 
-    <insert id="insertDialogue">
+    <insert id="insertDialogue" useGeneratedKeys="true" keyProperty="id">
         insert into t_int_dialogue (dlg_session_id, dlg_order, dlg_role, dlg_type, dlg_content, dlg_intent, dlg_created_at)
         values (#{sessionId}, #{order}, #{role}, #{type}, #{content}, #{intent,jdbcType=VARCHAR}, sysdate())
     </insert>
 
     <select id="selectCaptions" resultType="java.util.LinkedHashMap">
         select dlg_id            as id,
-               dlg_order         as sequence,
+               dlg_id            as sequence,
                dlg_role          as role,
                dlg_content       as content,
                date_format(dlg_created_at, '%H:%i:%s') as at
         from t_int_dialogue
-        where dlg_session_id = #{sessionId} and dlg_order &gt; #{afterSequence}
-        order by dlg_order asc
+        where dlg_session_id = #{sessionId} and dlg_id &gt; #{afterSequence}
+        order by dlg_id asc
         limit #{limit}
     </select>
 
