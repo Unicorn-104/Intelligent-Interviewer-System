@@ -60,3 +60,11 @@
 - 按 [C-APP 与 Backend 提交及发布规范](c-app/提交与发布规范.md) 的「求职者端完善交付」拆分原子提交，完整功能统一一个 PR 到 `dev`。必要人工验收未完成时保持 Draft，明确已有验证和未验收边界。
 - 使用从最新 dev 创建的独立 worktree 整理交付，保留原工作区全部修改。PR 仅包含当前工作区相对其原 HEAD 的相关增量，不用旧目录整体覆盖最新 dev。
 - 本次授权包括创建、提交、推送 feature 分支并创建 PR；不包含合并 PR、直接推送 dev/main 或推进 dev 到 main。
+
+## 求职者端 AI Agent 交付（2026-10-22）
+
+- 功能分支为 `feature/capp-agent-MZR`，从最新 `origin/dev` 创建，完整功能统一 PR 到 `dev`。
+- 范围包括服务端 AI 对话编排与受控工具、SSE 任务恢复、会话历史与记忆、投递/简历上下文校验，以及 C-APP 对话入口、选择面板和错误恢复。
+- 仅纳入 `backend/`、`c-app/` 中 Agent 必需代码、迁移、回滚、测试、说明与项目 memory；不纳入 `e-app/`、本地 AI 配置、启动说明、密钥、真实简历或聊天数据。
+- 子功能拆分、接口契约、迁移顺序及验证要求见 [C-APP 与 Backend 提交及发布规范](c-app/提交与发布规范.md) 的「求职者端 AI Agent 交付」。实现和部署边界见 `backend/doc/capp_ai_agent.md`。
+- 功能 PR 仅推进至 `feature/* -> dev`。未经人工 Review 不合并 PR，不直接推送 `dev`/`main`，不执行生产发布。
