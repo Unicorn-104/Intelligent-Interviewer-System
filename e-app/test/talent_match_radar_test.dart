@@ -36,8 +36,8 @@ void main() {
         }
         expect(find.text('90.0'), findsOneWidget);
         expect(find.text('81.0'), findsOneWidget);
-        expect(find.text('—'), findsNWidgets(2));
-        expect(find.text('0.0'), findsNothing);
+        expect(find.text('—'), findsNothing);
+        expect(find.text('0.0'), findsNWidgets(2));
         expect(tester.takeException(), isNull);
       });
     }

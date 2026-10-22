@@ -41,8 +41,8 @@ class ScreeningServiceImplTest
         ReflectionTestUtils.setField(service, "transactionManager", transactions);
         when(transactions.getTransaction(any())).thenAnswer(call -> new SimpleTransactionStatus());
         when(dashboard.selectCompanyIdByUser(3L)).thenReturn(1L);
-        when(mapper.selectPosition(1L, 7L)).thenReturn(Map.of("positionId", 7L, "title", "演示数据Java岗位"));
-        when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L))));
+        when(mapper.selectPosition(1L, 7L)).thenReturn(Map.of("positionId", 7L, "title", "演示数据Java岗位", "positionVersion", "p1"));
+        when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "v1"))));
         when(mapper.selectOwnedCandidate(anyLong(), anyLong())).thenReturn(null);
         when(mapper.selectCandidateSkills(11L)).thenReturn(List.of("Java"));
         when(mapper.selectEducationEvidence(21L)).thenReturn(List.of(Map.of("major", "计算机科学")));
@@ -120,7 +120,7 @@ class ScreeningServiceImplTest
     {
         when(evaluator.evaluate(anyMap(), anyList())).thenThrow(new ServiceException("模型暂不可用"));
         service.triggerScreeningAsync(3L, 7L, 20);
-        verify(mapper, timeout(2000)).updateTask(eq(1L), eq(7L), anyString(), eq("failed"), eq(0), eq(0), eq("模型暂不可用"));
+        verify(mapper, timeout(2000)).updateTask(eq(1L), eq(7L), anyString(), eq("failed"), eq(0), eq(0), contains("模型暂不可用"));
         verify(mapper, never()).saveAnalysis(anyMap()); verify(mapper, never()).updateMatchedScore(anyLong(), any());
     }
 
@@ -153,14 +153,118 @@ class ScreeningServiceImplTest
         verify(mapper, never()).selectLatestAnalysis(anyLong(), anyLong());
     }
 
-    @Test void saveFailureRollsBackWholeRefresh()
+    @Test void saveFailureRollsBackOnlyCurrentCandidate()
     {
         when(evaluator.evaluate(anyMap(), anyList())).thenReturn(List.of(analysis()));
         when(mapper.saveAnalysis(anyMap())).thenThrow(new IllegalStateException("synthetic-private-database-message"));
         service.triggerScreeningAsync(3L, 7L, 20);
         verify(transactions, timeout(2000)).rollback(any());
-        verify(mapper, timeout(2000)).updateTask(eq(1L), eq(7L), anyString(), eq("failed"), eq(1), eq(0), eq("AI筛选失败，原有结果未变更，请稍后重试"));
+        verify(mapper, timeout(2000)).updateTask(eq(1L), eq(7L), anyString(), eq("failed"), eq(0), eq(0), contains("已完成的独立分析已保存"));
         verify(transactions, never()).commit(any());
+    }
+
+    @Test void incrementalSkipsExistingReportsWithoutContactingModel()
+    {
+        when(mapper.selectAnalyzedCandidates(1L, 7L)).thenReturn(List.of(Map.of("candidateId", 11L, "resumeVersion", "v1", "positionVersion", "p1")));
+        when(mapper.selectTaskStatus(1L, 7L)).thenReturn(Map.of("state", "completed"));
+        var reply = service.triggerScreeningAsync(3L, 7L, 20);
+        assertEquals(false, reply.get("processing"));
+        assertEquals(0, reply.get("candidateCount"));
+        assertEquals(1, reply.get("skippedCount"));
+        verifyNoInteractions(evaluator);
+        verify(mapper, never()).claimTask(anyLong(), anyLong(), anyString(), anyInt());
+        verify(mapper, never()).saveAnalysis(anyMap());
+    }
+
+    @Test void newCandidateOnlyGetsIndependentRequestAndExistingScoreIsNotWritten()
+    {
+        var original = new LinkedHashMap<String, Object>(Map.of("talentId", 12L, "resumeId", 22L, "resumeVersion", "v1"));
+        var added = new LinkedHashMap<String, Object>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "v1"));
+        when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(original, added));
+        when(mapper.selectAnalyzedCandidates(1L, 7L)).thenReturn(List.of(Map.of("candidateId", 12L, "resumeVersion", "v1", "positionVersion", "p1")));
+        when(evaluator.evaluate(anyMap(), anyList())).thenAnswer(call -> {
+            List<Map<String, Object>> input = call.getArgument(1);
+            assertEquals(1, input.size()); assertEquals(11L, input.get(0).get("candidateId"));
+            assertFalse(input.get(0).containsKey("totalScore"));
+            return List.of(analysis());
+        });
+        var reply = service.triggerScreeningAsync(3L, 7L, 20);
+        assertEquals(1, reply.get("skippedCount"));
+        verify(mapper, timeout(2000)).saveAnalysis(argThat(row -> row.get("resultId").equals(11L)));
+        verify(evaluator, timeout(2000).times(1)).evaluate(anyMap(), anyList());
+        verify(mapper, never()).updateMatchedScore(anyLong(), any());
+    }
+
+    @Test void existingReportIsReadEvenIfResumeChangedUntilExplicitFullAnalysis()
+    {
+        when(mapper.selectAnalyzedCandidates(1L, 7L)).thenReturn(List.of(
+                Map.of("candidateId", 11L, "resumeVersion", "old", "positionVersion", "p1")));
+        when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(
+                new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "new"))));
+        var reply = service.triggerScreeningAsync(3L, 7L, 20);
+        assertEquals(1, reply.get("skippedCount"));
+        assertEquals(false, reply.get("processing"));
+        verifyNoInteractions(evaluator);
+        verify(mapper, never()).saveAnalysis(anyMap());
+    }
+
+    @Test void cachedMissingDimensionsBecomeZeroWithoutModelOrDatabaseWrite()
+    {
+        var report = analysis();
+        Map<String, Object> dimensions = new LinkedHashMap<>();
+        for (String key : ScreeningAiEvaluator.WEIGHTS.keySet())
+        {
+            Map<String, Object> dimension = new LinkedHashMap<>();
+            dimension.put("score", null); dimension.put("evidence", List.of());
+            dimensions.put(key, dimension);
+        }
+        dimensions.put("skillMatch", Map.of("score", 80.0, "evidence", List.of("Java")));
+        report.put("dimensions", dimensions);
+        when(mapper.selectResultsByPosition(7L)).thenReturn(new ArrayList<>(List.of(
+                new LinkedHashMap<>(Map.of("resultId", 11L)))));
+        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(Map.of("report", JSON.toJSONString(report)));
+        var row = service.listResults(3L, 7L).get(0);
+        assertEquals(0.0, row.get("researchMatch"));
+        assertEquals(0.0, row.get("awardMatch"));
+        assertEquals(20.0, row.get("totalScore"));
+        verifyNoInteractions(evaluator);
+        verify(mapper, never()).saveAnalysis(anyMap());
+    }
+
+    @Test void fullAnalysisReevaluatesExistingCandidate()
+    {
+        when(mapper.selectAnalyzedCandidates(1L, 7L)).thenReturn(List.of(Map.of("candidateId", 11L, "resumeVersion", "v1", "positionVersion", "p1")));
+        when(evaluator.evaluate(anyMap(), anyList())).thenReturn(List.of(analysis()));
+        service.triggerScreeningAsync(3L, 7L, 20, true);
+        verify(mapper, timeout(2000)).saveAnalysis(anyMap());
+        verify(evaluator).evaluate(anyMap(), argThat(input -> input.size() == 1));
+        verify(mapper, never()).selectAnalyzedCandidates(anyLong(), anyLong());
+    }
+
+    @Test void secondFailureDoesNotUndoFirstCandidateResult()
+    {
+        when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(
+                new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L)),
+                new LinkedHashMap<>(Map.of("talentId", 12L, "resumeId", 22L))));
+        when(mapper.claimTask(eq(1L), eq(7L), anyString(), eq(2))).thenAnswer(call -> {
+            when(mapper.lockTask(1L, 7L)).thenReturn(Map.of("runId", call.getArgument(2))); return 1;
+        });
+        when(evaluator.evaluate(anyMap(), anyList())).thenReturn(List.of(analysis()))
+                .thenThrow(new ServiceException("演示模型失败"));
+        service.triggerScreeningAsync(3L, 7L, 20, true);
+        verify(mapper, timeout(2000)).updateTask(eq(1L), eq(7L), anyString(), eq("failed"), eq(1), eq(1), contains("已保存"));
+        verify(mapper, times(1)).saveAnalysis(anyMap());
+        verify(transactions, times(1)).commit(any());
+    }
+
+    @Test void refreshReadsSavedResultsAndNeverCallsModel()
+    {
+        when(mapper.selectResultsByPosition(7L)).thenReturn(new ArrayList<>(List.of(new LinkedHashMap<>(Map.of("resultId", 11L)))));
+        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(Map.of("report", JSON.toJSONString(analysis())));
+        service.listResults(3L, 7L); service.listResults(3L, 7L);
+        verifyNoInteractions(evaluator);
+        verify(mapper, never()).saveAnalysis(anyMap());
+        verify(mapper, never()).initTask(anyLong(), anyLong());
     }
 
     @Test void invalidReviewScoreCannotChangeCandidate()

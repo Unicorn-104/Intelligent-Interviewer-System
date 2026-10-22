@@ -47,6 +47,8 @@ public interface ScreeningMapper
     Map<String, Object> selectAnalysis(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
             @Param("talId") Long talId);
     Map<String, Object> selectLatestAnalysis(@Param("companyId") Long companyId, @Param("talId") Long talId);
+    /** 企业和岗位隔离的增量去重查询，不作为模型输入。 */
+    List<Map<String, Object>> selectAnalyzedCandidates(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
     int saveAnalysis(Map<String, Object> analysis);
     int initTask(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
     int claimTask(@Param("companyId") Long companyId, @Param("positionId") Long positionId,

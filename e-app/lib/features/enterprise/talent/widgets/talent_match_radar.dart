@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../theme/app_theme.dart';
 import '../models/talent_detail_view_data.dart';
 
-/// Missing dimensions have no plotted point; they are never represented as zero.
+/// Dimensions without submitted evidence are shown as zero under the screening rubric.
 class TalentMatchRadar extends StatelessWidget {
   const TalentMatchRadar({super.key, required this.result});
   final Map<String, dynamic> result;
@@ -31,7 +31,7 @@ class TalentMatchRadar extends StatelessWidget {
         for (final key in dimensions.keys)
           switch (talentNumber(result[key])) {
             final num score when score >= 0 && score <= 100 => score.toDouble(),
-            _ => null,
+            _ => 0.0,
           },
       ];
       final labelWidth = (width * .32).clamp(68.0, 120.0);
@@ -66,7 +66,7 @@ class TalentMatchRadar extends StatelessWidget {
                 width: labelWidth,
                 child: Semantics(
                   label:
-                      '${dimensions.values.elementAt(i)}：${scores[i]?.toStringAsFixed(1) ?? '资料不足'}',
+                      '${dimensions.values.elementAt(i)}：${scores[i].toStringAsFixed(1)}',
                   excludeSemantics: true,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -80,7 +80,7 @@ class TalentMatchRadar extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        scores[i]?.toStringAsFixed(1) ?? '—',
+                        scores[i].toStringAsFixed(1),
                         key: ValueKey(
                           'radar-score-${dimensions.keys.elementAt(i)}',
                         ),
@@ -107,7 +107,7 @@ class _RadarPainter extends CustomPainter {
     required this.center,
     required this.radius,
   });
-  final List<double?> scores;
+  final List<double> scores;
   final Offset center;
   final double radius;
 
@@ -134,36 +134,21 @@ class _RadarPainter extends CustomPainter {
       ..color = AppColors.interactive
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
-    if (scores.every((value) => value != null)) {
-      final polygon = Path()
-        ..addPolygon([
-          for (var i = 0; i < 6; i++) point(i, scores[i]! / 100),
-        ], true);
-      canvas.drawPath(
-        polygon,
-        Paint()..color = AppColors.interactive.withValues(alpha: .12),
-      );
-      canvas.drawPath(polygon, line);
-    } else {
-      for (var i = 0; i < 6; i++) {
-        final next = (i + 1) % 6;
-        if (scores[i] != null && scores[next] != null) {
-          canvas.drawLine(
-            point(i, scores[i]! / 100),
-            point(next, scores[next]! / 100),
-            line,
-          );
-        }
-      }
-    }
+    final polygon = Path()
+      ..addPolygon([
+        for (var i = 0; i < 6; i++) point(i, scores[i] / 100),
+      ], true);
+    canvas.drawPath(
+      polygon,
+      Paint()..color = AppColors.interactive.withValues(alpha: .12),
+    );
+    canvas.drawPath(polygon, line);
     for (var i = 0; i < 6; i++) {
-      if (scores[i] != null) {
-        canvas.drawCircle(
-          point(i, scores[i]! / 100),
-          3.5,
-          Paint()..color = AppColors.interactive,
-        );
-      }
+      canvas.drawCircle(
+        point(i, scores[i] / 100),
+        3.5,
+        Paint()..color = AppColors.interactive,
+      );
     }
   }
 

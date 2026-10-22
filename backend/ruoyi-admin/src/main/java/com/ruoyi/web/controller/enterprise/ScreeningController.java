@@ -58,8 +58,15 @@ public class ScreeningController extends BaseController
     @PostMapping("/tasks/async")
     public AjaxResult triggerAsync(@RequestBody Map<String, Object> body)
     {
-        return success(screeningService.triggerScreeningAsync(getUserId(), asLong(body.get("positionId")),
-                asInt(body.get("topN"), 20)));
+        Long positionId = asLong(body.get("positionId"));
+        Integer topN = asInt(body.get("topN"), 20);
+        // Omitted/false keeps the original API contract; only an explicit JSON true forces a refresh.
+        Object full = body.get("fullAnalysis");
+        if (full != null && !(full instanceof Boolean))
+            throw new com.ruoyi.common.exception.ServiceException("fullAnalysis须为布尔值");
+        return success(Boolean.TRUE.equals(full)
+                ? screeningService.triggerScreeningAsync(getUserId(), positionId, topN, true)
+                : screeningService.triggerScreeningAsync(getUserId(), positionId, topN));
     }
 
     @GetMapping("/tasks/{taskId}/status")

@@ -14,11 +14,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectCandidatesByPosition" resultType="java.util.LinkedHashMap">
-        select distinct t.tal_id as talentId, t.tal_status as status, r.rbs_id as resumeId, r.rbs_file_path as fileReference, r.rbs_user_id as resumeUserId, date_format(r.rbs_updated_at, '%Y-%m-%d %H:%i:%s') as resumeVersion,
-               u.nick_name as name, u.phonenumber as phone
+        select distinct t.tal_id as talentId, t.tal_status as status, r.rbs_id as resumeId, r.rbs_file_path as fileReference, r.rbs_user_id as resumeUserId, date_format(r.rbs_updated_at, '%Y-%m-%d %H:%i:%s') as resumeVersion
         from t_process_instance p
         join t_tal t on t.tal_id = p.pin_candidate_id
-        left join sys_user u on u.user_id = t.tal_user_id
         left join t_res_base r on r.rbs_id = t.tal_resume_id and r.rbs_user_id = t.tal_user_id
         where t.tal_company_id = (select pos_company_id from t_pos where pos_id = #{positionId})
           and p.pin_position_id = #{positionId}
@@ -109,16 +107,23 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
     <select id="selectAnalysis" resultType="java.util.LinkedHashMap">
         select cast(asr_report as char) as report, date_format(asr_updated_at, '%Y-%m-%d %H:%i:%s') as generatedAt
-        from t_ai_screening_result where asr_company_id = #{companyId} and asr_position_id = #{positionId}
+        from t_ai_candidate_analysis where asr_company_id = #{companyId} and asr_position_id = #{positionId}
           and asr_candidate_id = #{talId}
     </select>
     <select id="selectLatestAnalysis" resultType="java.util.LinkedHashMap">
         select cast(asr_report as char) as report, date_format(asr_updated_at, '%Y-%m-%d %H:%i:%s') as generatedAt
-        from t_ai_screening_result where asr_company_id = #{companyId} and asr_candidate_id = #{talId}
+        from t_ai_candidate_analysis where asr_company_id = #{companyId} and asr_candidate_id = #{talId}
         order by asr_updated_at desc, asr_position_id desc limit 1
     </select>
+    <select id="selectAnalyzedCandidates" resultType="java.util.LinkedHashMap">
+        select asr_candidate_id as candidateId,
+               json_unquote(json_extract(asr_report, '$.resumeVersion')) as resumeVersion,
+               json_unquote(json_extract(asr_report, '$.positionVersion')) as positionVersion
+        from t_ai_candidate_analysis
+        where asr_company_id = #{companyId} and asr_position_id = #{positionId}
+    </select>
     <insert id="saveAnalysis">
-        insert into t_ai_screening_result (asr_company_id, asr_position_id, asr_candidate_id, asr_resume_id, asr_report)
+        insert into t_ai_candidate_analysis (asr_company_id, asr_position_id, asr_candidate_id, asr_resume_id, asr_report)
         values (#{companyId}, #{positionId}, #{resultId}, #{resumeId}, #{report})
         on duplicate key update asr_resume_id = values(asr_resume_id), asr_report = values(asr_report), asr_updated_at = now()
     </insert>

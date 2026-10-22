@@ -448,6 +448,15 @@ class _HomePageState extends State<HomePage> {
                               (item) => HomeInterviewPreview(
                                 interview: item,
                                 now: () => _source.now,
+                                rescheduleSource:
+                                    _source.candidateActionsSource,
+                                onRescheduled: () async {
+                                  await Future.wait<void>([
+                                    _load(_interviews, _source.loadInterviews),
+                                    _loadCalendarInterviews(),
+                                    _load(_stats, _source.loadStats),
+                                  ]);
+                                },
                                 onOpen: () => _openInterview(item),
                                 onViewCandidate: item.candidateId == null
                                     ? null

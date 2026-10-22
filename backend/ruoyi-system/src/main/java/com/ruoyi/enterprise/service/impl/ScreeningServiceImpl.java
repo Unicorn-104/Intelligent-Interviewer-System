@@ -60,6 +60,7 @@ public class ScreeningServiceImpl implements IScreeningService
             task = getTaskStatus(userId, positionId);
         }
         if ("failed".equals(task.get("state"))) throw new ServiceException(String.valueOf(task.get("error")));
+        task = new LinkedHashMap<>(task);
         task.put("topN", topN == null ? 20 : topN);
         return task;
     }
@@ -67,12 +68,41 @@ public class ScreeningServiceImpl implements IScreeningService
     @Override
     public Map<String, Object> triggerScreeningAsync(Long userId, Long positionId, Integer topN)
     {
+        return triggerScreeningAsync(userId, positionId, topN, false);
+    }
+
+    @Override
+    public Map<String, Object> triggerScreeningAsync(Long userId, Long positionId, Integer topN, boolean fullAnalysis)
+    {
         Long companyId = resolveCompanyId(userId);
         Map<String, Object> job = requirePosition(companyId, positionId);
         if (topN != null && (topN < 1 || topN > 200)) throw new ServiceException("短名单人数须为1至200");
         List<Map<String, Object>> candidates = screeningMapper.selectCandidatesByPosition(positionId);
         if (candidates.isEmpty()) throw new ServiceException("该岗位暂无可筛选的求职者");
         Map<String, Object> current = screeningMapper.selectTaskStatus(companyId, positionId);
+        // A processing task is shared; claimTask below recovers a stale lease.
+        if (current != null && "processing".equals(current.get("state")))
+        {
+            Object updated = current.get("updatedAt");
+            if (updated != null && java.time.LocalDateTime.parse(updated.toString(),
+                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                    .isAfter(java.time.LocalDateTime.now().minusMinutes(15))) return taskView(current);
+        }
+        int total = candidates.size();
+        if (!fullAnalysis)
+        {
+            Map<Long, Map<String, Object>> analyzed = new java.util.HashMap<>();
+            for (Map<String, Object> row : screeningMapper.selectAnalyzedCandidates(companyId, positionId))
+                analyzed.put(Long.valueOf(row.get("candidateId").toString()), row);
+            candidates = candidates.stream().filter(candidate ->
+                    !analyzed.containsKey(Long.valueOf(candidate.get("talentId").toString()))).toList();
+        }
+        if (candidates.isEmpty())
+            return Map.of("taskId", positionId, "state", "completed", "processing", false,
+                    "candidateCount", 0, "completedCount", 0, "skippedCount", total,
+                    "results", listResults(userId, positionId),
+                    "message", "已优先读取数据库中的分析结果；没有待补充的新分析");
+        final List<Map<String, Object>> pending = candidates;
         if (!capacity.tryAcquire())
         {
             if (current != null && "processing".equals(current.get("state"))) return taskView(current);
@@ -87,7 +117,9 @@ public class ScreeningServiceImpl implements IScreeningService
             if (screeningMapper.claimTask(companyId, positionId, runId, candidates.size()) == 0)
                 return taskView(screeningMapper.selectTaskStatus(companyId, positionId));
             Map<String, Object> reply = taskView(screeningMapper.selectTaskStatus(companyId, positionId));
-            workers.execute(() -> runScreening(companyId, positionId, runId, job, candidates));
+            reply.put("skippedCount", total - pending.size());
+            reply.put("fullAnalysis", fullAnalysis);
+            workers.execute(() -> runScreening(companyId, positionId, runId, job, pending, fullAnalysis));
             dispatched = true;
             return reply;
         }
@@ -101,60 +133,57 @@ public class ScreeningServiceImpl implements IScreeningService
     }
 
     private void runScreening(Long companyId, Long positionId, String runId, Map<String, Object> job,
-            List<Map<String, Object>> candidates)
+            List<Map<String, Object>> candidates, boolean fullAnalysis)
     {
         int completed = 0;
+        int scored = 0;
         try
         {
-            long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(10);
-            List<Map<String, Object>> analyses = new ArrayList<>();
-            for (int start = 0; start < candidates.size(); start += 3)
+            // Each request contains exactly one resume; previous scores/ranks are never model input.
+            for (Map<String, Object> candidate : candidates)
             {
-                if (Thread.currentThread().isInterrupted() || System.nanoTime() > deadline)
-                    throw new ServiceException("AI筛选任务超时或已中断，原有结果未变更");
-                List<Map<String, Object>> batch = new ArrayList<>();
-                for (Map<String, Object> candidate : candidates.subList(start, Math.min(start + 3, candidates.size())))
-                    batch.add(resumeEvidence(candidate));
-                analyses.addAll(evaluator.evaluate(job, batch));
-                completed += batch.size();
-                if (screeningMapper.updateTask(companyId, positionId, runId, "processing", completed, 0, null) == 0) return;
-            }
-            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-                Map<String, Object> task = screeningMapper.lockTask(companyId, positionId);
-                if (task == null || !runId.equals(task.get("runId"))) throw new ServiceException("AI筛选任务已被更新");
-                Map<String, Object> currentJob = requirePosition(companyId, positionId);
-                if (!java.util.Objects.equals(job.get("positionVersion"), currentJob.get("positionVersion")))
-                    throw new ServiceException("分析期间岗位发生变化，请重新筛选，原有结果未变更");
-                List<Map<String, Object>> currentCandidates = screeningMapper.selectCandidatesByPosition(positionId);
-                int scored = 0;
-                for (Map<String, Object> analysis : analyses)
-                {
-                    long id = ((Number)analysis.get("resultId")).longValue();
-                    Map<String, Object> candidate = candidates.stream()
-                            .filter(c -> Long.parseLong(c.get("talentId").toString()) == id).findFirst().orElseThrow();
-                    Map<String, Object> latest = currentCandidates.stream()
+                if (Thread.currentThread().isInterrupted()) throw new ServiceException("AI筛选任务已中断");
+                Map<String, Object> analysis = evaluator.evaluate(job, List.of(resumeEvidence(candidate))).get(0);
+                int nextCompleted = completed + 1;
+                int nextScored = scored + (analysis.get("totalScore") == null ? 0 : 1);
+                new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                    Map<String, Object> task = screeningMapper.lockTask(companyId, positionId);
+                    if (task == null || !runId.equals(task.get("runId"))) throw new ServiceException("AI筛选任务已被更新");
+                    Map<String, Object> currentJob = requirePosition(companyId, positionId);
+                    if (!java.util.Objects.equals(job.get("positionVersion"), currentJob.get("positionVersion")))
+                        throw new ServiceException("分析期间岗位发生变化，请重试；已完成结果已保留");
+                    long id = Long.parseLong(candidate.get("talentId").toString());
+                    Map<String, Object> latest = screeningMapper.selectCandidatesByPosition(positionId).stream()
                             .filter(c -> Long.parseLong(c.get("talentId").toString()) == id).findFirst().orElse(null);
                     if (latest == null || !java.util.Objects.equals(candidate.get("resumeId"), latest.get("resumeId"))
                             || !java.util.Objects.equals(candidate.get("resumeVersion"), latest.get("resumeVersion")))
-                        throw new ServiceException("分析期间候选人或简历发生变化，请重新筛选，原有结果未变更");
+                        throw new ServiceException("分析期间求职者或简历发生变化，请重试；已完成结果已保留");
+                    // The run lease and task lock prevent concurrent writers to this company/job pair.
                     analysis.put("positionId", positionId);
                     analysis.put("positionTitle", job.get("title"));
                     analysis.put("resumeId", candidate.get("resumeId"));
+                    analysis.put("positionVersion", job.get("positionVersion"));
+                    analysis.put("resumeVersion", candidate.get("resumeVersion"));
+                    analysis.put("analysisMode", fullAnalysis ? "full" : "incremental");
                     Map<String, Object> row = new LinkedHashMap<>(analysis);
                     row.put("companyId", companyId);
                     row.put("report", JSON.toJSONString(analysis));
                     screeningMapper.saveAnalysis(row);
-                    screeningMapper.updateMatchedScore(id, (Double)analysis.get("totalScore"));
-                    if (analysis.get("totalScore") != null) scored++;
-                }
-                screeningMapper.updateTask(companyId, positionId, runId, "completed", candidates.size(), scored, null);
-            });
+                    // Result and progress commit together. No HTTP/model call inside this transaction.
+                    String state = nextCompleted == candidates.size() ? "completed" : "processing";
+                    if (screeningMapper.updateTask(companyId, positionId, runId, state,
+                            nextCompleted, nextScored, null) == 0) throw new ServiceException("AI筛选任务已被更新");
+                });
+                completed = nextCompleted;
+                scored = nextScored;
+            }
         }
         catch (RuntimeException error)
         {
-            String message = error instanceof ServiceException ? error.getMessage() : "AI筛选失败，原有结果未变更，请稍后重试";
-            try { screeningMapper.updateTask(companyId, positionId, runId, "failed", completed, 0, message); }
-            catch (RuntimeException ignored) { /* No prompt, resume or database exception details may be logged. */ }
+            String message = error instanceof ServiceException ? error.getMessage() : "AI筛选失败，请稍后重试";
+            message += "；已完成的独立分析已保存，重试增量分析仅处理尚无结果的求职者";
+            try { screeningMapper.updateTask(companyId, positionId, runId, "failed", completed, scored, message); }
+            catch (RuntimeException ignored) { /* Never log resumes, credentials or database details. */ }
         }
         finally { capacity.release(); }
     }
@@ -301,6 +330,32 @@ public class ScreeningServiceImpl implements IScreeningService
         if (row == null || row.get("report") == null) return null;
         Map<String, Object> report = JSON.parseObject(row.get("report").toString());
         if (!"llm".equals(report.get("source"))) return null;
+        // Normalize cached pre-zero-policy reports without invoking the provider or writing on GET.
+        // Retain original evidence and distinguish missing material from a model-backed zero.
+        if (report.get("dimensions") instanceof Map<?, ?> storedDimensions)
+        {
+            double weighted = 0;
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            for (Map.Entry<String, Integer> entry : ScreeningAiEvaluator.WEIGHTS.entrySet())
+            {
+                Object raw = storedDimensions.get(entry.getKey());
+                Map<String, Object> dimension = new LinkedHashMap<>();
+                if (raw instanceof Map<?, ?> values)
+                    values.forEach((key, value) -> dimension.put(key.toString(), value));
+                Object rawScore = dimension.get("score");
+                double score = rawScore instanceof Number n && Double.isFinite(n.doubleValue())
+                        ? n.doubleValue() : 0.0;
+                dimension.put("score", score);
+                dimension.put("weight", entry.getValue());
+                if (rawScore == null) dimension.put("evidence", List.of());
+                normalized.put(entry.getKey(), dimension);
+                report.put(entry.getKey(), score);
+                weighted += score * entry.getValue();
+            }
+            report.put("dimensions", normalized);
+            report.put("totalScore", Math.round(weighted / 100.0 * 10.0) / 10.0);
+            report.put("scoringPolicy", "missing-zero-v1");
+        }
         report.put("generatedAt", row.get("generatedAt"));
         report.put("content", report.get("recommendation"));
         List<String> points = new ArrayList<>();

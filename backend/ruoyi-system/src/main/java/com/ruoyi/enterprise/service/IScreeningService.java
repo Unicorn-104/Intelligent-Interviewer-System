@@ -51,6 +51,9 @@ public interface IScreeningService
     public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore);
     Map<String, Object> getTaskStatus(Long userId, Long taskId);
 
-    /** APP后台分析入口，立即返回任务进度，不阻塞HTTP连接。 */
+    /** 新增全量分析重载；原方法签名保持兼容，默认执行增量分析。 */
+    Map<String, Object> triggerScreeningAsync(Long userId, Long positionId, Integer topN, boolean fullAnalysis);
+
+    /** APP后台增量分析入口，立即返回任务进度，不阻塞HTTP连接。 */
     Map<String, Object> triggerScreeningAsync(Long userId, Long positionId, Integer topN);
 }

@@ -9,13 +9,15 @@ flutter pub get
 flutter run
 ```
 
-APP 默认访问服务器后端 `http://114.55.175.79/prod-api`，由后端连接服务器数据库。普通运行、构建和重启均使用该地址，无需额外参数；APP 不保存数据库账号密码。
+APP 当前默认访问本机后端 `http://10.0.2.2:8080`（Android 模拟器访问宿主机），用于测试最新功能。本机后端通过私有数据源配置连接服务器数据库；APP 不保存数据库账号密码。
 
-连接本机开发后端时，可通过编译参数覆盖（Android 模拟器示例）：
+需要访问公网后端时，可通过编译参数覆盖：
 
 ```powershell
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080
+flutter run --dart-define=API_BASE_URL=http://114.55.175.79/prod-api
 ```
+
+真机测试时，将接口地址覆盖为本机电脑的局域网地址与8080端口。
 
 ## 已接入接口
 

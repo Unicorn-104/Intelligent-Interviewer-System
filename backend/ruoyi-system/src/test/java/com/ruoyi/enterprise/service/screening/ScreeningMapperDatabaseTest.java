@@ -59,6 +59,7 @@ class ScreeningMapperDatabaseTest
                     mapper.selectProjectEvidence(id.longValue());
                 }
                 mapper.selectTaskList(company); mapper.selectResultsByPosition(position);
+                mapper.selectAnalyzedCandidates(company, position);
                 mapper.initTask(company, position);
                 String run = UUID.randomUUID().toString();
                 assertEquals(1, mapper.claimTask(company, position, run, candidates.size()));
@@ -70,6 +71,7 @@ class ScreeningMapperDatabaseTest
                 report.put("resumeId", resume); report.put("report", "{\"source\":\"llm\",\"recommendation\":\"演示数据：事务回滚验证\"}");
                 assertTrue(mapper.saveAnalysis(report) > 0);
                 assertTrue(mapper.selectAnalysis(company, position, talent).get("report").toString().contains("llm"));
+                assertTrue(mapper.selectAnalyzedCandidates(company, position).stream().anyMatch(row -> ((Number) row.get("candidateId")).longValue() == talent));
                 assertNotNull(mapper.selectLatestAnalysis(company, talent));
                 assertNull(mapper.selectAnalysis(Long.MAX_VALUE, position, talent));
                 assertEquals(1, mapper.updateTask(company, position, run, "completed", candidates.size(), 1, null));

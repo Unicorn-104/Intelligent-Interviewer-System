@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../theme/app_theme.dart';
+import '../../talent/data/talent_detail_data_source.dart';
+import '../../talent/widgets/talent_interview_reschedule_sheet.dart';
 import '../home_models.dart';
 
 /// Shared appointment card with an injectable future meeting entry point.
@@ -15,6 +17,8 @@ class HomeInterviewPreview extends StatefulWidget {
     this.onViewJob,
     this.onViewCandidate,
     this.onReschedule,
+    this.rescheduleSource,
+    this.onRescheduled,
   });
 
   final HomeInterview interview;
@@ -22,6 +26,8 @@ class HomeInterviewPreview extends StatefulWidget {
   final VoidCallback? onViewJob;
   final VoidCallback? onViewCandidate;
   final VoidCallback? onReschedule;
+  final TalentDetailDataSource? rescheduleSource;
+  final Future<void> Function()? onRescheduled;
   final DateTime Function()? now;
 
   @override
@@ -30,6 +36,7 @@ class HomeInterviewPreview extends StatefulWidget {
 
 class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
     with WidgetsBindingObserver {
+  bool _rescheduling = false;
   Timer? _boundaryTimer;
   Timer? _hintTimer;
   OverlayEntry? _hintEntry;
@@ -121,6 +128,45 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
       0 || 1 => _now.isBefore(interview.startTime) ? '到预约时间后可开始' : '面试已失效',
       _ => '面试状态暂不可用',
     };
+    _showHint(message);
+  }
+
+  Future<void> _reschedule() async {
+    if (_rescheduling) return;
+    final interview = widget.interview;
+    if ((interview.status != 0 && interview.status != 1) ||
+        !interview.startTime.isAfter(_now)) {
+      _showHint('仅未开始且未取消的面试可以改期');
+      return;
+    }
+    final source = widget.rescheduleSource;
+    if (source == null) return;
+    _hideHint();
+    setState(() => _rescheduling = true);
+    try {
+      await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        isDismissible: false,
+        enableDrag: false,
+        backgroundColor: AppColors.canvas,
+        builder: (_) => FractionallySizedBox(
+          heightFactor: .9,
+          child: TalentInterviewRescheduleSheet(
+            appointment: interview.raw,
+            source: source,
+            now: widget.now,
+          ),
+        ),
+      );
+      if (mounted) await widget.onRescheduled?.call();
+    } finally {
+      if (mounted) setState(() => _rescheduling = false);
+    }
+  }
+
+  void _showHint(String message) {
     _hideHint();
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
@@ -368,12 +414,15 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                       spacing: 8,
                       runSpacing: 4,
                       children: [
-                        if (widget.onReschedule != null)
+                        if (widget.onReschedule != null ||
+                            widget.rescheduleSource != null)
                           OutlinedButton(
                             key: ValueKey(
                               'job-interview-reschedule-${interview.id}',
                             ),
-                            onPressed: widget.onReschedule,
+                            onPressed: _rescheduling
+                                ? null
+                                : widget.onReschedule ?? _reschedule,
                             style: OutlinedButton.styleFrom(
                               minimumSize: const Size(0, 46),
                               padding: const EdgeInsets.symmetric(
@@ -392,7 +441,8 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                         children: [
                           Expanded(child: details),
                           const SizedBox(width: 8),
-                          if (widget.onReschedule == null)
+                          if (widget.onReschedule == null &&
+                              widget.rescheduleSource == null)
                             button
                           else
                             Flexible(child: actions),
@@ -406,7 +456,11 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                         const SizedBox(height: 4),
                         Align(
                           alignment: Alignment.centerRight,
-                          child: widget.onReschedule == null ? button : actions,
+                          child:
+                              widget.onReschedule == null &&
+                                  widget.rescheduleSource == null
+                              ? button
+                              : actions,
                         ),
                       ],
                     );

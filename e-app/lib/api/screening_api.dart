@@ -19,11 +19,16 @@ import '../../core/network/api_exception.dart';
 Future<Map<String, dynamic>> createScreeningTask({
   required int positionId,
   int? topN,
+  bool fullAnalysis = false,
 }) async {
   try {
     final response = await EnterpriseApiClient().post(
       '/enterprise/screening/tasks/async',
-      body: {'positionId': positionId, 'topN': topN},
+      body: {
+        'positionId': positionId,
+        'topN': topN,
+        'fullAnalysis': fullAnalysis,
+      },
     );
     return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
   } on ApiException catch (error) {

@@ -192,11 +192,6 @@ class TalentMatchAnalysisSection extends StatelessWidget {
     final result = job == null ? fallbackReport?.data : match.data?.result;
     final analyzed = result?['source'] == 'llm';
     final score = analyzed ? talentNumber(result?['totalScore']) : null;
-    final missing =
-        analyzed &&
-        TalentMatchRadar.dimensions.keys.any(
-          (key) => talentNumber(result?[key]) == null,
-        );
     return TalentSectionFrame(
       title: '',
       ai: !embedded,
@@ -246,9 +241,9 @@ class TalentMatchAnalysisSection extends StatelessWidget {
             ],
           ),
           TalentMatchRadar(result: result ?? const {}),
-          if (missing)
+          if (analyzed)
             const Text(
-              '— 资料不足或不适用，不计入综合分',
+              '未提供相关材料的维度按0分计入综合分',
               style: TextStyle(fontSize: 11, color: AppColors.muted),
             ),
         ],

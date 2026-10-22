@@ -67,6 +67,13 @@ class ScreeningAiEvaluatorTest
         when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(result);
     }
 
+    @Test void refusesCrossCandidateScoringBeforeCallingProvider()
+    {
+        assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of("title", "Java岗位"),
+                List.of(candidates.get(0), Map.of("candidateId", 12L))));
+        verifyNoInteractions(client);
+    }
+
     @Test void missingKeyDoesNotContactProvider()
     {
         properties.setApiKey("");
@@ -81,13 +88,13 @@ class ScreeningAiEvaluatorTest
         verifyNoInteractions(client);
     }
 
-    @Test void realProtocolAndNormalizedWeightsAreUsed() throws Exception
+    @Test void realProtocolAndFixedWeightsWithMissingZeroAreUsed() throws Exception
     {
         response(200, envelope(json.writeValueAsString(valid()), "end_turn"));
         var result = evaluator.evaluate(Map.of("title", "Java岗位"), candidates).get(0);
-        assertEquals(70.0, result.get("totalScore"));
+        assertEquals(35.0, result.get("totalScore"));
         assertEquals(50, result.get("evidenceCoverage"));
-        assertNull(result.get("educationMatch"));
+        assertEquals(0.0, result.get("educationMatch"));
         assertEquals("llm", result.get("source"));
         var request = ArgumentCaptor.forClass(HttpRequest.class);
         verify(client).send(request.capture(), any(HttpResponse.BodyHandler.class));
@@ -106,7 +113,7 @@ class ScreeningAiEvaluatorTest
         var raw = valid();
         ((ObjectNode)raw.path("results").get(0).path("dimensions").path("skillMatch"))
                 .put("evidence", "[\"Java工程开发\"]");
-        assertEquals(70.0, evaluator.decode(raw.toString(), candidates).get(0).get("totalScore"));
+        assertEquals(35.0, evaluator.decode(raw.toString(), candidates).get(0).get("totalScore"));
     }
 
     @Test void fabricatedEvidenceIsRejected() throws Exception
@@ -115,12 +122,26 @@ class ScreeningAiEvaluatorTest
         assertThrows(ServiceException.class, () -> evaluator.decode(raw.toString(), candidates));
     }
 
-    @Test void missingScoreIsNotReplacedBySeventy() throws Exception
+    @Test void missingScoreDefaultsToZeroAndCountsTowardFixedTotal() throws Exception
     {
         var raw = valid(); var dimensions = raw.path("results").get(0).path("dimensions");
         for (var dimension : dimensions) ((ObjectNode)dimension).putNull("score");
         var result = evaluator.decode(raw.toString(), candidates).get(0);
-        assertNull(result.get("totalScore")); assertEquals(0, result.get("evidenceCoverage"));
+        assertEquals(0.0, result.get("totalScore")); assertEquals(0, result.get("evidenceCoverage"));
+        assertTrue(result.values().contains(0.0));
+    }
+
+    @Test void explicitZeroWithoutEvidenceIsAcceptedButPositiveScoreNeedsEvidence() throws Exception
+    {
+        var raw = valid();
+        var education = (ObjectNode) raw.path("results").get(0).path("dimensions").path("educationMatch");
+        education.put("score", 0); education.putArray("evidence");
+        var result = evaluator.decode(raw.toString(), candidates).get(0);
+        assertEquals(0.0, result.get("educationMatch"));
+        assertEquals(35.0, result.get("totalScore"));
+        assertEquals(50, result.get("evidenceCoverage"));
+        education.put("score", 75);
+        assertThrows(ServiceException.class, () -> evaluator.decode(raw.toString(), candidates));
     }
 
     @Test void outOfRangeAndMissingDimensionAreRejected() throws Exception
