@@ -37,6 +37,7 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   image_picker: ^1.2.0
   file_picker: ^13.1.0
+  flutter_markdown_plus: ^1.0.12
 
 dev_dependencies:
   flutter_test:

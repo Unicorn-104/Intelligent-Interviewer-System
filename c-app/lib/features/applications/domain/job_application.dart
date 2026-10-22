@@ -7,6 +7,8 @@ class JobApplication {
     required this.companyName,
     required this.status,
     required this.statusText,
+    this.jobId,
+    this.resumeId,
     this.statusCode,
     this.appliedAt,
     this.updatedAt,
@@ -18,6 +20,8 @@ class JobApplication {
   });
 
   final int id;
+  final int? jobId;
+  final int? resumeId;
   final String jobTitle;
   final String companyName;
   final String status;
@@ -36,6 +40,8 @@ class JobApplication {
     if (id == null) throw const ApiException('投递记录格式不正确，请重试');
     return JobApplication(
       id: id,
+      jobId: int.tryParse(json['jobId']?.toString() ?? ''),
+      resumeId: int.tryParse(json['resumeId']?.toString() ?? ''),
       jobTitle: json['jobTitle']?.toString() ?? '岗位',
       companyName: json['companyName']?.toString() ?? '企业',
       status: json['status']?.toString() ?? '',
