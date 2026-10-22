@@ -1,3 +1,25 @@
+class ChatQuickReply {
+  const ChatQuickReply({
+    required this.id,
+    required this.content,
+    this.category = '',
+  });
+  factory ChatQuickReply.fromJson(Map<String, dynamic> row) {
+    final id = messageId(row['id']);
+    final content = messageText(row['content'], '');
+    if (id == null || content.isEmpty) {
+      throw const FormatException('常用语数据不完整，请重新读取');
+    }
+    return ChatQuickReply(
+      id: id,
+      content: content,
+      category: messageText(row['category'], ''),
+    );
+  }
+  final int id;
+  final String content, category;
+}
+
 class MessageSession {
   MessageSession._(
     this.raw,

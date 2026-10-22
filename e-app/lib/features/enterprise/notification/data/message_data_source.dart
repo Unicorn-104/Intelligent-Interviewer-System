@@ -4,7 +4,14 @@ import '../../../../api/message_api.dart' as im;
 import '../../../../config/app_config.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/network/enterprise_api_client.dart';
+import '../../jobs/data/job_detail_data_source.dart';
+import '../../profile/data/profile_data_source.dart';
+import '../../profile/models/profile_view_data.dart';
+import '../../talent/data/talent_detail_data_source.dart';
+import '../models/chat_context.dart';
 import '../models/message_view_data.dart';
+import 'chat_context_data_source.dart';
+import 'chat_attachment_picker.dart';
 
 class MessageDataSource {
   const MessageDataSource({
@@ -19,6 +26,20 @@ class MessageDataSource {
       throw const ApiException('登录已失效，请重新登录', code: 401);
     }
   }
+
+  JobDetailDataSource get jobDetailsSource => const JobDetailDataSource();
+
+  TalentDetailDataSource get candidateDetailsSource =>
+      const TalentDetailDataSource();
+
+  Future<ChatContext> loadChatContext(Map<String, dynamic> session) async {
+    await _requireSession();
+    return ChatContextDataSource(client: client ?? EnterpriseApiClient())
+        .load(session);
+  }
+
+  Future<EnterpriseProfile> loadRecruiterProfile() =>
+      ProfileDataSource(client: client, storage: storage).loadProfile();
 
   Future<List<MessageSession>> loadSessions() async {
     await _requireSession();
@@ -75,16 +96,112 @@ class MessageDataSource {
     }
   }
 
-  Future<List<String>> loadQuickReplies() async {
+  Future<List<ChatQuickReply>> loadQuickReplies() async {
     await _requireSession();
     final rows = client == null
         ? await im.listQuickReplies()
         : messageRows((await client!.get('/system/im/quick-replies'))['data']);
+    final seen = <int>{};
     return rows
-        .map((row) => messageText(row['content'], ''))
-        .where((text) => text.isNotEmpty)
-        .toSet()
+        .where((row) => messageText(row['content'], '').isNotEmpty)
+        .map(ChatQuickReply.fromJson)
+        .where((reply) => seen.add(reply.id))
         .toList();
+  }
+
+  Future<void> saveQuickReply({
+    ChatQuickReply? reply,
+    required String content,
+  }) async {
+    await _requireSession();
+    final text = content.trim();
+    if (text.isEmpty || text.length > 1000) {
+      throw const FormatException('常用语须为1至1000个字符');
+    }
+    final body = <String, Object?>{
+      if (reply != null) 'id': reply.id,
+      'category': reply?.category ?? '常用语',
+      'content': text,
+    };
+    if (client == null) {
+      await im.saveQuickReply(body);
+    } else {
+      await client!.post('/system/im/quick-replies', body: body);
+    }
+  }
+
+  Future<ChatPickedAttachment?> pickAttachment({required bool image}) =>
+      ChatAttachmentPicker().pick(image: image);
+
+  Future<ChatUploadedAttachment> uploadAttachment(
+    ChatPickedAttachment file,
+  ) async {
+    await _requireSession();
+    final Map<String, dynamic> response;
+    try {
+      response = await (client ?? EnterpriseApiClient()).uploadFile(
+        '/common/upload',
+        filename: file.name,
+        bytes: file.bytes,
+        mimeType: file.mimeType,
+      );
+    } on ApiException catch (error) {
+      if (error.isUnauthorized) rethrow;
+      throw ApiException('附件上传失败，请检查文件或网络后重试', code: error.code);
+    }
+    final path = messageText(
+      response['fileName'],
+      messageText(response['url'], ''),
+    );
+    if (attachmentUrl(path) == null) {
+      throw const FormatException('上传服务未返回有效的附件地址，消息未发送');
+    }
+    return ChatUploadedAttachment(
+      name: file.name,
+      url: path,
+      isImage: file.isImage,
+    );
+  }
+
+  Future<void> sendAttachment(
+    int sessionId,
+    ChatUploadedAttachment file,
+  ) async {
+    await _requireSession();
+    if (attachmentUrl(file.url) == null) {
+      throw const FormatException('附件地址无效，请重新选择');
+    }
+    ChatPickedAttachment.validateName(file.name, file.isImage);
+    final body = {
+      'sessionId': sessionId,
+      'type': file.isImage ? 2 : 3,
+      'content': file.name,
+      'attachmentUrl': file.url,
+    };
+    if (client == null) {
+      await im.sendImMessage(body);
+    } else {
+      await client!.post('/system/im/messages', body: body);
+    }
+  }
+
+  String? attachmentUrl(String path) {
+    if (path.isEmpty || RegExp(r'[\x00-\x20\x7f]').hasMatch(path)) return null;
+    final parsed = Uri.tryParse(path);
+    if (parsed == null || parsed.userInfo.isNotEmpty || parsed.hasFragment) {
+      return null;
+    }
+    final base = Uri.parse(AppConfig.apiBaseUrl);
+    final url = base.resolveUri(parsed);
+    if (!['http', 'https'].contains(url.scheme) ||
+        url.origin != base.origin ||
+        url.query.isNotEmpty ||
+        !url.path.startsWith('/profile/') ||
+        RegExp(r'%2f|%5c|%2e', caseSensitive: false).hasMatch(url.path) ||
+        parsed.pathSegments.contains('..')) {
+      return null;
+    }
+    return url.toString();
   }
 
   Future<NotificationSlice> loadNotifications({int? beforeId}) async {
