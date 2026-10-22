@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.app.AppAiMemoryMapper">
+    <insert id="initialize">
+        insert into t_capp_ai_memory_state(user_id) values(#{userId})
+        on duplicate key update enabled=1
+    </insert>
+    <select id="state" resultType="map">
+        select enabled,revision,forget_before_id as fence from t_capp_ai_memory_state where user_id=#{userId}
+    </select>
+    <select id="lock" resultType="map">
+        select enabled,revision,forget_before_id as fence from t_capp_ai_memory_state where user_id=#{userId} for update
+    </select>
+    <select id="items" resultType="map">
+        select memory_key as memoryKey,memory_value as `value` from t_capp_ai_memory where user_id=#{userId} order by memory_key
+    </select>
+    <insert id="save">
+        insert into t_capp_ai_memory(user_id,memory_key,memory_value,updated_at)
+        values(#{userId},#{key},#{value},current_timestamp(3))
+        on duplicate key update memory_value=#{value},updated_at=current_timestamp(3)
+    </insert>
+    <delete id="forget">
+        delete from t_capp_ai_memory where user_id=#{userId}
+        <if test="key != null">and memory_key=#{key}</if>
+    </delete>
+    <update id="change">
+        update t_capp_ai_memory_state set enabled=#{enabled},revision=revision+1,forget_before_id=#{fence} where user_id=#{userId}
+    </update>
+    <select id="active" resultType="int">
+        select count(*) from t_capp_ai_run where user_id=#{userId} and status='RUNNING'
+    </select>
+    <select id="latest" resultType="long">
+        select coalesce(max(m.id),0) from t_capp_ai_message m join t_capp_ai_session s on s.id=m.session_id where s.user_id=#{userId}
+    </select>
+    <delete id="clearSummaries">delete from t_capp_ai_summary where user_id=#{userId}</delete>
+    <select id="summary" resultType="map">
+        select content,through_id as throughId,revision from t_capp_ai_summary
+        where user_id=#{userId} and session_id=#{sessionId}
+    </select>
+    <select id="summaryMessages" resultType="map">
+        select m.id,m.role,m.content from t_capp_ai_message m
+        join t_capp_ai_session s on s.id=m.session_id join t_capp_ai_run r on r.id=m.run_id
+        where s.user_id=#{userId} and s.id=#{sessionId} and r.status='COMPLETED'
+        and m.id &gt; #{after} and m.id &lt; #{before} order by m.id limit 24
+    </select>
+    <insert id="saveSummary">
+        insert into t_capp_ai_summary(session_id,user_id,content,through_id,revision,updated_at)
+        select id,user_id,#{content},#{through},#{revision},current_timestamp(3)
+        from t_capp_ai_session where id=#{sessionId} and user_id=#{userId}
+        on duplicate key update content=#{content},through_id=#{through},revision=#{revision},updated_at=current_timestamp(3)
+    </insert>
+</mapper>
