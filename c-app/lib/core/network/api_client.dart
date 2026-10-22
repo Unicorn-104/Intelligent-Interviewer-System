@@ -15,6 +15,39 @@ class ApiClient {
   final HttpClient _httpClient;
   final String baseUrl;
 
+  Stream<String> eventLines(String path, {required String token}) async* {
+    HttpClientRequest? request;
+    try {
+      request = await _httpClient
+          .getUrl(Uri.parse('$baseUrl$path'))
+          .timeout(AppConfig.requestTimeout);
+      request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      final response = await request.close().timeout(AppConfig.requestTimeout);
+      if (response.statusCode != 200 ||
+          response.headers.contentType?.mimeType != 'text/event-stream') {
+        await _readResponse(response, token: token);
+        throw const ApiException('AI 连接暂不可用，请重试');
+      }
+      yield* response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 30));
+    } on ApiException {
+      rethrow;
+    } on TimeoutException {
+      throw const ApiException('AI 连接超时，可重新连接查看回答');
+    } on SocketException {
+      throw const ApiException('连接中断，可重新连接查看回答');
+    } on HandshakeException {
+      throw const ApiException('无法建立安全连接，请联系管理员');
+    } on FormatException {
+      throw const ApiException('AI 响应格式不正确，请重试');
+    } finally {
+      request?.abort();
+    }
+  }
+
   Future<Map<String, dynamic>> get(
     String path, {
     String? token,
@@ -39,6 +72,15 @@ class ApiClient {
     Duration timeout = AppConfig.requestTimeout,
   }) {
     return _request('PUT', path, body: body, token: token, timeout: timeout);
+  }
+
+  Future<Map<String, dynamic>> delete(
+    String path, {
+    Map<String, dynamic>? body,
+    String? token,
+    Duration timeout = AppConfig.requestTimeout,
+  }) {
+    return _request('DELETE', path, body: body, token: token, timeout: timeout);
   }
 
   Future<Map<String, dynamic>> postFile(
@@ -130,6 +172,7 @@ class ApiClient {
         'GET' => await _httpClient.getUrl(uri).timeout(timeout),
         'POST' => await _httpClient.postUrl(uri).timeout(timeout),
         'PUT' => await _httpClient.putUrl(uri).timeout(timeout),
+        'DELETE' => await _httpClient.deleteUrl(uri).timeout(timeout),
         _ => throw const ApiException('不支持的请求方法'),
       };
 

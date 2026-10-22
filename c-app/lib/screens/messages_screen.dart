@@ -6,9 +6,11 @@ import '../config/app_config.dart';
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
 import '../features/auth/domain/auth_session.dart';
+import '../features/ai/presentation/ai_chat_screen.dart';
 import '../features/messages/data/message_api.dart';
 import '../features/messages/domain/app_message.dart';
 import '../theme/app_theme.dart';
+import '../widgets/draggable_ai_assistant.dart';
 import 'hr_chat_screen.dart';
 import 'message_detail_screen.dart';
 
@@ -18,11 +20,13 @@ class MessagesScreen extends StatefulWidget {
     required this.session,
     required this.onUnreadChanged,
     this.refreshVersion = 0,
+    this.messageApi,
   });
 
   final AuthSession session;
   final ValueChanged<int> onUnreadChanged;
   final int refreshVersion;
+  final MessageApi? messageApi;
 
   @override
   State<MessagesScreen> createState() => _MessagesScreenState();
@@ -34,7 +38,7 @@ class _MessagesScreenState extends State<MessagesScreen>
   late final MessageApi _api;
   List<AppMessage>? _messages;
   String? _error;
-  int _selectedFilter = 0;
+  bool _openingAssistant = false;
   bool _markingAllRead = false;
   bool _loading = false, _openingMessage = false;
   int _mutationEpoch = 0;
@@ -44,7 +48,7 @@ class _MessagesScreenState extends State<MessagesScreen>
   void initState() {
     super.initState();
     _client = ApiClient();
-    _api = MessageApi(_client);
+    _api = widget.messageApi ?? MessageApi(_client);
     WidgetsBinding.instance.addObserver(this);
     _startPolling();
     _load();
@@ -194,66 +198,88 @@ class _MessagesScreenState extends State<MessagesScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
+  Future<void> _openAssistant() async {
+    if (_openingAssistant) return;
+    _openingAssistant = true;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: AppColors.ink.withValues(alpha: 0.3),
+        builder: (_) => FractionallySizedBox(
+          heightFactor: 0.97,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: AiChatScreen(
+              session: widget.session,
+              overlay: true,
+              restoreLastConversation: true,
+            ),
+          ),
+        ),
+      );
+    } finally {
+      _openingAssistant = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            color: AppColors.canvas,
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '消息中心',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'HR、系统通知与企业动态统一管理',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
+      body: DraggableAiAssistant(
+        onPressed: _openAssistant,
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              color: AppColors.canvas,
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '消息中心',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'HR、系统通知与企业动态统一管理',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    TextButton.icon(
-                      onPressed: _markingAllRead || _selectedFilter == 1
-                          ? null
-                          : _markAllRead,
-                      icon: _markingAllRead
-                          ? const SizedBox(
-                              width: 15,
-                              height: 15,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.done, size: 17),
-                      label: const Text('全部已读'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                _MessageFilter(
-                  selectedIndex: _selectedFilter,
-                  onChanged: (index) => setState(() => _selectedFilter = index),
-                ),
-              ],
+                      TextButton.icon(
+                        onPressed: _markingAllRead ? null : _markAllRead,
+                        icon: _markingAllRead
+                            ? const SizedBox(
+                                width: 15,
+                                height: 15,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.done, size: 17),
+                        label: const Text('全部已读'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: _selectedFilter == 1
-                ? const _AiAgentPlaceholder()
-                : _buildMessageContent(),
-          ),
-        ],
+            Expanded(child: _buildMessageContent()),
+          ],
+        ),
       ),
     );
   }
@@ -306,81 +332,6 @@ class _MessagesScreenState extends State<MessagesScreen>
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MessageFilter extends StatelessWidget {
-  const _MessageFilter({required this.selectedIndex, required this.onChanged});
-
-  final int selectedIndex;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _FilterButton(
-              label: '全部',
-              selected: selectedIndex == 0,
-              onPressed: () => onChanged(0),
-            ),
-          ),
-          Expanded(
-            child: _FilterButton(
-              label: 'AI Agent',
-              selected: selectedIndex == 1,
-              onPressed: () => onChanged(1),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterButton extends StatelessWidget {
-  const _FilterButton({
-    required this.label,
-    required this.selected,
-    required this.onPressed,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: Material(
-        color: selected ? AppColors.interactive : Colors.transparent,
-        borderRadius: BorderRadius.circular(4),
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(4),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: selected ? Colors.white : AppColors.muted,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -556,57 +507,6 @@ class _MessageBadge extends StatelessWidget {
           color: color,
           fontSize: 9,
           fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-}
-
-class _AiAgentPlaceholder extends StatelessWidget {
-  const _AiAgentPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.canvas,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.hairline),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: AppColors.purple.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.smart_toy_outlined,
-                  color: AppColors.purple,
-                  size: 27,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'AI Agent 会话建设中',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '后续将在这里接入 AI 面试官与求职助手会话。\nAI 输出仅作为辅助建议。',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
         ),
       ),
     );

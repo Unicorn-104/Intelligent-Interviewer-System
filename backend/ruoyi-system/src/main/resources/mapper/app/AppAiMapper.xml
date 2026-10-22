@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.app.AppAiMapper">
+    <insert id="createSession">
+        insert into t_capp_ai_session(id,user_id,title,created_at,updated_at)
+        values(#{id},#{userId},'新对话',current_timestamp(3),current_timestamp(3))
+    </insert>
+    <select id="sessions" resultType="map">
+        select id,title,pinned,active_run_id as activeRunId,created_at as createdAt from t_capp_ai_session
+        where user_id=#{userId}
+        <if test="before != null">and id &lt; #{before}</if>
+        order by id desc limit 21
+    </select>
+    <select id="session" resultType="map">
+        select id,title,pinned,active_run_id as activeRunId from t_capp_ai_session where id=#{id} and user_id=#{userId}
+    </select>
+    <select id="sessionForUpdate" resultType="map">
+        select id,title,active_run_id as activeRunId,pinned from t_capp_ai_session
+        where id=#{id} and user_id=#{userId} for update
+    </select>
+    <update id="acquire">
+        update t_capp_ai_session set active_run_id=#{runId},updated_at=current_timestamp(3)
+        where id=#{id} and user_id=#{userId} and active_run_id is null
+    </update>
+    <update id="release">
+        update t_capp_ai_session set active_run_id=null,updated_at=current_timestamp(3)
+        where id=#{id} and user_id=#{userId} and active_run_id=#{runId}
+    </update>
+    <update id="title">
+        update t_capp_ai_session set title=#{title},updated_at=current_timestamp(3)
+        where id=#{id} and user_id=#{userId} and title in ('新会话','新对话')
+    </update>
+    <update id="rename">
+        update t_capp_ai_session set title=#{title},updated_at=current_timestamp(3)
+        where id=#{id} and user_id=#{userId}
+    </update>
+    <update id="pin">
+        update t_capp_ai_session set pinned=#{pinned},updated_at=current_timestamp(3)
+        where id=#{id} and user_id=#{userId}
+    </update>
+    <delete id="deleteSessions">
+        delete from t_capp_ai_session where user_id=#{userId}
+        and id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </delete>
+    <delete id="deleteSummary">
+        delete from t_capp_ai_summary where user_id=#{userId} and session_id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </delete>
+    <delete id="deleteEvents">
+        delete from t_capp_ai_event where run_id in
+        (select id from t_capp_ai_run where user_id=#{userId} and session_id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        )
+    </delete>
+    <delete id="deleteMessages">
+        delete from t_capp_ai_message where session_id in
+        (select id from t_capp_ai_session where user_id=#{userId} and id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        )
+    </delete>
+    <delete id="deleteRuns">
+        delete from t_capp_ai_run where user_id=#{userId} and session_id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </delete>
+    <insert id="createRun">
+        insert into t_capp_ai_run(id,session_id,user_id,request_id,status,resume_id,input_text,application_id,task_type,created_at)
+        values(#{id},#{sessionId},#{userId},#{requestId},'RUNNING',#{resumeId},#{inputText},#{applicationId},coalesce(#{action},'chat'),current_timestamp(3))
+    </insert>
+    <select id="run" resultType="map">
+        select id,session_id as sessionId,status,resume_id as resumeId,input_text as inputText,
+               application_id as applicationId,task_type as action,
+               error_code as errorCode,model_calls as modelCalls,tool_calls as toolCalls,total_tokens as totalTokens,
+               timestampdiff(second,created_at,current_timestamp) as ageSeconds
+        from t_capp_ai_run where id=#{id} and user_id=#{userId}
+    </select>
+    <select id="requestRun" resultType="map">
+        select id,session_id as sessionId,status,resume_id as resumeId,input_text as inputText,
+               application_id as applicationId,task_type as action
+        from t_capp_ai_run where session_id=#{sessionId} and request_id=#{requestId} and user_id=#{userId}
+    </select>
+    <update id="finish">
+        update t_capp_ai_run set status=#{status},error_code=#{errorCode},model_calls=#{modelCalls},
+            tool_calls=#{toolCalls},total_tokens=#{tokens},finished_at=current_timestamp(3)
+        where id=#{id} and user_id=#{userId} and status='RUNNING'
+    </update>
+    <insert id="message">
+        insert into t_capp_ai_message(session_id,run_id,role,content,cards_json,created_at)
+        select #{sessionId},#{runId},#{role},#{content},#{cardsJson},current_timestamp(3)
+        from t_capp_ai_session where id=#{sessionId} and user_id=#{userId}
+    </insert>
+    <select id="messages" resultType="map">
+        select m.id,m.run_id as runId,m.role,m.content,m.cards_json as cardsJson,
+               r.status as runStatus
+        from t_capp_ai_message m join t_capp_ai_session s on s.id=m.session_id
+        join t_capp_ai_run r on r.id=m.run_id
+        where s.id=#{sessionId} and s.user_id=#{userId}
+        <if test="before != null">and m.id &lt; #{before}</if>
+        order by m.id desc limit #{limit}
+    </select>
+    <insert id="event">
+        insert into t_capp_ai_event(run_id,event_type,data_json,created_at)
+        select id,#{type},#{data},current_timestamp(3) from t_capp_ai_run where id=#{runId} and user_id=#{userId}
+        and (status='RUNNING' or #{type} in ('done','cards'))
+    </insert>
+    <select id="events" resultType="map">
+        select e.id,e.event_type as type,e.data_json as data
+        from t_capp_ai_event e join t_capp_ai_run r on r.id=e.run_id
+        where r.id=#{runId} and r.user_id=#{userId} and e.id &gt; #{after}
+        order by e.id limit 100
+    </select>
+</mapper>
