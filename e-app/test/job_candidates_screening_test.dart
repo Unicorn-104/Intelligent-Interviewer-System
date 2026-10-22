@@ -41,7 +41,7 @@ class ScreeningSource extends JobDetailDataSource {
     return resume;
   }
 
-  bool failure = false, screenFailure = false;
+  bool failure = false, screenFailure = false, legacyResponse = false;
   Completer<void>? readGate, screenGate;
 
   @override
@@ -67,7 +67,7 @@ class ScreeningSource extends JobDetailDataSource {
     starts++;
     await screenGate?.future;
     if (screenFailure) throw const ApiException('筛选刷新失败，请重试');
-    return {'taskId': id};
+    return {'taskId': id, if (!legacyResponse) 'processing': false};
   }
 }
 
@@ -345,19 +345,32 @@ void main() {
     expect(source.starts, 0);
   });
 
-  testWidgets('点击直接刷新筛选，执行中阻止重复并刷新同一份名单', (tester) async {
+  testWidgets('旧版服务器响应明确提示部署新版，不声称AI分析成功', (tester) async {
+    final source = ScreeningSource()..legacyResponse = true;
+    await mountCandidates(tester, source);
+    await tester.tap(find.byKey(const Key('job-rescreen')));
+    await tester.pumpAndSettle();
+    expect(find.text('服务器尚未部署新版AI筛选服务，请先更新服务器后端'), findsOneWidget);
+    expect(source.starts, 1);
+    expect(source.reads, 2);
+  });
+
+  testWidgets('点击增量分析先读缓存再补充求职者，执行中阻止重复', (tester) async {
     final source = ScreeningSource()..screenGate = Completer<void>();
     await mountCandidates(tester, source);
     expect(source.starts, 0);
     final action = find.byKey(const Key('job-rescreen'));
     expect(
-      find.descendant(of: action, matching: find.byIcon(Icons.refresh)),
+      find.descendant(
+        of: action,
+        matching: find.byIcon(Icons.auto_awesome_outlined),
+      ),
       findsOneWidget,
     );
     await tester.tap(action);
     await tester.pump();
     expect(find.byType(AlertDialog), findsNothing);
-    expect(find.text('筛选中…'), findsOneWidget);
+    expect(find.text('分析中…'), findsOneWidget);
     await tester.tap(action);
     await tester.pump();
     expect(source.starts, 1);
@@ -366,8 +379,8 @@ void main() {
     ];
     source.screenGate!.complete();
     await tester.pumpAndSettle();
-    expect(source.details, 2);
-    expect(source.reads, 2);
+    expect(source.details, 3);
+    expect(source.reads, 3);
     expect(find.byType(JobCandidateCard), findsNWidgets(2));
     expect(find.text('99.0'), findsOneWidget);
   });
@@ -380,7 +393,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('筛选刷新失败，请重试'), findsOneWidget);
     expect(find.byType(JobCandidateCard), findsNWidgets(2));
-    expect(find.text('AI辅助筛选'), findsOneWidget);
+    expect(find.text('增量分析'), findsOneWidget);
     expect(source.starts, 1);
     expect(find.byType(AlertDialog), findsNothing);
     source.screenFailure = false;
@@ -445,7 +458,11 @@ void main() {
       );
       expect(tester.takeException(), isNull);
       final target = find.byKey(const ValueKey('job-candidate-11'));
-      await tester.ensureVisible(target);
+      await tester.dragUntilVisible(
+        target,
+        find.byKey(const PageStorageKey('job-candidates-scroll')),
+        const Offset(0, -250),
+      );
       await tester.pumpAndSettle();
       expect(target, findsOneWidget);
       expect(tester.takeException(), isNull);

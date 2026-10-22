@@ -2,6 +2,7 @@ import '../../../api/home_api.dart' as home_api;
 import '../../../api/jobs_api.dart' as jobs_api;
 import '../../../api/schedule_api.dart' as schedule_api;
 import '../../../core/network/api_exception.dart';
+import '../talent/data/talent_detail_data_source.dart';
 import 'home_models.dart';
 
 typedef HomeJobLoader = Future<List<Map<String, dynamic>>> Function({
@@ -36,6 +37,9 @@ class HomeDataSource {
        _jobs = jobsLoader ?? jobs_api.listJobs,
        _interviews = interviewsLoader ?? schedule_api.listInterviews,
        _clock = clock ?? DateTime.now;
+
+  TalentDetailDataSource get candidateActionsSource =>
+      const TalentDetailDataSource();
 
   static const pageSize = 20;
   final Future<Map<String, dynamic>> Function() _overview;

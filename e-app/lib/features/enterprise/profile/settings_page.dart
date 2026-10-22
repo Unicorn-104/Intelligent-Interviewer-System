@@ -4,7 +4,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
-import '../../../widgets/skeleton_list.dart';
 
 /// 保留旧页面入口，企业管理概览同时复用于“我的”主页。
 class EnterpriseSettingsPage extends StatelessWidget {
@@ -88,60 +87,118 @@ class _EnterpriseManagementPanelState extends State<EnterpriseManagementPanel> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) => Container(
     key: const Key('profile-enterprise-management'),
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Text('企业管理', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 12),
-      if (_loading)
-        const SizedBox(height: 240, child: SkeletonList(rows: 4))
-      else ...[
-        if (_error != null || _counts!.values.any((count) => count == null))
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _error ?? '部分管理接口暂不可用，请稍后重试或在 Web 端查看',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                TextButton.icon(
-                  key: const Key('profile-management-retry'),
-                  onPressed: _load,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('重试'),
-                ),
-              ],
-            ),
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: AppColors.canvas,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          '企业管理',
+          style: TextStyle(
+            color: AppColors.ink,
+            fontWeight: FontWeight.w600,
+            fontSize: 17,
           ),
-        for (final name in _sections.keys)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Card(
-              child: ListTile(
-                key: ValueKey('profile-management-$name'),
-                leading: Icon(switch (name) {
-                  '部门管理' => Icons.apartment_outlined,
-                  '成员管理' => Icons.people_outline,
-                  '通知模板' => Icons.notifications_outlined,
-                  _ => Icons.settings_input_component_outlined,
-                }, color: AppColors.interactive),
-                title: Text(name),
-                subtitle: Text(
-                  _error != null || _counts?[name] == null
-                      ? '暂不可用，请在 Web 端查看'
-                      : '当前记录：${_counts![name]} 条',
-                ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '企业协作，让招聘更有序',
+          style: TextStyle(color: AppColors.muted, fontSize: 12),
+        ),
+        const SizedBox(height: 16),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else ...[
+          Row(
+            key: const Key('profile-management-row'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final name in _sections.keys)
+                Expanded(child: _managementEntry(name)),
+            ],
+          ),
+          if (_error != null ||
+              _counts!.values.any((count) => count == null)) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error ?? '部分管理数据暂不可用，请稍后重试或在 Web 端查看',
+              style: const TextStyle(color: AppColors.muted, fontSize: 11),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('profile-management-retry'),
+                onPressed: _load,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('重新加载'),
               ),
             ),
+          ],
+          const SizedBox(height: 10),
+          const Text(
+            'App 内详细管理功能开发中，请在 Web 端操作',
+            style: TextStyle(color: AppColors.muted, fontSize: 11),
           ),
-        Text(
-          'App 内详细管理功能开发中，请在 Web 端操作',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
+        ],
       ],
-    ],
+    ),
+  );
+
+  Widget _managementEntry(String name) => InkWell(
+    key: ValueKey('profile-management-$name'),
+    borderRadius: BorderRadius.circular(8),
+    onTap: () =>
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$name功能开发中，请在 Web 端操作'))),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 2),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              switch (name) {
+                '部门管理' => Icons.apartment_outlined,
+                '成员管理' => Icons.people_outline,
+                '通知模板' => Icons.notifications_outlined,
+                _ => Icons.tune_rounded,
+              },
+              color: AppColors.interactive,
+              size: 26,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            name,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, color: AppColors.body),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _error != null || _counts?[name] == null
+                ? 'Web 端查看'
+                : '${_counts![name]} 条记录',
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: AppColors.muted),
+          ),
+        ],
+      ),
+    ),
   );
 }

@@ -3,10 +3,8 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import 'interview/interview_workbench_page.dart';
 import 'interview/device_check_page.dart';
-import 'interview/recording_page.dart';
 import 'interview/practice_preload_page.dart';
 import 'interview/interview_entrance_page.dart';
-import 'schedule/reschedule_review_page.dart';
 import 'notification/notification_templates_page.dart';
 import 'notification/survey_result_page.dart';
 import 'notification/assistant_placeholder_page.dart';
@@ -21,7 +19,6 @@ import 'offer/offer_page.dart';
 import 'profile/account_page.dart';
 import 'review/review_page.dart';
 import 'schedule/interview_schedule_page.dart';
-import 'talent/talent_page.dart';
 import 'screening/screening_task_list_page.dart';
 import 'screening/shortlist_review_page.dart';
 import 'screening/greeting_page.dart';
@@ -32,13 +29,11 @@ class _FeatureEntry {
     this.icon,
     this.builder, {
     this.isDemo = false,
-    this.alias,
   });
   final String label;
   final IconData icon;
   final WidgetBuilder builder;
   final bool isDemo;
-  final String? alias;
 }
 
 class EnterpriseModuleShell extends StatefulWidget {
@@ -75,12 +70,6 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
             onOpenAnnouncements: () => _openFeature(_announcement),
           ),
         ),
-      ),
-      _FeatureEntry(
-        '候选人管理',
-        Icons.people_outline,
-        (_) => const TalentPage(),
-        alias: '人才库',
       ),
       _interviews,
       _FeatureEntry(
@@ -132,21 +121,9 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
         isDemo: true,
       ),
       _FeatureEntry(
-        '录播',
-        Icons.video_library_outlined,
-        (_) => const RecordingPage(),
-        isDemo: true,
-      ),
-      _FeatureEntry(
         '预加载',
         Icons.hourglass_top_outlined,
         (_) => const PracticePreloadPage(),
-        isDemo: true,
-      ),
-      _FeatureEntry(
-        '改期审批',
-        Icons.edit_calendar_outlined,
-        (_) => const RescheduleReviewPage(),
         isDemo: true,
       ),
       _FeatureEntry(
@@ -279,11 +256,7 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
                   key: ValueKey('feature-${entries[index].label}'),
                   leading: Icon(entries[index].icon, color: AppColors.brand),
                   title: Text(entries[index].label),
-                  subtitle: entries[index].isDemo
-                      ? const Text('演示数据')
-                      : entries[index].alias == null
-                      ? null
-                      : Text(entries[index].alias!),
+                  subtitle: entries[index].isDemo ? const Text('演示数据') : null,
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _openFeature(entries[index]),
                 ),

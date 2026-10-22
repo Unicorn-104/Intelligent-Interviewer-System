@@ -172,7 +172,9 @@ List<JobRankedCandidate> rankJobCandidates(
     ranked.add(
       JobRankedCandidate(
         candidate,
-        score ?? jobScore(candidate['matchScore']),
+        byId.containsKey(jobPositiveId(candidate['talId']))
+            ? score
+            : jobScore(candidate['matchScore']),
         score,
         index,
       ),

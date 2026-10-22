@@ -29,7 +29,7 @@ public interface ScreeningMapper
     public int updateMatchedScore(@Param("talId") Long talId, @Param("score") Double score);
 
     /** 筛选任务列表：按岗位聚合流程实例（taskId 即岗位ID） */
-    public List<Map<String, Object>> selectTaskList();
+    public List<Map<String, Object>> selectTaskList(@Param("companyId") Long companyId);
 
     /** 某岗位筛选结果：候选人评分降序（含技能标签串） */
     public List<Map<String, Object>> selectResultsByPosition(@Param("positionId") Long positionId);
@@ -39,6 +39,25 @@ public interface ScreeningMapper
 
     /** 更新候选人流程状态（UC-06 复核确认，状态日志由数据库触发器写入） */
     public int updateTalStatus(@Param("talId") Long talId, @Param("status") Integer status);
+    Map<String, Object> selectPosition(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
+    Map<String, Object> selectOwnedCandidate(@Param("companyId") Long companyId, @Param("talId") Long talId);
+    List<Map<String, Object>> selectEducationEvidence(@Param("resumeId") Long resumeId);
+    List<Map<String, Object>> selectWorkEvidence(@Param("resumeId") Long resumeId);
+    List<Map<String, Object>> selectProjectEvidence(@Param("resumeId") Long resumeId);
+    Map<String, Object> selectAnalysis(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
+            @Param("talId") Long talId);
+    Map<String, Object> selectLatestAnalysis(@Param("companyId") Long companyId, @Param("talId") Long talId);
+    /** 企业和岗位隔离的增量去重查询，不作为模型输入。 */
+    List<Map<String, Object>> selectAnalyzedCandidates(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
+    int saveAnalysis(Map<String, Object> analysis);
+    int initTask(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
+    int claimTask(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
+            @Param("runId") String runId, @Param("candidateCount") int candidateCount);
+    Map<String, Object> selectTaskStatus(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
+    Map<String, Object> lockTask(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
+    int updateTask(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
+            @Param("runId") String runId, @Param("state") String state, @Param("completed") int completed,
+            @Param("passed") int passed, @Param("error") String error);
 
     /** 某岗位待初筛的投递申请（app_status = 0） */
     public List<Map<String, Object>> selectPendingApplications(@Param("positionId") Long positionId);

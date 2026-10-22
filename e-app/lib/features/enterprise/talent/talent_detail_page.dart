@@ -84,7 +84,7 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
       _loadDetail(),
       _loadResume(),
       _loadMatch(),
-      _loadReport(),
+      if (widget.jobContext == null) _loadReport(),
     ]);
   }
 
@@ -257,8 +257,11 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
                 TalentMatchAnalysisSection(
                   detail: _detail,
                   match: _match,
+                  fallbackReport: _report,
                   job: widget.jobContext,
-                  onDetailRetry: _loadDetail,
+                  onDetailRetry: widget.jobContext == null
+                      ? _loadReport
+                      : _loadDetail,
                   onMatchRetry: _loadMatch,
                   embedded: true,
                 ),
@@ -268,8 +271,14 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
                   color: AppColors.hairline,
                 ),
                 TalentRecommendationSection(
-                  state: _report,
-                  onRetry: _loadReport,
+                  state: widget.jobContext == null
+                      ? _report
+                      : TalentSectionState<Map<String, dynamic>>(
+                          data: _match.data?.result,
+                          error: _match.error,
+                          loading: _match.loading,
+                        ),
+                  onRetry: widget.jobContext == null ? _loadReport : _loadMatch,
                   embedded: true,
                 ),
               ],

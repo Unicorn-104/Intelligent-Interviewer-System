@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../theme/app_theme.dart';
 import '../models/talent_detail_view_data.dart';
+import 'talent_match_radar.dart';
 
 /// Local to candidate details so shared app components stay unchanged.
 class TalentAiInfoButton extends StatefulWidget {
@@ -177,138 +178,76 @@ class TalentMatchAnalysisSection extends StatelessWidget {
     required this.onDetailRetry,
     required this.onMatchRetry,
     this.embedded = false,
+    this.fallbackReport,
   });
   final TalentSectionState<Map<String, dynamic>> detail;
   final TalentSectionState<TalentMatchData> match;
+  final TalentSectionState<Map<String, dynamic>>? fallbackReport;
   final TalentJobContext? job;
   final VoidCallback onDetailRetry, onMatchRetry;
   final bool embedded;
 
   @override
   Widget build(BuildContext context) {
-    final result = match.data?.result;
-    final score = talentNumber(
-      result?['totalScore'] ?? detail.data?['matchedScore'],
-    );
-    final skills = match.data?.requiredSkills ?? const <String>[];
-    final skillScore = talentNumber(result?['skillMatch']);
-    final validSkillScore =
-        skillScore != null && skillScore >= 0 && skillScore <= 100;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TalentSectionFrame(
-          title: '通用评分，非岗位维度',
-          ai: !embedded,
-          embedded: embedded,
-          loading: detail.loading && result == null,
-          error: result == null ? detail.error : null,
-          empty: score == null,
-          emptyText: '暂无评分数据',
-          onRetry: onDetailRetry,
-          child: Text(
-            score == null ? '暂无评分数据' : '$score 分',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              color: AppColors.interactive,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        if (embedded)
-          const Divider(height: 24, thickness: 1, color: AppColors.hairline),
-        TalentSectionFrame(
-          title: '岗位技能分析',
-          ai: !embedded,
-          embedded: embedded,
-          loading: job != null && match.loading,
-          error: job == null ? null : match.error,
-          empty: job == null,
-          emptyText: '选择岗位后查看',
-          onRetry: onMatchRetry,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    final result = job == null ? fallbackReport?.data : match.data?.result;
+    final analyzed = result?['source'] == 'llm';
+    final score = analyzed ? talentNumber(result?['totalScore']) : null;
+    return TalentSectionFrame(
+      title: '',
+      ai: !embedded,
+      embedded: embedded,
+      loading: job == null ? fallbackReport?.loading ?? false : match.loading,
+      error: job == null ? fallbackReport?.error : match.error,
+      empty: !analyzed,
+      emptyText: job == null ? '暂无AI分析，请在岗位中运行AI辅助筛选' : '尚未分析，请在求职者列表点击AI辅助筛选',
+      onRetry: job == null ? onDetailRetry : onMatchRetry,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                job?.title ?? '',
-                style: const TextStyle(color: AppColors.bodySoft, fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              if (skills.isEmpty)
-                const Text('暂无岗位技能依据', style: TextStyle(color: AppColors.muted))
-              else ...[
-                Text(
-                  validSkillScore ? '技能重合度：$skillScore%' : '技能重合度：暂无分析',
-                  style: const TextStyle(
-                    color: AppColors.interactive,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (validSkillScore) ...[
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value: skillScore / 100,
-                    minHeight: 6,
-                    borderRadius: BorderRadius.circular(4),
-                    backgroundColor: AppColors.primarySoft,
-                    color: AppColors.interactive,
-                    semanticsLabel: '岗位必备技能重合度',
-                    semanticsValue: '$skillScore%',
-                  ),
-                ],
-                const SizedBox(height: 8),
-                const Text(
-                  '按岗位必备技能计算的重合度',
-                  style: TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final skill in skills)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primarySoft,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          skill,
-                          style: const TextStyle(
-                            color: AppColors.brand,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 12,
-                runSpacing: 4,
-                children: [
-                  for (final dimension in const {
-                    'projectMatch': '项目',
-                    'educationMatch': '学历',
-                    'industryMatch': '行业',
-                  }.entries)
-                    Text(
-                      '${dimension.value}：${talentNumber(result?[dimension.key]) ?? '暂无分析'}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.muted,
+                    const Text(
+                      '综合匹配度',
+                      style: TextStyle(
+                        color: AppColors.brand,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      job?.title ??
+                          talentText(result?['positionTitle'], '岗位匹配分析'),
+                      style: const TextStyle(
+                        color: AppColors.bodySoft,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                score == null ? '—' : score.toStringAsFixed(1),
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: AppColors.interactive,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
-        ),
-      ],
+          TalentMatchRadar(result: result ?? const {}),
+          if (analyzed)
+            const Text(
+              '未提供相关材料的维度按0分计入综合分',
+              style: TextStyle(fontSize: 11, color: AppColors.muted),
+            ),
+        ],
+      ),
     );
   }
 }

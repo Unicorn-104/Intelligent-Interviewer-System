@@ -18,6 +18,35 @@ void main() {
     source = MessageDataSource(client: http.client);
   });
   tearDown(() => http.close());
+  test('招聘者头像读取当前登录账号资料，不使用会话对方身份', () async {
+    http.adapter.body = {
+      'code': 200,
+      'data': {
+        'userId': 99,
+        'nickName': '招聘者测试',
+        'avatar': '/profile/synthetic-recruiter.png',
+      },
+    };
+    final profile = await source.loadRecruiterProfile();
+    final request = http.adapter.requests.single;
+    expect(request.path, '/system/user/profile');
+    expect(request.method, 'GET');
+    expect(profile.id, 99);
+    expect(profile.name, '招聘者测试');
+    expect(profile.avatar, '/profile/synthetic-recruiter.png');
+    expect(source.avatarUrl(profile.avatar), endsWith(profile.avatar));
+  });
+  test('招聘者资料缺失或登录失效时不伪造身份', () async {
+    http.adapter.body = {'code': 200, 'data': {}};
+    await expectLater(source.loadRecruiterProfile(), throwsFormatException);
+    final calls = http.adapter.requests.length;
+    FlutterSecureStorage.setMockInitialValues({});
+    await expectLater(
+      source.loadRecruiterProfile(),
+      throwsA(isA<ApiException>().having((e) => e.code, 'code', 401)),
+    );
+    expect(http.adapter.requests.length, calls);
+  });
   test('复用现有会话接口，准确读取peerName、lastMessageAt和unread', () async {
     http.adapter.body = {
       'code': 200,
@@ -154,7 +183,7 @@ void main() {
         {'id': 3, 'content': ''},
       ],
     };
-    expect(await source.loadQuickReplies(), ['合成回复']);
+    expect((await source.loadQuickReplies()).map((r) => r.id), [1, 2]);
     expect(http.adapter.requests.single.path, '/system/im/quick-replies');
   });
 }

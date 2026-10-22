@@ -56,6 +56,10 @@ class TalentFakeSource extends TalentDetailDataSource {
     requiredSkills: ['Dart'],
     currentStage: '技术面试',
     result: {
+      'source': 'llm',
+      'positionId': 7,
+      'positionTitle': '合成测试岗位',
+      'recommendation': '合成推荐理由：具备Dart项目经验，与岗位技能要求匹配，科研和奖项待补充。',
       'totalScore': 91,
       'skillMatch': 75,
       'projectMatch': null,
@@ -64,6 +68,12 @@ class TalentFakeSource extends TalentDetailDataSource {
     },
   );
   Map<String, dynamic>? report = {
+    'source': 'llm',
+    'positionId': 7,
+    'positionTitle': '合成测试岗位',
+    'totalScore': 91,
+    'skillMatch': 75,
+    'recommendation': '合成推荐理由：具备Dart项目经验，与岗位技能要求匹配，科研和奖项待补充。',
     'matchPoints': ['合成匹配点'],
     'content': '合成报告正文',
     'status': 0,

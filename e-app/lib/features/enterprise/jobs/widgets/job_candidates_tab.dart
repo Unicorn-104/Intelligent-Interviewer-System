@@ -18,6 +18,7 @@ class JobCandidatesTab extends StatelessWidget {
     required this.onReloadDetail,
     required this.onReloadScores,
     required this.onScreen,
+    this.onFullScreen,
     required this.onOpen,
     required this.loadResume,
     required this.actionsSource,
@@ -30,6 +31,7 @@ class JobCandidatesTab extends StatelessWidget {
   final Future<void> Function() onReloadDetail;
   final Future<void> Function() onReloadScores;
   final VoidCallback onScreen;
+  final VoidCallback? onFullScreen;
   final ValueChanged<Map<String, dynamic>> onOpen;
   final Future<Map<String, dynamic>> Function(int) loadResume;
   final TalentDetailDataSource actionsSource;
@@ -84,14 +86,86 @@ class JobCandidatesTab extends StatelessWidget {
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: Tooltip(
-              message: '刷新AI筛选结果',
-              child: FilledButton.icon(
-                key: const Key('job-rescreen'),
-                onPressed: screening ? null : onScreen,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: Text(screening ? '筛选中…' : 'AI辅助筛选'),
+            child: Material(
+              color: AppColors.interactive,
+              borderRadius: BorderRadius.circular(4),
+              clipBehavior: Clip.antiAlias,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    key: const Key('job-rescreen'),
+                    onTap: screening || scores.loading ? null : onScreen,
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 46),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.auto_awesome_outlined,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            screening ? '分析中…' : '增量分析',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 24,
+                    color: Colors.white.withValues(alpha: .45),
+                  ),
+                  PopupMenuButton<String>(
+                    key: const Key('job-analysis-menu'),
+                    tooltip: '选择分析方式',
+                    enabled: !screening && !scores.loading,
+                    constraints: const BoxConstraints(minWidth: 210),
+                    padding: EdgeInsets.zero,
+                    iconSize: 24,
+                    icon: const Icon(
+                      Icons.arrow_drop_down,
+                      color: Colors.white,
+                    ),
+                    onSelected: (mode) {
+                      if (mode == 'full') {
+                        onFullScreen?.call();
+                      } else {
+                        onScreen();
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'incremental',
+                        child: Text('增量分析（优先读取，补充新增）'),
+                      ),
+                      PopupMenuItem(
+                        value: 'full',
+                        enabled: onFullScreen != null,
+                        child: const Text('全量分析（耗时较长）'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              '进入页面自动读取已有结果；增量分析会先刷新，只有缺少分析的求职者才调用模型。简历或岗位更新后可选择全量分析。',
+              style: TextStyle(fontSize: 12, color: AppColors.muted),
             ),
           ),
           if (scores.loading)
@@ -113,13 +187,6 @@ class JobCandidatesTab extends StatelessWidget {
           ] else if (!scores.loading && !hasScores) ...[
             const SizedBox(height: 12),
             const Text('暂无评分数据', style: TextStyle(fontWeight: FontWeight.w600)),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: onReloadScores,
-                child: const Text('刷新评分'),
-              ),
-            ),
           ],
           const SizedBox(height: 12),
           for (var index = 0; index < ranked.length; index++) ...[

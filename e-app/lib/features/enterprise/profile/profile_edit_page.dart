@@ -225,6 +225,60 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     ],
   );
 
+  Widget _section(String title, IconData icon, List<Widget> children) =>
+      Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.canvas,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Icon(icon, size: 19, color: AppColors.muted),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...children,
+          ],
+        ),
+      );
+
+  Widget _readonly(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 68,
+          child: Text(
+            label,
+            style: const TextStyle(color: AppColors.muted, fontSize: 13),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(color: AppColors.body, fontSize: 14),
+          ),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !_busy && (!_avatarChanged || _allowPop),
@@ -233,136 +287,155 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     },
     child: Scaffold(
       appBar: AppBar(
-        title: const Text('编辑资料'),
+        centerTitle: true,
+        backgroundColor: AppColors.primarySoft,
+        title: const Text(
+          '个人资料',
+          style: TextStyle(color: AppColors.ink, fontSize: 20),
+        ),
         leading: IconButton(
           key: const Key('profile-edit-back'),
           tooltip: '返回',
           onPressed: _busy ? null : _leave,
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 21),
         ),
         actions: [
-          TextButton(
-            key: const Key('profile-edit-cancel'),
-            onPressed: _busy ? null : _leave,
-            child: const Text('取消'),
-          ),
+          TextButton(onPressed: _busy ? null : _leave, child: const Text('取消')),
         ],
       ),
       body: SingleChildScrollView(
         key: const Key('profile-edit-scroll'),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         child: Form(
           key: _form,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _avatarHeader(),
-              const SizedBox(height: 24),
-              const Text(
-                '基本资料',
-                style: TextStyle(
-                  color: AppColors.brand,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                '登录账号：${widget.profile.account}',
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _field(
-                'nickName',
-                '姓名 / 昵称',
-                maxLength: 30,
-                validator: (value) =>
-                    value == null || value.trim().isEmpty ? '请填写姓名或昵称' : null,
-              ),
-              _field(
-                'phonenumber',
-                '手机号',
-                maxLength: 11,
-                keyboard: TextInputType.phone,
-                validator: (value) =>
-                    value != null &&
-                        value.isNotEmpty &&
-                        !RegExp(r'^1[3-9]\d{9}$').hasMatch(value)
-                    ? '请输入有效的11位手机号'
-                    : null,
-              ),
-              _field(
-                'email',
-                '邮箱',
-                maxLength: 50,
-                keyboard: TextInputType.emailAddress,
-                validator: (value) =>
-                    value != null &&
-                        value.trim().isNotEmpty &&
-                        !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
-                            .hasMatch(value.trim())
-                    ? '请输入有效邮箱地址'
-                    : null,
-              ),
-              DropdownButtonFormField<String>(
-                key: const Key('profile-edit-sex'),
-                initialValue: _sex,
-                decoration: const InputDecoration(
-                  labelText: '性别',
-                  filled: true,
-                  fillColor: AppColors.canvas,
-                ),
-                items: const [
-                  DropdownMenuItem(value: '0', child: Text('男')),
-                  DropdownMenuItem(value: '1', child: Text('女')),
-                  DropdownMenuItem(value: '2', child: Text('未填写')),
-                ],
-                onChanged: _busy
-                    ? null
-                    : (value) {
-                        if (value != null) setState(() => _sex = value);
-                      },
-              ),
-              const SizedBox(height: 12),
-              InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: '所属部门',
-                  filled: true,
-                  fillColor: AppColors.canvas,
-                ),
-                child: Text(
-                  widget.profile.department,
-                  style: const TextStyle(color: AppColors.textMuted),
-                ),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                '个人简介',
-                style: TextStyle(
-                  color: AppColors.brand,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _field('remark', '介绍你的招聘方向与工作理念', maxLength: 500, lines: 4),
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    _error!,
-                    style: const TextStyle(color: AppColors.error),
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [AppColors.primarySoft, AppColors.background],
                   ),
                 ),
-              const SizedBox(height: 8),
-              FilledButton(
-                key: const Key('profile-edit-save'),
-                onPressed: _busy ? null : _save,
-                child: Text(_saving ? '保存中…' : '保存修改'),
+                child: Column(
+                  children: [
+                    _avatarHeader(),
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.profile.name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '完善招聘名片，让沟通更有温度',
+                      style: TextStyle(color: AppColors.muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _section('基本资料', Icons.edit_outlined, [
+                      _field(
+                        'nickName',
+                        '姓名 / 昵称',
+                        maxLength: 30,
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? '请填写姓名或昵称'
+                            : null,
+                      ),
+                      DropdownButtonFormField<String>(
+                        key: const Key('profile-edit-sex'),
+                        initialValue: _sex,
+                        decoration: const InputDecoration(labelText: '性别'),
+                        items: const [
+                          DropdownMenuItem(value: '0', child: Text('男')),
+                          DropdownMenuItem(value: '1', child: Text('女')),
+                          DropdownMenuItem(value: '2', child: Text('未填写')),
+                        ],
+                        onChanged: _busy
+                            ? null
+                            : (value) {
+                                if (value != null) setState(() => _sex = value);
+                              },
+                      ),
+                    ]),
+                    _section('联系方式', Icons.contact_phone_outlined, [
+                      _field(
+                        'phonenumber',
+                        '手机号',
+                        maxLength: 11,
+                        keyboard: TextInputType.phone,
+                        validator: (value) =>
+                            value != null &&
+                                value.isNotEmpty &&
+                                !RegExp(r'^1[3-9]\d{9}$').hasMatch(value)
+                            ? '请输入有效的11位手机号'
+                            : null,
+                      ),
+                      _field(
+                        'email',
+                        '邮箱',
+                        maxLength: 50,
+                        keyboard: TextInputType.emailAddress,
+                        validator: (value) =>
+                            value != null &&
+                                value.trim().isNotEmpty &&
+                                !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+                                    .hasMatch(value.trim())
+                            ? '请输入有效邮箱地址'
+                            : null,
+                      ),
+                      const Text(
+                        '联系方式仅用于当前账号资料；对外展示以业务权限为准。',
+                        style: TextStyle(color: AppColors.muted, fontSize: 11),
+                      ),
+                    ]),
+                    _section('招聘身份', Icons.business_center_outlined, [
+                      _readonly('登录账号', widget.profile.account),
+                      _readonly('所属部门', widget.profile.department),
+                      _readonly('职务', widget.profile.position),
+                      _readonly('角色', widget.profile.role),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '身份信息由企业管理员维护，当前页面不可修改。',
+                        style: TextStyle(color: AppColors.muted, fontSize: 11),
+                      ),
+                    ]),
+                    _section('个人简介', Icons.edit_note_outlined, [
+                      _field(
+                        'remark',
+                        '介绍你的招聘方向与工作理念',
+                        maxLength: 500,
+                        lines: 4,
+                      ),
+                    ]),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: AppColors.error),
+                        ),
+                      ),
+                    FilledButton(
+                      key: const Key('profile-edit-save'),
+                      onPressed: _busy ? null : _save,
+                      child: Text(_saving ? '保存中…' : '保存修改'),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

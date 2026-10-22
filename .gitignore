@@ -9,6 +9,8 @@
 !/user-PC/
 !/docs/
 !/enterprise_pc/
+!/e-app/
+!/e-app/**/
 
 ######################################################################
 # 操作系统
@@ -107,6 +109,8 @@ data/
 # Flutter API source directories are not runtime data.
 !/c-app/lib/features/*/data/
 !/c-app/lib/features/*/data/*.dart
+!/e-app/lib/features/**/data/
+!/e-app/lib/features/**/data/*.dart
 run/
 																																	
 ######################################################################
@@ -128,3 +132,9 @@ backend/dump.rdb
 # Python 本地验证缓存
 __pycache__/
 *.py[cod]
+
+# Local SDK/cache and private developer notes are not application source.
+/e-app/AndroidSDK/
+/e-app/docs/local-backend-testing.md
+# Database backups must remain local, even when previously staged.
+/backend/doc/backup/

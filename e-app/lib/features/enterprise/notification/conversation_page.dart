@@ -1,13 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/skeleton_list.dart';
+import '../jobs/job_detail_page.dart';
+import '../talent/talent_detail_page.dart';
+import '../talent/models/talent_detail_view_data.dart';
 import 'data/message_data_source.dart';
+import 'models/chat_context.dart';
 import 'models/message_view_data.dart';
+import 'widgets/chat_composer.dart';
+import 'widgets/chat_job_card.dart';
+import 'widgets/message_avatar.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({
@@ -26,8 +32,18 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final _input = TextEditingController(), _scroll = ScrollController();
   List<ConversationMessage> _messages = [];
-  List<String> _quick = [];
+  List<ChatQuickReply> _quick = [];
   int? _id;
+  ChatContext? _chatContext;
+  ChatJob? _selectedJob;
+  bool _contextLoading = true, _openingCandidate = false;
+  String? _contextError;
+  String _recruiterName = '招聘者';
+  String? _recruiterAvatarUrl;
+  String get _peerName => messageText(
+    widget.session['peerName'],
+    messageText(widget.session['name'], '求职者'),
+  );
   bool _loading = true,
       _fetching = false,
       _sending = false,
@@ -35,6 +51,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       _active = true,
       _ready = false;
   String? _error, _quickError;
+  bool _quickLoading = false,
+      _composerExpanded = false,
+      _choosingAttachment = false;
   Timer? _timer;
   @override
   void initState() {
@@ -43,6 +62,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _id = messageId(widget.session['sessionId']);
     _load();
     _loadQuick();
+    _loadContext();
+    _loadRecruiterProfile();
     if (widget.pollInterval > Duration.zero) {
       _timer = Timer.periodic(widget.pollInterval, (_) {
         if (mounted && _active && !_sending && !_uncertain) _load(silent: true);
@@ -65,8 +86,168 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  Future<void> _loadRecruiterProfile() async {
+    try {
+      final profile = await widget.source.loadRecruiterProfile();
+      if (!mounted) return;
+      setState(() {
+        _recruiterName = profile.name;
+        _recruiterAvatarUrl = widget.source.avatarUrl(profile.avatar);
+      });
+    } catch (_) {
+      // Profile failure must not interrupt chatting; keep the text avatar.
+    }
+  }
+
+  Future<void> _loadContext() async {
+    setState(() {
+      _contextLoading = true;
+      _contextError = null;
+    });
+    try {
+      final data = await widget.source.loadChatContext(widget.session);
+      if (!mounted) return;
+      setState(() {
+        _chatContext = data;
+        _selectedJob = data.jobs.length == 1 ? data.jobs.single : null;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _contextError = messageError(error));
+    } finally {
+      if (mounted) setState(() => _contextLoading = false);
+    }
+  }
+
+  Future<void> _selectJob() async {
+    final jobs = _chatContext?.jobs ?? const <ChatJob>[];
+    if (jobs.isEmpty) return;
+    final selected = await showModalBottomSheet<ChatJob>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * .6,
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                '选择应聘岗位',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '仅切换本页查看的岗位，不更改应聘记录',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                itemCount: jobs.length,
+                itemBuilder: (context, index) {
+                  final job = jobs[index];
+                  return ListTile(
+                    key: ValueKey('chat-job-option-${job.id}'),
+                    title: Text(job.title),
+                    subtitle: Text(job.salary),
+                    trailing: _selectedJob?.id == job.id
+                        ? const Icon(Icons.check, color: AppColors.interactive)
+                        : null,
+                    onTap: () => Navigator.pop(context, job),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mounted && selected != null) setState(() => _selectedJob = selected);
+  }
+
+  Future<void> _openCandidate() async {
+    if (_openingCandidate) return;
+    _openingCandidate = true;
+    try {
+      await _showCandidate();
+    } finally {
+      _openingCandidate = false;
+    }
+  }
+
+  Future<void> _showCandidate() async {
+    if (_contextLoading) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('正在读取求职者资料，请稍候')));
+      return;
+    }
+    if (_contextError != null) {
+      await _loadContext();
+      if (!mounted || _contextError != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(_contextError!)));
+        }
+        return;
+      }
+    }
+    var talent = _selectedJob?.talent ?? _chatContext?.talent;
+    if (talent == null && (_chatContext?.jobs.length ?? 0) > 1) {
+      await _selectJob();
+      if (!mounted) return;
+      talent = _selectedJob?.talent;
+      if (talent == null) return;
+    }
+    if (talent == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('当前企业暂无该求职者的关联资料，请稍后刷新重试')));
+      return;
+    }
+    final job = _selectedJob;
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => TalentDetailPage(
+          talent: talent!,
+          jobContext: job == null
+              ? null
+              : TalentJobContext(
+                  positionId: job.id,
+                  title: job.title,
+                  currentStage: messageText(job.talent['currentStage'], ''),
+                ),
+          source: widget.source.candidateDetailsSource,
+        ),
+      ),
+    );
+  }
+
+  Widget _peerAvatar(String key) => Semantics(
+    button: true,
+    label: '查看$_peerName的求职者资料',
+    child: Tooltip(
+      message: '查看求职者资料',
+      child: InkWell(
+        key: ValueKey(key),
+        onTap: _openCandidate,
+        borderRadius: BorderRadius.circular(24),
+        child: MessageAvatar(
+          name: _peerName,
+          url: widget.source.avatarUrl(
+            messageText(widget.session['peerAvatar'], ''),
+          ),
+        ),
+      ),
+    ),
+  );
+
   Future<void> _loadQuick() async {
     if (_id == null) return;
+    if (mounted) setState(() => _quickLoading = true);
     try {
       final rows = await widget.source.loadQuickReplies();
       if (mounted) {
@@ -76,7 +257,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _quickError = '快捷回复暂不可用');
+      if (mounted) setState(() => _quickError = '常用语暂不可用');
+    } finally {
+      if (mounted) setState(() => _quickLoading = false);
     }
   }
 
@@ -118,8 +301,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _send() async {
-    final text = _input.text.trim();
+  Future<void> _send() async => _sendText(_input.text.trim(), clearDraft: true);
+
+  Future<void> _sendText(String text, {bool clearDraft = false}) async {
     if (_sending ||
         _fetching ||
         _uncertain ||
@@ -139,7 +323,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     try {
       await widget.source.send(_id!, text);
       if (!mounted) return;
-      _input.clear();
+      if (clearDraft) _input.clear();
       await _load();
       _bottom();
     } catch (error) {
@@ -154,19 +338,130 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  void _fill(String text) {
-    _input.text = text;
-    _input.selection = TextSelection.collapsed(offset: text.length);
+  Future<void> _saveQuickReply(ChatQuickReply? reply, String text) async {
+    try {
+      await widget.source.saveQuickReply(reply: reply, content: text);
+    } finally {
+      if (mounted) await _loadQuick();
+    }
+  }
+
+  Future<void> _sendAttachment(bool image) async {
+    if (_sending || _fetching || _uncertain || !_ready || _id == null) return;
+    var messageAttempted = false;
+    setState(() {
+      _sending = true;
+      _choosingAttachment = true;
+      _error = null;
+    });
+    try {
+      final picked = await widget.source.pickAttachment(image: image);
+      if (!mounted || picked == null) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          scrollable: true,
+          title: Text(image ? '发送图片' : '发送文件'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (image) ...[
+                Image.memory(
+                  picked.bytes,
+                  height: 150,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const Text('图片预览不可用'),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Text(picked.name),
+              Text(
+                '${(picked.bytes.length / 1024).toStringAsFixed(1)} KB',
+                style: const TextStyle(color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '确认后上传并发送给当前求职者。请勿发送密码、证件等敏感资料。',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              key: const Key('chat-confirm-attachment'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('确认发送'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+      setState(() => _choosingAttachment = false);
+      final uploaded = await widget.source.uploadAttachment(picked);
+      if (!mounted) return;
+      messageAttempted = true;
+      await widget.source.sendAttachment(_id!, uploaded);
+      if (!mounted) return;
+      await _load();
+      _bottom();
+    } catch (error) {
+      if (!mounted) return;
+      final known = error is ApiException && error.code != null;
+      setState(() {
+        // Upload and picker errors cannot have sent a chat message.
+        _uncertain = messageAttempted && !known;
+        _error = _uncertain ? '附件发送结果待核对，请刷新记录后确认，避免重复发送' : messageError(error);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _choosingAttachment = false;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(
-        messageText(
-          widget.session['peerName'],
-          messageText(widget.session['name'], '聊天'),
-        ),
+      toolbarHeight: MediaQuery.textScalerOf(context)
+          .scale(40)
+          .clamp(56.0, 112.0)
+          .toDouble(),
+      title: Row(
+        children: [
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: _peerAvatar('chat-peer-profile'),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _peerName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 17),
+                ),
+                const Text(
+                  '求职者 · 点击头像查看资料',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
       actions: [
         IconButton(
@@ -179,187 +474,316 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     ),
     body: SafeArea(
       top: false,
-      child: Column(
-        children: [
-          if (_error != null)
-            Container(
-              width: double.infinity,
-              color: AppColors.warningSoft,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: LayoutBuilder(
+        builder: (_, constraints) {
+          final compact =
+              constraints.maxHeight < 400 ||
+              MediaQuery.viewInsetsOf(context).bottom > 0;
+          return Column(
+            children: [
+              ChatJobCard(
+                compact: compact || _composerExpanded,
+                loading: _contextLoading,
+                job: _selectedJob,
+                error: _contextError,
+                jobCount: _chatContext?.jobs.length ?? 0,
+                onRetry: _loadContext,
+                onSelect: _selectJob,
+                onOpen: () {
+                  final job = _selectedJob;
+                  if (job != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => JobDetailPage(
+                          job: job.job,
+                          source: widget.source.jobDetailsSource,
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+              if (_error != null)
+                Container(
+                  width: double.infinity,
+                  color: AppColors.warningSoft,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        _error!,
+                        style: const TextStyle(
+                          color: AppColors.warning,
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (_uncertain)
+                        TextButton(
+                          key: const Key('chat-verify-result'),
+                          onPressed: _fetching || _sending
+                              ? null
+                              : () async {
+                                  await _load();
+                                  if (!mounted) return;
+                                  // 核对服务器记录后由用户明确恢复编辑，不自动重发。
+                                  if (_ready) {
+                                    setState(
+                                      () => _error = '请核对上方记录，确认上一条消息是否已送达',
+                                    );
+                                  }
+                                },
+                          child: const Text('刷新并核对记录'),
+                        ),
+                      if (_uncertain)
+                        TextButton(
+                          key: const Key('chat-resume-edit'),
+                          onPressed: () => setState(() {
+                            _uncertain = false;
+                            _error = null;
+                          }),
+                          child: const Text('已核对记录，继续编辑'),
+                        ),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: _loading
+                    ? const SkeletonList(rows: 4)
+                    : RefreshIndicator(
+                        onRefresh: () => _load(),
+                        child: ListView(
+                          controller: _scroll,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            if (_messages.isEmpty && _ready)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 40),
+                                child: Text(
+                                  '暂无聊天记录',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: AppColors.textMuted),
+                                ),
+                              ),
+                            if (_messages.isEmpty && !_ready)
+                              TextButton(
+                                onPressed: () => _load(),
+                                child: const Text('重试加载聊天记录'),
+                              ),
+                            for (final item in _messages) _bubble(item),
+                          ],
+                        ),
+                      ),
+              ),
+              ChatComposer(
+                controller: _input,
+                disabled: _sending || _uncertain || !_ready,
+                canSend: !_sending && !_fetching && !_uncertain && _ready,
+                sending: _sending && !_choosingAttachment,
+                quickReplies: _quick,
+                quickLoading: _quickLoading,
+                quickError: _quickError,
+                maxPanelHeight: constraints.maxHeight * .4,
+                maxInputLines: constraints.maxHeight < 360 ? 1 : 3,
+                onSend: _send,
+                onSendQuick: _sendText,
+                onReloadQuick: _loadQuick,
+                onSaveQuick: _saveQuickReply,
+                onAttachment: _sendAttachment,
+                onPanelChanged: (expanded) {
+                  if (_composerExpanded != expanded) {
+                    setState(() => _composerExpanded = expanded);
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+  Widget _messageContent(ConversationMessage item) {
+    final color = item.mine ? AppColors.canvas : AppColors.textPrimary;
+    if (item.type == 2) {
+      final url = widget.source.attachmentUrl(item.attachment);
+      if (url != null) {
+        return GestureDetector(
+          key: ValueKey('chat-image-${item.id}'),
+          onTap: () => showDialog<void>(
+            context: context,
+            builder: (context) => Dialog(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    _error!,
-                    style: const TextStyle(
-                      color: AppColors.warning,
-                      fontSize: 12,
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      tooltip: '关闭图片',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
                     ),
                   ),
-                  if (_uncertain)
-                    TextButton(
-                      key: const Key('chat-verify-result'),
-                      onPressed: _fetching || _sending
-                          ? null
-                          : () async {
-                              await _load();
-                              if (!mounted) return;
-                              // 核对服务器记录后由用户明确恢复编辑，不自动重发。
-                              if (_ready) {
-                                setState(() => _error = '请核对上方记录，确认上一条消息是否已送达');
-                              }
-                            },
-                      child: const Text('刷新并核对记录'),
+                  Flexible(
+                    child: InteractiveViewer(
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text('图片暂不可用'),
+                        ),
+                      ),
                     ),
-                  if (_uncertain)
-                    TextButton(
-                      key: const Key('chat-resume-edit'),
-                      onPressed: () => setState(() {
-                        _uncertain = false;
-                        _error = null;
-                      }),
-                      child: const Text('已核对记录，继续编辑'),
-                    ),
+                  ),
                 ],
               ),
             ),
-          Expanded(
-            child: _loading
-                ? const SkeletonList(rows: 4)
-                : RefreshIndicator(
-                    onRefresh: () => _load(),
-                    child: ListView(
-                      controller: _scroll,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        if (_messages.isEmpty && _ready)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 40),
-                            child: Text(
-                              '暂无聊天记录',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: AppColors.textMuted),
-                            ),
-                          ),
-                        if (_messages.isEmpty && !_ready)
-                          TextButton(
-                            onPressed: () => _load(),
-                            child: const Text('重试加载聊天记录'),
-                          ),
-                        for (final item in _messages) _bubble(item),
-                      ],
-                    ),
-                  ),
           ),
-          if (_quick.isNotEmpty)
-            SizedBox(
-              height: 44,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                itemCount: _quick.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (_, index) => ActionChip(
-                  label: Text(
-                    _quick[index],
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  onPressed: _sending || _uncertain
-                      ? null
-                      : () => setState(() => _fill(_quick[index])),
-                ),
-              ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Image.network(
+              url,
+              height: 150,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) =>
+                  Text('图片暂不可用', style: TextStyle(color: color)),
             ),
-          if (_quickError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                _quickError!,
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 11,
-                ),
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: TextField(
-                    key: const Key('chat-input'),
-                    controller: _input,
-                    enabled: !_sending && !_uncertain,
-                    minLines: 1,
-                    maxLines: 4,
-                    maxLength: 1000,
-                    inputFormatters: [LengthLimitingTextInputFormatter(1000)],
-                    textInputAction: TextInputAction.newline,
-                    decoration: const InputDecoration(
-                      hintText: '输入消息…',
-                      counterText: '',
-                      filled: true,
-                      fillColor: AppColors.canvas,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  key: const Key('chat-send'),
-                  onPressed: _sending || _fetching || _uncertain || !_ready
-                      ? null
-                      : _send,
-                  child: Text(_sending ? '发送中' : '发送'),
-                ),
-              ],
+          ),
+        );
+      }
+    }
+    if (item.type == 3) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.insert_drive_file_outlined, color: color, size: 28),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              item.content.isEmpty ? '文件附件' : item.content,
+              key: ValueKey('chat-file-${item.id}'),
+              style: TextStyle(color: color),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
-      ),
-    ),
-  );
+      );
+    }
+    return SelectableText(
+      item.display,
+      style: TextStyle(color: color, fontSize: 14, height: 1.5),
+    );
+  }
+
+  String _timestamp(DateTime? time) {
+    final date = messageDate(time), clock = messageClock(time);
+    return date == clock ? clock : '$date $clock';
+  }
+
   Widget _bubble(ConversationMessage item) => Padding(
     key: ValueKey('chat-message-${item.id}'),
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Align(
-      alignment: item.mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * .78,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: item.mine ? AppColors.interactive : AppColors.canvas,
-          borderRadius: BorderRadius.circular(8),
-          border: item.mine ? null : Border.all(color: AppColors.hairline),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SelectableText(
-              item.display,
-              style: TextStyle(
-                color: item.mine ? AppColors.canvas : AppColors.textPrimary,
-                fontSize: 14,
-                height: 1.5,
+    // Reserve the opposite avatar's 48px column and its 8px gap.
+    padding: EdgeInsets.only(
+      left: item.mine ? 56 : 0,
+      right: item.mine ? 0 : 56,
+      bottom: 12,
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: item.mine
+          ? MainAxisAlignment.end
+          : MainAxisAlignment.start,
+      children: [
+        if (!item.mine) ...[
+          _peerAvatar('chat-peer-avatar-${item.id}'),
+          const SizedBox(width: 8),
+        ],
+        Flexible(
+          child: Stack(
+            children: [
+              Padding(
+                padding: EdgeInsets.only(right: item.mine ? 7 : 0),
+                child: Container(
+                  key: ValueKey('chat-bubble-${item.id}'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: item.mine ? AppColors.interactive : AppColors.canvas,
+                    borderRadius: BorderRadius.circular(8),
+                    border: item.mine
+                        ? null
+                        : Border.all(color: AppColors.hairline),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _messageContent(item),
+                      const SizedBox(height: 4),
+                      Text(
+                        _timestamp(item.time),
+                        style: TextStyle(
+                          color: item.mine
+                              ? AppColors.canvas.withValues(alpha: .72)
+                              : AppColors.textMuted,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${messageDate(item.time)} ${messageClock(item.time)}',
-              style: TextStyle(
-                color: item.mine
-                    ? AppColors.canvas.withValues(alpha: .72)
-                    : AppColors.textMuted,
-                fontSize: 10,
-              ),
-            ),
-          ],
+              if (item.mine)
+                Positioned(
+                  right: 0,
+                  top: 18,
+                  child: CustomPaint(
+                    key: ValueKey('chat-bubble-tail-${item.id}'),
+                    size: const Size(7, 12),
+                    painter: const _RecruiterBubbleTailPainter(),
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
+        if (item.mine) ...[
+          const SizedBox(width: 8),
+          Semantics(
+            label: '招聘者$_recruiterName的头像',
+            image: true,
+            child: MessageAvatar(
+              key: ValueKey('chat-recruiter-avatar-${item.id}'),
+              name: _recruiterName,
+              url: _recruiterAvatarUrl,
+            ),
+          ),
+        ],
+      ],
     ),
   );
+}
+
+class _RecruiterBubbleTailPainter extends CustomPainter {
+  const _RecruiterBubbleTailPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, size.height / 2)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = AppColors.interactive);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RecruiterBubbleTailPainter oldDelegate) =>
+      false;
 }

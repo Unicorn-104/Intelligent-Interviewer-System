@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_exception.dart';
+
 import '../../../theme/app_theme.dart';
 import '../talent/talent_detail_page.dart';
 import '../talent/models/talent_detail_view_data.dart';
@@ -242,7 +244,33 @@ class _JobDetailPageState extends State<JobDetailPage>
     }
   }
 
-  Future<void> _rescreen() async {
+  Future<void> _fullRescreen() async {
+    if (_screening) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认全量分析'),
+        content: const Text(
+          '全量分析将重新分析该岗位下所有求职者，覆盖已保存的分析结果，'
+          '会耗费大量时间和模型调用额度。每位求职者仍独立与岗位要求匹配，不进行横向比较。是否继续？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            key: const Key('job-full-analysis-confirm'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('开始全量分析'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) await _rescreen(fullAnalysis: true);
+  }
+
+  Future<void> _rescreen({bool fullAnalysis = false}) async {
     final data = _detail.data;
     if (_screening ||
         _detail.loading ||
@@ -254,7 +282,34 @@ class _JobDetailPageState extends State<JobDetailPage>
     }
     setState(() => _screening = true);
     try {
-      final summary = await widget.source.startScreening(_positionId);
+      // Re-read both sources before incremental analysis. If every current candidate
+      // already has an LLM result, this action is read-only and does not spend model calls.
+      if (!fullAnalysis) {
+        await Future.wait([_loadDetail(), _loadScores()]);
+        if (!mounted) return;
+        if (_detail.error != null) throw ApiException(_detail.error!);
+        if (_scores.error != null) throw ApiException(_scores.error!);
+        final candidates =
+            _detail.data?.candidates ?? const <Map<String, dynamic>>[];
+        final analyzedIds = <int>{
+          for (final result in _scores.data ?? const <Map<String, dynamic>>[])
+            if (result['source'] == 'llm')
+              if (jobPositiveId(result['resultId']) case final int id) id,
+        };
+        final hasUnanalyzedCandidate = candidates.any((candidate) {
+          final id = jobPositiveId(candidate['talId']);
+          return id == null || !analyzedIds.contains(id);
+        });
+        if (!hasUnanalyzedCandidate) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('已读取已有分析结果，没有待补充的求职者')));
+          return;
+        }
+      }
+      final summary = fullAnalysis
+          ? await widget.source.startFullScreening(_positionId)
+          : await widget.source.startScreening(_positionId);
       if (!mounted) {
         return;
       }
@@ -262,7 +317,31 @@ class _JobDetailPageState extends State<JobDetailPage>
         setState(() => _scores.error = '筛选已响应，但没有返回可核对的任务标识。请刷新评分，避免重复提交。');
         return;
       }
+      if (summary['processing'] is! bool) {
+        throw const ApiException('服务器尚未部署新版AI筛选服务，请先更新服务器后端');
+      }
+      var progress = summary;
+      final deadline = DateTime.now().add(const Duration(minutes: 12));
+      while (progress['processing'] == true) {
+        if (DateTime.now().isAfter(deadline)) {
+          throw const ApiException('分析仍在后台进行，请稍后查看结果；无需重复提交');
+        }
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+        progress = await widget.source.loadScreeningStatus(_positionId);
+        if (jobPositiveId(progress['taskId']) != _positionId) {
+          throw const ApiException('分析进度标识不一致，请稍后查看结果');
+        }
+      }
+      if (progress['state'] == 'failed') {
+        throw ApiException(talentText(progress['error'], 'AI筛选失败，原有结果未变更'));
+      }
       await Future.wait([_loadDetail(), _loadScores()]);
+      if (mounted && summary['message'] is String) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(summary['message'] as String)));
+      }
     } catch (error) {
       if (mounted) {
         setState(() => _scores.error = jobDetailError(error));
@@ -423,6 +502,7 @@ class _JobDetailPageState extends State<JobDetailPage>
             onReloadDetail: _loadDetail,
             onReloadScores: _loadScores,
             onScreen: _rescreen,
+            onFullScreen: _fullRescreen,
             onOpen: _openCandidate,
           ),
         ),

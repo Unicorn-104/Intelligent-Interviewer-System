@@ -44,6 +44,8 @@ class HomeInterviewsPage extends StatelessWidget {
     itemBuilder: (item, reload) => HomeInterviewRow(
       interview: item,
       now: now,
+      rescheduleSource: source.candidateActionsSource,
+      onRescheduled: () async => reload(),
       onViewCandidate: onViewCandidate == null || item.candidateId == null
           ? null
           : () async {

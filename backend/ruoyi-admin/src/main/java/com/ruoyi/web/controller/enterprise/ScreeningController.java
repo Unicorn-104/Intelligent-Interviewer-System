@@ -21,7 +21,7 @@ import com.ruoyi.enterprise.service.IScreeningService;
  *
  * <p>依据《业务功能分析》UC-04（硬性条件自动过滤）、
  * UC-05（AI 多维度匹配与评分排序）、UC-06（短名单 HR 复核）：
- * 硬性过滤 → 多维度加权评分（技能 30%/项目 30%/教育 20%/行业 20%）
+ * 基于简历证据生成六维评分及简短推荐理由
  * → 降序短名单 Top N → 可解释推荐报告与个性化招呼语 → HR 复核。</p>
  *
  * @author enterprise
@@ -53,6 +53,26 @@ public class ScreeningController extends BaseController
             @RequestParam(defaultValue = "20") Integer pageSize)
     {
         return getDataTable(screeningService.listTasks(getUserId(), pageNum, pageSize));
+    }
+
+    @PostMapping("/tasks/async")
+    public AjaxResult triggerAsync(@RequestBody Map<String, Object> body)
+    {
+        Long positionId = asLong(body.get("positionId"));
+        Integer topN = asInt(body.get("topN"), 20);
+        // Omitted/false keeps the original API contract; only an explicit JSON true forces a refresh.
+        Object full = body.get("fullAnalysis");
+        if (full != null && !(full instanceof Boolean))
+            throw new com.ruoyi.common.exception.ServiceException("fullAnalysis须为布尔值");
+        return success(Boolean.TRUE.equals(full)
+                ? screeningService.triggerScreeningAsync(getUserId(), positionId, topN, true)
+                : screeningService.triggerScreeningAsync(getUserId(), positionId, topN));
+    }
+
+    @GetMapping("/tasks/{taskId}/status")
+    public AjaxResult taskStatus(@PathVariable("taskId") Long taskId)
+    {
+        return success(screeningService.getTaskStatus(getUserId(), taskId));
     }
 
     /**

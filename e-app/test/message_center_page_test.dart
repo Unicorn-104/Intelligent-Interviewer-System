@@ -1,5 +1,9 @@
 import 'dart:async';
 
+import 'package:enterprise_recruiter/features/enterprise/notification/models/chat_context.dart';
+import 'package:enterprise_recruiter/features/enterprise/notification/widgets/message_avatar.dart';
+import 'package:enterprise_recruiter/features/enterprise/profile/models/profile_view_data.dart';
+
 import 'package:enterprise_recruiter/core/network/api_exception.dart';
 import 'package:enterprise_recruiter/features/enterprise/notification/message_center_page.dart';
 import 'package:enterprise_recruiter/features/enterprise/notification/system_notifications_page.dart';
@@ -26,6 +30,29 @@ Map<String, dynamic> noticeJson(int id) => {
 };
 
 class FakeMessageSource extends MessageDataSource {
+  EnterpriseProfile recruiterProfile = EnterpriseProfile.fromResponse({
+    'data': {'userId': 99, 'nickName': '招聘者测试', 'avatar': ''},
+  });
+  bool recruiterProfileFail = false;
+  int recruiterProfileCalls = 0;
+  Completer<EnterpriseProfile>? recruiterProfileGate;
+  @override
+  Future<EnterpriseProfile> loadRecruiterProfile() async {
+    recruiterProfileCalls++;
+    if (recruiterProfileFail) throw const ApiException('合成资料读取失败');
+    return recruiterProfileGate?.future ?? recruiterProfile;
+  }
+
+  ChatContext chatContext = ChatContext();
+  int contextCalls = 0;
+  bool contextFail = false;
+  @override
+  Future<ChatContext> loadChatContext(Map<String, dynamic> session) async {
+    contextCalls++;
+    if (contextFail) throw const ApiException('合成岗位资料读取失败');
+    return chatContext;
+  }
+
   List<MessageSession> sessions = [MessageSession.fromJson(sessionJson())];
   List<SystemMessage> notices = [SystemMessage.fromJson(noticeJson(4))];
   List<ConversationMessage> messages = [
@@ -86,7 +113,9 @@ class FakeMessageSource extends MessageDataSource {
   }
 
   @override
-  Future<List<String>> loadQuickReplies() async => ['合成快捷回复'];
+  Future<List<ChatQuickReply>> loadQuickReplies() async => [
+    const ChatQuickReply(id: 1, content: '合成快捷回复'),
+  ];
   @override
   Future<void> send(int id, String content) async {
     sends.add(content);
@@ -148,6 +177,183 @@ Future<void> mountMessages(
 }
 
 void main() {
+  ConversationMessage ownMessage([String content = '合成招聘者消息']) =>
+      ConversationMessage.fromJson({
+        'messageId': 2,
+        'isMine': true,
+        'content': content,
+        'sendTime': '2026-10-22 09:30',
+      });
+
+  testWidgets('双方头像分列气泡两侧，招聘者头像使用当前账号真实图片', (tester) async {
+    final source = FakeMessageSource();
+    source.recruiterProfile = EnterpriseProfile.fromResponse({
+      'data': {
+        'userId': 99,
+        'nickName': '招聘者测试',
+        'avatar': '/profile/synthetic-recruiter.png',
+      },
+    });
+    source.messages.add(ownMessage());
+    await mountMessages(tester, source, chat: true);
+    final recruiter = find.byKey(const ValueKey('chat-recruiter-avatar-2'));
+    final peer = find.byKey(const ValueKey('chat-peer-avatar-1'));
+    final avatar = tester.widget<MessageAvatar>(recruiter);
+    expect(avatar.name, '招聘者测试');
+    expect(avatar.url, source.avatarUrl(source.recruiterProfile.avatar));
+    expect(
+      tester.getTopLeft(recruiter).dx,
+      greaterThan(tester.getTopRight(find.text('合成招聘者消息')).dx),
+    );
+    expect(
+      tester.getTopRight(peer).dx,
+      lessThan(tester.getTopLeft(find.text('真实接口合成消息')).dx),
+    );
+    expect(source.recruiterProfileCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in [
+    const Size(320, 700),
+    const Size(430, 900),
+    const Size(900, 420),
+  ]) {
+    testWidgets('双方长气泡在$size均不越过对方头像列，自己的箭头指向本人头像', (tester) async {
+      final source = FakeMessageSource();
+      source.messages = [
+        ConversationMessage.fromJson({
+          'messageId': 1,
+          'isMine': false,
+          'content': '合成求职者长消息' * 8,
+          'sendTime': '2026-10-22 09:30',
+        }),
+        ownMessage('合成招聘者长消息' * 8),
+      ];
+      await mountMessages(tester, source, chat: true, size: size);
+      final peerAvatar = tester.getRect(
+        find.byKey(const ValueKey('chat-peer-avatar-1')),
+      );
+      final recruiterAvatar = tester.getRect(
+        find.byKey(const ValueKey('chat-recruiter-avatar-2')),
+      );
+      final peerBubble = tester.getRect(
+        find.byKey(const ValueKey('chat-bubble-1')),
+      );
+      final ownBubble = tester.getRect(
+        find.byKey(const ValueKey('chat-bubble-2')),
+      );
+      final tail = tester.getRect(
+        find.byKey(const ValueKey('chat-bubble-tail-2')),
+      );
+      expect(ownBubble.left, greaterThanOrEqualTo(peerAvatar.right + 8));
+      expect(peerBubble.right, lessThanOrEqualTo(recruiterAvatar.left - 8));
+      expect(tail.left, closeTo(ownBubble.right, .01));
+      expect(tail.right, closeTo(recruiterAvatar.left - 8, .01));
+      expect(tail.center.dy, closeTo(recruiterAvatar.center.dy, .01));
+      expect(find.byKey(const ValueKey('chat-bubble-tail-1')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('短消息保持收窄并贴近本人头像，箭头不撑满气泡', (tester) async {
+    final source = FakeMessageSource()..messages.add(ownMessage('好'));
+    await mountMessages(tester, source, chat: true);
+    final bubble = tester.getRect(find.byKey(const ValueKey('chat-bubble-2')));
+    final tail = tester.getRect(
+      find.byKey(const ValueKey('chat-bubble-tail-2')),
+    );
+    final avatar = tester.getRect(
+      find.byKey(const ValueKey('chat-recruiter-avatar-2')),
+    );
+    expect(bubble.width, lessThan(200));
+    expect(tail.left, closeTo(bubble.right, .01));
+    expect(tail.right, closeTo(avatar.left - 8, .01));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('招聘者无头像时使用本人姓名首字', (tester) async {
+    final source = FakeMessageSource()..messages.add(ownMessage());
+    await mountMessages(tester, source, chat: true);
+    final avatar = find.byKey(const ValueKey('chat-recruiter-avatar-2'));
+    expect(tester.widget<MessageAvatar>(avatar).url, isNull);
+    expect(
+      find.descendant(of: avatar, matching: find.text('招')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('招聘者资料失败保留文字头像并允许发送，刷新聊天不重复读取资料', (tester) async {
+    final source = FakeMessageSource()..recruiterProfileFail = true;
+    await mountMessages(tester, source, chat: true);
+    await tester.enterText(find.byType(TextField), '合成招聘者消息');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('chat-send')));
+    await tester.pumpAndSettle();
+    final avatar = find.byKey(const ValueKey('chat-recruiter-avatar-2'));
+    expect(tester.widget<MessageAvatar>(avatar).name, '招聘者');
+    expect(
+      find.descendant(of: avatar, matching: find.text('招')),
+      findsOneWidget,
+    );
+    expect(source.sends, ['合成招聘者消息']);
+    await tester.tap(find.byKey(const Key('chat-refresh')));
+    await tester.pumpAndSettle();
+    expect(source.recruiterProfileCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('招聘者资料读取中不阻塞聊天，离开后响应不会setState', (tester) async {
+    final source = FakeMessageSource()
+      ..recruiterProfileGate = Completer<EnterpriseProfile>()
+      ..messages.add(ownMessage());
+    await mountMessages(tester, source, chat: true);
+    final avatar = find.byKey(const ValueKey('chat-recruiter-avatar-2'));
+    expect(tester.widget<MessageAvatar>(avatar).name, '招聘者');
+    expect(find.text('合成招聘者消息'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    source.recruiterProfileGate!.complete(source.recruiterProfile);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in [const Size(320, 700), const Size(900, 420)]) {
+    testWidgets('招聘者头像与长消息在$size大字号及键盘下不溢出', (tester) async {
+      final source = FakeMessageSource()
+        ..messages.add(ownMessage('合成超长招聘者消息' * 30));
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: ChatPage(
+            session: sessionJson(),
+            source: source,
+            pollInterval: Duration.zero,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('chat-recruiter-avatar-2')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: size.height < 500 ? 100 : 220,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('系统通知游标加载更多保留已有记录并去重', (tester) async {
     final source = FakeMessageSource()
       ..notificationMore = true
@@ -224,23 +430,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('暂无消息'), findsOneWidget);
   });
-  testWidgets('打开会话读取真实历史后标为已读，快捷回复填入不自动发送', (tester) async {
+  testWidgets('打开会话读取真实历史后标为已读，常用语展开后点击直接发送', (tester) async {
     final source = FakeMessageSource();
     await mountMessages(tester, source);
     await tester.tap(find.byKey(const ValueKey('message-session-8')));
     await tester.pumpAndSettle();
     expect(find.text('真实接口合成消息'), findsOneWidget);
     expect(source.readCalls, 1);
+    await tester.tap(find.byKey(const Key('chat-quick-toggle')));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('合成快捷回复'));
     await tester.pumpAndSettle();
+    expect(source.sends, ['合成快捷回复']);
     expect(
       tester
           .widget<TextField>(find.byKey(const Key('chat-input')))
           .controller!
           .text,
-      '合成快捷回复',
+      isEmpty,
     );
-    expect(source.sends, isEmpty);
+    await tester.tap(find.byKey(const Key('chat-quick-toggle')));
+    await tester.pumpAndSettle();
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(source.sessions.single.unread, 0);
@@ -249,6 +459,7 @@ void main() {
     final source = FakeMessageSource()..sendGate = Completer<void>();
     await mountMessages(tester, source, chat: true);
     await tester.enterText(find.byKey(const Key('chat-input')), '合成发送消息');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('chat-send')));
     await tester.pump();
     expect(source.sends, ['合成发送消息']);
@@ -275,8 +486,11 @@ void main() {
     final source = FakeMessageSource()..historyFail = true;
     await mountMessages(tester, source, chat: true);
     expect(source.readCalls, 0);
+    expect(find.byKey(const Key('chat-send')), findsNothing);
     expect(
-      tester.widget<FilledButton>(find.byKey(const Key('chat-send'))).onPressed,
+      tester
+          .widget<IconButton>(find.byKey(const Key('chat-more-toggle')))
+          .onPressed,
       isNull,
     );
     source.historyFail = false;
@@ -284,6 +498,7 @@ void main() {
     await tester.pumpAndSettle();
     source.sendFailure = const ApiException('合成发送拒绝', code: 500);
     await tester.enterText(find.byKey(const Key('chat-input')), '保留的消息');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('chat-send')));
     await tester.pumpAndSettle();
     expect(find.text('合成发送拒绝'), findsOneWidget);
@@ -301,6 +516,7 @@ void main() {
       ..sendFailure = const ApiException('网络异常');
     await mountMessages(tester, source, chat: true);
     await tester.enterText(find.byKey(const Key('chat-input')), '可能已发送');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('chat-send')));
     await tester.pumpAndSettle();
     expect(find.textContaining('发送结果待核对'), findsOneWidget);

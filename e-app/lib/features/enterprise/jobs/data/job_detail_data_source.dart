@@ -36,6 +36,10 @@ class JobDetailDataSource {
       screening.getScreeningResults(id);
   Future<Map<String, dynamic>> startScreening(int id) =>
       screening.createScreeningTask(positionId: id);
+  Future<Map<String, dynamic>> startFullScreening(int id) =>
+      screening.createScreeningTask(positionId: id, fullAnalysis: true);
+  Future<Map<String, dynamic>> loadScreeningStatus(int id) =>
+      screening.getScreeningTaskStatus(id);
   Future<void> parseJd(int id, String text) async {
     await jd.parseJdProfile(positionId: id, jdText: text);
   }

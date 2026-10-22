@@ -7,24 +7,36 @@
 /// 请求统一走 lib/core/network/enterprise_api_client.dart。
 ///
 /// 已知占位（P6 报告标注）：
-/// - 维度明细 projectMatch/educationMatch/industryMatch 为 null（向量服务未接入）；
 /// - 任务列表 status 筛选后端暂未实现（传参保留，当前无过滤效果）。
 library;
 
 import '../../core/network/enterprise_api_client.dart';
+import '../../core/network/api_exception.dart';
 
-/// UC-04/UC-05 步骤1：触发 AI 初筛任务（硬性过滤 + 多维度匹配）。
-/// 已对接：POST /enterprise/screening/tasks
+/// UC-04/UC-05 步骤1：启动真实模型后台分析，随后只读轮询进度。
+/// 已对接：POST /enterprise/screening/tasks/async
 /// 入参以实际接口为准：{positionId, topN}
 Future<Map<String, dynamic>> createScreeningTask({
   required int positionId,
   int? topN,
+  bool fullAnalysis = false,
 }) async {
-  final response = await EnterpriseApiClient().post(
-    '/enterprise/screening/tasks',
-    body: {'positionId': positionId, 'topN': topN},
-  );
-  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+  try {
+    final response = await EnterpriseApiClient().post(
+      '/enterprise/screening/tasks/async',
+      body: {
+        'positionId': positionId,
+        'topN': topN,
+        'fullAnalysis': fullAnalysis,
+      },
+    );
+    return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+  } on ApiException catch (error) {
+    if (error.statusCode == 404 || error.code == 404) {
+      throw const ApiException('服务器尚未部署新版AI筛选服务，请先更新服务器后端');
+    }
+    rethrow;
+  }
 }
 
 /// UC-05 步骤1：筛选任务列表（按岗位聚合）。
@@ -47,10 +59,11 @@ Future<List<Map<String, dynamic>>> listScreeningTasks({
 
 /// UC-05 步骤3-4：匹配度评分列表 + 维度明细（降序）。
 /// 已对接：GET /enterprise/screening/tasks/{taskId}/results
-/// 注意：projectMatch/educationMatch/industryMatch 为 null（语义维度未接入，P6 占位）。
+/// 六维真实模型评分；资料不足的维度为 null，source=llm 表示分析完成。
 Future<List<Map<String, dynamic>>> getScreeningResults(int taskId) async {
-  final response =
-      await EnterpriseApiClient().get('/enterprise/screening/tasks/$taskId/results');
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/screening/tasks/$taskId/results',
+  );
   return (response['data'] as List?)
           ?.map((item) => Map<String, dynamic>.from(item as Map))
           .toList() ??
@@ -74,8 +87,9 @@ Future<List<Map<String, dynamic>>> getShortlist(int taskId, {int? topN}) async {
 /// 已对接：GET /enterprise/screening/results/{resultId}/report
 /// 容错：matchPoints 可能为 null（未触发深度分析时）。
 Future<Map<String, dynamic>> getRecommendationReport(int resultId) async {
-  final response =
-      await EnterpriseApiClient().get('/enterprise/screening/results/$resultId/report');
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/screening/results/$resultId/report',
+  );
   final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
   data['matchPoints'] = data['matchPoints'] ?? const <String, dynamic>{};
   return data;
@@ -84,8 +98,9 @@ Future<Map<String, dynamic>> getRecommendationReport(int resultId) async {
 /// UC-05 步骤8：Top 3 个性化招呼语。
 /// 已对接：GET /enterprise/screening/results/{resultId}/greeting
 Future<Map<String, dynamic>> getGreetingMessage(int resultId) async {
-  final response =
-      await EnterpriseApiClient().get('/enterprise/screening/results/$resultId/greeting');
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/screening/results/$resultId/greeting',
+  );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
@@ -101,4 +116,12 @@ Future<void> reviewScreeningResult(
     '/enterprise/screening/results/$resultId/review',
     body: {'approved': approved, 'adjustScore': adjustScore},
   );
+}
+
+/// Reads progress without triggering another model request.
+Future<Map<String, dynamic>> getScreeningTaskStatus(int taskId) async {
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/screening/tasks/$taskId/status',
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
