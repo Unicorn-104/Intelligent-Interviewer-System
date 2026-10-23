@@ -138,3 +138,9 @@ __pycache__/
 /e-app/docs/local-backend-testing.md
 # Database backups must remain local, even when previously staged.
 /backend/doc/backup/
+
+# Private certificate containers and local data exports are not source.
+*.pfx
+*.p12
+/c-app/命令
+/backend/doc/capp_mock_data_increment_20261016.sql

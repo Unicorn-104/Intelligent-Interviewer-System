@@ -101,11 +101,15 @@ AI 结果仅供辅助，用户仍须逐项核对。
 | POST | `/app/resumes/import-pdf` | multipart `file` + `resume`（application/json），确认后创建简历并保存 PDF |
 | POST | `/app/resumes/{resumeId}/import-pdf` | 同上，校验所有权后替换该简历 PDF 和结构化信息 |
 | GET | `/app/resumes/{resumeId}/pdf` | 携带 Bearer Token，只允许本人读取，返回 application/pdf |
+| DELETE | `/app/resumes/{resumeId}` | 携带 Bearer Token 软删除本人简历；已关联投递/人才档案时拒绝删除 |
 
 保存和列表响应增加 `fileName`、`fileSize`、`pdfUrl`；无附件时为空。
+简历列表对已保存的原始 PDF 显示文件名入口，点击后调用本人鉴权接口在 App 内预览，支持捏合缩放、翻页和重试；无附件的简历不显示入口。
+预览 PDF 以 Bearer Token 请求现有读取接口，不向系统浏览器暴露私有文件地址；客户端最多接收 10 MB，并在页面关闭时释放文档资源。
 自动导入成功草稿的 `structureMethod` 为 AI，另包含 `unmappedText` 和 `parseWarnings`；这些诊断字段不参与保存。客户端拒绝未完成 AI 编排的导入草稿。
 不接收客户端指定服务器路径；普通 JSON 保存忽略附件元数据并保留已有附件。
 PDF 替换成功提交后清理旧文件，数据库回滚时清理新文件。
+删除简历会先锁定并校验所有权；已被投递记录或人才档案引用的简历拒绝删除以保留历史流程。未被引用的简历软删除并清理经历明细，默认简历删除后自动将最近更新的其他简历设为默认；原始 PDF 在事务提交后删除，回滚时保留。
 简历内容和识别原文不进入操作审计的请求、响应日志。
 
 ## 验证
@@ -117,6 +121,7 @@ PDF 替换成功提交后清理旧文件，数据库回滚时清理新文件。
 - 数据库测试在 H2 的 MySQL 模式下执行真实 MyBatis Mapper 和事务，验证字段对齐、
   原始字节、普通编辑保留附件、越权、路径校验、替换及失败回滚。
 - 客户端测试在本地 HTTP 服务验证 multipart JSON、中文文件名、PDF 字节及响应字段。
+- 原始 PDF 预览测试验证 Bearer 鉴权、401、越权/不存在、异常响应、重定向、PDF 文件头及 10 MB 上限。
 - AI 测试用本地模拟服务验证不同标题的字段映射、日期与枚举、超长内容保留、
   超时、限流/鉴权失败、不完整 JSON，以及失败时保留原文。
 - 获得授权后的实际 DeepSeek 验证仅发送合成简历，不输出密钥、请求原文或模型原文。
