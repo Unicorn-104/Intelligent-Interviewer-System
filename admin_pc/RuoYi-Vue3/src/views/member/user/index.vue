@@ -1,5 +1,25 @@
 ﻿<template>
   <div class="app-container list-page">
+    <!-- 统计卡 -->
+    <div class="stat-row">
+      <div class="stat-card" @click="quickFilter(undefined)">
+        <div class="stat-num">{{ stats.total }}</div>
+        <div class="stat-label">全部用户</div>
+      </div>
+      <div class="stat-card stat-normal" @click="quickFilter('0')">
+        <div class="stat-num">{{ stats.normal }}</div>
+        <div class="stat-label">正常</div>
+      </div>
+      <div class="stat-card stat-banned" @click="quickFilter('1')">
+        <div class="stat-num">{{ stats.banned }}</div>
+        <div class="stat-label">已封禁</div>
+      </div>
+      <div class="stat-card stat-pending" @click="quickFilter('2')">
+        <div class="stat-num">{{ stats.pending }}</div>
+        <div class="stat-label">待注销审核</div>
+      </div>
+    </div>
+
     <!-- 搜索卡片 -->
     <div class="search-card">
       <el-form :model="queryParams" ref="queryRef" :inline="true">
@@ -41,7 +61,9 @@
         <el-table-column label="ID" align="center" prop="userId" width="70" />
         <el-table-column label="昵称" align="center" prop="userName" min-width="140" />
         <el-table-column label="账号" align="center" prop="account" min-width="160" />
-        <el-table-column label="手机号" align="center" prop="phone" width="130" />
+        <el-table-column label="手机号" align="center" width="130">
+          <template #default="scope">{{ maskPhone(scope.row.phone) }}</template>
+        </el-table-column>
         <el-table-column label="身份" align="center" width="100">
           <template #default="scope">
             <el-tag effect="plain" :type="identityTag(scope.row.identity)">{{
@@ -146,7 +168,7 @@
 
         <div class="detail-section">
           <div class="section-title">登录设备（{{ detailDevices.length }} 台）</div>
-          <el-table :data="detailDevices" border size="small" class="mini-table">
+          <el-table v-if="detailDevices.length" :data="detailDevices" border size="small" class="mini-table">
             <el-table-column label="设备" align="center" prop="deviceName" min-width="140" />
             <el-table-column label="IP" align="center" prop="ip" width="120" />
             <el-table-column label="归属地" align="center" prop="location" width="110" />
@@ -162,16 +184,18 @@
               </template>
             </el-table-column>
           </el-table>
+          <el-empty v-else description="暂无登录设备记录" :image-size="70" />
         </div>
 
         <div class="detail-section">
           <div class="section-title">最近登录记录</div>
-          <el-table :data="detailLoginLogs" border size="small" class="mini-table">
+          <el-table v-if="detailLoginLogs.length" :data="detailLoginLogs" border size="small" class="mini-table">
             <el-table-column label="时间" align="center" prop="time" width="165" />
             <el-table-column label="IP" align="center" prop="ip" width="120" />
             <el-table-column label="归属地" align="center" prop="location" />
             <el-table-column label="结果" align="center" prop="result" width="70" />
           </el-table>
+          <el-empty v-else description="暂无登录记录" :image-size="70" />
         </div>
       </div>
     </el-drawer>
@@ -203,12 +227,11 @@
 </template>
 
 <script setup name="MemberUser">
-import { listUser, getUser, changeStatus, auditCancel, logoutForce } from '@/api/member/user'
+import { listUser, getUser, changeStatus, auditCancel, logoutForce, statsUser } from '@/api/member/user'
 
 const { proxy } = getCurrentInstance()
 const userList = ref([])
 const detailOpen = ref(false)
-const detailTitle = ref('')
 const detailUser = ref({})
 const detailDevices = ref([])
 const detailLoginLogs = ref([])
@@ -216,6 +239,7 @@ const auditOpen = ref(false)
 const loading = ref(true)
 const showSearch = ref(true)
 const total = ref(0)
+const stats = ref({ total: 0, normal: 0, banned: 0, pending: 0 })
 
 const statusOptions = [
   { value: '0', label: '正常', tag: 'success' },
@@ -283,6 +307,28 @@ function getList() {
       console.error('查询用户列表失败:', err)
       loading.value = false
     })
+  getStats()
+}
+
+function getStats() {
+  statsUser()
+    .then((res) => {
+      stats.value = res.data || res || {}
+    })
+    .catch(() => {})
+}
+
+/** 统计卡点选筛选 */
+function quickFilter(status) {
+  data.queryParams.status = status
+  handleQuery()
+}
+
+/** 手机号脱敏 138****8000 */
+function maskPhone(phone) {
+  if (!phone) return '-'
+  const s = String(phone)
+  return s.length >= 7 ? s.slice(0, 3) + '****' + s.slice(-4) : s
 }
 
 /** 搜索按钮操作 */
@@ -304,7 +350,7 @@ function resetQuery() {
 }
 
 /** 强制下线操作 */
-function forceOffline(row) {
+function handleForceOffline(row) {
   proxy.$modal
     .confirm('确认强制该用户下线吗？')
     .then(() => {
@@ -360,7 +406,7 @@ function submitAudit() {
     if (v) {
       auditCancel({
         userId: data.form.userId,
-        pass: data.form.pass,
+        status: data.form.pass,
         reason: data.form.reason
       })
         .then(() => {
@@ -414,6 +460,56 @@ getList()
 
 <style lang="scss" scoped>
 .list-page {
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .stat-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 18px 20px;
+    box-shadow: 0 2px 10px rgba(72, 47, 105, 0.05);
+    cursor: pointer;
+    border-left: 4px solid transparent;
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(72, 47, 105, 0.1);
+  }
+  .stat-num {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .stat-label {
+    color: #86909c;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  .stat-normal {
+    border-left-color: #22c55e;
+  }
+  .stat-normal .stat-num {
+    color: #22c55e;
+  }
+  .stat-banned {
+    border-left-color: #ef4444;
+  }
+  .stat-banned .stat-num {
+    color: #ef4444;
+  }
+  .stat-pending {
+    border-left-color: #f59e0b;
+  }
+  .stat-pending .stat-num {
+    color: #f59e0b;
+  }
+
   .search-card {
     background: #fff;
     padding: 18px 20px 6px;
