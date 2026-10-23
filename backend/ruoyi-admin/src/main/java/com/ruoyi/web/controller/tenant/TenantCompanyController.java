@@ -1,6 +1,7 @@
 package com.ruoyi.web.controller.tenant;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import com.ruoyi.common.core.controller.BaseController;
@@ -21,6 +22,9 @@ public class TenantCompanyController extends BaseController {
 
     @Autowired
     private ICompanyService companyService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @PreAuthorize("@ss.hasPermi('tenant:company:list')")
     @GetMapping("/list")
@@ -46,7 +50,12 @@ public class TenantCompanyController extends BaseController {
             item.put("address", c.getCmpAddress());
             item.put("website", c.getCmpWebsite());
             item.put("intro", c.getCmpIntro());
+            item.put("contactName", c.getContactName());
+            item.put("contactPhone", c.getContactPhone());
             item.put("verifyStatus", c.getCmpVerifyStatus() != null ? c.getCmpVerifyStatus() : 0);
+            item.put("verifyAt", c.getCmpVerifyAt());
+            item.put("verifyRemark", c.getVerifyRemark());
+            item.put("verifyByName", resolveUserName(c.getCmpVerifyBy()));
             item.put("createTime", c.getCmpCreatedAt());
             result.add(item);
         }
@@ -70,7 +79,12 @@ public class TenantCompanyController extends BaseController {
         item.put("address", c.getCmpAddress());
         item.put("website", c.getCmpWebsite());
         item.put("intro", c.getCmpIntro());
+        item.put("contactName", c.getContactName());
+        item.put("contactPhone", c.getContactPhone());
         item.put("verifyStatus", c.getCmpVerifyStatus() != null ? c.getCmpVerifyStatus() : 0);
+        item.put("verifyAt", c.getCmpVerifyAt());
+        item.put("verifyRemark", c.getVerifyRemark());
+        item.put("verifyByName", resolveUserName(c.getCmpVerifyBy()));
         item.put("createTime", c.getCmpCreatedAt());
         return success(item);
     }
@@ -145,5 +159,65 @@ public class TenantCompanyController extends BaseController {
         Integer status = Integer.valueOf(statusObj.toString()); // 1通过 2拒绝
         String rejectReason = data.get("rejectReason") != null ? data.get("rejectReason").toString() : "";
         return toAjax(companyService.verifyCompany(companyId, status, getUserId(), rejectReason));
+    }
+
+    /**
+     * 撤销审核：重置为待审核并清空留痕
+     */
+    @PreAuthorize("@ss.hasPermi('tenant:company:edit')")
+    @PutMapping("/revoke")
+    public AjaxResult revoke(@RequestBody Map<String, Object> data) {
+        Object companyIdObj = data.get("companyId");
+        if (companyIdObj == null) {
+            return AjaxResult.error("企业ID不能为空");
+        }
+        Long companyId = Long.valueOf(companyIdObj.toString());
+        return toAjax(companyService.resetVerify(companyId));
+    }
+
+    /**
+     * 审核状态统计：0待审核 1已通过 2已拒绝
+     */
+    @PreAuthorize("@ss.hasPermi('tenant:company:list')")
+    @GetMapping("/stats")
+    public AjaxResult stats() {
+        Map<String, Object> result = new HashMap<>();
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT cmp_verify_status AS s, COUNT(*) AS cnt FROM t_cmp GROUP BY cmp_verify_status");
+        int pending = 0, approved = 0, rejected = 0;
+        for (Map<String, Object> row : rows) {
+            int s = row.get("s") == null ? 0 : ((Number) row.get("s")).intValue();
+            int cnt = ((Number) row.get("cnt")).intValue();
+            if (s == 1) approved = cnt;
+            else if (s == 2) rejected = cnt;
+            else pending += cnt;
+        }
+        result.put("pending", pending);
+        result.put("approved", approved);
+        result.put("rejected", rejected);
+        result.put("total", pending + approved + rejected);
+        return success(result);
+    }
+
+    private String resolveUserName(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT nick_name, user_name FROM sys_user WHERE user_id = ?", userId);
+            if (rows.isEmpty()) {
+                return null;
+            }
+            Map<String, Object> row = rows.get(0);
+            Object nick = row.get("nick_name");
+            if (nick != null && !nick.toString().isEmpty()) {
+                return nick.toString();
+            }
+            Object login = row.get("user_name");
+            return login == null ? null : login.toString();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

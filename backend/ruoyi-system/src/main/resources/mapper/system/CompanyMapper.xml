@@ -19,16 +19,22 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="cmpVerifyStatus" column="cmp_verify_status"/>
         <result property="cmpVerifyAt" column="cmp_verify_at"/>
         <result property="cmpVerifyBy" column="cmp_verify_by"/>
+        <result property="verifyRemark" column="verify_remark"/>
         <result property="cmpStatus" column="cmp_status"/>
         <result property="apiQuota" column="api_quota"/>
         <result property="apiUsed" column="api_used"/>
+        <result property="contactName" column="contact_name"/>
+        <result property="contactPhone" column="contact_phone"/>
+        <result property="packageType" column="package_type"/>
+        <result property="expireDate" column="expire_date"/>
         <result property="cmpCreatedAt" column="cmp_created_at"/>
     </resultMap>
 
     <sql id="selectCompanyVo">
         select cmp_id, cmp_name, cmp_credit_code, cmp_logo_url, cmp_industry, cmp_size,
                cmp_city, cmp_address, cmp_website, cmp_intro, cmp_detail_json,
-               cmp_verify_status, cmp_verify_at, cmp_verify_by, cmp_status, api_quota, api_used, cmp_created_at
+               cmp_verify_status, cmp_verify_at, cmp_verify_by, verify_remark, cmp_status, api_quota, api_used,
+               contact_name, contact_phone, package_type, expire_date, cmp_created_at
         from t_cmp
     </sql>
 
@@ -82,6 +88,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="cmpStatus != null">cmp_status = #{cmpStatus},</if>
             <if test="apiQuota != null">api_quota = #{apiQuota},</if>
             <if test="apiUsed != null">api_used = #{apiUsed},</if>
+            <if test="contactName != null">contact_name = #{contactName},</if>
+            <if test="contactPhone != null">contact_phone = #{contactPhone},</if>
+            <if test="packageType != null">package_type = #{packageType},</if>
+            <if test="expireDate != null">expire_date = #{expireDate},</if>
         </trim>
         where cmp_id = #{cmpId}
     </update>
@@ -89,8 +99,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <update id="verifyCompany" parameterType="com.ruoyi.system.domain.Company">
         update t_cmp
         set cmp_verify_status = #{cmpVerifyStatus},
-            cmp_verify_at = #{cmpVerifyAt},
-            cmp_verify_by = #{cmpVerifyBy}
+            cmp_verify_at = #{cmpVerifyAt,jdbcType=TIMESTAMP},
+            cmp_verify_by = #{cmpVerifyBy,jdbcType=BIGINT},
+            verify_remark = #{verifyRemark,jdbcType=VARCHAR}
         where cmp_id = #{cmpId}
     </update>
 
