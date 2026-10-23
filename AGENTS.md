@@ -68,3 +68,12 @@
 - 仅纳入 `backend/`、`c-app/` 中 Agent 必需代码、迁移、回滚、测试、说明与项目 memory；不纳入 `e-app/`、本地 AI 配置、启动说明、密钥、真实简历或聊天数据。
 - 子功能拆分、接口契约、迁移顺序及验证要求见 [C-APP 与 Backend 提交及发布规范](c-app/提交与发布规范.md) 的「求职者端 AI Agent 交付」。实现和部署边界见 `backend/doc/capp_ai_agent.md`。
 - 功能 PR 仅推进至 `feature/* -> dev`。未经人工 Review 不合并 PR，不直接推送 `dev`/`main`，不执行生产发布。
+
+## Backend 与 C-APP 增量交付（2026-10-23）
+
+- 交付分支为 `feature/capp-job-assistant-delivery-MZR`，从最新 `origin/dev` 创建；姓名缩写由用户指定为 `MZR`。
+- 执行 [C-APP 与 Backend 提交及发布规范](c-app/提交与发布规范.md) 的「Backend 与 C-APP 增量交付（2026-10-23）」：用户随后明确要求本轮一起提交，因此本轮汇总为一个 Conventional Commit，统一一个 PR 到 dev；其他任务仍沿用默认原子提交规则。
+- 已核对的本地新增业务源码均已在 dev；保留 dev 较新的岗位接口、AI 控制器和企业岗位发布实现，仅提交尚未入库的说明与安全忽略规则，不重复提交或回退远端代码。
+- 在独立 worktree 中整理，保留原工作区全部修改。排除其他端修改、已有 SQL 删除、本地账号与业务数据导出、私有配置、启动命令、凭据和产物。
+- 本轮授权包括创建、提交、推送 feature 分支及创建 PR，不包含代替人工 Review 合并或推进 dev 到 main。只有完整可运行项目通过发布门禁后，才能另行通过 dev 到 main 的 PR 发布。
+- 仅文档与忽略规则差异执行文档契约、链接、敏感信息和 diff 检查；历史测试结果不能作为当前全部业务验收通过的证据。
