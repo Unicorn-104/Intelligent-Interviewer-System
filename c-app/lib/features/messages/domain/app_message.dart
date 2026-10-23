@@ -54,15 +54,9 @@ class AppMessage {
   final String? badge;
 
   int? get companyId {
-    if (category != AppMessageCategory.company || targetUrl == null)
-      return null;
+    if (category != AppMessageCategory.company || targetUrl == null) return null;
     final uri = Uri.tryParse(targetUrl!);
-    if (uri == null ||
-        uri.hasScheme ||
-        uri.hasAuthority ||
-        uri.pathSegments.length != 2 ||
-        uri.pathSegments.first != 'companies')
-      return null;
+    if (uri == null || uri.hasScheme || uri.hasAuthority || uri.pathSegments.length != 2 || uri.pathSegments.first != 'companies') return null;
     final id = int.tryParse(uri.pathSegments[1]);
     return id != null && id > 0 ? id : null;
   }

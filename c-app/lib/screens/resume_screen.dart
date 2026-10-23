@@ -8,6 +8,7 @@ import '../features/profile/data/profile_api.dart';
 import '../features/profile/domain/user_profile.dart';
 import '../features/resume/data/resume_api.dart';
 import '../features/resume/domain/app_resume.dart';
+import '../features/resume/presentation/resume_pdf_screen.dart';
 import '../theme/app_theme.dart';
 import 'recommend_screen.dart';
 
@@ -16,9 +17,11 @@ class ResumeScreen extends StatefulWidget {
     super.key,
     required this.session,
     this.showAppBar = false,
+    this.api,
   });
   final AuthSession session;
   final bool showAppBar;
+  final ResumeApi? api;
 
   @override
   State<ResumeScreen> createState() => _ResumeScreenState();
@@ -35,12 +38,13 @@ class _ResumeScreenState extends State<ResumeScreen> {
   String? _pendingPdfPath;
   int? _pendingPdfSize;
   int _loadGeneration = 0;
+  final Set<int> _deletingResumeIds = {};
 
   @override
   void initState() {
     super.initState();
     _client = ApiClient();
-    _api = ResumeApi(_client);
+    _api = widget.api ?? ResumeApi(_client);
     _load();
   }
 
@@ -135,6 +139,39 @@ class _ResumeScreenState extends State<ResumeScreen> {
     }
   }
 
+  Future<void> _delete(AppResume resume) async {
+    final id = resume.resumeId;
+    if (id == null || _deletingResumeIds.contains(id)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除简历？'),
+        content: Text('确定删除「${resume.resumeName}」吗？删除后将无法恢复。已用于投递的简历不能删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deletingResumeIds.add(id));
+    try {
+      await _api.delete(widget.session.token, id);
+      await _load();
+      if (mounted) _message('简历已删除');
+    } on ApiException catch (error) {
+      if (mounted) _message(error.message);
+    } finally {
+      if (mounted) setState(() => _deletingResumeIds.remove(id));
+    }
+  }
+
   void _recommend(AppResume summary) {
     if (summary.resumeId == null) {
       _message('简历尚未保存，无法推荐');
@@ -178,26 +215,29 @@ class _ResumeScreenState extends State<ResumeScreen> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: _CreateCard(
-                    icon: Icons.document_scanner_outlined,
-                    title: _parsing ? '正在导入…' : '上传 PDF 简历',
-                    subtitle: '导入已有简历，核对后保存',
-                    onTap: _parsing ? null : _uploadPdf,
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _CreateCard(
+                      icon: Icons.document_scanner_outlined,
+                      title: _parsing ? '正在导入…' : '上传 PDF 简历',
+                      subtitle: '导入已有简历，核对后保存',
+                      onTap: _parsing ? null : _uploadPdf,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _CreateCard(
-                    icon: Icons.edit_note_outlined,
-                    title: '直接输入',
-                    subtitle: '自行填写简历内容',
-                    onTap: () => _openEditor(AppResume(resumeName: '我的简历')),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _CreateCard(
+                      icon: Icons.edit_note_outlined,
+                      title: '直接输入',
+                      subtitle: '自行填写简历内容',
+                      onTap: () => _openEditor(AppResume(resumeName: '我的简历')),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             if (_importError != null) ...[
               const SizedBox(height: 12),
@@ -267,6 +307,17 @@ class _ResumeScreenState extends State<ResumeScreen> {
                     resume: resume,
                     onEdit: () => _edit(resume),
                     onRecommend: () => _recommend(resume),
+                    onViewPdf: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => ResumePdfScreen(
+                          session: widget.session,
+                          resume: resume,
+                          api: _api,
+                        ),
+                      ),
+                    ),
+                    onDelete: () => _delete(resume),
+                    deleting: _deletingResumeIds.contains(resume.resumeId),
                   ),
                 ),
               ),
@@ -334,10 +385,16 @@ class _ResumeCard extends StatelessWidget {
     required this.resume,
     required this.onEdit,
     required this.onRecommend,
+    required this.onViewPdf,
+    required this.onDelete,
+    required this.deleting,
   });
   final AppResume resume;
   final VoidCallback onEdit;
   final VoidCallback onRecommend;
+  final VoidCallback onViewPdf;
+  final VoidCallback onDelete;
+  final bool deleting;
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -354,6 +411,23 @@ class _ResumeCard extends StatelessWidget {
                 ),
               ),
               if (resume.isDefault) const _Badge(text: '默认'),
+              PopupMenuButton<String>(
+                tooltip: '简历操作',
+                enabled: !deleting,
+                onSelected: (_) => onDelete(),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline, size: 20),
+                        SizedBox(width: 10),
+                        Text('删除简历'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 5),
@@ -361,13 +435,28 @@ class _ResumeCard extends StatelessWidget {
             resume.jobDirection.isEmpty ? '求职方向待完善' : resume.jobDirection,
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          if (resume.pdfUrl != null) ...[
+          if (resume.hasOriginalPdf) ...[
             const SizedBox(height: 6),
-            Text(
-              '原始 PDF：${resume.fileName ?? '已保存'}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
+            TextButton(
+              onPressed: onViewPdf,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                alignment: Alignment.centerLeft,
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.picture_as_pdf_outlined, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '查看原始 PDF：${resume.fileName ?? '简历.pdf'}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, size: 20),
+                ],
+              ),
             ),
           ],
           const SizedBox(height: 12),
@@ -550,6 +639,20 @@ class _ResumeEditorScreenState extends State<ResumeEditorScreen> {
                 subtitle: Text(
                   _resume.localPdfPath != null ? '保存简历时将保留此文件' : '已保留上传的简历文件',
                 ),
+                trailing: _resume.hasOriginalPdf
+                    ? IconButton(
+                        tooltip: '查看原始 PDF',
+                        icon: const Icon(Icons.visibility_outlined),
+                        onPressed: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) => ResumePdfScreen(
+                              session: widget.session,
+                              resume: _resume,
+                            ),
+                          ),
+                        ),
+                      )
+                    : null,
               ),
             ),
           ],

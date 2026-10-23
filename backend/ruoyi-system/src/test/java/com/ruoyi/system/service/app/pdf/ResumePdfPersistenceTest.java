@@ -64,6 +64,8 @@ class ResumePdfPersistenceTest
                 prj_end_date date, prj_description varchar(2000), prj_tech_stack varchar(500))
             """);
         jdbc.execute("create table t_res_skill (skl_id bigint auto_increment primary key, skl_resume_id bigint, skl_name varchar(50), skl_level int)");
+        jdbc.execute("create table t_app_record (app_id bigint auto_increment primary key, app_resume_id bigint)");
+        jdbc.execute("create table t_tal (tal_id bigint auto_increment primary key, tal_resume_id bigint)");
         SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
         factory.setDataSource(source);
         org.apache.ibatis.session.Configuration configuration = new org.apache.ibatis.session.Configuration();
@@ -197,6 +199,55 @@ class ResumePdfPersistenceTest
         assertThrows(ServiceException.class, () -> storage.read(18L, saved.getFilePath()));
         assertThrows(ServiceException.class, () -> storage.read(17L, "private-resume/17/../../outside.pdf"));
         assertEquals(1, fileCount());
+    }
+
+    @Test
+    void deletesUnreferencedResumeAndItsPrivatePdfAfterCommit() throws Exception
+    {
+        AppResume first = service.saveResumeWithPdf(17L, draft(), LocalResumePdfParserTest.textPdf(1), "first.pdf");
+        AppResume second = service.saveResume(17L, draft());
+        Path deletedFile = storage.read(17L, first.getFilePath());
+
+        assertEquals(1, service.deleteResume(17L, first.getResumeId()));
+
+        assertFalse(Files.exists(deletedFile));
+        assertEquals(0, fileCount());
+        assertNull(mapper.selectResume(first.getResumeId(), 17L));
+        assertEquals(second.getResumeId(), jdbc.queryForObject(
+                "select rbs_id from t_res_base where rbs_status = 1 and rbs_is_default = true", Long.class));
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_res_education where edu_resume_id = ?",
+                Integer.class, first.getResumeId()));
+        assertEquals(0, jdbc.queryForObject("select rbs_status from t_res_base where rbs_id = ?",
+                Integer.class, first.getResumeId()));
+    }
+
+    @Test
+    void refusesDeletingResumeReferencedByApplicationOrTalentRecord() throws Exception
+    {
+        AppResume saved = service.saveResumeWithPdf(17L, draft(), LocalResumePdfParserTest.textPdf(1), "used.pdf");
+        Path file = storage.read(17L, saved.getFilePath());
+        jdbc.update("insert into t_app_record (app_resume_id) values (?)", saved.getResumeId());
+
+        ServiceException error = assertThrows(ServiceException.class,
+                () -> service.deleteResume(17L, saved.getResumeId()));
+
+        assertEquals("该简历已关联投递记录，暂不能删除", error.getMessage());
+        assertTrue(Files.exists(file));
+        assertNotNull(mapper.selectResume(saved.getResumeId(), 17L));
+
+        jdbc.update("delete from t_app_record");
+        jdbc.update("insert into t_tal (tal_resume_id) values (?)", saved.getResumeId());
+        assertThrows(ServiceException.class, () -> service.deleteResume(17L, saved.getResumeId()));
+        assertTrue(Files.exists(file));
+        assertEquals(1, fileCount());
+    }
+
+    @Test
+    void anotherUserCannotDeleteResume() throws Exception
+    {
+        AppResume saved = service.saveResume(17L, draft());
+        assertThrows(ServiceException.class, () -> service.deleteResume(18L, saved.getResumeId()));
+        assertNotNull(mapper.selectResume(saved.getResumeId(), 17L));
     }
 
     @Test

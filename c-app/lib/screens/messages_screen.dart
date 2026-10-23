@@ -311,7 +311,7 @@ class _MessagesScreenState extends State<MessagesScreen>
       onRefresh: _load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 104),
         children: [
           Container(
             clipBehavior: Clip.antiAlias,

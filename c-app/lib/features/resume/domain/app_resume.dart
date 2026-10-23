@@ -34,6 +34,8 @@ class AppResume {
   String? fileName;
   int? fileSize;
   String? pdfUrl;
+  bool get hasOriginalPdf =>
+      resumeId != null && pdfUrl?.trim().isNotEmpty == true;
   String? extractedText;
   String? parseMethod;
   // Only used while editing an import; never sent as a server file path.

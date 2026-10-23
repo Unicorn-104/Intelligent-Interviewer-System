@@ -66,13 +66,12 @@ void main() {
           ),
         ),
       );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
       expect(find.text('AI Agent'), findsNothing);
       expect(find.text('全部'), findsNothing);
       expect(find.text('全部已读'), findsOneWidget);
       await tester.drag(find.byType(ListView).first, const Offset(0, -300));
-      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
       final scroll = tester.state<ScrollableState>(
         find
             .descendant(
@@ -84,9 +83,9 @@ void main() {
       final offset = scroll.position.pixels;
       expect(offset, greaterThan(0));
       await tester.tap(find.byTooltip('AI 助手'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
       expect(find.byTooltip('关闭 AI 助手'), findsOneWidget);
+      expect(find.text('你可以对我说'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('root-navigation')).hitTestable(),
         findsNothing,
@@ -94,8 +93,7 @@ void main() {
       expect(find.byType(TextField), findsOneWidget);
       tester.view.viewInsets = const FakeViewPadding(bottom: 280);
       await tester.showKeyboard(find.byType(TextField));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
       expect(
         tester.getBottomRight(find.byType(TextField)).dy,
         lessThanOrEqualTo(520),
@@ -103,8 +101,7 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('关闭 AI 助手'));
       tester.view.resetViewInsets();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
       expect(find.byType(TextField), findsNothing);
       expect(
         find.byKey(const ValueKey('root-navigation')).hitTestable(),

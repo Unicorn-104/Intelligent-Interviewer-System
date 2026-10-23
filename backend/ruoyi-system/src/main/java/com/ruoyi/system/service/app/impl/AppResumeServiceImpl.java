@@ -74,6 +74,43 @@ public class AppResumeServiceImpl implements IAppResumeService
 
     @Override
     @Transactional
+    public int deleteResume(Long userId, Long resumeId)
+    {
+        AppResume resume = lockResume(userId, resumeId);
+        if (resumeMapper.countResumeReferences(resumeId) > 0)
+        {
+            throw new ServiceException("该简历已关联投递记录，暂不能删除");
+        }
+        if (resumeMapper.softDeleteResume(resumeId, userId) <= 0)
+        {
+            throw new ServiceException("简历不存在或已删除");
+        }
+        resumeMapper.deleteEducations(resumeId);
+        resumeMapper.deleteWorks(resumeId);
+        resumeMapper.deleteProjects(resumeId);
+        resumeMapper.deleteSkills(resumeId);
+        if (Boolean.TRUE.equals(resume.getIsDefault()))
+        {
+            Long replacementId = resumeMapper.selectNewestActiveResumeId(userId);
+            if (replacementId != null) resumeMapper.setDefaultResume(userId, replacementId);
+        }
+        if (StringUtils.isNotEmpty(resume.getFilePath()))
+        {
+            String filePath = resume.getFilePath();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization()
+            {
+                @Override
+                public void afterCommit()
+                {
+                    pdfStorage.delete(userId, filePath);
+                }
+            });
+        }
+        return 1;
+    }
+
+    @Override
+    @Transactional
     public AppResume saveResumeWithPdf(Long userId, AppResume resume, byte[] pdfBytes, String originalFilename)
     {
         AppResume previous = resume.getResumeId() == null ? null : lockResume(userId, resume.getResumeId());

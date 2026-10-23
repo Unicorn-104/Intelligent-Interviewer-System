@@ -79,6 +79,16 @@
     <select id="countActiveResumes" resultType="int">
         select count(*) from t_res_base where rbs_user_id = #{userId} and rbs_status = 1
     </select>
+    <select id="countResumeReferences" resultType="int">
+        select
+            (select count(*) from t_app_record where app_resume_id = #{resumeId})
+            + (select count(*) from t_tal where tal_resume_id = #{resumeId})
+    </select>
+    <select id="selectNewestActiveResumeId" resultType="long">
+        select rbs_id from t_res_base
+        where rbs_user_id = #{userId} and rbs_status = 1
+        order by rbs_updated_at desc, rbs_id desc limit 1
+    </select>
 
     <insert id="insertResume" parameterType="com.ruoyi.system.domain.app.AppResume" useGeneratedKeys="true" keyProperty="resumeId" keyColumn="rbs_id">
         insert into t_res_base (rbs_user_id, rbs_resume_name, rbs_job_direction, rbs_is_default, rbs_status,
@@ -94,6 +104,16 @@
     </update>
     <update id="clearDefault">
         update t_res_base set rbs_is_default = 0 where rbs_user_id = #{userId} and rbs_status = 1
+    </update>
+    <update id="softDeleteResume">
+        update t_res_base
+        set rbs_status = 0, rbs_is_default = 0, rbs_file_path = null,
+            rbs_file_name = null, rbs_file_size = null, rbs_updated_at = now()
+        where rbs_id = #{resumeId} and rbs_user_id = #{userId} and rbs_status = 1
+    </update>
+    <update id="setDefaultResume">
+        update t_res_base set rbs_is_default = 1
+        where rbs_id = #{resumeId} and rbs_user_id = #{userId} and rbs_status = 1
     </update>
 
     <delete id="deleteEducations">delete from t_res_education where edu_resume_id = #{resumeId}</delete>

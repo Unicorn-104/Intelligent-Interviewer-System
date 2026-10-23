@@ -79,8 +79,8 @@
         <template #default="scope">
           <el-switch
             v-model="scope.row.status"
-            active-value="0"
-            inactive-value="1"
+            :active-value="1"
+            :inactive-value="0"
             @change="handleStatusChange(scope.row)"
           />
         </template>
@@ -235,8 +235,8 @@ const typeOptions = ref([
   { value: 'voice', label: '语音' }
 ])
 const statusOptions = ref([
-  { value: '0', label: '启用' },
-  { value: '1', label: '停用' }
+  { value: 1, label: '启用' },
+  { value: 0, label: '停用' }
 ])
 
 const data = reactive({
@@ -325,7 +325,7 @@ function reset() {
     unitPrice: 0,
     timeout: 3000,
     maxConcurrency: 10,
-    status: '0'
+    status: 1
   }
   proxy.resetForm('modelRef')
 }
@@ -424,8 +424,8 @@ function handleTestForm() {
 
 /** \u72b6\u6001\u5207\u6362 */
 function handleStatusChange(row) {
-  const nextStatus = row.status === '0' ? '1' : '0'
-  const text = nextStatus === '0' ? '\u542f\u7528' : '\u505c\u7528'
+  const nextStatus = Number(row.status) === 1 ? 1 : 0
+  const text = nextStatus === 1 ? '\u542f\u7528' : '\u505c\u7528'
   proxy.$modal
     .confirm('\u786e\u8ba4\u8981"' + text + '"' + row.modelName + '"\u6a21\u578b\u5417\uff1f')
     .then(function () {
@@ -435,7 +435,7 @@ function handleStatusChange(row) {
       proxy.$modal.msgSuccess(text + '\u6210\u529f')
     })
     .catch(() => {
-      row.status = row.status === '0' ? '1' : '0'
+      row.status = nextStatus === 1 ? 0 : 1
     })
 }
 

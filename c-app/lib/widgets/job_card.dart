@@ -60,47 +60,55 @@ class JobCard extends StatelessWidget {
                 '${job.company}  ·  ${job.city}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: job.tags.map((tag) => _Tag(label: tag)).toList(),
-              ),
+              if (job.tags.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: job.tags.map((tag) => _Tag(label: tag)).toList(),
+                ),
+              ],
               const SizedBox(height: 14),
-              Wrap(
-                spacing: AppSpacing.md,
-                runSpacing: AppSpacing.sm,
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
+              Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: job.accent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'AI 匹配 ${job.matchLabel}',
-                      style: TextStyle(
-                        color: job.accent,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  Expanded(
+                    child: Wrap(
+                      spacing: AppSpacing.md,
+                      runSpacing: AppSpacing.sm,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: job.accent.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'AI 匹配 ${job.matchLabel}',
+                            style: TextStyle(
+                              color: job.accent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '${job.educationLabel} · ${job.experience}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ),
                   ),
-                  Text(
-                    '${job.educationLabel} · ${job.experience}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  const SizedBox(width: AppSpacing.md),
                   FilledButton(
                     onPressed: job.applied || applying || onApply == null
                         ? null
                         : () => onApply!(job),
                     style: FilledButton.styleFrom(
-                      minimumSize: const Size(72, 38),
+                      minimumSize: const Size(72, 46),
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                     ),
                     child: applying
