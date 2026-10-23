@@ -1,5 +1,21 @@
 ﻿<template>
   <div class="app-container">
+    <!-- 统计卡 -->
+    <div class="stat-row">
+      <div class="stat-card" @click="quickFilter(undefined)">
+        <div class="stat-num">{{ stats.total }}</div>
+        <div class="stat-label">全部模型</div>
+      </div>
+      <div class="stat-card stat-on" @click="quickFilter('0')">
+        <div class="stat-num">{{ stats.enabled }}</div>
+        <div class="stat-label">启用</div>
+      </div>
+      <div class="stat-card stat-off" @click="quickFilter('1')">
+        <div class="stat-num">{{ stats.disabled }}</div>
+        <div class="stat-label">停用</div>
+      </div>
+    </div>
+
     <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch">
       <el-form-item label="模型名称" prop="modelName">
         <el-input
@@ -60,6 +76,7 @@
     <el-table v-loading="loading" :data="modelList" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column label="模型名称" align="center" prop="modelName" :show-overflow-tooltip="true" min-width="140" />
+      <el-table-column label="实际模型" align="center" prop="model" :show-overflow-tooltip="true" min-width="130" />
       <el-table-column label="提供商" align="center" width="100">
         <template #default="scope">
           <el-tag :type="providerTagType(scope.row.provider)">{{ providerLabel(scope.row.provider) }}</el-tag>
@@ -74,6 +91,11 @@
       </el-table-column>
       <el-table-column label="API 地址" align="center" prop="apiUrl" :show-overflow-tooltip="true" min-width="200" />
       <el-table-column label="调用单价(元/千tokens)" align="center" prop="unitPrice" width="160" />
+      <el-table-column label="超时/并发" align="center" width="110">
+        <template #default="scope">
+          <span>{{ scope.row.timeout }}ms / {{ scope.row.maxConcurrency }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="API Key" align="center" prop="apiKey" width="170" :show-overflow-tooltip="true" />
       <el-table-column label="状态" align="center" width="90">
         <template #default="scope">
@@ -85,9 +107,14 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="最近调用时间" align="center" width="160">
+      <el-table-column label="最近测试" align="center" width="180">
         <template #default="scope">
-          <span>{{ parseTime(scope.row.lastCallTime) }}</span>
+          <div v-if="scope.row.lastTestAt">
+            <el-tag v-if="scope.row.lastTestOk" type="success" size="small">成功</el-tag>
+            <el-tag v-else type="danger" size="small">失败</el-tag>
+            <div class="test-time">{{ scope.row.lastTestAt }}</div>
+          </div>
+          <span v-else class="text-muted">未测试</span>
         </template>
       </el-table-column>
       <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
@@ -124,9 +151,19 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="提供商" prop="provider">
-              <el-select v-model="form.provider" placeholder="请选择提供商" style="width: 100%">
+              <el-select
+                v-model="form.provider"
+                placeholder="请选择提供商"
+                style="width: 100%"
+                @change="onProviderChange"
+              >
                 <el-option v-for="item in providerOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="实际模型" prop="model">
+              <el-input v-model="form.model" placeholder="如 gpt-4o / deepseek-chat" />
             </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -143,7 +180,12 @@
           </el-col>
           <el-col :span="24">
             <el-form-item label="API Key" prop="apiKey">
-              <el-input v-model="form.apiKey" type="password" show-password placeholder="请输入API Key" />
+              <el-input
+                v-model="form.apiKey"
+                type="password"
+                show-password
+                :placeholder="form.modelId ? '留空则不修改原 Key' : '请输入API Key'"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -183,6 +225,30 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="温度 temperature" prop="temperature">
+              <el-slider
+                v-model="form.temperature"
+                :min="0"
+                :max="2"
+                :step="0.1"
+                show-input
+                :show-input-controls="false"
+                style="width: 220px"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="最大 Tokens" prop="maxTokens">
+              <el-input-number
+                v-model="form.maxTokens"
+                :min="1"
+                :step="256"
+                controls-position="right"
+                style="width: 180px"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="状态">
               <el-radio-group v-model="form.status">
                 <el-radio v-for="item in statusOptions" :key="item.value" :value="item.value">{{
@@ -209,8 +275,17 @@
 </template>
 
 <script setup name="AiModel">
-import { listModel, getModel, addModel, updateModel, delModel, testModel, changeModelStatus } from '@/api/ai/model'
-import { ElMessage } from 'element-plus'
+import {
+  listModel,
+  getModel,
+  addModel,
+  updateModel,
+  delModel,
+  testModel,
+  changeModelStatus,
+  statsModel
+} from '@/api/ai/model'
+import { ElMessageBox } from 'element-plus'
 
 const { proxy } = getCurrentInstance()
 
@@ -226,9 +301,22 @@ const title = ref('')
 const testLoading = ref(false)
 
 const providerOptions = ref([
-  { value: 'aliyun', label: '阿里云' },
-  { value: 'other', label: '其他' }
+  { value: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1/chat/completions' },
+  { value: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1/chat/completions' },
+  { value: 'qwen', label: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions' },
+  { value: 'doubao', label: '豆包', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions' },
+  { value: 'zhipu', label: '智谱', baseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions' },
+  { value: 'anthropic', label: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1/messages' },
+  { value: 'baidu', label: '百度文心', baseUrl: '' },
+  { value: 'other', label: '其他', baseUrl: '' }
 ])
+// 选择提供商自动填充 baseUrl 模板（仅在地址为空或为其他模板时覆盖）
+function onProviderChange(val) {
+  const opt = providerOptions.value.find((p) => p.value === val)
+  if (opt && opt.baseUrl && (!form.value.apiUrl || form.value.apiUrl.includes('api.openai.com/v1/chat/completions'))) {
+    form.value.apiUrl = opt.baseUrl
+  }
+}
 const typeOptions = ref([
   { value: 'vl', label: '多模态' },
   { value: 'text', label: '文本' },
@@ -287,11 +375,27 @@ function getList() {
     })
     .catch((err) => {
       console.error(err)
-      proxy?.$msgError?.('\u67e5\u8be2\u5931\u8d25')
+      proxy?.$msgError?.('查询失败')
     })
     .finally(() => {
       loading.value = false
     })
+  getStats()
+}
+
+const stats = ref({ total: 0, enabled: 0, disabled: 0 })
+function getStats() {
+  statsModel()
+    .then((res) => {
+      stats.value = res.data || res || {}
+    })
+    .catch(() => {})
+}
+
+/** 统计卡点选筛选 */
+function quickFilter(status) {
+  data.queryParams.status = status
+  handleQuery()
 }
 
 /** \u641c\u7d22\u6309\u94ae\u64cd\u4f5c */
@@ -318,6 +422,7 @@ function reset() {
   data.form = {
     modelId: undefined,
     modelName: undefined,
+    model: undefined,
     provider: undefined,
     modelTypes: [],
     apiUrl: undefined,
@@ -325,6 +430,8 @@ function reset() {
     unitPrice: 0,
     timeout: 3000,
     maxConcurrency: 10,
+    temperature: 0.7,
+    maxTokens: 4096,
     status: 1
   }
   proxy.resetForm('modelRef')
@@ -382,44 +489,59 @@ function cancel() {
   reset()
 }
 
-/** \u6d4b\u8bd5\u8fde\u63a5\u6309\u94ae */
+/** 测试连接（列表行，读库配置） */
 function handleTest(row) {
   testLoading.value = true
-  testModel(row.modelId)
+  testModel({ modelId: row.modelId })
     .then((res) => {
       testLoading.value = false
       const result = res.data || {}
-      if (result.success) {
-        ElMessage.success('\u8fde\u63a5\u6210\u529f\uff0c\u54cd\u5e94 ' + result.latency + 'ms')
-      } else {
-        ElMessage.error('\u8fde\u63a5\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u6a21\u578b\u914d\u7f6e')
-      }
+      showTestResult(true, result)
+      getList()
     })
     .catch((err) => {
-      console.error(err)
-      proxy?.$msgError?.('\u64cd\u4f5c\u5931\u8d25')
       testLoading.value = false
+      showTestResult(false, null, err?.msg || '连接失败')
+      getList()
     })
 }
 
-/** \u6d4b\u8bd5\u8fde\u63a5\uff08\u5bf9\u8bdd\u6846\u5185\uff09 */
+/** 测试连接（弹窗内，支持未保存的临时值） */
 function handleTestForm() {
   testLoading.value = true
-  testModel(data.form.modelId)
+  const payload = {
+    modelId: data.form.modelId,
+    apiUrl: data.form.apiUrl,
+    apiKey: data.form.apiKey,
+    model: data.form.model
+  }
+  testModel(payload)
     .then((res) => {
       testLoading.value = false
       const result = res.data || {}
-      if (result.success) {
-        ElMessage.success('\u8fde\u63a5\u6210\u529f\uff0c\u54cd\u5e94 ' + result.latency + 'ms')
-      } else {
-        ElMessage.error('\u8fde\u63a5\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u6a21\u578b\u914d\u7f6e')
-      }
+      showTestResult(true, result)
+      if (data.form.modelId) getList()
     })
     .catch((err) => {
-      console.error(err)
-      proxy?.$msgError?.('\u64cd\u4f5c\u5931\u8d25')
       testLoading.value = false
+      showTestResult(false, null, err?.msg || '连接失败')
+      if (data.form.modelId) getList()
     })
+}
+
+/** 统一展示测试结果 */
+function showTestResult(ok, result, failMsg) {
+  if (ok && result.success) {
+    ElMessageBox.alert('鉴权通过，响应 ' + (result.latency ?? '-') + 'ms', '连接成功', {
+      type: 'success',
+      confirmButtonText: '知道了'
+    })
+  } else {
+    ElMessageBox.alert(failMsg || result?.message || '连接失败，请检查 API 地址与 Key', '连接失败', {
+      type: 'error',
+      confirmButtonText: '知道了'
+    })
+  }
 }
 
 /** \u72b6\u6001\u5207\u6362 */
@@ -465,3 +587,60 @@ function handleSelectionChange(selection) {
 
 getList()
 </script>
+
+<style scoped>
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.stat-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: 0 2px 10px rgba(72, 47, 105, 0.05);
+  cursor: pointer;
+  border-left: 4px solid transparent;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(72, 47, 105, 0.1);
+}
+.stat-num {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.stat-label {
+  color: #86909c;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.stat-on {
+  border-left-color: #22c55e;
+}
+.stat-on .stat-num {
+  color: #22c55e;
+}
+.stat-off {
+  border-left-color: #ef4444;
+}
+.stat-off .stat-num {
+  color: #ef4444;
+}
+.type-tag {
+  margin-right: 4px;
+}
+.test-time {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #909399;
+}
+.text-muted {
+  color: #c0c4cc;
+}
+</style>

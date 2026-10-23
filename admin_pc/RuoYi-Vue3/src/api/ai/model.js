@@ -9,6 +9,14 @@ export function listModel(query) {
   })
 }
 
+// 模型状态统计
+export function statsModel() {
+  return request({
+    url: '/ai/model/stats',
+    method: 'get'
+  })
+}
+
 // 查询AI模型详细
 export function getModel(modelId) {
   return request({
