@@ -30,6 +30,12 @@ public interface ICompanyService
     public int verifyCompany(Long cmpId, Integer verifyStatus, Long verifyBy, String rejectReason);
 
     /**
+     * 撤销审核：重置为待审核，清空审核人、审核时间与驳回理由
+     * @param cmpId 企业ID
+     */
+    public int resetVerify(Long cmpId);
+
+    /**
      * 启停用企业
      * @param cmpId 企业ID
      * @param status 状态：0-下架，1-正常

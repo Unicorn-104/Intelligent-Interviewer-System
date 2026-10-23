@@ -61,7 +61,19 @@ public class CompanyServiceImpl implements ICompanyService
         company.setCmpVerifyStatus(verifyStatus);
         company.setCmpVerifyAt(DateUtils.getNowDate());
         company.setCmpVerifyBy(verifyBy);
-        company.setRemark(rejectReason);
+        company.setVerifyRemark(verifyStatus != null && verifyStatus == 2 ? rejectReason : null);
+        return companyMapper.verifyCompany(company);
+    }
+
+    @Override
+    public int resetVerify(Long cmpId)
+    {
+        Company company = new Company();
+        company.setCmpId(cmpId);
+        company.setCmpVerifyStatus(0);
+        company.setCmpVerifyAt(null);
+        company.setCmpVerifyBy(null);
+        company.setVerifyRemark(null);
         return companyMapper.verifyCompany(company);
     }
 

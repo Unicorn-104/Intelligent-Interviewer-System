@@ -1,7 +1,7 @@
 ﻿<template>
   <div class="login">
     <el-form ref="loginRef" :model="loginForm" :rules="loginRules" class="login-form">
-      <img class="login-brand" src="/zhpin-agent-logo.svg" :alt="title" />
+      <img class="login-brand" :src="logoUrl" :alt="title" />
       <div class="sub-title">面向超级管理员的平台级数据管理与功能配置平台</div>
       <el-form-item prop="username">
         <el-input v-model="loginForm.username" type="text" size="large" auto-complete="off" placeholder="账号">
@@ -62,6 +62,7 @@ import useUserStore from '@/store/modules/user'
 import defaultSettings from '@/settings'
 
 const title = import.meta.env.VITE_APP_TITLE
+const logoUrl = `${import.meta.env.BASE_URL}zhpin-agent-logo.svg`
 const footerContent = defaultSettings.footerContent
 const userStore = useUserStore()
 const route = useRoute()

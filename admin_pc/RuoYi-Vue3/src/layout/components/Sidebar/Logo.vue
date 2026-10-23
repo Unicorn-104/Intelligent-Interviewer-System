@@ -17,7 +17,7 @@
 import useSettingsStore from '@/store/modules/settings'
 import variables from '@/assets/styles/variables.module.scss'
 
-const logo = '/zhpin-agent-mark.svg'
+const logo = `${import.meta.env.BASE_URL}zhpin-agent-mark.svg`
 
 defineProps({
   collapse: {

@@ -49,7 +49,7 @@ public class MemberUserController extends BaseController {
             "d.dept_name " +
             "FROM sys_user u " +
             "LEFT JOIN sys_dept d ON u.dept_id = d.dept_id " +
-            "WHERE 1=1 "
+            "WHERE u.del_flag = '0' "
         );
 
         List<Object> params = new ArrayList<>();
@@ -63,6 +63,16 @@ public class MemberUserController extends BaseController {
         if (phone != null && !phone.isEmpty()) {
             sql.append("AND u.phonenumber LIKE ? ");
             params.add("%" + phone + "%");
+        }
+
+        if (identity != null) {
+            if (identity == 1) {
+                // 企业用户（HR/人事）
+                sql.append("AND (d.dept_name LIKE '%HR%' OR d.dept_name LIKE '%人事%') ");
+            } else {
+                // 求职者（非HR/非管理）
+                sql.append("AND NOT (d.dept_name LIKE '%HR%' OR d.dept_name LIKE '%人事%' OR d.dept_name LIKE '%管理%') ");
+            }
         }
 
         if (status != null && !status.isEmpty()) {
@@ -92,7 +102,9 @@ public class MemberUserController extends BaseController {
             map.put("status", item.get("status"));
             map.put("registerTime", item.get("create_time"));
             map.put("companyName", item.get("dept_name"));
-            map.put("identity", 1);
+            String deptName = item.get("dept_name") != null ? item.get("dept_name").toString() : "";
+            int roleIdentity = deptName.contains("管理") ? 3 : (deptName.contains("HR") || deptName.contains("人事") ? 1 : 0);
+            map.put("identity", roleIdentity);
             map.put("realStatus", "0");
             map.put("resumeCount", 0);
             map.put("applyCount", 0);
@@ -106,6 +118,31 @@ public class MemberUserController extends BaseController {
         dataInfo.setRows(result);
         dataInfo.setTotal(total);
         return dataInfo;
+    }
+
+    /**
+     * 用户状态统计：总数/正常/封禁/待注销
+     */
+    @PreAuthorize("@ss.hasPermi('member:user:list')")
+    @GetMapping("/stats")
+    public AjaxResult stats() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+            "SELECT status, COUNT(*) AS cnt FROM sys_user WHERE del_flag = '0' GROUP BY status");
+        Map<String, Object> map = new HashMap<>();
+        int total = 0, normal = 0, banned = 0, pending = 0;
+        for (Map<String, Object> row : rows) {
+            int cnt = ((Number) row.get("cnt")).intValue();
+            total += cnt;
+            String st = row.get("status") != null ? row.get("status").toString() : "";
+            if ("0".equals(st)) normal = cnt;
+            else if ("1".equals(st)) banned = cnt;
+            else if ("2".equals(st)) pending = cnt;
+        }
+        map.put("total", total);
+        map.put("normal", normal);
+        map.put("banned", banned);
+        map.put("pending", pending);
+        return success(map);
     }
 
     /**

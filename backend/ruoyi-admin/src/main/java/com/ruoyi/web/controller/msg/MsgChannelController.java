@@ -26,8 +26,9 @@ public class MsgChannelController extends BaseController {
     public TableDataInfo list() {
         startPage();
         List<Map<String, Object>> list = jdbcTemplate.queryForList(
-            "SELECT mc_id as id, mc_name as name, mc_type as type, mc_config as config, " +
-            "mc_status as status, mc_create_time as createTime FROM t_msg_channel ORDER BY mc_create_time DESC"
+            "SELECT mc_id AS channelId, mc_name AS channelName, mc_type AS channelType, " +
+            "mc_config AS config, mc_status AS status, mc_create_time AS createTime, " +
+            "'' AS provider, 0 AS dailyLimit, '' AS remark FROM t_msg_channel ORDER BY mc_create_time DESC"
         );
         return getDataTable(list);
     }
@@ -73,6 +74,18 @@ public class MsgChannelController extends BaseController {
         for (Long id : ids) {
             jdbcTemplate.update("DELETE FROM t_msg_channel WHERE mc_id = ?", id);
         }
+        return AjaxResult.success();
+    }
+
+    /** 启用 / 停用渠道 */
+    @PreAuthorize("@ss.hasPermi('msg:channel:edit')")
+    @PutMapping("/toggle")
+    public AjaxResult toggle(@RequestBody Map<String, Object> body) {
+        Object channelId = body.get("channelId");
+        if (channelId == null) {
+            return AjaxResult.error("渠道ID不能为空");
+        }
+        jdbcTemplate.update("UPDATE t_msg_channel SET mc_status = 1 - mc_status WHERE mc_id = ?", channelId);
         return AjaxResult.success();
     }
 }

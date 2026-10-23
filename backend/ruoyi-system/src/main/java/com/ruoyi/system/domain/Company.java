@@ -56,6 +56,9 @@ public class Company extends BaseEntity
     /** 认证审核人ID */
     private Long cmpVerifyBy;
 
+    /** 审核驳回理由 */
+    private String verifyRemark;
+
     /** 状态：0-已下架，1-正常 */
     private Integer cmpStatus;
 
@@ -64,6 +67,19 @@ public class Company extends BaseEntity
 
     /** API已使用量 */
     private Integer apiUsed;
+
+    /** 认证联系人 */
+    private String contactName;
+
+    /** 联系人电话 */
+    private String contactPhone;
+
+    /** 套餐类型 basic/pro/flag */
+    private String packageType;
+
+    /** 套餐到期日期 */
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    private Date expireDate;
 
     /** 创建时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
@@ -97,6 +113,8 @@ public class Company extends BaseEntity
     public void setCmpVerifyAt(Date cmpVerifyAt) { this.cmpVerifyAt = cmpVerifyAt; }
     public Long getCmpVerifyBy() { return cmpVerifyBy; }
     public void setCmpVerifyBy(Long cmpVerifyBy) { this.cmpVerifyBy = cmpVerifyBy; }
+    public String getVerifyRemark() { return verifyRemark; }
+    public void setVerifyRemark(String verifyRemark) { this.verifyRemark = verifyRemark; }
     public Integer getCmpStatus() { return cmpStatus; }
     public void setCmpStatus(Integer cmpStatus) { this.cmpStatus = cmpStatus; }
 
@@ -105,6 +123,14 @@ public class Company extends BaseEntity
 
     public Integer getApiUsed() { return apiUsed; }
     public void setApiUsed(Integer apiUsed) { this.apiUsed = apiUsed; }
+    public String getContactName() { return contactName; }
+    public void setContactName(String contactName) { this.contactName = contactName; }
+    public String getContactPhone() { return contactPhone; }
+    public void setContactPhone(String contactPhone) { this.contactPhone = contactPhone; }
+    public String getPackageType() { return packageType; }
+    public void setPackageType(String packageType) { this.packageType = packageType; }
+    public Date getExpireDate() { return expireDate; }
+    public void setExpireDate(Date expireDate) { this.expireDate = expireDate; }
     public Date getCmpCreatedAt() { return cmpCreatedAt; }
     public void setCmpCreatedAt(Date cmpCreatedAt) { this.cmpCreatedAt = cmpCreatedAt; }
 }

@@ -18,6 +18,23 @@ export function updateChannel(data) {
   })
 }
 
+// 新增通知渠道
+export function addChannel(data) {
+  return request({
+    url: '/msg/channel',
+    method: 'post',
+    data: data
+  })
+}
+
+// 删除通知渠道
+export function delChannel(channelId) {
+  return request({
+    url: '/msg/channel/' + channelId,
+    method: 'delete'
+  })
+}
+
 // 启用 / 停用通知渠道
 export function toggleChannel(data) {
   return request({

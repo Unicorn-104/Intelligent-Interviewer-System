@@ -55,11 +55,28 @@ export function changeCompanyStatus(companyId, status) {
   })
 }
 
+// 企业审核状态统计
+export function statsCompany() {
+  return request({
+    url: '/tenant/company/stats',
+    method: 'get'
+  })
+}
+
 // 企业审核
 export function auditCompany(data) {
   return request({
     url: '/tenant/company/audit',
     method: 'put',
     data: data
+  })
+}
+
+// 撤销审核（重置为待审核）
+export function revokeCompany(companyId) {
+  return request({
+    url: '/tenant/company/revoke',
+    method: 'put',
+    data: { companyId: companyId }
   })
 }

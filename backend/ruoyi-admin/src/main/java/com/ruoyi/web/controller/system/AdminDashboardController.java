@@ -37,47 +37,43 @@ public class AdminDashboardController extends BaseController
     {
         Map<String, Object> data = new HashMap<>();
 
-        // 从数据库查询真实数据
+        // 岗位：已发布 / 待审核
+        int jobPublished = count("SELECT COUNT(*) FROM t_pos WHERE pos_status = 1");
+        int jobPending = count("SELECT COUNT(*) FROM t_pos WHERE pos_status = 0");
+        // 候选人总数、今日新增
+        int candidateTotal = count("SELECT COUNT(*) FROM t_tal");
+        int candidateToday = count("SELECT COUNT(*) FROM t_tal WHERE DATE(tal_created_at) = CURDATE()");
+        // 投递总量、今日新增投递
+        int applicationTotal = count("SELECT COUNT(*) FROM t_app_record");
+        int applicationToday = count("SELECT COUNT(*) FROM t_app_record WHERE DATE(app_created_at) = CURDATE()");
+        // 今日简历、今日面试场次
+        int todayResumes = count("SELECT COUNT(*) FROM t_res_base WHERE DATE(rbs_created_at) = CURDATE()");
+        int todayInterviews = count("SELECT COUNT(*) FROM t_int_session WHERE DATE(ses_start_at) = CURDATE()");
+        // 企业总数 / 已认证企业
         int companyTotal = companyMapper.selectCompanyCount();
         int companyActive = companyMapper.selectActiveCompanyCount();
-        int candidateTotal = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM t_tal", Integer.class);
-        int todayApiCalls = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM t_agent_call_log WHERE DATE(acl_created_at) = CURDATE()", Integer.class);
-        int applicationTotal = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM t_app_record", Integer.class);
-        int todayResumes = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM t_res_base WHERE DATE(rbs_created_at) = CURDATE()", Integer.class);
-        int todayInterviews = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM t_int_session WHERE DATE(ses_start_at) = CURDATE()", Integer.class);
 
-        // 计算真实增长率（对比昨天新增）
-        int todayCompanies = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM t_cmp WHERE DATE(cmp_created_at) = CURDATE()", Integer.class);
-        int yesterdayCompanies = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM t_cmp WHERE DATE(cmp_created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)", Integer.class);
-        int todayCandidates = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM t_tal WHERE DATE(tal_created_at) = CURDATE()", Integer.class);
-        int yesterdayCandidates = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM t_tal WHERE DATE(tal_created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)", Integer.class);
-
-        // 计算增长率
-        int companyGrowth = yesterdayCompanies > 0 ? (int)((todayCompanies - yesterdayCompanies) * 100.0 / yesterdayCompanies) : (todayCompanies > 0 ? 100 : 0);
-        int candidateGrowth = yesterdayCandidates > 0 ? (int)((todayCandidates - yesterdayCandidates) * 100.0 / yesterdayCandidates) : (todayCandidates > 0 ? 100 : 0);
-
+        data.put("jobPublished", jobPublished);
+        data.put("jobPending", jobPending);
+        data.put("candidateTotal", candidateTotal);
+        data.put("candidateToday", candidateToday);
+        data.put("applicationTotal", applicationTotal);
+        data.put("applicationToday", applicationToday);
+        data.put("todayResumes", todayResumes);
+        data.put("todayInterviews", todayInterviews);
         data.put("companyTotal", companyTotal);
         data.put("companyActive", companyActive);
-        data.put("companyGrowth", companyGrowth + "%");
-        data.put("activeRate", companyTotal > 0 ? String.valueOf((int)(companyActive * 100.0 / companyTotal)) + "%" : "0%");
-        data.put("candidateTotal", candidateTotal);
-        data.put("candidateGrowth", candidateGrowth + "%");
-        data.put("todayApiCalls", todayApiCalls);
-        data.put("apiQuotaUsage", "75%");
-        data.put("applicationTotal", applicationTotal);
-        data.put("applicationGrowth", 1 + "%");
-        data.put("todayResumes", todayResumes);
-        data.put("resumeSuccessRate", "95%");
-        data.put("todayInterviews", todayInterviews);
-        data.put("screenPassRate", "68%");
         return success(data);
+    }
+
+    /** 安全计数：表或列缺失时返回 0，不阻断整页 */
+    private int count(String sql)
+    {
+        try {
+            return jdbcTemplate.queryForObject(sql, Integer.class);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /**
@@ -95,64 +91,27 @@ public class AdminDashboardController extends BaseController
         List<Integer> candidates = new ArrayList<>();
         List<Integer> interviews = new ArrayList<>();
         List<Integer> applications = new ArrayList<>();
-        
-        // 从数据库查询近30天的数据
-        try {
-            // 查询每天新增的企业
-            List<Map<String, Object>> companyList = jdbcTemplate.queryForList(
-                "SELECT DATE(cmp_created_at) AS dt, COUNT(*) AS cnt FROM t_cmp WHERE cmp_created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY DATE(cmp_created_at)"
-            );
-            // 查询每天新增的候选人
-            List<Map<String, Object>> candidateList = jdbcTemplate.queryForList(
-                "SELECT DATE(created_at) AS dt, COUNT(*) AS cnt FROM t_tal WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY DATE(created_at)"
-            );
-            // 查询每天的面试场次
-            List<Map<String, Object>> interviewList = jdbcTemplate.queryForList(
-                "SELECT DATE(created_at) AS dt, COUNT(*) AS cnt FROM t_int_session WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY DATE(created_at)"
-            );
-            
-            // 生成近30天的日期
-            for (int i = 29; i >= 0; i--) {
-                String date = java.time.LocalDate.now().minusDays(i).toString();
-                dates.add(date.substring(5)); // MM-dd
-                
-                // 查询当天的数据
-                int companyCnt = 0;
-                int candidateCnt = 0;
-                int interviewCnt = 0;
-                
-                for (Map<String, Object> item : companyList) {
-                    if (item.get("dt").toString().equals(date)) {
-                        companyCnt = ((Number) item.get("cnt")).intValue();
-                    }
-                }
-                for (Map<String, Object> item : candidateList) {
-                    if (item.get("dt").toString().equals(date)) {
-                        candidateCnt = ((Number) item.get("cnt")).intValue();
-                    }
-                }
-                for (Map<String, Object> item : interviewList) {
-                    if (item.get("dt").toString().equals(date)) {
-                        interviewCnt = ((Number) item.get("cnt")).intValue();
-                    }
-                }
-                
-                companies.add(companyCnt);
-                candidates.add(candidateCnt);
-                interviews.add(interviewCnt);
-                applications.add((int)(Math.random() * 5));
-            }
-        } catch (Exception e) {
-            // 如果查询失败，返回默认数据
-            for (int i = 30; i >= 1; i--) {
-                dates.add("09-" + (i < 10 ? "0" + i : i));
-                companies.add(0);
-                candidates.add(0);
-                interviews.add(0);
-                applications.add(0);
-            }
+
+        // 近30天按天聚合，列名与实际表一致；单序列失败不影响其他
+        Map<String, Integer> companyMap = dailyCount("SELECT DATE(cmp_created_at) AS dt, COUNT(*) AS cnt FROM t_cmp "
+                + "WHERE cmp_created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY DATE(cmp_created_at)");
+        Map<String, Integer> candidateMap = dailyCount("SELECT DATE(tal_created_at) AS dt, COUNT(*) AS cnt FROM t_tal "
+                + "WHERE tal_created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY DATE(tal_created_at)");
+        Map<String, Integer> applicationMap = dailyCount("SELECT DATE(app_created_at) AS dt, COUNT(*) AS cnt FROM t_app_record "
+                + "WHERE app_created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY DATE(app_created_at)");
+        Map<String, Integer> interviewMap = dailyCount("SELECT DATE(ses_start_at) AS dt, COUNT(*) AS cnt FROM t_int_session "
+                + "WHERE ses_start_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND ses_start_at IS NOT NULL GROUP BY DATE(ses_start_at)");
+
+        for (int i = 29; i >= 0; i--) {
+            java.time.LocalDate day = java.time.LocalDate.now().minusDays(i);
+            String key = day.toString();
+            dates.add(key.substring(5)); // MM-dd
+            companies.add(companyMap.getOrDefault(key, 0));
+            candidates.add(candidateMap.getOrDefault(key, 0));
+            applications.add(applicationMap.getOrDefault(key, 0));
+            interviews.add(interviewMap.getOrDefault(key, 0));
         }
-        
+
         data.put("dates", dates);
         data.put("companies", companies);
         data.put("candidates", candidates);
@@ -161,59 +120,60 @@ public class AdminDashboardController extends BaseController
         return success(data);
     }
 
-    /**
-     * 后台管理端Controller
-     *
-     * @author TQY
-     */
-    @PreAuthorize("@ss.hasPermi('dashboard:view')")
-    @GetMapping("/packageDist")
-    public AjaxResult packageDist()
+    /** 按天聚合计数，返回 dateString -> count；查询失败返回空 Map */
+    private Map<String, Integer> dailyCount(String sql)
     {
-        List<Map<String, Object>> list = new ArrayList<>();
-        Map<String, Object> item1 = new HashMap<>();
-        item1.put("name", "基础版");
-        item1.put("value", 2);
-        list.add(item1);
-        Map<String, Object> item2 = new HashMap<>();
-        item2.put("name", "专业版");
-        item2.put("value", 1);
-        list.add(item2);
-        Map<String, Object> item3 = new HashMap<>();
-        item3.put("name", "企业版");
-        item3.put("value", 1);
-        list.add(item3);
-        return success(list);
+        Map<String, Integer> map = new HashMap<>();
+        try {
+            for (Map<String, Object> row : jdbcTemplate.queryForList(sql)) {
+                map.put(row.get("dt").toString(), ((Number) row.get("cnt")).intValue());
+            }
+        } catch (Exception e) {
+            // 表/列缺失时按 0 处理
+        }
+        return map;
     }
 
     /**
-     * 后台管理端Controller
-     *
-     * @author TQY
+     * 企业 API 调用量 TOP10（真实查询，无数据返回空列表）
      */
     @PreAuthorize("@ss.hasPermi('dashboard:view')")
     @GetMapping("/apiTop")
     public AjaxResult apiTop()
     {
         List<Map<String, Object>> list = new ArrayList<>();
-        
         try {
-            // 从数据库查询企业API调用量
             list = jdbcTemplate.queryForList(
-                "SELECT c.cmp_name AS companyName, c.api_used AS calls FROM t_cmp c ORDER BY c.api_used DESC LIMIT 10"
+                "SELECT c.cmp_name AS companyName, COALESCE(c.api_used, 0) AS calls, "
+                + "COALESCE(c.api_quota, 0) AS quota FROM t_cmp c ORDER BY calls DESC LIMIT 10"
             );
         } catch (Exception e) {
-            // 如果查询失败，返回默认数据
-            Map<String, Object> item1 = new HashMap<>();
-            item1.put("companyName", "杭州云智科技");
-            item1.put("calls", 3000);
-            list.add(item1);
-            Map<String, Object> item2 = new HashMap<>();
-            item2.put("companyName", "北京数联信息");
-            item2.put("calls", 6500);
-            list.add(item2);
+            // 表/列缺失时保持空列表，不返回假数据
         }
-        
+        return success(list);
+    }
+
+    /** 候选人状态分布（归并后的6类），供首页环形图 */
+    @PreAuthorize("@ss.hasPermi('dashboard:view')")
+    @GetMapping("/statusDist")
+    public AjaxResult statusDist()
+    {
+        List<Map<String, Object>> list = new ArrayList<>();
+        try {
+            list = jdbcTemplate.queryForList(
+                "SELECT CASE "
+                + "WHEN tal_status IN (0,9) THEN '新候选人' "
+                + "WHEN tal_status = 1 THEN '已初筛' "
+                + "WHEN tal_status = 2 THEN '面试中' "
+                + "WHEN tal_status IN (4,5) THEN '通过' "
+                + "WHEN tal_status IN (3,8) THEN '淘汰' "
+                + "WHEN tal_status IN (6,7) THEN '归档' "
+                + "ELSE '其他' END AS name, COUNT(*) AS value "
+                + "FROM t_tal GROUP BY name"
+            );
+        } catch (Exception e) {
+            // 表/列缺失时保持空列表，不返回假数据
+        }
         return success(list);
     }
 
@@ -247,9 +207,7 @@ public class AdminDashboardController extends BaseController
     }
 
     /**
-     * 后台管理端Controller
-     *
-     * @author TQY
+     * 招聘闭环工作台：5 步 pipeline、真实待办、转化漏斗
      */
     @PreAuthorize("@ss.hasPermi('dashboard:view')")
     @GetMapping("/recruitmentOverview")
@@ -257,47 +215,74 @@ public class AdminDashboardController extends BaseController
     {
         Map<String, Object> data = new HashMap<>();
         List<Map<String, Object>> pipeline = new ArrayList<>();
-        
-        try {
-            // 从数据库查询真实数据
-            int jobCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM t_pos", Integer.class);
-            int candidateCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM t_tal", Integer.class);
-            
-            Map<String, Object> p1 = new HashMap<>();
-            p1.put("key", "jobs");
-            p1.put("label", "岗位发布");
-            p1.put("value", jobCount);
-            p1.put("detail", "本月新增 2");
-            p1.put("route", "/job/list");
-            p1.put("tone", "blue");
-            p1.put("icon", "Briefcase");
-            pipeline.add(p1);
-            
-            Map<String, Object> p2 = new HashMap<>();
-            p2.put("key", "applications");
-            p2.put("label", "候选人");
-            p2.put("value", candidateCount);
-            p2.put("detail", "本月新增 8");
-            p2.put("route", "/talent/list");
-            p2.put("tone", "green");
-            p2.put("icon", "User");
-            pipeline.add(p2);
-        } catch (Exception e) {
-            Map<String, Object> p1 = new HashMap<>();
-            p1.put("key", "jobs");
-            p1.put("label", "岗位发布");
-            p1.put("value", 5);
-            p1.put("detail", "本月新增 2");
-            p1.put("route", "/job/list");
-            p1.put("tone", "blue");
-            p1.put("icon", "Briefcase");
-            pipeline.add(p1);
-        }
-        
+
+        int jobPublished = count("SELECT COUNT(*) FROM t_pos WHERE pos_status = 1");
+        int applicationTotal = count("SELECT COUNT(*) FROM t_app_record");
+        int screened = count("SELECT COUNT(*) FROM t_tal WHERE tal_status = 1");
+        int interviewing = count("SELECT COUNT(*) FROM t_tal WHERE tal_status = 2");
+        int passed = count("SELECT COUNT(*) FROM t_tal WHERE tal_status IN (4,5)");
+
+        pipeline.add(step("jobs", "已发布岗位", jobPublished, "在架可投递", "/recruit/job", "blue", "Briefcase"));
+        pipeline.add(step("applications", "投递总量", applicationTotal, "累计投递记录", "/recruit/resume", "cyan", "Promotion"));
+        pipeline.add(step("screened", "已初筛", screened, "通过初筛进入流程", "/recruit/candidate", "green", "User"));
+        pipeline.add(step("interviewing", "面试中", interviewing, "正在安排/进行面试", "/recruit/interview", "orange", "VideoCamera"));
+        pipeline.add(step("passed", "已通过", passed, "面试通过待录用", "/recruit/exam", "purple", "CircleCheck"));
+
+        // 待办：待审核岗位 / 待初筛候选人 / 待开始面试
+        List<Map<String, Object>> todos = new ArrayList<>();
+        int jobPending = count("SELECT COUNT(*) FROM t_pos WHERE pos_status = 0");
+        int talNew = count("SELECT COUNT(*) FROM t_tal WHERE tal_status IN (0,9)");
+        int sessionPending = count("SELECT COUNT(*) FROM t_int_session WHERE ses_status = 0");
+        todos.add(todo("jobPending", "待审核岗位", jobPending, "岗位待管理员审核", "/recruit/job", "warning"));
+        todos.add(todo("talNew", "待初筛候选人", talNew, "新候选人等待初筛", "/recruit/candidate", "primary"));
+        todos.add(todo("sessionPending", "待开始面试", sessionPending, "已排期待开始的面试", "/recruit/interview", "success"));
+
+        // 转化漏斗：已发布岗位 → 投递 → 初筛 → 面试中 → 通过
+        List<Map<String, Object>> funnel = new ArrayList<>();
+        funnel.add(funnelItem("已发布岗位", jobPublished));
+        funnel.add(funnelItem("投递总量", applicationTotal));
+        funnel.add(funnelItem("已初筛", screened));
+        funnel.add(funnelItem("面试中", interviewing));
+        funnel.add(funnelItem("已通过", passed));
+
         data.put("pipeline", pipeline);
-        data.put("todos", new ArrayList<>());
-        data.put("funnel", new ArrayList<>());
-        data.put("asOf", "2026-09-29 10:00:00");
+        data.put("todos", todos);
+        data.put("funnel", funnel);
+        data.put("asOf", java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         return success(data);
+    }
+
+    private Map<String, Object> step(String key, String label, int value, String detail, String route, String tone, String icon)
+    {
+        Map<String, Object> m = new HashMap<>();
+        m.put("key", key);
+        m.put("label", label);
+        m.put("value", value);
+        m.put("detail", detail);
+        m.put("route", route);
+        m.put("tone", tone);
+        m.put("icon", icon);
+        return m;
+    }
+
+    private Map<String, Object> todo(String key, String title, int count, String desc, String route, String level)
+    {
+        Map<String, Object> m = new HashMap<>();
+        m.put("key", key);
+        m.put("title", title);
+        m.put("count", count);
+        m.put("desc", desc);
+        m.put("route", route);
+        m.put("level", level);
+        return m;
+    }
+
+    private Map<String, Object> funnelItem(String label, int value)
+    {
+        Map<String, Object> m = new HashMap<>();
+        m.put("label", label);
+        m.put("value", value);
+        return m;
     }
 }

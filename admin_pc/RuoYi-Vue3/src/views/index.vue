@@ -64,11 +64,17 @@
           <span>待办与风险</span>
           <span class="header-hint">需要优先处理</span>
         </div>
-        <button v-for="todo in overview.todos" :key="todo.id" type="button" class="todo-item" @click="goTo(todo.route)">
-          <span class="todo-dot" :class="todo.tone"></span>
+        <button
+          v-for="todo in overview.todos"
+          :key="todo.key"
+          type="button"
+          class="todo-item"
+          @click="goTo(todo.route)"
+        >
+          <span class="todo-dot" :class="todo.level"></span>
           <span class="todo-copy">
             <strong>{{ todo.title }}</strong>
-            <small>{{ todo.detail }}</small>
+            <small>{{ todo.desc }}</small>
           </span>
           <b>{{ todo.count }}</b>
           <el-icon><ArrowRight /></el-icon>
@@ -81,8 +87,8 @@
           <span class="header-hint">本周期</span>
         </div>
         <div class="funnel-list">
-          <div v-for="(item, index) in overview.funnel" :key="item.name" class="funnel-row">
-            <span>{{ item.name }}</span>
+          <div v-for="(item, index) in overview.funnel" :key="item.label" class="funnel-row">
+            <span>{{ item.label }}</span>
             <div class="funnel-track">
               <i :style="{ width: `${funnelWidth(item.value)}%` }" :class="`funnel-${index}`"></i>
             </div>
@@ -92,7 +98,7 @@
       </div>
     </div>
 
-    <!-- 中部图表区 -->
+    <!-- 中部图表区：趋势图 + 最近操作动态并排 -->
     <div class="chart-sections">
       <div class="section-card chart-trend">
         <div class="section-header">
@@ -106,13 +112,13 @@
       </div>
       <div class="section-card chart-distribution">
         <div class="section-header">
-          <span>套餐分布</span>
+          <span>候选人状态分布</span>
         </div>
-        <div ref="pieChartRef" class="chart chart-lg"></div>
+        <div ref="distChartRef" class="chart chart-lg"></div>
       </div>
     </div>
 
-    <!-- 底部双列区 -->
+    <!-- 底部：API 调用量 TOP10 + 最近操作动态 -->
     <div class="bottom-sections">
       <div class="section-card">
         <div class="section-header">
@@ -121,7 +127,7 @@
         </div>
         <div ref="topChartRef" class="chart chart-sm"></div>
       </div>
-      <div class="section-card">
+      <div class="section-card recent-card">
         <div class="section-header">
           <span>最近操作动态</span>
         </div>
@@ -151,15 +157,15 @@ import { useRouter } from 'vue-router'
 import {
   listStats,
   listTrend,
-  listPackageDist,
   listApiTop,
+  listStatusDist,
   listRecentLogs,
   listRecruitmentOverview
 } from '@/api/dashboard'
 
 const trendChartRef = ref(null)
-const pieChartRef = ref(null)
 const topChartRef = ref(null)
+const distChartRef = ref(null)
 const trendRange = ref('30')
 const recentLogs = ref([])
 const overview = ref({ pipeline: [], todos: [], funnel: [] })
@@ -170,81 +176,63 @@ const router = useRouter()
 const stats = ref({})
 
 let trendChart = null
-let pieChart = null
 let topChart = null
+let distChart = null
 
 const statCards = computed(() => [
   {
-    label: '租户企业总数',
-    value: stats.value.companyTotal ?? '-',
-    extra: '较上月 +' + (stats.value.companyGrowth || 0),
-    icon: 'OfficeBuilding',
+    label: '已发布岗位',
+    value: formatNum(stats.value.jobPublished),
+    extra: '待审核 ' + (stats.value.jobPending ?? 0) + ' 个',
+    icon: 'Briefcase',
     iconClass: 'blue',
-    route: '/tenant/company',
+    route: '/recruit/job',
     negative: false
   },
   {
-    label: '本月活跃企业',
-    value: stats.value.companyActive ?? '-',
-    extra: '活跃率 ' + (stats.value.activeRate || '-'),
-    icon: 'Lightning',
-    iconClass: 'orange',
-    route: '/tenant/company',
+    label: '投递总量',
+    value: formatNum(stats.value.applicationTotal),
+    extra: '今日新增 ' + (stats.value.applicationToday ?? 0),
+    icon: 'Tickets',
+    iconClass: 'purple',
+    route: '/recruit/resume',
     negative: false
   },
   {
     label: '候选人总数',
     value: formatNum(stats.value.candidateTotal),
-    extra: '较昨日 +' + (stats.value.candidateGrowth || 0),
+    extra: '今日新增 ' + (stats.value.candidateToday ?? 0),
     icon: 'User',
     iconClass: 'green',
-    route: '/member/user',
-    negative: false
-  },
-  {
-    label: '今日 AI 调用量',
-    value: formatNum(stats.value.todayApiCalls),
-    extra: '配额使用 ' + (stats.value.apiQuotaUsage || '-'),
-    icon: 'Cpu',
-    iconClass: 'red',
-    route: '/ai/quota',
-    negative: true
-  },
-  {
-    label: '投递总量',
-    value: formatNum(stats.value.applicationTotal),
-    extra: '较昨日 +' + (stats.value.applicationGrowth || 0),
-    icon: 'Tickets',
-    iconClass: 'purple',
-    route: '/biz/resume',
-    negative: false
-  },
-  {
-    label: '今日简历解析',
-    value: formatNum(stats.value.todayResumes),
-    extra: '解析成功率 ' + (stats.value.resumeSuccessRate || '-'),
-    icon: 'Document',
-    iconClass: 'blue',
-    route: '/biz/resumeParse',
+    route: '/recruit/candidate',
     negative: false
   },
   {
     label: '今日面试场次',
     value: formatNum(stats.value.todayInterviews),
-    extra: '覆盖企业 ' + (stats.value.companyActive || '-') + ' 家',
+    extra: '面试评估见面试安排',
     icon: 'VideoCamera',
-    iconClass: 'green',
-    route: '/supervise/interview',
+    iconClass: 'cyan',
+    route: '/recruit/interview',
     negative: false
   },
   {
-    label: '初筛通过率',
-    value: stats.value.screenPassRate ?? '-',
-    extra: '规则粗排 + LLM 深析',
-    icon: 'DataAnalysis',
+    label: '今日新增简历',
+    value: formatNum(stats.value.todayResumes),
+    extra: '简历库实时更新',
+    icon: 'Document',
+    iconClass: 'blue',
+    route: '/recruit/resume',
+    negative: false
+  },
+  {
+    label: '入驻企业',
+    value: formatNum(stats.value.companyTotal),
+    extra: '已认证 ' + (stats.value.companyActive ?? 0) + ' 家',
+    icon: 'OfficeBuilding',
     iconClass: 'orange',
-    route: '/biz/aiScreen',
-    negative: true
+    route: '/company',
+    negative: false
   }
 ])
 
@@ -272,16 +260,16 @@ async function loadDashboard() {
   const results = await Promise.allSettled([
     listStats(),
     listTrend(),
-    listPackageDist(),
     listApiTop(),
+    listStatusDist(),
     listRecentLogs(),
     listRecruitmentOverview()
   ])
-  const [statsRes, trendRes, packageRes, apiRes, logsRes, overviewRes] = results
+  const [statsRes, trendRes, apiRes, distRes, logsRes, overviewRes] = results
   if (statsRes.status === 'fulfilled') stats.value = statsRes.value?.data || {}
   if (trendRes.status === 'fulfilled') initTrend(trendRes.value?.data || {})
-  if (packageRes.status === 'fulfilled') initPie(packageRes.value?.data || [])
   if (apiRes.status === 'fulfilled') initTop(apiRes.value?.data || [])
+  if (distRes.status === 'fulfilled') initDist(distRes.value?.data || [])
   if (logsRes.status === 'fulfilled') recentLogs.value = logsRes.value?.data || []
   if (overviewRes.status === 'fulfilled') {
     overview.value = overviewRes.value?.data || { pipeline: [], todos: [], funnel: [] }
@@ -307,7 +295,7 @@ function initTrend(data) {
       textStyle: { color: '#1D2129' }
     },
     legend: {
-      data: ['新注册企业', '活跃候选人', 'AI 面试完成次数', '投递量'],
+      data: ['新注册企业', '新增候选人', '面试场次', '投递量'],
       bottom: 0,
       textStyle: { color: '#86909C', fontSize: 12 }
     },
@@ -343,7 +331,7 @@ function initTrend(data) {
         symbolSize: 6
       },
       {
-        name: '活跃候选人',
+        name: '新增候选人',
         type: 'line',
         smooth: true,
         data: data.candidates.slice(-sliceN),
@@ -353,7 +341,7 @@ function initTrend(data) {
         symbolSize: 6
       },
       {
-        name: 'AI 面试完成次数',
+        name: '面试场次',
         type: 'line',
         smooth: true,
         data: data.interviews.slice(-sliceN),
@@ -376,69 +364,18 @@ function initTrend(data) {
   })
 }
 
-function initPie(data) {
-  if (!pieChartRef.value) return
-  if (!pieChart) pieChart = echarts.init(pieChartRef.value)
-  else pieChart.clear()
-  pieChart.setOption({
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: '#fff',
-      borderColor: '#EBEEF5',
-      textStyle: { color: '#1D2129' },
-      formatter: '{b}: {c} 家 ({d}%)'
-    },
-    legend: {
-      orient: 'vertical',
-      left: 'left',
-      top: 'middle',
-      textStyle: { color: '#4E5969', fontSize: 12 },
-      itemWidth: 12,
-      itemHeight: 12,
-      itemGap: 16
-    },
-    series: [
-      {
-        name: '套餐分布',
-        type: 'pie',
-        radius: ['42%', '68%'],
-        center: ['58%', '55%'],
-        avoidLabelOverlap: true,
-        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-        label: {
-          show: true,
-          formatter: '{b}\n{c} 家',
-          fontSize: 12,
-          color: '#4E5969'
-        },
-        emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
-        data: [
-          {
-            value: (data.find((d) => d.name === '基础版') || {}).value || 0,
-            name: '基础版',
-            itemStyle: { color: '#909399' }
-          },
-          {
-            value: (data.find((d) => d.name === '专业版') || {}).value || 0,
-            name: '专业版',
-            itemStyle: { color: '#2F80ED' }
-          },
-          {
-            value: (data.find((d) => d.name === '旗舰版') || {}).value || 0,
-            name: '旗舰版',
-            itemStyle: { color: '#F59E0B' }
-          }
-        ]
-      }
-    ]
-  })
-}
-
 function initTop(data) {
   if (!topChartRef.value) return
   if (!topChart) topChart = echarts.init(topChartRef.value)
   else topChart.clear()
-  const sorted = [...data].sort((a, b) => b.calls - a.calls).slice(0, 10)
+  const sorted = [...data]
+    .sort((a, b) => b.calls - a.calls)
+    .slice(0, 10)
+    .map((d) => {
+      const quota = Number(d.quota) || 0
+      const percent = quota > 0 ? Math.round(((Number(d.calls) || 0) * 100) / quota) : 0
+      return { ...d, percent }
+    })
   topChart.setOption({
     tooltip: {
       trigger: 'axis',
@@ -481,9 +418,10 @@ function initTop(data) {
         name: 'API 调用量',
         type: 'bar',
         barWidth: '45%',
+        data: sorted.map((d) => ({ value: d.calls, percent: d.percent })),
         itemStyle: {
           borderRadius: [0, 4, 4, 0],
-          color: (params) => (params.value.percent > 80 ? '#F59E0B' : '#2F80ED')
+          color: (params) => (params.data.percent > 80 ? '#F59E0B' : '#2F80ED')
         },
         label: {
           show: true,
@@ -497,10 +435,66 @@ function initTop(data) {
   })
 }
 
+function initDist(data) {
+  if (!distChartRef.value) return
+  if (!distChart) distChart = echarts.init(distChartRef.value)
+  else distChart.clear()
+  const colorMap = {
+    新候选人: '#909399',
+    已初筛: '#2F80ED',
+    面试中: '#F59E0B',
+    通过: '#22C55E',
+    淘汰: '#EF4444',
+    归档: '#C9CDD4',
+    其他: '#BFBFBF'
+  }
+  const list = (data || []).map((d) => ({
+    name: d.name,
+    value: Number(d.value) || 0,
+    itemStyle: { color: colorMap[d.name] || '#2F80ED' }
+  }))
+  distChart.setOption({
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: '#fff',
+      borderColor: '#EBEEF5',
+      textStyle: { color: '#1D2129' },
+      formatter: '{b}: {c} 人 ({d}%)'
+    },
+    legend: {
+      orient: 'vertical',
+      left: 'left',
+      top: 'middle',
+      textStyle: { color: '#4E5969', fontSize: 12 },
+      itemWidth: 12,
+      itemHeight: 12,
+      itemGap: 16
+    },
+    series: [
+      {
+        name: '候选人状态分布',
+        type: 'pie',
+        radius: ['42%', '68%'],
+        center: ['58%', '55%'],
+        avoidLabelOverlap: true,
+        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+        label: {
+          show: true,
+          formatter: '{b}\n{c} 人',
+          fontSize: 12,
+          color: '#4E5969'
+        },
+        emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+        data: list
+      }
+    ]
+  })
+}
+
 function resizeCharts() {
   trendChart && trendChart.resize()
-  pieChart && pieChart.resize()
   topChart && topChart.resize()
+  distChart && distChart.resize()
 }
 
 onMounted(() => {
@@ -511,8 +505,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeCharts)
   trendChart && trendChart.dispose()
-  pieChart && pieChart.dispose()
   topChart && topChart.dispose()
+  distChart && distChart.dispose()
 })
 
 watch(trendRange, () => {
@@ -726,6 +720,9 @@ watch(trendRange, () => {
     &.primary {
       background: #7c3aed;
     }
+    &.success {
+      background: #22c55e;
+    }
     &.info {
       background: #909399;
     }
@@ -795,9 +792,9 @@ watch(trendRange, () => {
   }
   .stat-cards {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 16px;
-    margin-bottom: 20px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
     @media (max-width: 1100px) {
       grid-template-columns: repeat(2, 1fr);
     }
@@ -1027,6 +1024,11 @@ watch(trendRange, () => {
   }
   .chart-sm {
     height: 320px;
+  }
+  .recent-card {
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
   }
 
   .timeline-wrap {

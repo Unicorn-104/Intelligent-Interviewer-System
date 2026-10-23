@@ -9,6 +9,14 @@ export function listUser(query) {
   })
 }
 
+// 用户状态统计
+export function statsUser() {
+  return request({
+    url: '/member/user/stats',
+    method: 'get'
+  })
+}
+
 // 查询C端用户详情（含登录设备、登录记录）
 export function getUser(userId) {
   return request({

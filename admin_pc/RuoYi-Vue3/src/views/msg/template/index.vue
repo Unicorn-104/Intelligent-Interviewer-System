@@ -78,6 +78,7 @@
       <el-table-column label="更新时间" align="center" prop="updateTime" width="170" />
       <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
         <template #default="scope">
+          <el-button link type="primary" icon="View" @click="handlePreview(scope.row)">预览</el-button>
           <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['msg:template:edit']"
             >修改</el-button
           >
@@ -162,6 +163,15 @@
         </div>
       </template>
     </el-dialog>
+    <!-- 模板预览对话框 -->
+    <el-dialog title="模板预览" v-model="previewOpen" width="600px" append-to-body>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="模板名称">{{ previewRow.templateName }}</el-descriptions-item>
+        <el-descriptions-item label="渠道">{{ channelLabel(previewRow.channel) }}</el-descriptions-item>
+      </el-descriptions>
+      <el-divider content-position="left">渲染效果（变量以示例值替换）</el-divider>
+      <div class="preview-text">{{ previewText }}</div>
+    </el-dialog>
   </div>
 </template>
 
@@ -182,8 +192,7 @@ const title = ref('')
 const channelOptions = [
   { value: 'sms', label: '短信', tag: 'primary' },
   { value: 'email', label: '邮件', tag: 'success' },
-  { value: 'site', label: '站内', tag: 'info' },
-  { value: 'miniapp', label: '小程序', tag: 'warning' }
+  { value: 'site', label: '站内', tag: 'info' }
 ]
 
 // 消息类型选项
@@ -196,10 +205,10 @@ const msgTypeOptions = [
   { value: '5', label: '系统公告', tag: 'danger' }
 ]
 
-// 状态选项
+// 状态选项（DB：1启用 0停用）
 const statusOptions = [
-  { value: '0', label: '启用', tag: 'success' },
-  { value: '1', label: '停用', tag: 'info' }
+  { value: '1', label: '启用', tag: 'success' },
+  { value: '0', label: '停用', tag: 'info' }
 ]
 
 const data = reactive({
@@ -211,7 +220,7 @@ const data = reactive({
     msgType: undefined,
     variables: [],
     content: undefined,
-    status: '0'
+    status: '1'
   },
   queryParams: {
     pageNum: 1,
@@ -268,7 +277,7 @@ function reset() {
     msgType: undefined,
     variables: [],
     content: undefined,
-    status: '0'
+    status: '1'
   }
   proxy.resetForm('templateRef')
 }
@@ -369,6 +378,31 @@ function statusTag(val) {
   return item && item.tag ? item.tag : 'danger'
 }
 
+/** 模板预览：将 ${变量} 以示例值替换后渲染 */
+const previewOpen = ref(false)
+const previewRow = ref({})
+const previewText = ref('')
+const PREVIEW_SAMPLE = {
+  candidate_name: '张三',
+  candidate: '张三',
+  name: '张三',
+  position_name: 'Java高级工程师',
+  position: 'Java高级工程师',
+  company: '本公司',
+  phone: '13800000000',
+  email: 'zhang@example.com',
+  date: '2026-10-22',
+  time: '14:00',
+  interview_link: 'https://example.com/interview'
+}
+function handlePreview(row) {
+  previewRow.value = row
+  let text = row.content || ''
+  text = text.replace(/\$\{([^}]+)\}/g, (_, key) => PREVIEW_SAMPLE[key.trim()] ?? `【${key.trim()}】`)
+  previewText.value = text
+  previewOpen.value = true
+}
+
 getList()
 </script>
 
@@ -376,6 +410,13 @@ getList()
 .app-container {
   .variable-tag {
     margin: 2px 4px 2px 0;
+  }
+  .preview-text {
+    white-space: pre-wrap;
+    line-height: 1.8;
+    padding: 12px;
+    background: #f7f8fa;
+    border-radius: 6px;
   }
   .content-label {
     line-height: 1.4;
