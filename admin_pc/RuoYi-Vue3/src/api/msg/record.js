@@ -19,3 +19,12 @@ export function resendRecord(recordId) {
     }
   })
 }
+
+// 发送记录统计：总数 / 成功 / 失败
+export function statsRecord(query) {
+  return request({
+    url: '/msg/record/stats',
+    method: 'get',
+    params: query
+  })
+}

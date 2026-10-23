@@ -3,9 +3,7 @@
     <el-card class="box-card" shadow="hover">
       <template #header><span class="section-title">AI应答配置</span></template>
       <el-form :model="aiConfig" label-width="120px" style="max-width: 600px">
-        <el-form-item label="启用AI应答"
-          ><el-switch v-model="aiConfig.enabled" active-value="0" inactive-value="1" @change="handleSave"
-        /></el-form-item>
+        <el-form-item label="启用AI应答"><el-switch v-model="aiConfig.enabled" @change="handleSave" /></el-form-item>
         <el-form-item label="回复语言">
           <el-select v-model="aiConfig.language" style="width: 200px" @change="handleSave">
             <el-option label="中文" value="zh" /><el-option label="English" value="en" /><el-option
@@ -85,6 +83,26 @@
           <el-button type="primary" plain icon="Plus" size="small" @click="handleAddKnowledge">新增条目</el-button>
         </div>
       </template>
+      <el-form :inline="true" class="kb-filter">
+        <el-form-item label="关键词">
+          <el-input
+            v-model="kbQuery.keyword"
+            placeholder="问题 / 回答关键词"
+            clearable
+            style="width: 200px"
+            @keyup.enter="handleKbSearch"
+          />
+        </el-form-item>
+        <el-form-item label="分类">
+          <el-select v-model="kbQuery.category" placeholder="全部分类" clearable style="width: 140px">
+            <el-option v-for="c in kbCategories" :key="c" :label="c" :value="c" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" icon="Search" @click="handleKbSearch">查询</el-button>
+          <el-button icon="Refresh" @click="resetKbSearch">重置</el-button>
+        </el-form-item>
+      </el-form>
       <el-table v-loading="kbLoading" :data="knowledgeBase" stripe>
         <el-table-column label="编号" align="center" prop="id" width="70" />
         <el-table-column label="问题" align="center" prop="question" :show-overflow-tooltip="true" min-width="200" />
@@ -187,7 +205,7 @@ function loadRecords() {
 /** 加载知识库 */
 function loadKnowledge() {
   kbLoading.value = true
-  listAiKnowledge()
+  listAiKnowledge({ keyword: kbQuery.keyword, category: kbQuery.category })
     .then((res) => {
       knowledgeBase.value = res.rows || []
     })
@@ -198,6 +216,17 @@ function loadKnowledge() {
     .finally(() => {
       kbLoading.value = false
     })
+}
+
+/** 知识库查询 / 重置 */
+const kbQuery = reactive({ keyword: '', category: '' })
+function handleKbSearch() {
+  loadKnowledge()
+}
+function resetKbSearch() {
+  kbQuery.keyword = ''
+  kbQuery.category = ''
+  loadKnowledge()
 }
 
 /** 保存配置 */

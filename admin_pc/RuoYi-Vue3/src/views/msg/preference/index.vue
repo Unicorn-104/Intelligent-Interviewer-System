@@ -10,11 +10,6 @@
           @keyup.enter="handleQuery"
         />
       </el-form-item>
-      <el-form-item label="渠道类型" prop="channelType">
-        <el-select v-model="queryParams.channelType" placeholder="全部" clearable style="width: 150px">
-          <el-option v-for="item in channelOptions" :key="item.value" :label="item.label" :value="item.value" />
-        </el-select>
-      </el-form-item>
       <el-form-item>
         <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
         <el-button icon="Refresh" @click="resetQuery">重置</el-button>
@@ -22,32 +17,39 @@
     </el-form>
 
     <el-row :gutter="10" class="mb8">
-      <el-col :span="1.5">
-        <el-button type="primary" plain icon="Edit" @click="handleBatchUpdate" v-hasPermi="['msg:preference:edit']"
-          >批量更新</el-button
-        >
-      </el-col>
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table v-loading="loading" :data="preferenceList" @selection-change="handleSelectionChange">
-      <el-table-column type="selection" width="55" align="center" />
-      <el-table-column label="用户名称" align="center" prop="userName" />
-      <el-table-column label="渠道类型" align="center" prop="channelType">
+    <el-table v-loading="loading" :data="preferenceList">
+      <el-table-column label="用户名称" align="center" prop="userName" min-width="120" />
+      <el-table-column label="App推送" align="center" width="110">
         <template #default="scope">
-          <el-tag :type="channelTagType(scope.row.channelType)">{{ scope.row.channelLabel }}</el-tag>
+          <el-switch
+            :model-value="scope.row.enabledApp === 1 || scope.row.enabledApp === '1'"
+            @change="(val) => handleToggle(scope.row, 'app')"
+          />
         </template>
       </el-table-column>
-      <el-table-column label="通知类型" align="center" prop="msgType" :show-overflow-tooltip="true" />
-      <el-table-column label="当前状态" align="center" prop="status">
+      <el-table-column label="邮件通知" align="center" width="110">
         <template #default="scope">
-          <el-switch v-model="scope.row.status" active-value="0" inactive-value="1" @change="handleToggle(scope.row)" />
+          <el-switch
+            :model-value="scope.row.enabledEmail === 1 || scope.row.enabledEmail === '1'"
+            @change="(val) => handleToggle(scope.row, 'email')"
+          />
         </template>
       </el-table-column>
-      <el-table-column label="更新时间" align="center" prop="updateTime" width="160">
-        <template #default="scope"
-          ><span>{{ parseTime(scope.row.updateTime) }}</span></template
-        >
+      <el-table-column label="短信通知" align="center" width="110">
+        <template #default="scope">
+          <el-switch
+            :model-value="scope.row.enabledSms === 1 || scope.row.enabledSms === '1'"
+            @change="(val) => handleToggle(scope.row, 'sms')"
+          />
+        </template>
+      </el-table-column>
+      <el-table-column label="更新时间" align="center" prop="updateTime" width="170">
+        <template #default="scope">
+          <span>{{ parseTime(scope.row.updateTime) }}</span>
+        </template>
       </el-table-column>
       <el-table-column label="操作" align="center" width="120">
         <template #default="scope">
@@ -74,21 +76,15 @@
     <el-dialog :title="dialogTitle" v-model="dialogOpen" width="500px" append-to-body>
       <el-form ref="prefRef" :model="form" label-width="100px">
         <el-form-item label="用户名称"><el-input v-model="form.userName" disabled /></el-form-item>
-        <el-form-item label="邮件通知"
-          ><el-switch v-model="form.emailEnabled" active-value="0" inactive-value="1"
-        /></el-form-item>
-        <el-form-item label="短信通知"
-          ><el-switch v-model="form.smsEnabled" active-value="0" inactive-value="1"
-        /></el-form-item>
-        <el-form-item label="站内推送"
-          ><el-switch v-model="form.siteEnabled" active-value="0" inactive-value="1"
-        /></el-form-item>
-        <el-form-item label="小程序消息"
-          ><el-switch v-model="form.miniappEnabled" active-value="0" inactive-value="1"
-        /></el-form-item>
-        <el-form-item label="备注"
-          ><el-input v-model="form.remark" type="textarea" placeholder="请输入备注"
-        /></el-form-item>
+        <el-form-item label="App推送">
+          <el-switch v-model="form.enabledApp" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="邮件通知">
+          <el-switch v-model="form.enabledEmail" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="短信通知">
+          <el-switch v-model="form.enabledSms" :active-value="1" :inactive-value="0" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button type="primary" @click="submitForm">确 定</el-button>
@@ -105,36 +101,23 @@ const { proxy } = getCurrentInstance()
 const preferenceList = ref([])
 const loading = ref(true)
 const showSearch = ref(true)
-const ids = ref([])
 const total = ref(0)
 const dialogOpen = ref(false)
 const dialogTitle = ref('')
-const dateRange = ref([])
-
-const channelOptions = [
-  { value: 'email', label: '邮件' },
-  { value: 'sms', label: '短信' },
-  { value: 'site', label: '站内' },
-  { value: 'miniapp', label: '小程序' }
-]
 
 const data = reactive({
   form: {},
   queryParams: {
     pageNum: 1,
     pageSize: 10,
-    userName: undefined,
-    channelType: undefined
+    userName: undefined
   }
 })
+const { queryParams } = toRefs(data)
 
-const { form, queryParams } = toRefs(data)
-
-/**
- 查询通知偏好列表 */
+/** 查询通知偏好列表 */
 function getList() {
   loading.value = true
-
   listPreference(data.queryParams)
     .then((response) => {
       preferenceList.value = response.rows
@@ -147,41 +130,24 @@ function getList() {
     })
 }
 
-/** 搜索按钮操作 */
 function handleQuery() {
   data.queryParams.pageNum = 1
   getList()
 }
 
-/** 重置按钮操作 */
 function resetQuery() {
   proxy.resetForm('queryRef')
   handleQuery()
 }
 
-/** 行勾选 */
-function handleSelectionChange(selection) {
-  ids.value = selection.map((item) => item.preferenceId)
-}
-
-/** 渠道类型标签 */
-function channelTagType(val) {
-  const item = channelOptions.find((o) => o.value === val)
-  return item && item.tag ? item.tag : 'info'
-}
-
-/** 单条开关切换 */
-function handleToggle(row) {
-  const status = row.status === '0' ? '1' : '0'
-  toggleChannel({ preferenceId: row.preferenceId, status: status })
+/** 行内开关切换 */
+function handleToggle(row, channel) {
+  toggleChannel({ userId: row.userId, channel })
     .then(() => {
-      getList()
       proxy.$modal.msgSuccess('状态已更新')
-    })
-    .catch((err) => {
-      console.error('状态更新失败:', err)
       getList()
     })
+    .catch(() => getList())
 }
 
 /** 编辑按钮操作 */
@@ -192,30 +158,10 @@ function handleUpdate(row) {
       dialogOpen.value = true
       dialogTitle.value = '编辑通知偏好'
     })
-    .catch((err) => {
-      console.error('查询通知偏好详情失败:', err)
-    })
+    .catch((err) => console.error('查询通知偏好详情失败:', err))
 }
 
-/** 批量更新按钮操作 */
-function handleBatchUpdate() {
-  if (ids.value.length === 0) {
-    proxy.$modal.msgWarning('请先选择要更新的数据')
-    return
-  }
-  proxy.$modal
-    .confirm('确认批量更新所选用户的通知偏好吗？')
-    .then(() => {
-      return toggleChannel({ preferenceIds: ids.value.join(','), status: '0' })
-    })
-    .then(() => {
-      proxy.$modal.msgSuccess('批量更新成功')
-      getList()
-    })
-    .catch(() => {})
-}
-
-/** 提交按钮 */
+/** 提交保存 */
 function submitForm() {
   updatePreference(data.form)
     .then(() => {
@@ -223,9 +169,7 @@ function submitForm() {
       dialogOpen.value = false
       getList()
     })
-    .catch((err) => {
-      console.error('修改通知偏好失败:', err)
-    })
+    .catch((err) => console.error('修改通知偏好失败:', err))
 }
 
 getList()

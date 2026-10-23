@@ -1,6 +1,9 @@
 <template>
   <div class="app-container">
     <el-row :gutter="10" class="mb8">
+      <el-col :span="1.5">
+        <el-button type="primary" plain icon="Plus" @click="handleAdd">新增渠道</el-button>
+      </el-col>
       <right-toolbar :search="false" @queryTable="getList"></right-toolbar>
     </el-row>
 
@@ -37,10 +40,18 @@
         </template>
       </el-table-column>
       <el-table-column label="备注" align="center" prop="remark" :show-overflow-tooltip="true" />
-      <el-table-column label="操作" align="center" width="100" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
         <template #default="scope">
           <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['msg:channel:edit']"
             >修改</el-button
+          >
+          <el-button
+            link
+            type="danger"
+            icon="Delete"
+            @click="handleDelete(scope.row)"
+            v-hasPermi="['msg:channel:remove']"
+            >删除</el-button
           >
         </template>
       </el-table-column>
@@ -59,6 +70,11 @@
       <el-form ref="channelRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="渠道名称" prop="channelName">
           <el-input v-model="form.channelName" placeholder="请输入渠道名称" />
+        </el-form-item>
+        <el-form-item label="渠道类型" prop="channelType">
+          <el-select v-model="form.channelType" placeholder="请选择渠道类型" style="width: 100%">
+            <el-option v-for="item in channelTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="服务商" prop="provider">
           <el-input v-model="form.provider" placeholder="请输入服务商" />
@@ -85,7 +101,7 @@
 </template>
 
 <script setup name="MsgChannel">
-import { listChannel, updateChannel, toggleChannel } from '@/api/msg/channel'
+import { listChannel, addChannel, updateChannel, delChannel, toggleChannel } from '@/api/msg/channel'
 
 const { proxy } = getCurrentInstance()
 
@@ -99,8 +115,8 @@ const total = ref(0)
 const channelTypeOptions = [
   { value: 'sms', label: '短信', tag: 'primary' },
   { value: 'email', label: '邮件', tag: 'success' },
-  { value: 'miniapp', label: '小程序', tag: 'warning' },
-  { value: 'site', label: '站内', tag: 'info' }
+  { value: 'site', label: '站内', tag: 'info' },
+  { value: 'webhook', label: 'Webhook', tag: 'danger' }
 ]
 
 const data = reactive({
@@ -145,6 +161,22 @@ function getList() {
     })
 }
 
+/** 新增按钮操作 */
+function handleAdd() {
+  data.form = {
+    channelId: undefined,
+    channelType: undefined,
+    channelName: undefined,
+    provider: undefined,
+    config: undefined,
+    dailyLimit: 0,
+    remark: undefined,
+    status: '0'
+  }
+  open.value = true
+  title.value = '新增渠道'
+}
+
 /** 修改按钮操作 */
 function handleUpdate(row) {
   data.form = { ...row }
@@ -156,9 +188,15 @@ function handleUpdate(row) {
 function submitForm() {
   proxy.$refs['channelRef'].validate((valid) => {
     if (valid) {
-      updateChannel(data.form)
+      const payload = {
+        name: data.form.channelName,
+        type: data.form.channelType,
+        config: data.form.config || '{}'
+      }
+      const req = data.form.channelId ? updateChannel({ id: data.form.channelId, ...payload }) : addChannel(payload)
+      req
         .then(() => {
-          proxy.$modal.msgSuccess('修改成功')
+          proxy.$modal.msgSuccess('保存成功')
           open.value = false
           getList()
         })
@@ -168,6 +206,18 @@ function submitForm() {
         })
     }
   })
+}
+
+/** 删除按钮操作 */
+function handleDelete(row) {
+  proxy.$modal
+    .confirm('确认删除渠道"' + row.channelName + '"吗？')
+    .then(() => delChannel(row.channelId))
+    .then(() => {
+      proxy.$modal.msgSuccess('删除成功')
+      getList()
+    })
+    .catch(() => {})
 }
 
 /** 取消按钮 */
