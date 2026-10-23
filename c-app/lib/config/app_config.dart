@@ -7,6 +7,12 @@ abstract final class AppConfig {
   );
 
   static const requestTimeout = Duration(seconds: 12);
+
+  /// 仅在明确指定的私有 CA 测试包中启用。
+  static const trustBaotaCertificate = bool.fromEnvironment(
+    'TRUST_BAOTA_CERTIFICATE',
+  );
+
   static const fileUploadTimeout = Duration(seconds: 180);
   static const aiRequestTimeout = Duration(seconds: 60);
 }

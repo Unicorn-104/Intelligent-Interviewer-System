@@ -9,6 +9,7 @@ public interface IAppResumeService
     List<AppResume> selectResumeList(Long userId);
     AppResume selectResume(Long userId, Long resumeId);
     AppResume saveResume(Long userId, AppResume resume);
+    int deleteResume(Long userId, Long resumeId);
     AppResume parsePdf(byte[] pdfBytes, String originalFilename);
     AppResume saveResumeWithPdf(Long userId, AppResume resume, byte[] pdfBytes, String originalFilename);
     AppResumePdfDocument selectPdf(Long userId, Long resumeId);

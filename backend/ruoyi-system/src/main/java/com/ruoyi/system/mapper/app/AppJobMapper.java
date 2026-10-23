@@ -13,6 +13,8 @@ public interface AppJobMapper
                             @Param("filter") String filter,
                             @Param("limit") Integer limit);
 
+    List<Long> selectAvailableRecommendationIds(@Param("positionIds") List<Long> positionIds);
+
     int countNewOpportunities();
 
     List<AppApplicationSummary> selectRecentApplications(@Param("userId") Long userId,

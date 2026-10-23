@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../../config/app_config.dart';
 import 'api_exception.dart';
@@ -15,34 +16,52 @@ class ApiClient {
   final HttpClient _httpClient;
   final String baseUrl;
 
-  Stream<String> eventLines(String path, {required String token}) async* {
+  Future<Uint8List> getPdf(String path, {required String token}) async {
     HttpClientRequest? request;
     try {
-      request = await _httpClient
-          .getUrl(Uri.parse('$baseUrl$path'))
-          .timeout(AppConfig.requestTimeout);
-      request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
-      final response = await request.close().timeout(AppConfig.requestTimeout);
-      if (response.statusCode != 200 ||
-          response.headers.contentType?.mimeType != 'text/event-stream') {
-        await _readResponse(response, token: token);
-        throw const ApiException('AI 连接暂不可用，请重试');
-      }
-      yield* response
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .timeout(const Duration(seconds: 30));
+      return await (() async {
+        request = await _httpClient.getUrl(Uri.parse('$baseUrl$path'));
+        request!.followRedirects = false;
+        request!.headers.set(HttpHeaders.acceptHeader, 'application/pdf');
+        request!.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+        final response = await request!.close();
+        if (response.statusCode != 200 ||
+            response.headers.contentType?.mimeType != 'application/pdf') {
+          await _readResponse(response, token: token);
+          throw const ApiException('无法读取原始 PDF，请稍后重试');
+        }
+        const maxBytes = 10 * 1024 * 1024;
+        if (response.contentLength > maxBytes) {
+          throw const ApiException('PDF 文件过大，暂时无法预览');
+        }
+        final bytes = BytesBuilder(copy: false);
+        await for (final chunk in response) {
+          if (bytes.length + chunk.length > maxBytes) {
+            throw const ApiException('PDF 文件过大，暂时无法预览');
+          }
+          bytes.add(chunk);
+        }
+        final data = bytes.takeBytes();
+        if (data.length < 5 ||
+            data[0] != 0x25 ||
+            data[1] != 0x50 ||
+            data[2] != 0x44 ||
+            data[3] != 0x46 ||
+            data[4] != 0x2d) {
+          throw const ApiException('PDF 文件无法打开，请重新上传');
+        }
+        return data;
+      })().timeout(AppConfig.aiRequestTimeout);
     } on ApiException {
       rethrow;
     } on TimeoutException {
-      throw const ApiException('AI 连接超时，可重新连接查看回答');
-    } on SocketException {
-      throw const ApiException('连接中断，可重新连接查看回答');
+      throw const ApiException('PDF 加载超时，请重试');
     } on HandshakeException {
       throw const ApiException('无法建立安全连接，请联系管理员');
-    } on FormatException {
-      throw const ApiException('AI 响应格式不正确，请重试');
+    } on SocketException {
+      throw const ApiException('无法连接后端服务，请确认服务已启动');
+    } catch (_) {
+      throw const ApiException('无法读取原始 PDF，请稍后重试');
     } finally {
       request?.abort();
     }
@@ -81,6 +100,40 @@ class ApiClient {
     Duration timeout = AppConfig.requestTimeout,
   }) {
     return _request('DELETE', path, body: body, token: token, timeout: timeout);
+  }
+
+  /// Authenticated SSE transport; shares login-expiry handling with normal APIs.
+  Stream<String> eventLines(String path, {required String token}) async* {
+    HttpClientRequest? request;
+    try {
+      request = await _httpClient
+          .getUrl(Uri.parse('$baseUrl$path'))
+          .timeout(AppConfig.requestTimeout);
+      request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      final response = await request.close().timeout(AppConfig.requestTimeout);
+      if (response.statusCode != 200 ||
+          response.headers.contentType?.mimeType != 'text/event-stream') {
+        await _readResponse(response, token: token);
+        throw const ApiException('AI 连接暂不可用，请重试');
+      }
+      yield* response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 30));
+    } on ApiException {
+      rethrow;
+    } on TimeoutException {
+      throw const ApiException('AI 连接超时，可重新连接查看回答');
+    } on SocketException {
+      throw const ApiException('连接中断，可重新连接查看回答');
+    } on HandshakeException {
+      throw const ApiException('无法建立安全连接，请联系管理员');
+    } on FormatException {
+      throw const ApiException('AI 响应格式不正确，请重试');
+    } finally {
+      request?.abort();
+    }
   }
 
   Future<Map<String, dynamic>> postFile(
@@ -147,6 +200,8 @@ class ApiClient {
       rethrow;
     } on TimeoutException {
       throw const ApiException('PDF 上传或识别超时，请稍后重试');
+    } on HandshakeException {
+      throw const ApiException('无法建立安全连接，请联系管理员');
     } on SocketException {
       throw const ApiException('无法连接后端服务，请确认服务已启动');
     } on FileSystemException {
@@ -191,6 +246,8 @@ class ApiClient {
       rethrow;
     } on TimeoutException {
       throw const ApiException('连接后端超时，请检查网络后重试');
+    } on HandshakeException {
+      throw const ApiException('无法建立安全连接，请联系管理员');
     } on SocketException {
       throw const ApiException('无法连接后端服务，请确认服务已启动');
     } on FormatException {

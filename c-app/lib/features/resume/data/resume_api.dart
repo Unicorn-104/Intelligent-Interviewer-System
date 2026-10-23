@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../domain/app_resume.dart';
@@ -5,6 +7,26 @@ import '../domain/app_resume.dart';
 class ResumeApi {
   const ResumeApi(this._client);
   final ApiClient _client;
+
+  Future<Uint8List> pdf(String token, int resumeId) async {
+    try {
+      return await _client.getPdf('/app/resumes/$resumeId/pdf', token: token);
+    } on ApiException catch (error) {
+      if (error.code == 401 || error.statusCode == 401) {
+        throw const ApiException('登录已失效，请重新登录', code: 401);
+      }
+      if (error.code == 403 || error.statusCode == 403) {
+        throw const ApiException('无权查看此简历的原始 PDF', code: 403);
+      }
+      if (error.code == 404 || error.statusCode == 404) {
+        throw const ApiException('原始 PDF 不存在，请刷新简历列表', code: 404);
+      }
+      if (error.code != null || error.statusCode != null) {
+        throw const ApiException('原始 PDF 暂不可用，请刷新列表或稍后重试');
+      }
+      rethrow;
+    }
+  }
 
   Future<List<AppResume>> list(String token) async {
     final json = await _client.get('/app/resumes', token: token);
@@ -23,6 +45,10 @@ class ResumeApi {
   Future<AppResume> detail(String token, int resumeId) async {
     final json = await _client.get('/app/resumes/$resumeId', token: token);
     return _resume(json);
+  }
+
+  Future<void> delete(String token, int resumeId) async {
+    await _client.delete('/app/resumes/$resumeId', token: token);
   }
 
   Future<AppResume> save(String token, AppResume resume) async {

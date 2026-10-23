@@ -142,6 +142,9 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
                     if (widget.panel == JobFilterPanel.more) ...[
                       ExpansionTile(
                         title: const Text('工作城市'),
+                        childrenPadding: const EdgeInsets.only(
+                          top: AppSpacing.lg,
+                        ),
                         subtitle: Text(
                           _draft.city.isEmpty ? '不限' : _draft.city,
                         ),
@@ -154,11 +157,15 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
                             }.toList(),
                             _draft.city,
                             (v) => _draft.copyWith(city: v == '全国' ? '' : v),
+                            showTitle: false,
                           ),
                         ],
                       ),
                       ExpansionTile(
                         title: const Text('职位类别'),
+                        childrenPadding: const EdgeInsets.only(
+                          top: AppSpacing.lg,
+                        ),
                         subtitle: Text(
                           _draft.positionLabel.isEmpty
                               ? '不限'
@@ -168,14 +175,31 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
                           _positionPicker(options?.categories ?? const []),
                         ],
                       ),
-                      _group(
-                        '工作经验',
-                        pcJobExperiences,
-                        _draft.experienceMin,
-                        (v) => _draft.copyWith(experienceMin: v),
+                      ExpansionTile(
+                        title: const Text('工作经验'),
+                        childrenPadding: const EdgeInsets.only(
+                          top: AppSpacing.lg,
+                        ),
+                        subtitle: Text(
+                          _draft.experienceMin.isEmpty
+                              ? '不限'
+                              : _draft.experienceMin,
+                        ),
+                        children: [
+                          _group(
+                            '工作经验',
+                            pcJobExperiences,
+                            _draft.experienceMin,
+                            (v) => _draft.copyWith(experienceMin: v),
+                            showTitle: false,
+                          ),
+                        ],
                       ),
                       ExpansionTile(
                         title: const Text('所属行业'),
+                        childrenPadding: const EdgeInsets.only(
+                          top: AppSpacing.lg,
+                        ),
                         subtitle: Text(
                           _draft.industry.isEmpty ? '不限' : _draft.industry,
                         ),
@@ -183,11 +207,25 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
                           _industryPicker(options?.industries ?? const []),
                         ],
                       ),
-                      _group(
-                        '公司规模',
-                        options?.companySizes ?? const [],
-                        _draft.companySize,
-                        (v) => _draft.copyWith(companySize: v),
+                      ExpansionTile(
+                        title: const Text('公司规模'),
+                        childrenPadding: const EdgeInsets.only(
+                          top: AppSpacing.lg,
+                        ),
+                        subtitle: Text(
+                          _draft.companySize.isEmpty
+                              ? '不限'
+                              : _draft.companySize,
+                        ),
+                        children: [
+                          _group(
+                            '公司规模',
+                            options?.companySizes ?? const [],
+                            _draft.companySize,
+                            (v) => _draft.copyWith(companySize: v),
+                            showTitle: false,
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -248,7 +286,7 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
           ),
           onChanged: (value) => setState(() => _positionSearch = value),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.xl),
         DropdownButtonFormField<String>(
           initialValue: _positionGroup,
           isExpanded: true,
@@ -334,7 +372,7 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
             if (value != null) setState(() => _industryGroup = value);
           },
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.xl),
         _group(
           current.title,
           current.items,
@@ -349,14 +387,17 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
     String title,
     List<String> options,
     String selected,
-    JobSearchQuery Function(String) update,
-  ) => Padding(
+    JobSearchQuery Function(String) update, {
+    bool showTitle = true,
+  }) => Padding(
     padding: const EdgeInsets.only(bottom: AppSpacing.xxl),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: AppSpacing.sm),
+        if (showTitle) ...[
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         if (options.isEmpty && selected.isEmpty) ...[
           Text('暂无可选条件', style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: AppSpacing.sm),

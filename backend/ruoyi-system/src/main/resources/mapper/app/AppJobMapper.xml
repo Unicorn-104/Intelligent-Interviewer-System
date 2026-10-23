@@ -86,6 +86,19 @@
         limit #{limit}
     </select>
 
+    <select id="selectAvailableRecommendationIds" resultType="long">
+        select p.pos_id from t_pos p
+        join t_cmp c on c.cmp_id = p.pos_company_id and c.cmp_status = 1
+        where p.pos_status = 1
+        <choose>
+            <when test="positionIds != null and positionIds.size() > 0">
+                and p.pos_id in
+                <foreach collection="positionIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </when>
+            <otherwise>and 1 = 0</otherwise>
+        </choose>
+    </select>
+
     <select id="countNewOpportunities" resultType="int">
         select count(*) from t_pos where pos_status = 1 and pos_created_at >= date_sub(now(), interval 7 day)
     </select>

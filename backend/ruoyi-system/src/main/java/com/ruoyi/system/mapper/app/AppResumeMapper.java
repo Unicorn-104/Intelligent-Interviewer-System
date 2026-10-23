@@ -15,8 +15,12 @@ public interface AppResumeMapper
     List<AppResume.Project> selectProjects(Long resumeId);
     List<AppResume.Skill> selectSkills(Long resumeId);
     int countActiveResumes(Long userId);
+    int countResumeReferences(@Param("resumeId") Long resumeId);
+    Long selectNewestActiveResumeId(@Param("userId") Long userId);
     int insertResume(AppResume resume);
     int updateResume(AppResume resume);
+    int softDeleteResume(@Param("resumeId") Long resumeId, @Param("userId") Long userId);
+    int setDefaultResume(@Param("userId") Long userId, @Param("resumeId") Long resumeId);
     int clearDefault(Long userId);
     int deleteEducations(Long resumeId);
     int deleteWorks(Long resumeId);

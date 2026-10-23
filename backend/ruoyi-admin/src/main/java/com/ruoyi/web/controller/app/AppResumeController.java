@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -69,6 +70,13 @@ public class AppResumeController extends BaseController
     {
         resume.setResumeId(resumeId);
         return success(resumeService.saveResume(getUserId(), resume));
+    }
+
+    @Log(title = "C端简历", businessType = BusinessType.DELETE, isSaveRequestData = false, isSaveResponseData = false)
+    @DeleteMapping("/{resumeId}")
+    public AjaxResult delete(@PathVariable Long resumeId)
+    {
+        return toAjax(resumeService.deleteResume(getUserId(), resumeId));
     }
 
     @Log(title = "C端简历PDF识别", businessType = BusinessType.IMPORT, isSaveRequestData = false, isSaveResponseData = false)

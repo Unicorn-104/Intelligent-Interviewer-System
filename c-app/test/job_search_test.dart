@@ -69,7 +69,7 @@ void main() {
           'Bearer synthetic-session',
         );
         final Object data;
-        if (request.uri.path == '/system/enterprise/jobs/filter-options') {
+        if (request.uri.path == '/agent/v1/jobs/filter-options') {
           data = {
             'cities': ['杭州'],
             'categories': ['技术'],
@@ -80,7 +80,7 @@ void main() {
             'educations': [3],
           };
         } else {
-          expect(request.uri.path, '/system/enterprise/jobs');
+          expect(request.uri.path, '/agent/v1/jobs');
           data = {
             'items': [jobJson(7)],
             'page': 2,

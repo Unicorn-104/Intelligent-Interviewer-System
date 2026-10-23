@@ -40,8 +40,8 @@ class JobApplication {
     if (id == null) throw const ApiException('投递记录格式不正确，请重试');
     return JobApplication(
       id: id,
-      jobId: int.tryParse(json['jobId']?.toString() ?? ''),
-      resumeId: int.tryParse(json['resumeId']?.toString() ?? ''),
+      jobId: int.tryParse('${json['jobId']}'),
+      resumeId: int.tryParse('${json['resumeId']}'),
       jobTitle: json['jobTitle']?.toString() ?? '岗位',
       companyName: json['companyName']?.toString() ?? '企业',
       status: json['status']?.toString() ?? '',

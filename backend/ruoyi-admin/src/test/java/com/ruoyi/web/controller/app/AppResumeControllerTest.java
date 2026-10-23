@@ -95,4 +95,14 @@ class AppResumeControllerTest
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"));
         verify(service).selectPdf(17L, 7L);
     }
+
+    @Test
+    void deletesOnlyTheAuthenticatedUsersResume() throws Exception
+    {
+        when(service.deleteResume(17L, 7L)).thenReturn(1);
+        mvc.perform(delete("/app/resumes/7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+        verify(service).deleteResume(17L, 7L);
+    }
 }

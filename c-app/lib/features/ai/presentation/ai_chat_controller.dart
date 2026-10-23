@@ -15,12 +15,12 @@ class AiChatController extends ChangeNotifier {
     this.token,
     this.sessionId, {
     this.conversationStore,
-    this._restoreLastConversation = false,
+    this.restoreLastConversation = false,
   });
   final AiApi api;
   final String token;
   final AiConversationStore? conversationStore;
-  bool _restoreLastConversation;
+  bool restoreLastConversation;
   String? _rememberedSessionId;
   String? sessionId;
   List<AiMessage> messages = [];
@@ -47,7 +47,7 @@ class AiChatController extends ChangeNotifier {
   int _streamEpoch = 0;
   bool get busy => sending || runId != null || stopping || _completing;
   bool get awaitingConversation =>
-      _restoreLastConversation && sessionId == null;
+      restoreLastConversation && sessionId == null;
   bool get canRetry =>
       !busy &&
       !loading &&
@@ -98,7 +98,7 @@ class AiChatController extends ChangeNotifier {
   }
 
   Future<void> load({bool older = false}) async {
-    if (_restoreLastConversation && sessionId == null) {
+    if (restoreLastConversation && sessionId == null) {
       await _restoreConversation();
       return;
     }
@@ -174,7 +174,7 @@ class AiChatController extends ChangeNotifier {
         }
       }
       sessionId = id;
-      _restoreLastConversation = false;
+      restoreLastConversation = false;
     } catch (e) {
       if (_valid(epoch)) error = _message(e);
     } finally {
@@ -183,7 +183,7 @@ class AiChatController extends ChangeNotifier {
         _notify();
       }
     }
-    if (_valid(epoch) && !_restoreLastConversation && sessionId != null) {
+    if (_valid(epoch) && !restoreLastConversation && sessionId != null) {
       await load();
     }
   }
