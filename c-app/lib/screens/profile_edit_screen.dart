@@ -31,6 +31,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   late final TextEditingController _targetController;
   late final TextEditingController _targetCityController;
   late final TextEditingController _bioController;
+  late final TextEditingController _salaryMinController;
+  late final TextEditingController _salaryMaxController;
+  int? _salaryMode;
   late String _sex;
   int? _currentStatus;
   bool _saving = false;
@@ -49,6 +52,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     _targetController = TextEditingController(text: profile.targetDirection);
     _targetCityController = TextEditingController(text: profile.targetCity);
     _bioController = TextEditingController(text: profile.bio);
+    _salaryMinController = TextEditingController(
+      text: profile.salaryMin?.toString(),
+    );
+    _salaryMaxController = TextEditingController(
+      text: profile.salaryMax?.toString(),
+    );
+    _salaryMode = profile.salaryNegotiable;
     _sex = profile.sex ?? '2';
     _currentStatus = profile.currentStatus;
     _avatar = profile.avatar;
@@ -64,6 +74,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     _targetController.dispose();
     _targetCityController.dispose();
     _bioController.dispose();
+    _salaryMinController.dispose();
+    _salaryMaxController.dispose();
     super.dispose();
   }
 
@@ -195,7 +207,59 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             const _FormSectionTitle('求职信息'),
             const SizedBox(height: 10),
             DropdownButtonFormField<int>(
+              key: const Key('profile-salary-mode'),
+              initialValue: _salaryMode ?? -1,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: '期望薪资'),
+              items: const [
+                DropdownMenuItem(value: -1, child: Text('未填写')),
+                DropdownMenuItem(value: 1, child: Text('面议')),
+                DropdownMenuItem(value: 0, child: Text('填写月薪区间')),
+              ],
+              onChanged: _saving
+                  ? null
+                  : (value) => setState(
+                      () => _salaryMode = value == -1 ? null : value,
+                    ),
+            ),
+            if (_salaryMode == 0) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const Key('profile-salary-min'),
+                controller: _salaryMinController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '期望月薪下限（元）'),
+                validator: _salaryValidator,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const Key('profile-salary-max'),
+                controller: _salaryMaxController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '期望月薪上限（元）'),
+                validator: (value) {
+                  final error = _salaryValidator(value);
+                  if (error != null) return error;
+                  final minimum = int.tryParse(
+                    _salaryMinController.text.trim(),
+                  );
+                  final maximum = int.tryParse(value?.trim() ?? '');
+                  return minimum != null && maximum != null && maximum < minimum
+                      ? '上限不能低于下限'
+                      : null;
+                },
+              ),
+            ],
+            const SizedBox(height: 6),
+            const Text(
+              '人民币税前月薪；保存后用于招聘者人才发现。未填写不等于0元。',
+              style: TextStyle(fontSize: 12),
+            ),
+
+            const SizedBox(height: 10),
+            DropdownButtonFormField<int>(
               initialValue: _currentStatus,
+              isExpanded: true,
               decoration: const InputDecoration(labelText: '当前状态'),
               hint: const Text('请选择当前状态'),
               items: const [
@@ -385,6 +449,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     );
   }
 
+  String? _salaryValidator(String? raw) {
+    final value = int.tryParse(raw?.trim() ?? '');
+    return value == null || value < 0 || value > 10000000
+        ? '请输入0至10000000的整数金额'
+        : null;
+  }
+
   Future<void> _save() async {
     FocusManager.instance.primaryFocus?.unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) return;
@@ -400,6 +471,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       currentStatus: _currentStatus,
       targetDirection: _targetController.text.trim(),
       targetCity: _targetCityController.text.trim(),
+      updateSalary: true,
+      salaryNegotiable: _salaryMode,
+      salaryMin: _salaryMode == 0
+          ? int.tryParse(_salaryMinController.text.trim())
+          : null,
+      salaryMax: _salaryMode == 0
+          ? int.tryParse(_salaryMaxController.text.trim())
+          : null,
     );
     final success = await widget.controller.update(nextProfile);
     if (!mounted) return;

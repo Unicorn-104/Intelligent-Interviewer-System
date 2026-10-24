@@ -15,6 +15,9 @@ class UserProfile {
     this.currentStatus,
     this.targetDirection,
     this.targetCity,
+    this.salaryMin,
+    this.salaryMax,
+    this.salaryNegotiable,
     this.verifyStatus = 0,
     this.applicationCount = 0,
     this.interviewCount = 0,
@@ -35,6 +38,7 @@ class UserProfile {
   final int? currentStatus;
   final String? targetDirection;
   final String? targetCity;
+  final int? salaryMin, salaryMax, salaryNegotiable;
   final int verifyStatus;
   final int applicationCount;
   final int interviewCount;
@@ -66,6 +70,9 @@ class UserProfile {
       currentStatus: _asNullableInt(json['currentStatus']),
       targetDirection: _nullableText(json['targetDirection']),
       targetCity: _nullableText(json['targetCity']),
+      salaryMin: _asNullableInt(json['salaryMin']),
+      salaryMax: _asNullableInt(json['salaryMax']),
+      salaryNegotiable: _asNullableInt(json['salaryNegotiable']),
       verifyStatus: _asInt(json['verifyStatus']),
       applicationCount: _asInt(json['applicationCount']),
       interviewCount: _asInt(json['interviewCount']),
@@ -86,6 +93,10 @@ class UserProfile {
     int? currentStatus,
     String? targetDirection,
     String? targetCity,
+    int? salaryMin,
+    int? salaryMax,
+    int? salaryNegotiable,
+    bool updateSalary = false,
   }) {
     return UserProfile(
       userId: userId,
@@ -101,6 +112,9 @@ class UserProfile {
       currentStatus: currentStatus ?? this.currentStatus,
       targetDirection: targetDirection ?? this.targetDirection,
       targetCity: targetCity ?? this.targetCity,
+      salaryMin: updateSalary ? salaryMin : this.salaryMin,
+      salaryMax: updateSalary ? salaryMax : this.salaryMax,
+      salaryNegotiable: updateSalary ? salaryNegotiable : this.salaryNegotiable,
       verifyStatus: verifyStatus,
       applicationCount: applicationCount,
       interviewCount: interviewCount,
@@ -120,6 +134,9 @@ class UserProfile {
     'currentStatus': currentStatus,
     'targetDirection': _emptyToNull(targetDirection),
     'targetCity': _emptyToNull(targetCity),
+    'salaryMin': salaryMin,
+    'salaryMax': salaryMax,
+    'salaryNegotiable': salaryNegotiable,
   };
 
   int get completionPercent {

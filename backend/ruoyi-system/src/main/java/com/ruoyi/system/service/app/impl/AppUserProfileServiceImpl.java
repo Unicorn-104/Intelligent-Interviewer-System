@@ -23,6 +23,9 @@ public class AppUserProfileServiceImpl implements IAppUserProfileService
     @Autowired
     private ISysUserService userService;
 
+    @Autowired
+    private com.ruoyi.enterprise.mapper.JobPreferenceMapper jobPreferenceMapper;
+
     @Override
     public AppUserProfile selectProfileByUserId(Long userId)
     {
@@ -38,6 +41,7 @@ public class AppUserProfileServiceImpl implements IAppUserProfileService
     @Transactional
     public int updateProfile(AppUserProfile profile)
     {
+        profile.validateSalary();
         SysUser user = userService.selectUserById(profile.getUserId());
         if (user == null)
         {
@@ -54,6 +58,8 @@ public class AppUserProfileServiceImpl implements IAppUserProfileService
         {
             throw new ServiceException("邮箱账号已存在");
         }
-        return profileMapper.updateProfile(profile);
+        int changed = profileMapper.updateProfile(profile);
+        if (changed > 0 && profile.isSalaryProvided()) jobPreferenceMapper.saveSalary(profile);
+        return changed;
     }
 }
