@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.JobPreferenceMapper">
+    <insert id="saveSalary">
+        insert into t_usr_job_preference (user_id, salary_min, salary_max, salary_negotiable)
+        values (#{userId}, #{salaryMin}, #{salaryMax}, #{salaryNegotiable})
+        on duplicate key update salary_min = #{salaryMin}, salary_max = #{salaryMax},
+            salary_negotiable = #{salaryNegotiable}, updated_at = current_timestamp
+    </insert>
+</mapper>

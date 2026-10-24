@@ -35,7 +35,16 @@ class _PoolFixture {
   Completer<List<Map<String, dynamic>>>? moreGate;
   final pending = <String, Completer<List<Map<String, dynamic>>>>{};
   final calls = <Map<String, Object?>>[];
-  TalentPoolDataSource get source => TalentPoolDataSource(loader: load);
+  TalentPoolDataSource get source => TalentPoolDataSource(
+    loader: load,
+    optionsLoader: () async => {
+      'directions': ['合成求职方向'],
+      'tags': rows
+          .expand((row) => talentPoolTags(row['tags']))
+          .toSet()
+          .toList(),
+    },
+  );
 
   Future<List<Map<String, dynamic>>> load({
     String? keyword,
@@ -78,6 +87,7 @@ Future<void> _openPool(
   _PoolFixture fixture, {
   bool settle = true,
   Size size = const Size(430, 900),
+  double textScale = 1,
   Widget Function(Map<String, dynamic>)? detailBuilder,
 }) async {
   tester.view.physicalSize = size;
@@ -87,6 +97,11 @@ Future<void> _openPool(
   await tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.light,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
       home: TalentPage(source: fixture.source, detailBuilder: detailBuilder),
     ),
   );
@@ -117,25 +132,26 @@ Future<void> reachPool(
 }
 
 Future<void> choosePoolStatus(WidgetTester tester, int? status) async {
-  final chip = find.byKey(
-    ValueKey(status == null ? 'talent-status-all' : 'talent-status-$status'),
+  await tester.tap(find.byKey(const ValueKey('talent-filter-open')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(find.byKey(const ValueKey('talent-filter-category-1')));
+  await tester.pump(const Duration(milliseconds: 100));
+  final option = find.byKey(
+    ValueKey(
+      status == null
+          ? 'talent-filter-status-all'
+          : 'talent-filter-status-$status',
+    ),
   );
-  await tester.ensureVisible(chip);
+  await tester.ensureVisible(option);
+  await tester.pump(const Duration(milliseconds: 100));
+  await tester.tap(option);
   await tester.pump();
-  await tester.tap(chip);
-  await tester.pump();
-  // Advance chip selection without waiting for an intentionally pending page request.
-  for (var frame = 0; frame < 3; frame++) {
+  await tester.tap(find.byKey(const ValueKey('talent-filter-apply')));
+  for (var frame = 0; frame < 5; frame++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
-}
-
-Future<void> choosePoolTag(WidgetTester tester, String tag) async {
-  await tester.tap(find.byKey(const ValueKey('talent-tag-filter')));
-  await tester.pumpAndSettle();
-  await tester.enterText(find.byKey(const ValueKey('talent-tag-input')), tag);
-  await tester.tap(find.byKey(const ValueKey('talent-tag-apply')));
-  await tester.pumpAndSettle();
 }
 
 Future<void> searchPool(
@@ -152,63 +168,126 @@ Future<void> searchPool(
 }
 
 void main() {
-  testWidgets('全部及0到9状态chips横向滚动，蓝白选中态及状态图标映射正确', (tester) async {
-    final fixture = _PoolFixture([candidateRow(11, status: 1)]);
-    await _openPool(tester, fixture);
-    expect(find.byType(ChoiceChip), findsNWidgets(11));
-    expect(
-      tester
-          .widget<SingleChildScrollView>(
-            find.byKey(const ValueKey('talent-status')),
-          )
-          .scrollDirection,
-      Axis.horizontal,
+  testWidgets('搜索栏使用一体化青绿描边和右侧搜索按钮，只有一个搜索图标', (tester) async {
+    await _openPool(tester, _PoolFixture([]));
+    final bar = find.byKey(const Key('talent-search-bar'));
+    final decoration =
+        tester.widget<DecoratedBox>(bar).decoration as BoxDecoration;
+    expect((decoration.border! as Border).top.color, const Color(0xFF00B8B0));
+    expect(decoration.borderRadius, BorderRadius.circular(8));
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('talent-search')),
     );
-    final allFinder = find.byKey(const ValueKey('talent-status-all'));
-    final all = tester.widget<ChoiceChip>(allFinder);
+    expect(field.decoration!.prefixIcon, isNull);
+    expect(field.decoration!.enabledBorder, InputBorder.none);
+    expect(field.decoration!.focusedBorder, InputBorder.none);
     expect(
-      find.descendant(of: allFinder, matching: find.text('全部')),
+      find.descendant(of: bar, matching: find.byIcon(Icons.search)),
       findsOneWidget,
     );
-    expect(all.selected, isTrue);
-    expect(all.selectedColor, AppColors.interactive);
-    expect(all.labelStyle?.color, AppColors.canvas);
+    final button = tester.widget<IconButton>(
+      find.byKey(const Key('talent-search-submit')),
+    );
+    expect(button.style!.backgroundColor!.resolve({}), const Color(0xFF00B8B0));
+    expect(button.style!.foregroundColor!.resolve({}), AppColors.canvas);
+    final shape = button.style!.shape!.resolve({})! as RoundedRectangleBorder;
+    expect(
+      shape.borderRadius,
+      const BorderRadius.horizontal(right: Radius.circular(6.5)),
+    );
+    expect(decoration.color, const Color(0xFF00B8B0));
+    final inputShape = tester.widget<ClipRRect>(
+      find.byKey(const Key('talent-search-input-shape')),
+    );
+    final inputRadius = inputShape.borderRadius.resolve(TextDirection.ltr);
+    expect(inputRadius.topLeft, inputRadius.topRight);
+    expect(inputRadius.bottomLeft, inputRadius.bottomRight);
+    expect(inputRadius, const BorderRadius.all(Radius.circular(6.5)));
+    expect(find.byKey(const Key('talent-filter-open')), findsOneWidget);
+    final fieldRect = tester.getRect(find.byKey(const Key('talent-search')));
+    final buttonRect = tester.getRect(
+      find.byKey(const Key('talent-search-submit')),
+    );
+    expect(fieldRect.right, lessThanOrEqualTo(buttonRect.left));
+    expect(buttonRect.right, lessThan(tester.getRect(bar).right));
+  });
+
+  testWidgets('新搜索按钮与键盘继续使用原查询逻辑，保留已选筛选条件', (tester) async {
+    final fixture = _PoolFixture([
+      candidateRow(11, status: 1, name: '合成目标'),
+      candidateRow(12, status: 2, name: '合成其他'),
+    ]);
+    await _openPool(tester, fixture);
+    await choosePoolStatus(tester, 1);
+    final before = fixture.calls.length;
+    await tester.enterText(find.byKey(const Key('talent-search')), ' 目标 ');
+    await tester.tap(find.byKey(const Key('talent-search-submit')));
+    await tester.pumpAndSettle();
+    expect(fixture.calls.length, before + 1);
+    expect(fixture.calls.last['keyword'], '目标');
+    expect(find.byTooltip('筛选(1)'), findsOneWidget);
+    expect(find.byKey(const Key('talent-card-11')), findsOneWidget);
+    expect(find.byKey(const Key('talent-card-12')), findsNothing);
+    await searchPool(tester, ' 合成 ');
+    expect(fixture.calls.last['keyword'], '合成');
+    expect(find.byTooltip('筛选(1)'), findsOneWidget);
+    expect(find.byKey(const Key('talent-card-12')), findsNothing);
+  });
+
+  for (final size in [const Size(320, 700), const Size(900, 420)]) {
+    testWidgets('一体化搜索栏在$size双倍字号及键盘下不遮挡筛选入口', (tester) async {
+      await _openPool(tester, _PoolFixture([]), size: size, textScale: 2);
+      final bar = tester.getRect(find.byKey(const Key('talent-search-bar')));
+      final filter = tester.getRect(
+        find.byKey(const Key('talent-filter-open')),
+      );
+      expect(bar.right, lessThan(filter.left));
+      expect(
+        tester.getSize(find.byKey(const Key('talent-search-submit'))).height,
+        greaterThanOrEqualTo(48),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byKey(const Key('talent-search')));
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: size.height < 500 ? 100 : 220,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      await tester.enterText(find.byKey(const Key('talent-search')), '合成搜索输入');
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('talent-filter-open')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('统一筛选入口展开后提供全部招聘状态，取消不应用草稿', (tester) async {
+    final fixture = _PoolFixture([candidateRow(11, status: 1)]);
+    await _openPool(tester, fixture);
+    expect(find.byKey(const Key('talent-filter-open')), findsOneWidget);
+    expect(find.byType(ChoiceChip), findsNothing);
+    await tester.tap(find.byKey(const Key('talent-filter-open')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('talent-filter-category-1')));
+    await tester.pumpAndSettle();
     for (var status = 0; status <= 9; status++) {
-      final finder = find.byKey(ValueKey('talent-status-$status'));
-      final chip = tester.widget<ChoiceChip>(finder);
-      final visual = TalentStatusBadge.visualFor(status);
+      final finder = find.byKey(ValueKey('talent-filter-status-$status'));
+      expect(finder, findsOneWidget);
       expect(
         find.descendant(of: finder, matching: find.text(talentStatus(status))),
         findsOneWidget,
       );
-      expect(chip.selected, isFalse);
-      expect(chip.backgroundColor, AppColors.interactiveSoft);
-      expect(chip.labelStyle?.color, AppColors.interactive);
-      expect(
-        tester
-            .widget<Icon>(
-              find.descendant(of: finder, matching: find.byIcon(visual.$1)),
-            )
-            .color,
-        visual.$2,
-      );
     }
+    await tester.tap(find.byKey(const Key('talent-filter-status-1')));
+    await tester.tap(find.byKey(const Key('talent-filter-close')));
+    await tester.pumpAndSettle();
+    expect(fixture.calls, hasLength(1));
     await choosePoolStatus(tester, 1);
-    final selected = tester.widget<ChoiceChip>(
-      find.byKey(const ValueKey('talent-status-1')),
-    );
-    expect(selected.selected, isTrue);
-    expect(selected.selectedColor, AppColors.interactive);
-    expect(selected.labelStyle?.color, AppColors.canvas);
-    expect(find.byKey(const ValueKey('talent-card-11')), findsOneWidget);
+    expect(find.byKey(const Key('talent-card-11')), findsOneWidget);
+    expect(find.byTooltip('筛选(1)'), findsOneWidget);
     await choosePoolStatus(tester, null);
-    expect(tester.widget<ChoiceChip>(allFinder).selected, isTrue);
-    expect(
-      tester
-          .widget<ChoiceChip>(find.byKey(const ValueKey('talent-status-1')))
-          .selected,
-      isFalse,
-    );
+    expect(find.byTooltip('筛选'), findsOneWidget);
     expect(fixture.calls.map((call) => call['pageNum']), [1, 1, 1]);
   });
 
@@ -235,7 +314,7 @@ void main() {
     });
   });
 
-  testWidgets('关键词标签服务端组合过滤，状态客户端过滤，清除恢复第一页', (tester) async {
+  testWidgets('关键词与状态组合筛选，不发送标签条件，清除恢复第一页', (tester) async {
     final fixture = _PoolFixture([
       candidateRow(1, status: 1, name: '目标甲', tags: '前端'),
       candidateRow(2, status: 2, name: '目标乙', tags: '前端'),
@@ -244,11 +323,10 @@ void main() {
     await _openPool(tester, fixture);
     await searchPool(tester, ' 目标 ');
     expect(fixture.calls.last['keyword'], '目标');
-    await choosePoolTag(tester, ' 前端 ');
     await choosePoolStatus(tester, 1);
     expect(fixture.calls.last, {
       'keyword': '目标',
-      'tag': '前端',
+      'tag': null,
       'pageNum': 1,
       'pageSize': 20,
     });
@@ -269,28 +347,24 @@ void main() {
           .text,
       isEmpty,
     );
-    expect(
-      tester
-          .widget<ChoiceChip>(find.byKey(const ValueKey('talent-status-all')))
-          .selected,
-      isTrue,
-    );
+    expect(find.byTooltip('筛选'), findsOneWidget);
   });
 
-  testWidgets('标签可手输，空结果保留选中标签，取消标签面板不请求', (tester) async {
+  testWidgets('移除标签和归档入口，空结果保留选中状态，取消不请求', (tester) async {
     final fixture = _PoolFixture([candidateRow(11, tags: 'Java')]);
     await _openPool(tester, fixture);
     final before = fixture.calls.length;
-    await tester.tap(find.byKey(const ValueKey('talent-tag-filter')));
+    await tester.tap(find.byKey(const ValueKey('talent-filter-open')));
     await tester.pumpAndSettle();
-    expect(find.text('已加载记录中的标签建议'), findsOneWidget);
-    await tester.tap(find.text('取消'));
+    expect(find.text('筛选人才'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('talent-filter-close')));
     await tester.pumpAndSettle();
     expect(fixture.calls.length, before);
-    await choosePoolTag(tester, '未出现过的标签');
-    expect(fixture.calls.last['tag'], '未出现过的标签');
+    expect(find.byKey(const Key('talent-filter-tag')), findsNothing);
+    await choosePoolStatus(tester, 9);
+    expect(fixture.calls.last['tag'], isNull);
     expect(find.text('当前条件无匹配'), findsOneWidget);
-    expect(find.text('标签：未出现过的标签'), findsOneWidget);
+    expect(find.textContaining('状态：${talentStatus(9)}'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('talent-clear')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('talent-card-11')), findsOneWidget);
@@ -446,12 +520,7 @@ void main() {
     expect(find.text('未指定岗位，暂无岗位招聘阶段'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<ChoiceChip>(find.byKey(const ValueKey('talent-status-2')))
-          .selected,
-      isTrue,
-    );
+    expect(find.byTooltip('筛选(1)'), findsOneWidget);
     expect(fixture.calls.length, 2);
   });
 
@@ -462,7 +531,7 @@ void main() {
         candidateRow(11, status: 9, name: '合成的较长候选人名称用于核对布局', tags: longTag),
       ]);
       await _openPool(tester, fixture, size: size);
-      await choosePoolTag(tester, longTag);
+      await choosePoolStatus(tester, 9);
       expect(find.byType(TalentStatusBadge), findsOneWidget);
       expect(
         find.descendant(

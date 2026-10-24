@@ -3,6 +3,7 @@ package com.ruoyi.enterprise.service.impl;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import com.ruoyi.enterprise.domain.TalentSearchCriteria;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -37,16 +38,49 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     public List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
             String direction, Integer archiveSource, Integer status, Integer pageNum, Integer pageSize)
     {
-        Long companyId = resolveCompanyId(userId);
+        return listTalents(userId, keyword, tag, direction, archiveSource, status, pageNum, pageSize,
+                new TalentSearchCriteria());
+    }
+
+    @Override
+    public List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
+            String direction, Integer archiveSource, Integer status, Integer pageNum, Integer pageSize,
+            TalentSearchCriteria criteria)
+    {
+        PageUtils.clearPage();
+        if (criteria == null) criteria = new TalentSearchCriteria();
+        criteria.validate();
+        if (status != null && (status < 0 || status > 9)) throw new ServiceException("招聘状态不合法");
+        if (archiveSource != null && (archiveSource < 0 || archiveSource > 4)) throw new ServiceException("归档来源不合法");
+        if (pageNum == null || pageNum < 1 || pageSize == null || pageSize < 1 || pageSize > 100)
+            throw new ServiceException("分页参数不合法");
+        Long companyId = requireSearchCompany(userId);
         PageUtils.startPage(pageNum, pageSize);
-        return talentPoolMapper.selectTalentList(companyId, keyword, tag, direction, archiveSource, status);
+        try
+        {
+            return talentPoolMapper.selectFilteredTalentList(companyId, keyword, tag, direction,
+                    archiveSource, status, criteria);
+        }
+        finally { PageUtils.clearPage(); }
+    }
+
+    private Long requireSearchCompany(Long userId)
+    {
+        PageUtils.clearPage();
+        if (userId == null) throw new ServiceException("登录已失效");
+        Long companyId = dashboardMapper.selectCompanyIdByUser(userId);
+        if (companyId == null) throw new ServiceException("当前账号未绑定企业");
+        return companyId;
     }
 
     @Override
     public Map<String, Object> getTalentOptions(Long userId)
     {
-        Long companyId = resolveCompanyId(userId);
+        Long companyId = requireSearchCompany(userId);
         Map<String, Object> result = new LinkedHashMap<>();
+        result.put("searchFilterVersion", 2);
+        result.put("currentCities", talentPoolMapper.selectTalentCities(companyId, "current"));
+        result.put("targetCities", talentPoolMapper.selectTalentCities(companyId, "target"));
         result.put("directions", talentPoolMapper.selectTalentDirections(companyId));
         result.put("tags", talentPoolMapper.selectTalentTagNames(companyId));
         return result;

@@ -18,6 +18,7 @@ Future<void> open(
   JobsFixture source, {
   WidgetBuilder? publishBuilder,
   Size size = const Size(420, 900),
+  double textScale = 1,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -27,6 +28,11 @@ Future<void> open(
   await tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.light,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
       home: JobsPage(
         loadJobs: source.load,
         updateStatus: source.update,
@@ -119,6 +125,46 @@ Future<void> chooseSort(
 }
 
 void main() {
+  for (final size in [
+    const Size(320, 640),
+    const Size(420, 900),
+    const Size(900, 420),
+  ]) {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets('搜索栏与发布按钮在$size字号$textScale同行且不溢出', (tester) async {
+        final source = JobsFixture();
+        await open(tester, source, size: size, textScale: textScale);
+        final search = tester.getRect(
+          find.byKey(const ValueKey('jobs-search')),
+        );
+        final publish = tester.getRect(
+          find.byKey(const ValueKey('jobs-publish')),
+        );
+        expect(search.center.dy, closeTo(publish.center.dy, .01));
+        expect(search.right + 8, closeTo(publish.left, .01));
+        expect(search.width, greaterThan(100));
+        expect(publish.height, greaterThanOrEqualTo(46));
+        expect(publish.right, lessThanOrEqualTo(size.width - 20));
+        expect(
+          find.descendant(
+            of: find.byType(AppBar),
+            matching: find.byKey(const ValueKey('jobs-publish')),
+          ),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.enterText(
+          find.byKey(const ValueKey('jobs-search')),
+          'SMOKE',
+        );
+        await tester.tap(find.byTooltip('搜索'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('job-list-card-8')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
   testWidgets('搜索和四种筛选传递真实条件；测试岗位不特殊隐藏', (tester) async {
     final source = JobsFixture();
     await open(tester, source);
@@ -202,7 +248,7 @@ void main() {
       await tester.tap(find.text('确认'));
       await tester.pumpAndSettle();
       expect(source.writes, [(1, state == 1 ? 0 : 1)]);
-      final button = tester.widget<OutlinedButton>(action);
+      final button = tester.widget<FilledButton>(action);
       expect(button.onPressed, isNull);
       source.statusGate!.complete();
       await tester.pumpAndSettle();

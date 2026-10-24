@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import com.ruoyi.enterprise.domain.TalentSearchCriteria;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -45,10 +47,11 @@ public class TalentPoolController extends BaseController
             @RequestParam(required = false) Integer archiveSource,
             @RequestParam(required = false) Integer status,
             @RequestParam(defaultValue = "1") Integer pageNum,
-            @RequestParam(defaultValue = "20") Integer pageSize)
+            @RequestParam(defaultValue = "20") Integer pageSize,
+            @ModelAttribute TalentSearchCriteria criteria)
     {
         return getDataTable(talentPoolService.listTalents(getUserId(), keyword, tag, direction, archiveSource,
-                status, pageNum, pageSize));
+                status, pageNum, pageSize, criteria));
     }
 
     /**

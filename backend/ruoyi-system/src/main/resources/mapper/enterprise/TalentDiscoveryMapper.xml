@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.TalentDiscoveryMapper">
+    <sql id="eligible">
+        u.user_identity_type = 1 and u.status = '0' and u.del_flag = '0'
+        and u.user_id != 1
+        and not exists (select 1 from sys_user_role ur join sys_role sr on sr.role_id=ur.role_id
+                        where ur.user_id=u.user_id and sr.role_key='admin')
+    </sql>
+    <sql id="publicName">
+        case when trim(u.nick_name) regexp '^[+0-9() -]{7,}$' or u.nick_name like '%@%' then '求职者'
+             else coalesce(nullif(trim(u.nick_name), ''), '求职者') end
+    </sql>
+    <sql id="intent">coalesce(nullif(trim(u.target_direction), ''), nullif(trim(r.rbs_job_direction), ''))</sql>
+    <sql id="base">
+        from sys_user u
+        left join t_res_base r on r.rbs_id = (
+            select r0.rbs_id from t_res_base r0 where r0.rbs_user_id=u.user_id and r0.rbs_status=1
+            order by r0.rbs_is_default desc, r0.rbs_updated_at desc, r0.rbs_id desc limit 1)
+    </sql>
+    <sql id="validSearchWorkIntervals">
+        select w.wrk_id as workId, w.wrk_resume_id as resumeId,
+               year(w.wrk_start_date) * 12 + month(w.wrk_start_date) as startMonth,
+               year(case when w.wrk_is_current = 1 then curdate()
+                         else least(w.wrk_end_date, curdate()) end) * 12
+                 + month(case when w.wrk_is_current = 1 then curdate()
+                              else least(w.wrk_end_date, curdate()) end) as endMonth
+        from t_res_work w
+        where w.wrk_start_date is not null and w.wrk_start_date &lt;= curdate()
+          and (w.wrk_is_current = 1 or
+               (w.wrk_end_date is not null and w.wrk_end_date &gt;= w.wrk_start_date))
+    </sql>
+
+
+    <sql id="profileJoins">
+        <include refid="base"/>
+        left join t_usr_job_preference preference on preference.user_id = u.user_id
+        left join t_res_education school on school.edu_id = (
+            select e.edu_id from t_res_education e
+            where e.edu_resume_id = r.rbs_id and e.edu_degree between 1 and 5
+                and e.edu_end_date is not null and e.edu_end_date &lt;= curdate()
+            order by e.edu_degree desc, e.edu_end_date desc, e.edu_id desc limit 1)
+        left join (select edu_resume_id as resumeId,
+            max(case when edu_degree between 1 and 5 then edu_degree else null end) as highestEducation
+            from t_res_education group by edu_resume_id) education on education.resumeId=r.rbs_id
+        left join (
+            select ordered.resumeId,
+                   sum(greatest(0, ordered.endMonth - greatest(ordered.startMonth,
+                       coalesce(ordered.previousEndMonth, ordered.startMonth)))) as workMonths
+            from (
+                select currentWork.resumeId, currentWork.workId, currentWork.startMonth, currentWork.endMonth,
+                       max(previousWork.endMonth) as previousEndMonth
+                from (<include refid="validSearchWorkIntervals"/>) currentWork
+                left join (<include refid="validSearchWorkIntervals"/>) previousWork
+                  on previousWork.resumeId = currentWork.resumeId
+                 and (previousWork.startMonth &lt; currentWork.startMonth
+                      or (previousWork.startMonth = currentWork.startMonth and previousWork.workId &lt; currentWork.workId))
+                group by currentWork.resumeId, currentWork.workId, currentWork.startMonth, currentWork.endMonth
+            ) ordered
+            group by ordered.resumeId
+        ) experience on experience.resumeId = r.rbs_id
+    </sql>
+    <!-- 明确字段白名单：不返回手机/邮箱/简历地址/岗位ID/招聘状态/评分/流程/内部标签。 -->
+    <sql id="publicColumns">
+        u.user_id as userId, <include refid="publicName"/> as name, u.avatar as avatar,
+        nullif(trim(u.current_city), '') as currentCity, nullif(trim(u.target_city), '') as targetCity,
+        case when u.current_status between 1 and 3 then u.current_status else null end as currentStatus,
+        <include refid="intent"/> as jobDirection,
+        education.highestEducation as highestEducation, experience.workMonths as workMonths,
+        nullif(trim(school.edu_school), '') as schoolName,
+        nullif(trim(school.edu_major), '') as major,
+        year(school.edu_end_date) as graduationYear,
+        preference.salary_min as salaryMin, preference.salary_max as salaryMax,
+        preference.salary_negotiable as salaryNegotiable,
+        1 as directoryVersion
+    </sql>
+    <select id="selectUsers" resultType="java.util.LinkedHashMap">
+        select <include refid="publicColumns"/> <include refid="profileJoins"/>
+        where <include refid="eligible"/>
+        <if test="keyword != null">
+            and (<include refid="publicName"/> like concat('%',#{keyword},'%')
+                 or <include refid="intent"/> like concat('%',#{keyword},'%'))
+        </if>
+        <if test="direction != null">and <include refid="intent"/> = #{direction}</if>
+        <if test="currentStatus != null">and u.current_status = #{currentStatus}</if>
+        <if test="criteria.minimumEducation != null">and education.highestEducation &gt;= #{criteria.minimumEducation}</if>
+        <if test="criteria.experienceRange != null">
+            and experience.workMonths &gt;= #{criteria.minimumWorkMonths}
+            <if test="criteria.maximumWorkMonths != null">and experience.workMonths &lt; #{criteria.maximumWorkMonths}</if>
+        </if>
+        <if test="criteria.city != null">
+            <choose><when test="criteria.cityType == 'current'">and trim(u.current_city) = #{criteria.city}</when>
+                <otherwise>and trim(u.target_city) = #{criteria.city}</otherwise></choose>
+        </if>
+        <if test="criteria.loginWithinDays != null">
+            and u.login_date &gt;= #{criteria.loginSince} and u.login_date &lt;= #{criteria.referenceTime}
+        </if>
+        order by u.user_id desc
+    </select>
+    <select id="selectUser" resultType="java.util.LinkedHashMap">
+        select <include refid="publicColumns"/> <include refid="profileJoins"/>
+        where <include refid="eligible"/> and u.user_id=#{userId}
+    </select>
+    <select id="selectDirections" resultType="string">
+        select distinct <include refid="intent"/> as direction <include refid="base"/>
+        where <include refid="eligible"/> and <include refid="intent"/> is not null order by 1
+    </select>
+    <select id="selectCities" resultType="string">
+        select distinct <choose><when test="cityType == 'current'">trim(u.current_city)</when>
+            <otherwise>trim(u.target_city)</otherwise></choose> as city
+        from sys_user u where <include refid="eligible"/>
+        <choose><when test="cityType == 'current'">and nullif(trim(u.current_city),'') is not null</when>
+            <otherwise>and nullif(trim(u.target_city),'') is not null</otherwise></choose>
+        order by 1
+    </select>
+</mapper>

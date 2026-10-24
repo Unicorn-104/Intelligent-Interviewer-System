@@ -285,22 +285,7 @@ class _JobsPageState extends State<JobsPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('岗位'),
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: 20),
-          child: Center(
-            child: FilledButton.icon(
-              key: const ValueKey('jobs-publish'),
-              onPressed: _openCreate,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('发布岗位'),
-            ),
-          ),
-        ),
-      ],
-    ),
+    appBar: AppBar(title: const Text('岗位')),
     body: SafeArea(
       top: false,
       bottom: false,
@@ -311,20 +296,59 @@ class _JobsPageState extends State<JobsPage> {
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
             child: Column(
               children: [
-                TextField(
-                  key: const ValueKey('jobs-search'),
-                  controller: _search,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => _load(),
-                  decoration: InputDecoration(
-                    hintText: '搜索岗位或部门',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: IconButton(
-                      tooltip: '搜索',
-                      onPressed: () => _load(),
-                      icon: const Icon(Icons.arrow_forward),
-                    ),
-                  ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact =
+                        constraints.maxWidth < 360 ||
+                        MediaQuery.textScalerOf(context).scale(13) > 19;
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            key: const ValueKey('jobs-search'),
+                            controller: _search,
+                            textInputAction: TextInputAction.search,
+                            onSubmitted: (_) => _load(),
+                            decoration: InputDecoration(
+                              hintText: '搜索岗位或部门',
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 12,
+                              ),
+                              prefixIcon: IconButton(
+                                tooltip: '搜索',
+                                onPressed: () => _load(),
+                                icon: const Icon(Icons.search, size: 21),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          key: const ValueKey('jobs-publish'),
+                          onPressed: _openCreate,
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(0, 46),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (!compact) ...[
+                                const Icon(Icons.add, size: 18),
+                                const SizedBox(width: 4),
+                              ],
+                              const Text(
+                                '发布岗位',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -457,7 +481,7 @@ class _JobsPageState extends State<JobsPage> {
         title: '暂无岗位',
         message: _search.text.trim().isNotEmpty || _statusFilter != null
             ? '没有符合当前搜索/筛选条件的岗位'
-            : '点击右上角“发布岗位”开始招聘',
+            : '点击搜索栏旁的“发布岗位”开始招聘',
         actionLabel: '清除条件',
         onAction: _search.text.trim().isNotEmpty || _statusFilter != null
             ? () {

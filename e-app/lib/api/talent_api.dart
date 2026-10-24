@@ -33,10 +33,63 @@ Future<List<Map<String, dynamic>>> searchTalentPool({
       const <Map<String, dynamic>>[];
 }
 
+/// Reuses the existing server-side filters; never scans only one page locally.
+Future<List<Map<String, dynamic>>> searchAdvancedTalentPool({
+  String? keyword,
+  String? tag,
+  String? direction,
+  int? archiveSource,
+  int? status,
+  int? minimumEducation,
+  String? experienceRange,
+  String? city,
+  String? cityType,
+  int? loginWithinDays,
+  required int pageNum,
+  required int pageSize,
+  EnterpriseApiClient? client,
+}) async {
+  final response = await (client ?? EnterpriseApiClient()).get(
+    '/enterprise/talent/list',
+    query: {
+      'keyword': keyword,
+      'tag': tag,
+      'direction': direction,
+      'archiveSource': archiveSource,
+      'status': status,
+      'minimumEducation': ?minimumEducation,
+      'experienceRange': ?experienceRange,
+      'city': ?city,
+      if (city != null) 'cityType': cityType ?? 'target',
+      'loginWithinDays': ?loginWithinDays,
+      'pageNum': pageNum,
+      'pageSize': pageSize,
+    },
+  );
+  final rows = response['rows'];
+  if (rows is! List || rows.any((row) => row is! Map)) {
+    throw const FormatException('人才库列表响应不完整，请重新读取');
+  }
+  return [for (final row in rows) Map<String, dynamic>.from(row as Map)];
+}
+
+Future<Map<String, dynamic>> loadTalentPoolOptions({
+  EnterpriseApiClient? client,
+}) async {
+  final response = await (client ?? EnterpriseApiClient()).get(
+    '/enterprise/talent/options',
+  );
+  final data = response['data'];
+  if (data is! Map) throw const FormatException('人才筛选选项响应不完整');
+  return Map<String, dynamic>.from(data);
+}
+
 /// UC-03：人才库候选人详情。
 /// 已对接：GET /enterprise/talent/{talId}
 Future<Map<String, dynamic>> getTalentDetail(int talentId) async {
-  final response = await EnterpriseApiClient().get('/enterprise/talent/$talentId');
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/talent/$talentId',
+  );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
@@ -44,7 +97,9 @@ Future<Map<String, dynamic>> getTalentDetail(int talentId) async {
 /// 已对接：GET /enterprise/talent/{talId}/resume
 /// 容错：integrity 无数据时为 0；missingFields 无数据时为空列表。
 Future<Map<String, dynamic>> getTalentParsedResume(int talentId) async {
-  final response = await EnterpriseApiClient().get('/enterprise/talent/$talentId/resume');
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/talent/$talentId/resume',
+  );
   final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
   data['integrity'] = data['integrity'] ?? 0;
   data['missingFields'] = (data['missingFields'] as List?) ?? const <String>[];

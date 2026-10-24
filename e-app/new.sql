@@ -1329,3 +1329,63 @@ CREATE TABLE IF NOT EXISTS t_ai_candidate_analysis (
 -- 点击增量先GET读取缓存再补齐缺少结果者，进入页面自动GET，不自动分析。
 -- 缺少材料的维度记0，综合分按固定六维权重计算；历史报告在GET时归一化，不写库、不调用模型。
 -- 内嵌下拉菜单保留全量分析与耗时确认；移除求职者页独立刷新按钮。
+
+
+-- BEGIN RESCHEDULE_REVIEW_20261023
+-- 2026-10-23 企业端真实改期申请与审批（仅新增本表，不改既有表，不写 t_msg）
+-- 单独执行本段；不要为本功能重放本文件其他历史 DDL/DML。
+-- 申请时保存原安排快照；待审批不释放原时段；通过后在同一事务中改期并结案。
+-- 每个预约最多一条待审批申请（生成列唯一键），已结案历史允许多条。
+CREATE TABLE IF NOT EXISTS t_sch_reschedule_request (
+    rsr_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '改期申请ID',
+    rsr_appointment_id BIGINT NOT NULL COMMENT '关联预约ID，逻辑关联t_sch_appointment',
+    rsr_company_id BIGINT NOT NULL COMMENT '提交时岗位所属企业ID',
+    rsr_candidate_id BIGINT NOT NULL COMMENT '申请人才ID，不是用户ID',
+    rsr_requester_id BIGINT NOT NULL COMMENT '申请人sys_user.user_id',
+    rsr_original_start DATETIME NOT NULL COMMENT '申请时原开始时间快照',
+    rsr_original_end DATETIME NOT NULL COMMENT '申请时原结束时间快照',
+    rsr_original_interviewer_id BIGINT NOT NULL COMMENT '申请时原面试官快照',
+    rsr_new_start DATETIME NOT NULL COMMENT '申请的新开始时间',
+    rsr_new_end DATETIME NOT NULL COMMENT '申请的新结束时间，沿用原时长',
+    rsr_reason VARCHAR(500) NOT NULL COMMENT '申请原因',
+    rsr_status TINYINT NOT NULL DEFAULT 0 COMMENT '0待审批 1已通过 2已驳回',
+    rsr_reviewer_id BIGINT DEFAULT NULL COMMENT '审批人sys_user.user_id',
+    rsr_review_note VARCHAR(500) DEFAULT NULL COMMENT '审批说明，驳回必填',
+    rsr_created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '申请时间',
+    rsr_reviewed_at DATETIME DEFAULT NULL COMMENT '审批时间',
+    rsr_pending_appointment_id BIGINT GENERATED ALWAYS AS
+        (CASE WHEN rsr_status = 0 THEN rsr_appointment_id ELSE NULL END) STORED,
+    PRIMARY KEY (rsr_id),
+    UNIQUE KEY uk_rsr_pending_appointment (rsr_pending_appointment_id),
+    KEY idx_rsr_company_status_created (rsr_company_id, rsr_status, rsr_created_at, rsr_id),
+    KEY idx_rsr_requester_created (rsr_requester_id, rsr_created_at, rsr_id),
+    KEY idx_rsr_appointment (rsr_appointment_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='候选人面试改期申请与企业审批记录';
+-- 兼容：只新增表，不改变原企业直接改期接口；不回填或伪造申请。
+-- 回滚：先回退审批接口与页面，保留本表和审批历史；已通过的面试时间不自动回退。
+-- 仅在备份并确认无待审批申请、无历史保留要求后，由维护者另行审批删表；本脚本不自动删表。
+-- END RESCHEDULE_REVIEW_20261023
+
+
+-- BEGIN TALENT_EXPECTATION_20261023
+-- 2026-10-23 全站人才基础信息：院校/专业复用本人当前有效简历；期望岗位复用target_direction。
+-- 仅新增用户级期望薪资表；人民币税前月薪，整数元；不推断历史薪资，不回填任何用户数据。
+-- 目标MySQL 8.0.45；CHECK由数据库强制执行，服务端仍做相同校验。
+CREATE TABLE IF NOT EXISTS t_usr_job_preference (
+    user_id BIGINT NOT NULL COMMENT '本人sys_user.user_id，主键',
+    salary_min INT DEFAULT NULL COMMENT '期望税前月薪下限，人民币元',
+    salary_max INT DEFAULT NULL COMMENT '期望税前月薪上限，人民币元',
+    salary_negotiable TINYINT DEFAULT NULL COMMENT 'NULL未填写，1面议，0明确区间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '本人最近修改时间',
+    PRIMARY KEY (user_id),
+    CONSTRAINT chk_job_preference_salary CHECK (
+        (salary_negotiable IS NULL AND salary_min IS NULL AND salary_max IS NULL)
+        OR (salary_negotiable IS NOT NULL AND salary_negotiable = 1 AND salary_min IS NULL AND salary_max IS NULL)
+        OR (salary_negotiable IS NOT NULL AND salary_negotiable = 0 AND salary_min IS NOT NULL AND salary_max IS NOT NULL
+            AND salary_min >= 0 AND salary_max >= salary_min AND salary_max <= 10000000)
+    )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户本人维护的求职薪资意向';
+-- 只执行本标记段，不重放历史SQL；已有同名表必须先核对字段与约束，不覆盖不明结构。
+-- 老版profile请求未包含薪资字段时保留已有薪资；显式全NULL表示本人清除，不写0元占位。
+-- 回滚先退应用代码，保留本表与用户意向；删除表或清理数据需另行授权，不自动回滚DDL。
+-- END TALENT_EXPECTATION_20261023
