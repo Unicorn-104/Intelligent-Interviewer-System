@@ -18,6 +18,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="currentStatus" column="current_status" />
         <result property="targetDirection" column="target_direction" />
         <result property="targetCity" column="target_city" />
+        <result property="salaryMin" column="salary_min" />
+        <result property="salaryMax" column="salary_max" />
+        <result property="salaryNegotiable" column="salary_negotiable" />
         <result property="verifyStatus" column="verify_status" />
         <result property="applicationCount" column="application_count" />
         <result property="interviewCount" column="interview_count" />
@@ -39,6 +42,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                u.current_status,
                u.target_direction,
                u.target_city,
+               preference.salary_min, preference.salary_max, preference.salary_negotiable,
                coalesce((select v.vef_status
                          from t_usr_verify v
                          where v.vef_user_id = u.user_id
@@ -61,6 +65,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                            and r.rbs_status = 1
                            and w.wrk_start_date is not null), 0) as work_years
         from sys_user u
+        left join t_usr_job_preference preference on preference.user_id = u.user_id
         where u.user_id = #{userId} and u.del_flag = '0'
     </select>
 

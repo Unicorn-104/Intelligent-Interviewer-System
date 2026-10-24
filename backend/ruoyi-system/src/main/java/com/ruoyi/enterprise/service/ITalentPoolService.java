@@ -1,6 +1,7 @@
 package com.ruoyi.enterprise.service;
 
 import java.util.List;
+import com.ruoyi.enterprise.domain.TalentSearchCriteria;
 import java.util.Map;
 
 /**
@@ -18,6 +19,11 @@ public interface ITalentPoolService
      */
     public List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
             String direction, Integer archiveSource, Integer status, Integer pageNum, Integer pageSize);
+
+    /** Advanced filters are optional; preserve the original Java entry point above. */
+    List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
+            String direction, Integer archiveSource, Integer status, Integer pageNum, Integer pageSize,
+            TalentSearchCriteria criteria);
 
     /**
      * 人才库筛选项（岗位方向选项 + 标签选项）

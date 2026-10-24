@@ -51,6 +51,32 @@ public class AppUserProfile implements Serializable
     @Size(max = 50, message = "期望城市长度不能超过50个字符")
     private String targetCity;
 
+    private Integer salaryMin;
+    private Integer salaryMax;
+    private Integer salaryNegotiable;
+    private boolean salaryProvided;
+
+    public Integer getSalaryMin() { return salaryMin; }
+    public void setSalaryMin(Integer value) { salaryMin = value; salaryProvided = true; }
+    public Integer getSalaryMax() { return salaryMax; }
+    public void setSalaryMax(Integer value) { salaryMax = value; salaryProvided = true; }
+    public Integer getSalaryNegotiable() { return salaryNegotiable; }
+    public void setSalaryNegotiable(Integer value) { salaryNegotiable = value; salaryProvided = true; }
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean isSalaryProvided() { return salaryProvided; }
+
+    public void validateSalary()
+    {
+        if (!salaryProvided) return;
+        if (salaryNegotiable == null || salaryNegotiable == 1)
+        {
+            if (salaryMin == null && salaryMax == null) return;
+        }
+        else if (salaryNegotiable == 0 && salaryMin != null && salaryMax != null
+                && salaryMin >= 0 && salaryMin <= salaryMax && salaryMax <= 10000000) return;
+        throw new com.ruoyi.common.exception.ServiceException("期望薪资须选择未填写、面议或合法人民币月薪区间");
+    }
+
     private Integer verifyStatus;
     private Integer applicationCount;
     private Integer interviewCount;

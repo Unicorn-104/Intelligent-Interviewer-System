@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.RescheduleRequestMapper">
+    <sql id="columns">
+        r.rsr_id as requestId, r.rsr_appointment_id as appointmentId,
+        r.rsr_company_id as companyId, r.rsr_candidate_id as candidateId,
+        r.rsr_requester_id as requesterId, r.rsr_original_interviewer_id as originalInterviewerId,
+        date_format(r.rsr_original_start, '%Y-%m-%d %H:%i:%s') as originalStartTime,
+        date_format(r.rsr_original_end, '%Y-%m-%d %H:%i:%s') as originalEndTime,
+        date_format(r.rsr_new_start, '%Y-%m-%d %H:%i:%s') as newStartTime,
+        date_format(r.rsr_new_end, '%Y-%m-%d %H:%i:%s') as newEndTime,
+        r.rsr_reason as reason,
+        case r.rsr_status when 0 then 'pending' when 1 then 'approved' when 2 then 'rejected' end as status,
+        r.rsr_reviewer_id as reviewerId, r.rsr_review_note as reviewNote,
+        date_format(r.rsr_created_at, '%Y-%m-%d %H:%i:%s') as requestedAt,
+        date_format(r.rsr_reviewed_at, '%Y-%m-%d %H:%i:%s') as reviewedAt,
+        u.nick_name as candidateName, p.pos_title as positionName,
+        iu.nick_name as interviewerName, ru.nick_name as reviewerName
+    </sql>
+    <sql id="joins">
+        from t_sch_reschedule_request r
+        join t_sch_appointment a on a.apt_id = r.rsr_appointment_id
+        join t_pos p on p.pos_id = a.apt_position_id and p.pos_company_id = r.rsr_company_id
+        join t_tal t on t.tal_id = r.rsr_candidate_id and t.tal_id = a.apt_candidate_id
+        left join sys_user u on u.user_id = r.rsr_requester_id
+        left join sys_user iu on iu.user_id = r.rsr_original_interviewer_id
+        left join sys_user ru on ru.user_id = r.rsr_reviewer_id
+    </sql>
+    <select id="selectCompanyRequests" resultType="java.util.LinkedHashMap">
+        select <include refid="columns"/> <include refid="joins"/>
+        where r.rsr_company_id = #{companyId}
+        <if test="status != null">and r.rsr_status = #{status}</if>
+        order by r.rsr_created_at desc, r.rsr_id desc
+    </select>
+    <select id="selectOwnRequests" resultType="java.util.LinkedHashMap">
+        select <include refid="columns"/> <include refid="joins"/>
+        where r.rsr_requester_id = #{userId} and t.tal_user_id = #{userId}
+        order by r.rsr_created_at desc, r.rsr_id desc
+    </select>
+    <select id="selectRequest" resultType="java.util.LinkedHashMap" useCache="false" flushCache="true">
+        select <include refid="columns"/> <include refid="joins"/>
+        where r.rsr_id = #{requestId} and r.rsr_company_id = #{companyId}
+    </select>
+    <!-- 候选人行锁先于申请行锁，审批通过再复用原调度服务的面试官锁。 -->
+    <select id="lockRequest" resultType="java.util.LinkedHashMap">
+        select rsr_id as requestId from t_sch_reschedule_request
+        where rsr_id = #{requestId} and rsr_company_id = #{companyId} for update
+    </select>
+    <select id="selectAppointment" resultType="java.util.LinkedHashMap" useCache="false" flushCache="true">
+        select a.apt_id as appointmentId, a.apt_candidate_id as candidateId,
+            t.tal_user_id as candidateUserId, a.apt_position_id as positionId,
+            p.pos_company_id as companyId, a.apt_status as status,
+            a.apt_interviewer_id as interviewerId,
+            date_format(a.apt_start_time, '%Y-%m-%d %H:%i:%s') as startTime,
+            date_format(a.apt_end_time, '%Y-%m-%d %H:%i:%s') as endTime
+        from t_sch_appointment a join t_tal t on t.tal_id = a.apt_candidate_id
+        join t_pos p on p.pos_id = a.apt_position_id where a.apt_id = #{appointmentId}
+    </select>
+    <select id="lockAppointment" resultType="long">
+        select apt_id from t_sch_appointment where apt_id = #{appointmentId} for update
+    </select>
+    <select id="countPending" resultType="int">
+        select count(*) from t_sch_reschedule_request
+        where rsr_appointment_id = #{appointmentId} and rsr_status = 0
+    </select>
+    <insert id="insertRequest" useGeneratedKeys="true" keyProperty="requestId" keyColumn="rsr_id">
+        insert into t_sch_reschedule_request (rsr_appointment_id, rsr_company_id,
+            rsr_candidate_id, rsr_requester_id, rsr_original_start, rsr_original_end,
+            rsr_original_interviewer_id, rsr_new_start, rsr_new_end, rsr_reason)
+        values (#{appointmentId}, #{companyId}, #{candidateId}, #{requesterId},
+            #{originalStartTime}, #{originalEndTime}, #{originalInterviewerId},
+            #{newStartTime}, #{newEndTime}, #{reason})
+    </insert>
+    <update id="updateDecision">
+        update t_sch_reschedule_request set rsr_status = #{status}, rsr_reviewer_id = #{reviewerId},
+            rsr_review_note = #{reviewNote}, rsr_reviewed_at = now()
+        where rsr_id = #{requestId} and rsr_company_id = #{companyId} and rsr_status = 0
+    </update>
+</mapper>

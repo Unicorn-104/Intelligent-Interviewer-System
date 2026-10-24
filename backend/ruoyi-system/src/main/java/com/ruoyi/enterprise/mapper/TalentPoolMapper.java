@@ -1,6 +1,7 @@
 package com.ruoyi.enterprise.mapper;
 
 import java.util.List;
+import com.ruoyi.enterprise.domain.TalentSearchCriteria;
 import java.util.Map;
 import org.apache.ibatis.annotations.Param;
 
@@ -19,6 +20,13 @@ public interface TalentPoolMapper
             @Param("keyword") String keyword, @Param("tag") String tag,
             @Param("direction") String direction, @Param("archiveSource") Integer archiveSource,
             @Param("status") Integer status);
+
+    List<Map<String, Object>> selectFilteredTalentList(@Param("companyId") Long companyId,
+            @Param("keyword") String keyword, @Param("tag") String tag,
+            @Param("direction") String direction, @Param("archiveSource") Integer archiveSource,
+            @Param("status") Integer status, @Param("criteria") TalentSearchCriteria criteria);
+
+    List<String> selectTalentCities(@Param("companyId") Long companyId, @Param("cityType") String cityType);
 
     /** 岗位方向选项（企业内人才简历去重方向） */
     public List<String> selectTalentDirections(@Param("companyId") Long companyId);

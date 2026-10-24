@@ -44,7 +44,7 @@ public class InterviewScheduleServiceImplTest
         jdbc.execute("CREATE ALIAS date_format FOR 'com.ruoyi.enterprise.service.impl.InterviewScheduleServiceImplTest.dateFormat'");
         for (String sql : List.of(
             "create table sys_user(user_id bigint primary key, status varchar(1), nick_name varchar(100))",
-            "create table t_tal(tal_id bigint primary key, tal_user_id bigint)",
+            "create table t_tal(tal_id bigint primary key, tal_user_id bigint, tal_status int default 0, tal_updated_at timestamp)",
             "create table t_pos(pos_id bigint primary key, pos_company_id bigint, pos_title varchar(100), pos_process_template_id bigint)",
             "create table t_process_instance(pin_candidate_id bigint, pin_position_id bigint)",
             "create table t_cmp_binding(bnd_company_id bigint, bnd_user_id bigint, bnd_status int)",
@@ -53,7 +53,7 @@ public class InterviewScheduleServiceImplTest
             "create table t_sch_slot(slt_id bigint auto_increment primary key, slt_interviewer_id bigint, slt_position_id bigint, slt_start_time timestamp, slt_end_time timestamp, slt_status int, slt_updated_at timestamp)",
             "create table t_sch_appointment(apt_id bigint auto_increment primary key, apt_candidate_id bigint, apt_position_id bigint, apt_stage_id bigint, apt_stage_name varchar(100), apt_stage_type int, apt_stage_order int, apt_interviewer_id bigint, apt_slot_id bigint, apt_start_time timestamp, apt_end_time timestamp, apt_status int, apt_meeting_url varchar(255), apt_room_id varchar(100), apt_updated_at timestamp)",
             "insert into sys_user values(19,'0','面试官'),(20,'0','面试官二'),(11,'0','候选人'),(12,'0','候选人二')",
-            "insert into t_tal values(11,11),(12,12)",
+            "insert into t_tal(tal_id,tal_user_id) values(11,11),(12,12)",
             "insert into t_pos values(7,1,'合成岗位',1)",
             "insert into t_process_instance values(11,7),(12,7)",
             "insert into t_cmp_binding values(1,19,1),(1,20,1)",
