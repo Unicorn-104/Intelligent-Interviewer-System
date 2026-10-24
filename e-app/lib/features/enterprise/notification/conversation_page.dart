@@ -7,6 +7,8 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/skeleton_list.dart';
 import '../jobs/job_detail_page.dart';
 import '../talent/talent_detail_page.dart';
+import '../talent/talent_discovery_profile.dart';
+import '../talent/data/talent_discovery_data_source.dart';
 import '../talent/models/talent_detail_view_data.dart';
 import 'data/message_data_source.dart';
 import 'models/chat_context.dart';
@@ -34,6 +36,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   List<ConversationMessage> _messages = [];
   List<ChatQuickReply> _quick = [];
   int? _id;
+  int? get _peerId => messageId(widget.session['peerId']);
+  bool get _fromDiscovery => widget.session['fromTalentDiscovery'] == true;
   ChatContext? _chatContext;
   ChatJob? _selectedJob;
   bool _contextLoading = true, _openingCandidate = false;
@@ -100,6 +104,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _loadContext() async {
+    if (_fromDiscovery) {
+      setState(() {
+        _contextLoading = false;
+        _contextError = null;
+        _chatContext = ChatContext();
+        _selectedJob = null;
+      });
+      return;
+    }
     setState(() {
       _contextLoading = true;
       _contextError = null;
@@ -179,6 +192,22 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _showCandidate() async {
+    if (_fromDiscovery && _peerId != null) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (profileContext) => TalentDiscoveryProfilePage(
+            userId: _peerId!,
+            source: TalentDiscoveryDataSource(client: widget.source.client),
+            onContact: (_) async {
+              if (profileContext.mounted) Navigator.of(profileContext).pop();
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
     if (_contextLoading) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('正在读取求职者资料，请稍候')));
@@ -246,7 +275,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   );
 
   Future<void> _loadQuick() async {
-    if (_id == null) return;
+    if (_id == null && _peerId == null) return;
     if (mounted) setState(() => _quickLoading = true);
     try {
       final rows = await widget.source.loadQuickReplies();
@@ -270,7 +299,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   });
   Future<void> _load({bool silent = false}) async {
     if (_fetching || (_sending && silent)) return;
-    if (_id == null) {
+    if (_id == null && _peerId == null) {
       setState(() {
         _loading = false;
         _error = '会话信息无效，请返回消息中心刷新';
@@ -282,9 +311,22 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         _scroll.position.maxScrollExtent - _scroll.offset < 100;
     setState(() => _fetching = true);
     try {
+      if (_id == null) {
+        final existing = await widget.source.findPeerSession(_peerId!);
+        if (!mounted) return;
+        _id = existing;
+      }
+      if (_id == null) {
+        // 没有历史会话也可编辑首条消息，不创建虚假会话或占位聊天记录。
+        setState(() {
+          _messages = [];
+          _ready = true;
+          _error = _uncertain ? '未查到会话，请确认上一条消息是否送达后再继续编辑' : null;
+        });
+        return;
+      }
       final rows = await widget.source.loadMessages(_id!);
       if (!mounted) return;
-      // 读取成功后才标记已读，失败不伪造空消息。
       await widget.source.readSession(_id!);
       if (!mounted) return;
       setState(() {
@@ -308,7 +350,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         _fetching ||
         _uncertain ||
         !_ready ||
-        _id == null ||
+        (_id == null && _peerId == null) ||
         text.isEmpty) {
       return;
     }
@@ -321,7 +363,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       _error = null;
     });
     try {
-      await widget.source.send(_id!, text);
+      if (_id == null) {
+        final id = await widget.source.startPeerConversation(_peerId!, text);
+        if (!mounted) return;
+        _id = id;
+      } else {
+        await widget.source.send(_id!, text);
+      }
       if (!mounted) return;
       if (clearDraft) _input.clear();
       await _load();
@@ -347,7 +395,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _sendAttachment(bool image) async {
-    if (_sending || _fetching || _uncertain || !_ready || _id == null) return;
+    if (_sending || _fetching || _uncertain || !_ready) return;
+    if (_id == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请先发送一条文字消息，再发送图片或文件')));
+      return;
+    }
     var messageAttempted = false;
     setState(() {
       _sending = true;
@@ -481,29 +534,30 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               MediaQuery.viewInsetsOf(context).bottom > 0;
           return Column(
             children: [
-              ChatJobCard(
-                compact: compact || _composerExpanded,
-                loading: _contextLoading,
-                job: _selectedJob,
-                error: _contextError,
-                jobCount: _chatContext?.jobs.length ?? 0,
-                onRetry: _loadContext,
-                onSelect: _selectJob,
-                onOpen: () {
-                  final job = _selectedJob;
-                  if (job != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (_) => JobDetailPage(
-                          job: job.job,
-                          source: widget.source.jobDetailsSource,
+              if (!_fromDiscovery)
+                ChatJobCard(
+                  compact: compact || _composerExpanded,
+                  loading: _contextLoading,
+                  job: _selectedJob,
+                  error: _contextError,
+                  jobCount: _chatContext?.jobs.length ?? 0,
+                  onRetry: _loadContext,
+                  onSelect: _selectJob,
+                  onOpen: () {
+                    final job = _selectedJob;
+                    if (job != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => JobDetailPage(
+                            job: job.job,
+                            source: widget.source.jobDetailsSource,
+                          ),
                         ),
-                      ),
-                    );
-                  }
-                },
-              ),
+                      );
+                    }
+                  },
+                ),
               if (_error != null)
                 Container(
                   width: double.infinity,
@@ -562,10 +616,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           padding: const EdgeInsets.all(16),
                           children: [
                             if (_messages.isEmpty && _ready)
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 40),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 40,
+                                ),
                                 child: Text(
-                                  '暂无聊天记录',
+                                  _fromDiscovery && _id == null
+                                      ? '发送第一条消息，开始与$_peerName沟通'
+                                      : '暂无聊天记录',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(color: AppColors.textMuted),
                                 ),

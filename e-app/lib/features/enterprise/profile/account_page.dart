@@ -228,13 +228,18 @@ class AccountPageState extends State<AccountPage> {
           children: [
             for (final (label, icon, page, demo)
                 in const <(String, IconData, Widget, bool)>[
-                  ('人才库', Icons.people_outline, TalentPage(), false),
+                  (
+                    '人才库',
+                    Icons.people_outline,
+                    TalentPage(discovery: true),
+                    false,
+                  ),
                   ('录播', Icons.video_library_outlined, RecordingPage(), true),
                   (
                     '改期审批',
                     Icons.edit_calendar_outlined,
                     RescheduleReviewPage(),
-                    true,
+                    false,
                   ),
                 ])
               Expanded(

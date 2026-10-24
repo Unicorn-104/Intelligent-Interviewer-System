@@ -49,6 +49,32 @@ class MessageDataSource {
     return rows.map(MessageSession.fromJson).toList();
   }
 
+  /// 只查已有会话，进入人才聊天时不会创建会话或发送消息。
+  Future<int?> findPeerSession(int peerId) async {
+    if (peerId <= 0) throw const FormatException('聊天对象账号无效');
+    final sessions = (await loadSessions())
+        .where((row) => row.peerId == peerId)
+        .toList();
+    if (sessions.length > 1) throw const FormatException('聊天会话关联异常，请到消息中心核对');
+    return sessions.isEmpty ? null : sessions.single.id;
+  }
+
+  /// 第一次明确发送消息时由服务端按真实peerId创建/复用会话。
+  Future<int> startPeerConversation(int peerId, String content) async {
+    await _requireSession();
+    final text = content.trim();
+    if (peerId <= 0 || text.isEmpty || text.length > 1000) {
+      throw const FormatException('请核对聊天对象和消息内容');
+    }
+    final response = await (client ?? EnterpriseApiClient()).post(
+      '/system/im/messages',
+      body: {'peerId': peerId, 'type': 1, 'content': text},
+    );
+    final id = messageId(response['sessionId']);
+    if (id == null) throw const FormatException('发送结果待核对，请刷新聊天记录，勿重复发送');
+    return id;
+  }
+
   Future<List<ConversationMessage>> loadMessages(int sessionId) async {
     await _requireSession();
     final rows = client == null
