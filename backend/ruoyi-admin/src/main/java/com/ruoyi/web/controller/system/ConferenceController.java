@@ -263,6 +263,24 @@ public class ConferenceController extends BaseController
     }
 
     /**
+     * 面试问题参考提示：优先返回本场次面试提纲，无提纲时按岗位技能生成
+     */
+    @GetMapping("/session/{sessionId}/question-hints")
+    public AjaxResult questionHints(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.getQuestionHints(getUserId(), sessionId));
+    }
+
+    /**
+     * 面试问题参考提示偏好反馈（adopt-采纳，ignore-忽略）
+     */
+    @PostMapping("/session/{sessionId}/question-hints/feedback")
+    public AjaxResult hintFeedback(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.handleHintFeedback(getUserId(), sessionId, body));
+    }
+
+    /**
      * 处理提词器建议（adopt-采纳，edit-编辑后采纳，ignore-忽略）
      */
     @PostMapping("/session/{sessionId}/copilot/{id}/handle")
