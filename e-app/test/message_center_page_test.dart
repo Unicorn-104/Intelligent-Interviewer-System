@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:enterprise_recruiter/features/enterprise/notification/models/chat_context.dart';
 import 'package:enterprise_recruiter/features/enterprise/notification/widgets/message_avatar.dart';
@@ -542,6 +543,39 @@ void main() {
     expect(find.text('合成通知正文4'), findsWidgets);
     expect(source.notices.single.isRead, isTrue);
   });
+  testWidgets('候选人改期申请以卡片显示且提供同意拒绝操作', (tester) async {
+    final source = FakeMessageSource();
+    source.messages = [
+      ConversationMessage.fromJson({
+        'messageId': 41,
+        'type': 5,
+        'content': jsonEncode({
+          'kind': 'interview_reschedule',
+          'version': 1,
+          'requestId': 31,
+          'appointmentId': 44,
+          'candidateName': '合成候选人',
+          'positionName': '合成岗位',
+          'originalStartTime': '2099-01-02 09:00:00',
+          'originalEndTime': '2099-01-02 09:45:00',
+          'newStartTime': '2099-01-03 10:00:00',
+          'newEndTime': '2099-01-03 10:45:00',
+          'reason': '合成原因',
+          'status': 'pending',
+        }),
+        'isMine': false,
+        'sendTime': '2026-10-26 09:00',
+      }),
+    ];
+    await mountMessages(tester, source, chat: true);
+    expect(find.text('求职者申请改期'), findsOneWidget);
+    expect(find.text('合成岗位'), findsOneWidget);
+    expect(find.text('同意'), findsOneWidget);
+    expect(find.text('拒绝'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('聊天定时回读离开页面停止轮询', (tester) async {
     final source = FakeMessageSource();
     await mountMessages(

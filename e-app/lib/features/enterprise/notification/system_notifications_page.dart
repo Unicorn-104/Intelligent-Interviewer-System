@@ -4,6 +4,8 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/skeleton_list.dart';
 import 'data/message_data_source.dart';
 import 'models/message_view_data.dart';
+import '../schedule/data/reschedule_review_data_source.dart';
+import '../schedule/reschedule_review_page.dart';
 
 class SystemNotificationsPage extends StatefulWidget {
   const SystemNotificationsPage({super.key, required this.source});
@@ -79,6 +81,19 @@ class _SystemNotificationsPageState extends State<SystemNotificationsPage> {
             .map((row) => row.id == item.id ? row.read : row)
             .toList(),
       );
+      final requestId = item.rescheduleRequestId;
+      if (requestId != null) {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => RescheduleReviewPage(
+              initialRequestId: requestId,
+              source: RescheduleReviewDataSource(client: widget.source.client),
+            ),
+          ),
+        );
+        if (mounted) await _load();
+        return;
+      }
       await showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,

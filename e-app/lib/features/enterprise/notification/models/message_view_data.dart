@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ChatQuickReply {
   const ChatQuickReply({
     required this.id,
@@ -83,6 +85,20 @@ class ConversationMessage {
   final bool mine;
   final String content, attachment;
   final DateTime? time;
+  Map<String, dynamic>? get reschedule {
+    if (type != 5) return null;
+    try {
+      final value = jsonDecode(content);
+      if (value is! Map ||
+          value['kind'] != 'interview_reschedule' ||
+          value['version'] != 1)
+        return null;
+      return Map<String, dynamic>.from(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
   String get display => switch (type) {
     2 => '[图片]${content.isEmpty ? '' : ' $content'}',
     3 => '[文件]${content.isEmpty ? '' : ' $content'}',
@@ -116,6 +132,23 @@ class SystemMessage {
   final String title, content;
   final bool isRead;
   final DateTime? time;
+  int? get rescheduleRequestId {
+    final uri = Uri.tryParse(messageText(raw['targetUrl'], ''));
+    if (uri == null ||
+        uri.hasScheme ||
+        uri.hasAuthority ||
+        uri.hasQuery ||
+        uri.hasFragment)
+      return null;
+    final parts = uri.pathSegments;
+    if (parts.length != 4 ||
+        parts[0] != 'enterprise' ||
+        parts[1] != 'interview' ||
+        parts[2] != 'reschedule-requests')
+      return null;
+    return messageId(parts[3]);
+  }
+
   SystemMessage get read => SystemMessage.fromJson({...raw, 'isRead': 1});
 }
 

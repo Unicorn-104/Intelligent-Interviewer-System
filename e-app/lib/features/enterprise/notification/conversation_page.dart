@@ -16,6 +16,8 @@ import 'models/message_view_data.dart';
 import 'widgets/chat_composer.dart';
 import 'widgets/chat_job_card.dart';
 import 'widgets/message_avatar.dart';
+import 'widgets/reschedule_chat_card.dart';
+import '../schedule/data/reschedule_review_data_source.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({
@@ -23,16 +25,21 @@ class ChatPage extends StatefulWidget {
     required this.session,
     this.source = const MessageDataSource(),
     this.pollInterval = const Duration(seconds: 8),
+    this.rescheduleSource,
   });
   final Map<String, dynamic> session;
   final MessageDataSource source;
   final Duration pollInterval;
+  final RescheduleReviewDataSource? rescheduleSource;
   @override
   State<ChatPage> createState() => _ChatPageState();
 }
 
 class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final _input = TextEditingController(), _scroll = ScrollController();
+  late final RescheduleReviewDataSource _reschedules =
+      widget.rescheduleSource ??
+      RescheduleReviewDataSource(client: widget.source.client);
   List<ConversationMessage> _messages = [];
   List<ChatQuickReply> _quick = [];
   int? _id;
@@ -714,6 +721,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         );
       }
+    }
+    final reschedule = item.reschedule;
+    if (reschedule != null) {
+      return RescheduleChatCard(
+        key: ValueKey('reschedule-chat-card-${item.id}'),
+        data: reschedule,
+        peerUserId: _peerId,
+        canReview: !item.mine && reschedule['status'] == 'pending',
+        source: _reschedules,
+        onChanged: () => _load(silent: true),
+      );
     }
     if (item.type == 3) {
       return Row(
