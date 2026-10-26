@@ -41,6 +41,11 @@ public interface ITalentPoolService
     public Map<String, Object> updateStatus(Long userId, List<Long> talIds, Integer status);
 
     /**
+     * UC-03：批量为本企业候选人添加标签（写入 t_tal_tag）
+     */
+    public Map<String, Object> batchTags(Long userId, List<Long> talIds, String tagName, Integer source);
+
+    /**
      * 一键转投递：为候选人创建投递记录（t_app_record）
      */
     public Map<String, Object> reapplyTalent(Long userId, Long talId, Long positionId);

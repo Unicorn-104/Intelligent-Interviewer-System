@@ -131,6 +131,29 @@ public class TalentPoolController extends BaseController
     }
 
     /**
+     * UC-03：批量为候选人添加标签
+     */
+    @PostMapping("/tags/batch")
+    public AjaxResult batchTags(@RequestBody Map<String, Object> body)
+    {
+        List<Long> talIds = new ArrayList<>();
+        Object raw = body.get("talIds");
+        if (raw instanceof List)
+        {
+            for (Object item : (List<?>) raw)
+            {
+                if (item != null)
+                {
+                    talIds.add(Long.valueOf(String.valueOf(item)));
+                }
+            }
+        }
+        String tagName = body.get("tagName") == null ? null : String.valueOf(body.get("tagName"));
+        Integer source = body.get("source") == null ? 1 : Integer.valueOf(String.valueOf(body.get("source")));
+        return success(talentPoolService.batchTags(getUserId(), talIds, tagName, source));
+    }
+
+    /**
      * UC-03：一键转投递（为候选人创建投递记录）
      */
     @PostMapping("/{talId}/reapply")
