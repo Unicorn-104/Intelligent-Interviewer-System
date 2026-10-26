@@ -416,6 +416,38 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         limit #{offset}, 1
     </select>
 
+    <select id="selectOutlineQuestions" resultType="java.util.LinkedHashMap">
+        select oln_id          as questionId,
+               oln_topic       as topic,
+               oln_description as hint,
+               oln_dimension   as dimension
+        from t_int_outline
+        where oln_session_id = #{sessionId}
+        order by oln_order asc, oln_id asc
+    </select>
+
+    <select id="selectHintPreferences" resultType="java.util.LinkedHashMap">
+        select hip_hint_key      as hintKey,
+               hip_used_count    as usedCount,
+               hip_ignored_count as ignoredCount
+        from t_int_hint_preference
+        where hip_user_id = #{userId} and hip_company_id = #{companyId}
+    </select>
+
+    <insert id="upsertHintUsed">
+        insert into t_int_hint_preference
+            (hip_user_id, hip_company_id, hip_hint_key, hip_used_count, hip_ignored_count)
+        values (#{userId}, #{companyId}, #{hintKey}, 1, 0)
+        on duplicate key update hip_used_count = hip_used_count + 1, hip_updated_at = sysdate()
+    </insert>
+
+    <insert id="upsertHintIgnored">
+        insert into t_int_hint_preference
+            (hip_user_id, hip_company_id, hip_hint_key, hip_used_count, hip_ignored_count)
+        values (#{userId}, #{companyId}, #{hintKey}, 0, 1)
+        on duplicate key update hip_ignored_count = hip_ignored_count + 1, hip_updated_at = sysdate()
+    </insert>
+
     <select id="selectCopilot" resultType="java.util.LinkedHashMap">
         select cpt_id               as id,
                cpt_seq              as seq,

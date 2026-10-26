@@ -113,6 +113,26 @@ public interface ConferenceMapper
     public Map<String, Object> selectOutlineAt(Map<String, Object> params);
 
     /**
+     * 查询场次全部面试提纲问题（面试问题参考提示）
+     */
+    public List<Map<String, Object>> selectOutlineQuestions(@Param("sessionId") Long sessionId);
+
+    /**
+     * 查询面试官对参考提示的采纳 / 忽略累计次数（偏好学习）
+     */
+    public List<Map<String, Object>> selectHintPreferences(@Param("userId") Long userId, @Param("companyId") Long companyId);
+
+    /**
+     * 记录一次提示采纳
+     */
+    public int upsertHintUsed(Map<String, Object> params);
+
+    /**
+     * 记录一次提示忽略
+     */
+    public int upsertHintIgnored(Map<String, Object> params);
+
+    /**
      * 增量拉取提词器建议
      */
     public List<Map<String, Object>> selectCopilot(Map<String, Object> params);

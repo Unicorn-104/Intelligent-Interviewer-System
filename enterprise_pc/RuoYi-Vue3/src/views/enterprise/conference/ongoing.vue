@@ -2,13 +2,15 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  ArrowLeft, ChevronLeft, ChevronRight, FileText, Sparkles, Timer, Mic, MicOff,
-  Video, MonitorUp, Copy, MessageSquareText, Settings, PhoneOff, CircleCheck,
-  CircleX, Pencil, ArrowUpRight, AlertTriangle, Lightbulb
+  ArrowLeft, ChevronLeft, ChevronRight, FileText, Timer, Mic, MicOff,
+  Video, MonitorUp, Copy, MessageSquareText, Settings, PhoneOff,
+  ArrowUpRight, AlertTriangle, Lightbulb, CirclePause
 } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
-import { getCurrentSession, getSessionContext, getProgress, listCaptions, listCopilot, heartbeat, handleCopilot, finishSession, joinInterviewer, transferPrimary, getLiveKitToken, startRecording, stopRecording } from '@/api/system/conference'
+import BaseModal from '@/views/enterprise/components/BaseModal.vue'
+import { getCurrentSession, getSessionContext, getProgress, listCaptions, getQuestionHints, feedbackQuestionHint, heartbeat, finishSession, joinInterviewer, transferPrimary, getLiveKitToken, startRecording, stopRecording, takeover } from '@/api/system/conference'
+import { getTalentResume } from '@/api/talent'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, savePreferredDevice } from '@/utils/media'
 import { useRealtimeAsr } from './useRealtimeAsr'
 import { Room, RoomEvent, Track } from 'livekit-client'
@@ -64,11 +66,34 @@ const netLevel = computed(() => {
   return v < 400 ? 'warn' : 'bad'
 })
 
-// 面试进度 / 实时提词 / 评分要点 / 实时字幕：全部来自后端真实数据，无数据时展示空态
+// 面试进度 / 面试问题参考提示 / 实时字幕：全部来自后端真实数据，无数据时展示空态
 const progress = ref({ done: 0, total: 0, remain: '--:--' })
-const tips = ref([])
-const answerPoints = ref([])
+const questionHints = ref([])
 const captions = ref([])
+
+// HR 打断接管：接管期间 AI 暂停出题，由面试官主导提问
+const takeoverActive = ref(false)
+const takeoverReason = ref('')
+const takeoverVisible = ref(false)
+const takeoverInput = ref('')
+const takeoverLoading = ref(false)
+
+// 提示偏好：采纳 / 忽略会累计到后端，后续同类提示按偏好重新排序
+function hintScore(q) {
+  return (q.usedCount || 0) - (q.ignoredCount || 0) * 2
+}
+async function feedbackHint(q, action) {
+  if (!sessionId.value) return
+  try {
+    await feedbackQuestionHint(sessionId.value, { hintKey: q.topic, action })
+    if (action === 'adopt') q.usedCount = (q.usedCount || 0) + 1
+    else q.ignoredCount = (q.ignoredCount || 0) + 1
+    questionHints.value = questionHints.value.slice().sort((a, b) => hintScore(b) - hintScore(a))
+    notify(action === 'adopt' ? '已记录采纳，后续优先展示同类提示' : '已记录忽略，后续同类提示将靠后展示')
+  } catch (e) {
+    notify(e && e.message ? e.message : '反馈失败')
+  }
+}
 
 // 面试模式展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
 const modeLabel = computed(() => {
@@ -89,6 +114,7 @@ const isSelfPrimary = computed(() => String(myUserId.value) === String(primaryIn
 let timerId = null
 let heartbeatId = null
 let rttId = null
+let progressId = null
 // LiveKit 房间连接（媒体层：发布本地轨道 + 订阅远端轨道）
 let room = null
 const lkConnected = ref(false)
@@ -124,6 +150,13 @@ const positionJd = ref(null)
 const positionSkills = ref([])
 const flowHistory = ref([])
 
+// 会议中查看候选人简历（人才库简历接口，按当前企业隔离）
+const candidateId = ref(null)
+const resumeVisible = ref(false)
+const resumeLoading = ref(false)
+const resumeError = ref('')
+const resume = ref(null)
+
 // 候选人流程状态文案（与 t_tal.tal_status 取值一致）
 const CANDIDATE_STATUS_LABEL = {
   0: '新入库', 1: '初筛通过', 2: '面试中', 3: '已淘汰', 4: '已录用',
@@ -141,6 +174,16 @@ const positionSummary = computed(() => {
   const resp = jd.responsibilities
   return Array.isArray(resp) && resp.length ? resp.join('；') : ''
 })
+
+// 屏幕共享：仅展示对方共享的屏幕；本人共享时仍看正常宫格（自己的屏幕在本机可见，无需覆盖主画面）
+const sharing = ref(false)
+const remoteScreen = ref(null)
+const screenEl = ref(null)
+const activeScreenStream = computed(() => (remoteScreen.value && remoteScreen.value.stream) || null)
+const screenLabel = computed(() => (remoteScreen.value ? `${remoteScreen.value.name} 正在共享屏幕` : ''))
+watch(activeScreenStream, (stream) => {
+  if (screenEl.value && screenEl.value.srcObject !== stream) screenEl.value.srcObject = stream || null
+}, { flush: 'post' })
 
 // 宫格统一画面数据：所有远端参与者 + 本人，宫格/聚焦共用同一组 DOM
 const tiles = computed(() => {
@@ -265,7 +308,16 @@ async function connectLiveKit() {
   room.on(RoomEvent.TrackSubscribed, onRemoteTrack)
   room.on(RoomEvent.TrackUnsubscribed, offRemoteTrack)
   room.on(RoomEvent.ParticipantDisconnected, onPeerLeft)
-  room.on(RoomEvent.Disconnected, () => { lkConnected.value = false })
+  room.on(RoomEvent.LocalTrackUnpublished, (publication) => {
+    if (publication.source === Track.Source.ScreenShare) {
+      sharing.value = false
+    }
+  })
+  room.on(RoomEvent.Disconnected, () => {
+    lkConnected.value = false
+    sharing.value = false
+    remoteScreen.value = null
+  })
   try {
     await room.connect(info.url, info.token)
     lkConnected.value = true
@@ -284,6 +336,10 @@ function userIdFromIdentity(identity) {
 }
 
 function onRemoteTrack(track, publication, participant) {
+  if (publication && publication.source === Track.Source.ScreenShare) {
+    remoteScreen.value = { name: participant.name || '对方', identity: participant.identity, stream: new MediaStream([track.mediaStreamTrack]) }
+    return
+  }
   const uid = userIdFromIdentity(participant.identity)
   if (!uid || String(uid) === String(myUserId.value)) return
   const kind = track.kind === Track.Kind.Video ? 'video' : track.kind === Track.Kind.Audio ? 'audio' : null
@@ -294,6 +350,10 @@ function onRemoteTrack(track, publication, participant) {
 }
 
 function offRemoteTrack(track, publication, participant) {
+  if (publication && publication.source === Track.Source.ScreenShare) {
+    remoteScreen.value = null
+    return
+  }
   const uid = userIdFromIdentity(participant.identity)
   if (!uid || !remoteTracks[uid]) return
   const kind = track.kind === Track.Kind.Video ? 'video' : track.kind === Track.Kind.Audio ? 'audio' : null
@@ -302,6 +362,7 @@ function offRemoteTrack(track, publication, participant) {
 }
 
 function onPeerLeft(participant) {
+  if (remoteScreen.value && remoteScreen.value.identity === participant.identity) remoteScreen.value = null
   const uid = userIdFromIdentity(participant.identity)
   if (!uid) return
   delete remoteTracks[uid]
@@ -439,6 +500,7 @@ function applySessionContext(ctx) {
   if (!ctx) return
   if (ctx.candidateName) candidate.value.name = ctx.candidateName
   if (ctx.positionTitle) candidate.value.position = ctx.positionTitle
+  candidateId.value = ctx.candidateId != null ? Number(ctx.candidateId) : null
   if (ctx.roundNo != null) roundNo.value = Number(ctx.roundNo)
   if (ctx.totalRounds != null) totalRounds.value = Number(ctx.totalRounds)
   // 候选人头像为后端相对路径，拼接接口基址后交由 MiniAvatar 渲染（为空则降级首字母）
@@ -560,6 +622,30 @@ async function toggleCam() {
   notify(on ? '摄像头已开启' : '摄像头已关闭')
 }
 
+// 屏幕共享：发布/停止均由 LiveKit 管理，观察者无发布权限
+async function toggleScreenShare() {
+  if (!room || !lkConnected.value) {
+    notify('会议未连接，暂不能共享屏幕')
+    return
+  }
+  if (sessionRole.value === 'OBSERVER') {
+    notify('当前角色无屏幕共享权限')
+    return
+  }
+  // 以 LiveKit 实际发布状态为准：停止共享会触发 LocalTrackUnpublished，不能再手动取反
+  const next = !sharing.value
+  try {
+    await room.localParticipant.setScreenShareEnabled(next)
+    const pub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare)
+    sharing.value = !!(pub && pub.track)
+    notify(next ? '已开始共享屏幕' : '已停止共享屏幕')
+  } catch (e) {
+    const pub = room && room.localParticipant.getTrackPublication(Track.Source.ScreenShare)
+    sharing.value = !!(pub && pub.track)
+    notify(next ? '屏幕共享未开启' : '停止共享失败，请重试')
+  }
+}
+
 // 断开 LiveKit 房间并清空画面引用
 function disconnectRoom() {
   if (room) {
@@ -571,6 +657,8 @@ function disconnectRoom() {
   Object.keys(remoteTracks).forEach((k) => delete remoteTracks[k])
   peerStreams.value = {}
   localStreamRef.value = null
+  sharing.value = false
+  remoteScreen.value = null
 }
 
 function toggleQuality() {
@@ -626,19 +714,24 @@ function confirmLeave() {
   endSessionAndLeave()
 }
 
-function adoptTip(tip) {
-  if (tip) tip.adopted = true
-  notify('建议问题已采纳，将同步至面试官提词器')
-  if (sessionId.value && tip && typeof tip.id === 'number') {
-    handleCopilot(sessionId.value, tip.id, { action: 'adopt' }).catch(() => {})
+// 会议中查看候选人简历：按场次关联的候选人ID读取人才库简历，接口按当前企业隔离
+async function openResume() {
+  if (!candidateId.value) {
+    notify('当前场次未关联候选人简历')
+    return
   }
-}
-
-function ignoreTip(tip) {
-  if (tip) tip.adopted = false
-  notify('已忽略该建议问题')
-  if (sessionId.value && tip && typeof tip.id === 'number') {
-    handleCopilot(sessionId.value, tip.id, { action: 'ignore' }).catch(() => {})
+  resumeVisible.value = true
+  resumeLoading.value = true
+  resumeError.value = ''
+  resume.value = null
+  try {
+    const r = await getTalentResume(candidateId.value)
+    resume.value = r.data || null
+    if (!resume.value) resumeError.value = '该候选人暂无简历信息'
+  } catch (e) {
+    resumeError.value = e && e.message ? e.message : '简历加载失败'
+  } finally {
+    resumeLoading.value = false
   }
 }
 
@@ -657,6 +750,56 @@ async function refreshRtt() {
   } catch (e) {
     const estimated = navigator.connection?.rtt
     rtt.value = estimated > 0 ? estimated : null
+  }
+}
+
+// 拉取进度与接管状态：接口异常时保留上一次数据，不清空已展示内容
+async function refreshProgress() {
+  if (!sessionId.value) return
+  try {
+    const p = await getProgress(sessionId.value)
+    if (!p.data) return
+    progress.value.total = p.data.totalQuestionNo || 0
+    progress.value.done = p.data.answeredCount ?? 0
+    progress.value.remain = p.data.remainingSeconds != null ? fmtClock(p.data.remainingSeconds) : '--:--'
+    takeoverActive.value = Number(p.data.takeover) === 1
+    takeoverReason.value = p.data.takeoverReason || ''
+  } catch (e) {
+    // 后端未就绪时保留上一次数据
+  }
+}
+
+// HR 打断接管：接管期间 AI 暂停出题，由面试官主导提问
+function openTakeover() {
+  takeoverInput.value = takeoverReason.value || ''
+  takeoverVisible.value = true
+}
+
+async function confirmTakeover() {
+  if (!sessionId.value) return
+  takeoverLoading.value = true
+  try {
+    const r = await takeover(sessionId.value, { action: 'start', reason: takeoverInput.value.trim() })
+    takeoverActive.value = true
+    takeoverReason.value = (r.data && r.data.reason) || takeoverInput.value.trim()
+    takeoverVisible.value = false
+    notify('已接管本次面试，AI 暂停出题')
+  } catch (e) {
+    notify(e && e.message ? e.message : '接管失败')
+  } finally {
+    takeoverLoading.value = false
+  }
+}
+
+async function endTakeover() {
+  if (!sessionId.value) return
+  try {
+    await takeover(sessionId.value, { action: 'end', reason: '' })
+    takeoverActive.value = false
+    takeoverReason.value = ''
+    notify('已结束接管，AI 恢复出题')
+  } catch (e) {
+    notify(e && e.message ? e.message : '结束接管失败')
   }
 }
 
@@ -680,16 +823,9 @@ async function initSession() {
   if (!sessionId.value) return
   // 拉取场次上下文：候选人 / 面试官列表 / 面试模式 / 本人在场次中的角色（主面试官自动加入）
   await refreshContext()
-  try {
-    const p = await getProgress(sessionId.value)
-    if (p.data) {
-      progress.value.total = p.data.totalQuestionNo || 0
-      progress.value.done = p.data.answeredCount ?? 0
-      progress.value.remain = p.data.remainingSeconds != null ? fmtClock(p.data.remainingSeconds) : '--:--'
-    }
-  } catch (e) {
-    // 后端未就绪时保持空态
-  }
+  await refreshProgress()
+  // 进度与接管状态随场次变化，定时刷新以同步另一位面试官的操作
+  if (!progressId) progressId = setInterval(refreshProgress, 5000)
   try {
     const c = await listCaptions(sessionId.value, { afterSequence: 0, limit: 50 })
     appendCaptions(c.data)
@@ -697,18 +833,10 @@ async function initSession() {
     // 后端未就绪时保持空态
   }
   try {
-    const r = await listCopilot(sessionId.value, { afterSequence: 0, limit: 20 })
-    if (Array.isArray(r.data)) {
-      tips.value = r.data.map((item) => ({
-        id: item.id,
-        text: item.content,
-        reference: item.reference,
-        adopted: Number(item.status) === 1
-      }))
-      answerPoints.value = r.data.map((item) => item.points).filter((v) => v)
-    }
+    const r = await getQuestionHints(sessionId.value)
+    questionHints.value = Array.isArray(r.data) ? r.data : []
   } catch (e) {
-    // 无 AI 建议时展示空态
+    // 无面试问题提示时展示空态
   }
   // 心跳保活：仅在确认存在真实场次后才需要
   heartbeatId = setInterval(() => heartbeat(sessionId.value).catch(() => {}), 15000)
@@ -732,6 +860,7 @@ onBeforeUnmount(() => {
   clearInterval(timerId)
   clearInterval(heartbeatId)
   clearInterval(rttId)
+  clearInterval(progressId)
   clearInterval(captionPollId)
   asr.stop()
   disconnectRoom()
@@ -782,7 +911,7 @@ onBeforeUnmount(() => {
         <div class="info-row"><span>当前阶段</span><b>{{ stageLabel }}</b></div>
         <div class="info-row"><span>面试模式</span><b>{{ modeLabel }}</b></div>
 
-        <button class="resume" @click="notify('候选人简历详情接口尚未接入')">
+        <button class="resume" @click="openResume">
           <FileText :size="16" />查看候选人简历<ArrowUpRight :size="15" />
         </button>
 
@@ -801,6 +930,12 @@ onBeforeUnmount(() => {
 
       <section class="stage">
         <div class="video-stage" :class="[`n${Math.min(tiles.length, 6)}`, { 'is-spot': enlargedKey }]" :style="{ '--spot-rows': Math.max(tiles.length - 1, 1) }">
+          <!-- 屏幕共享画面覆盖宫格，由 LiveKit 原生 ScreenShare 轨驱动 -->
+          <div v-if="activeScreenStream" class="screen-share">
+            <video ref="screenEl" autoplay playsinline muted />
+            <span class="screen-share-tag"><MonitorUp :size="14" />{{ screenLabel }}</span>
+          </div>
+
           <div
             v-for="t in tiles"
             :key="t.key"
@@ -871,6 +1006,19 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <section class="block takeover-card" :class="{ on: takeoverActive }">
+          <h3><CirclePause :size="14" />人工接管</h3>
+          <template v-if="takeoverActive">
+            <p class="tk-status">已接管面试，AI 暂停出题</p>
+            <p v-if="takeoverReason" class="tk-reason">接管原因：{{ takeoverReason }}</p>
+            <button v-if="sessionRole !== 'OBSERVER'" class="tk-btn" @click="endTakeover">结束接管，交还 AI</button>
+          </template>
+          <template v-else>
+            <p class="empty">AI 正在按题纲出题，可随时打断并接管提问</p>
+            <button v-if="sessionRole !== 'OBSERVER'" class="tk-btn" @click="openTakeover">打断并接管</button>
+          </template>
+        </section>
+
         <section class="block">
           <h3>岗位摘要</h3>
           <p v-if="positionSummary" class="summary">{{ positionSummary }}</p>
@@ -881,24 +1029,18 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="block">
-          <h3><Sparkles :size="14" />实时提词器</h3>
-          <div v-for="tip in tips" :key="tip.id" class="tip" :class="{ adopted: tip.adopted }">
-            <p>{{ tip.text }}</p>
-            <div class="tip-actions">
-              <button class="ok" @click="adoptTip(tip)"><CircleCheck :size="14" />采纳</button>
-              <button @click="notify('进入建议问题编辑')"><Pencil :size="13" />编辑</button>
-              <button class="no" @click="ignoreTip(tip)"><CircleX :size="14" />忽略</button>
-            </div>
-          </div>
-          <p v-if="!tips.length" class="empty">暂无 AI 建议</p>
-        </section>
-
-        <section class="block">
-          <h3><Lightbulb :size="14" />参考答案 / 评分要点</h3>
-          <ol v-if="answerPoints.length" class="points">
-            <li v-for="(p, i) in answerPoints" :key="i">{{ p }}</li>
+          <h3><Lightbulb :size="14" />面试问题参考提示</h3>
+          <ol v-if="questionHints.length" class="q-hints">
+            <li v-for="(q, i) in questionHints" :key="i">
+              <b>{{ q.topic }}</b>
+              <p v-if="q.hint">{{ q.hint }}</p>
+              <div v-if="sessionRole !== 'OBSERVER'" class="q-actions">
+                <button class="q-act" :class="{ on: q.usedCount > 0 }" @click="feedbackHint(q, 'adopt')">采纳</button>
+                <button class="q-act" :class="{ off: q.ignoredCount > 0 }" @click="feedbackHint(q, 'ignore')">忽略</button>
+              </div>
+            </li>
           </ol>
-          <p v-else class="empty">暂无评分要点</p>
+          <p v-else class="empty">暂无面试问题提示</p>
         </section>
 
         <section class="block captions">
@@ -922,7 +1064,15 @@ onBeforeUnmount(() => {
       <button v-if="sessionRole !== 'OBSERVER'" class="ctl" :class="{ off: !CAM_ON }" @click="toggleCam">
         <Video :size="20" /><span>摄像头</span>
       </button>
-      <button class="ctl disabled" title="当前角色无屏幕共享权限" disabled>
+      <button
+        v-if="sessionRole !== 'OBSERVER'"
+        class="ctl"
+        :class="{ on: sharing }"
+        @click="toggleScreenShare"
+      >
+        <MonitorUp :size="20" /><span>{{ sharing ? '停止共享' : '屏幕共享' }}</span>
+      </button>
+      <button v-else class="ctl disabled" title="当前角色无屏幕共享权限" disabled>
         <MonitorUp :size="20" /><span>屏幕共享</span>
       </button>
       <button class="ctl rec-btn" :class="{ on: RECORDING }" @click="toggleRecord">
@@ -953,6 +1103,25 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
+    <BaseModal v-if="takeoverVisible" title="打断并接管面试" width="440px" @close="takeoverVisible = false">
+      <p class="tk-tip">接管后 AI 将暂停出题，由你主导提问；可随时结束接管交还 AI。</p>
+      <textarea
+        v-model="takeoverInput"
+        class="tk-input"
+        rows="3"
+        maxlength="200"
+        placeholder="接管原因（选填，最多 200 字）"
+      />
+      <template #footer>
+        <div class="tk-actions">
+          <button class="conf-cancel" @click="takeoverVisible = false">取消</button>
+          <button class="conf-confirm" :disabled="takeoverLoading" @click="confirmTakeover">
+            {{ takeoverLoading ? '处理中…' : '确认接管' }}
+          </button>
+        </div>
+      </template>
+    </BaseModal>
+
     <div v-if="showSettings" class="conf-mask" @click.self="showSettings = false">
       <section class="conf-modal">
         <h3>会议设置</h3>
@@ -976,6 +1145,59 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
+
+    <BaseModal v-if="resumeVisible" title="候选人简历" width="640px" @close="resumeVisible = false">
+      <p v-if="resumeLoading" class="rs-tip">简历加载中…</p>
+      <p v-else-if="resumeError" class="rs-tip">{{ resumeError }}</p>
+      <div v-else-if="resume" class="rs">
+        <div class="rs-head">
+          <strong>{{ resume.name || candidate.name || '候选人' }}</strong>
+          <span v-if="resume.jobDirection" class="rs-tag">{{ resume.jobDirection }}</span>
+          <span class="rs-integrity">完整度 {{ resume.integrity ?? 0 }}%</span>
+        </div>
+        <div class="rs-meta">
+          <span>手机：{{ resume.phone || '未填写' }}</span>
+          <span>邮箱：{{ resume.email || '未填写' }}</span>
+        </div>
+
+        <section v-if="resume.educationList && resume.educationList.length" class="rs-sec">
+          <h4>教育经历</h4>
+          <div v-for="(e, i) in resume.educationList" :key="'edu' + i" class="rs-item">
+            <b>{{ [e.school, e.major].filter(Boolean).join(' · ') || '—' }}</b>
+            <small>{{ [e.degree, e.startDate, e.endDate].filter(Boolean).join(' / ') }}</small>
+          </div>
+        </section>
+
+        <section v-if="resume.workList && resume.workList.length" class="rs-sec">
+          <h4>工作经历</h4>
+          <div v-for="(w, i) in resume.workList" :key="'work' + i" class="rs-item">
+            <b>{{ [w.company, w.position].filter(Boolean).join(' · ') || '—' }}</b>
+            <small>{{ [w.startDate, w.endDate].filter(Boolean).join(' - ') }}</small>
+            <p v-if="w.summary">{{ w.summary }}</p>
+          </div>
+        </section>
+
+        <section v-if="resume.projectList && resume.projectList.length" class="rs-sec">
+          <h4>项目经历</h4>
+          <div v-for="(p, i) in resume.projectList" :key="'prj' + i" class="rs-item">
+            <b>{{ [p.name, p.role].filter(Boolean).join(' · ') || '—' }}</b>
+            <small v-if="p.techStack">{{ p.techStack }}</small>
+            <p v-if="p.summary">{{ p.summary }}</p>
+          </div>
+        </section>
+
+        <section v-if="resume.skills && resume.skills.length" class="rs-sec">
+          <h4>技能标签</h4>
+          <div class="rs-skills">
+            <span v-for="(s, i) in resume.skills" :key="'skl' + i">{{ s.name }}<i v-if="s.level"> · {{ s.level }}</i></span>
+          </div>
+        </section>
+
+        <p v-if="resume.missingFields && resume.missingFields.length" class="rs-missing">
+          缺失字段：{{ resume.missingFields.join('、') }}
+        </p>
+      </div>
+    </BaseModal>
 
     <ToastMessage :message="toast" />
   </div>
@@ -1177,6 +1399,27 @@ onBeforeUnmount(() => {
 .video-stage.is-spot .tile:not(.big) { grid-column: 2; }
 .video-stage.is-spot .tag-right { right: 184px; }
 
+/* 屏幕共享画面：覆盖整个宫格区域，含黑边完整显示 */
+.screen-share {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: #05070c;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.screen-share video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.screen-share-tag {
+  position: absolute;
+  top: 12px; left: 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(9, 14, 24, .72);
+  border: 1px solid rgba(255, 255, 255, .12);
+  color: #cfe0ff; font-size: 12px;
+}
+
 .tile {
   position: relative;
   min-width: 0; min-height: 0;
@@ -1290,23 +1533,59 @@ onBeforeUnmount(() => {
   padding: 3px 8px; border-radius: 6px;
   background: var(--panel-2); color: var(--muted); font-size: 11px;
 }
-.tip { margin-top: 9px; padding: 11px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
-.tip.adopted { border-color: rgba(82, 196, 26, .45); }
-.tip p { margin: 0; font-size: 12px; line-height: 1.65; }
-.tip-actions { display: flex; gap: 7px; margin-top: 10px; }
-.tip-actions button {
-  height: 26px; padding: 0 9px;
-  display: inline-flex; align-items: center; gap: 4px;
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
+.q-hints { margin: 9px 0 0; padding-left: 16px; display: grid; gap: 10px; }
+.q-hints li { font-size: 12px; line-height: 1.6; color: #c3ccdb; }
+.q-hints b { display: block; color: #9dbcff; font-weight: 600; }
+.q-hints p { margin: 3px 0 0; color: var(--muted); line-height: 1.65; }
+.q-actions { display: flex; gap: 8px; margin-top: 6px; }
+.q-act {
+  height: 24px; padding: 0 9px;
+  border: 1px solid var(--line-strong); border-radius: 6px;
   background: transparent; color: var(--muted); font-size: 11px;
 }
-.tip-actions .ok { color: #7ee0a0; border-color: rgba(82, 196, 26, .4); }
-.tip-actions .no { color: #ff9c9d; border-color: rgba(255, 77, 79, .35); }
-.points { margin: 9px 0 0; padding-left: 16px; }
-.points li { font-size: 12px; line-height: 1.7; color: #c3ccdb; }
-.points b { color: #9dbcff; font-weight: 600; }
+.q-act:hover { border-color: var(--primary); color: #9dbcff; }
+.q-act.on { border-color: rgba(82, 196, 26, .5); color: #7ee787; }
+.q-act.off { border-color: rgba(255, 77, 79, .4); color: #ff9c9e; }
 .empty { margin: 9px 0 0; font-size: 12px; color: var(--muted); }
+
+/* HR 打断接管 */
+.takeover-card.on { padding: 10px 12px; border-radius: 11px; background: rgba(250, 173, 20, .12); border: 1px solid rgba(250, 173, 20, .32); }
+.tk-status { margin: 9px 0 0; font-size: 12px; color: #ffd591; font-weight: 600; }
+.tk-reason { margin: 4px 0 0; font-size: 12px; line-height: 1.6; color: #c3ccdb; }
+.tk-btn {
+  margin-top: 10px; height: 30px; padding: 0 12px;
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  background: transparent; color: var(--text); font-size: 12px;
+}
+.tk-btn:hover { border-color: var(--primary); color: #9dbcff; }
+.tk-tip { margin: 0 0 10px; font-size: 13px; line-height: 1.6; color: #6f7f99; }
+.tk-input {
+  width: 100%; padding: 9px 11px; resize: vertical;
+  border: 1px solid #d8e0ec; border-radius: 9px;
+  font: inherit; font-size: 13px; color: #16233b;
+}
+.tk-input:focus { outline: none; border-color: #4f7cff; }
+.tk-actions { display: flex; gap: 10px; }
+.tk-actions .conf-confirm:disabled { opacity: .6; cursor: not-allowed; }
+
+/* 会议中查看简历弹窗 */
+.rs-tip { margin: 0; font-size: 13px; color: #6f7f99; }
+.rs-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rs-head strong { font-size: 18px; color: #16233b; }
+.rs-tag { padding: 2px 8px; border-radius: 6px; background: #eef3ff; color: #2563eb; font-size: 12px; }
+.rs-integrity { margin-left: auto; font-size: 12px; color: #6f7f99; }
+.rs-meta { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: #46536b; }
+.rs-sec { margin-top: 18px; }
+.rs-sec h4 { margin: 0 0 8px; font-size: 13px; color: #16233b; }
+.rs-item { padding: 10px 12px; border: 1px solid #e7ebf3; border-radius: 9px; }
+.rs-item + .rs-item { margin-top: 8px; }
+.rs-item b { display: block; font-size: 13px; color: #16233b; }
+.rs-item small { display: block; margin-top: 3px; font-size: 12px; color: #808da4; }
+.rs-item p { margin: 6px 0 0; font-size: 12px; line-height: 1.7; color: #46536b; white-space: pre-wrap; }
+.rs-skills { display: flex; flex-wrap: wrap; gap: 8px; }
+.rs-skills span { padding: 4px 10px; border-radius: 7px; background: #eef3ff; color: #2563eb; font-size: 12px; }
+.rs-skills i { font-style: normal; color: #6f7f99; }
+.rs-missing { margin: 16px 0 0; font-size: 12px; color: #b26a00; }
 .captions { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .caption-list { margin-top: 9px; overflow: auto; display: grid; gap: 8px; }
 .caption { display: grid; grid-template-columns: 44px 1fr; gap: 7px; font-size: 12px; }

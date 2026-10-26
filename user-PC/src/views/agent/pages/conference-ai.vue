@@ -18,8 +18,20 @@
       面试全程录音录像，仅用于招聘评估与合规存档，请确保环境安静并独立作答
     </div>
 
+    <!-- 面试官打断接管：AI 暂停出题，由面试官主导提问 -->
+    <div v-if="takeover" class="ca-takeover">
+      <Icon name="mic" :size="14" />
+      <span>面试官已接管提问，AI 暂停出题<span v-if="takeoverReason">（{{ takeoverReason }}）</span></span>
+    </div>
+
     <section class="ca-stage">
       <div ref="stageRef" class="ca-video">
+        <!-- 屏幕共享画面：覆盖主视频区，由 LiveKit 原生 ScreenShare 轨驱动 -->
+        <div v-if="activeScreenStream" class="ca-screen">
+          <video ref="screenEl" autoplay playsinline muted />
+          <span class="ca-screen-tag"><Icon name="share" :size="14" />{{ screenLabel }}</span>
+        </div>
+
         <!-- 面试官宫格：多位面试官画面并排占据主区，本人画面仍以小窗独立呈现；纯 AI 面试没有人工面试官，不渲染宫格 -->
         <div v-if="interviewMode !== 1" class="ca-grid" :class="`g${Math.min(interviewers.length || 1, 6)}`">
           <div v-for="p in interviewers" :key="p.userId" class="ca-tile">
@@ -196,12 +208,23 @@ const interviewers = ref([])
 const interviewMode = ref(2)
 // 企业端是否正在录制（由面试官通过信令同步，未收到即为未录制）
 const recording = ref(false)
+// 面试官是否已打断接管：接管期间 AI 暂停出题，由面试官主导提问
+const takeover = ref(false)
+const takeoverReason = ref('')
 
 const micOn = ref(true)
 const camOn = ref(true)
 const captionOn = ref(true)
 // 是否正在向面试官共享屏幕
 const sharing = ref(false)
+// 屏幕共享：仅展示面试官共享的屏幕；本人共享时仍看正常宫格（自己的屏幕在本机可见，无需覆盖主画面）
+const remoteScreen = ref(null)
+const screenEl = ref(null)
+const activeScreenStream = computed(() => (remoteScreen.value && remoteScreen.value.stream) || null)
+const screenLabel = computed(() => (remoteScreen.value ? `${remoteScreen.value.name} 正在共享屏幕` : ''))
+watch(activeScreenStream, (stream) => {
+  if (screenEl.value && screenEl.value.srcObject !== stream) screenEl.value.srcObject = stream || null
+}, { flush: 'post' })
 const netLevel = ref('ok')
 const showConfirm = ref(false)
 const toast = ref('')
@@ -279,10 +302,10 @@ let room = null
 const lkConnected = ref(false)
 // 远端轨道缓存：userId -> { video?: MediaStreamTrack, audio?: MediaStreamTrack }
 const remoteTracks = {}
-let screenTrack = null
 let timerId = null
 let heartbeatId = null
 let toastTimer = null
+let progressId = null
 
 function notify(message) {
   toast.value = message
@@ -353,7 +376,16 @@ async function connectLiveKit() {
   room.on(RoomEvent.TrackSubscribed, onRemoteTrack)
   room.on(RoomEvent.TrackUnsubscribed, offRemoteTrack)
   room.on(RoomEvent.ParticipantDisconnected, onPeerLeft)
-  room.on(RoomEvent.Disconnected, () => { lkConnected.value = false })
+  room.on(RoomEvent.LocalTrackUnpublished, (publication) => {
+    if (publication.source === Track.Source.ScreenShare) {
+      sharing.value = false
+    }
+  })
+  room.on(RoomEvent.Disconnected, () => {
+    lkConnected.value = false
+    sharing.value = false
+    remoteScreen.value = null
+  })
   try {
     await room.connect(info.url, info.token)
     lkConnected.value = true
@@ -371,6 +403,11 @@ function userIdFromIdentity(identity) {
 }
 
 function onRemoteTrack(track, publication, participant) {
+  // 屏幕共享轨单独接管，不混入面试官宫格画面
+  if (publication && publication.source === Track.Source.ScreenShare) {
+    remoteScreen.value = { name: participant.name || '面试官', identity: participant.identity, stream: new MediaStream([track.mediaStreamTrack]) }
+    return
+  }
   const uid = userIdFromIdentity(participant.identity)
   if (!uid) return
   const kind = track.kind === Track.Kind.Video ? 'video' : track.kind === Track.Kind.Audio ? 'audio' : null
@@ -381,6 +418,10 @@ function onRemoteTrack(track, publication, participant) {
 }
 
 function offRemoteTrack(track, publication, participant) {
+  if (publication && publication.source === Track.Source.ScreenShare) {
+    remoteScreen.value = null
+    return
+  }
   const uid = userIdFromIdentity(participant.identity)
   if (!uid || !remoteTracks[uid]) return
   const kind = track.kind === Track.Kind.Video ? 'video' : track.kind === Track.Kind.Audio ? 'audio' : null
@@ -389,6 +430,7 @@ function offRemoteTrack(track, publication, participant) {
 }
 
 function onPeerLeft(participant) {
+  if (remoteScreen.value && remoteScreen.value.identity === participant.identity) remoteScreen.value = null
   const uid = userIdFromIdentity(participant.identity)
   if (!uid) return
   delete remoteTracks[uid]
@@ -521,42 +563,25 @@ async function toggleCam() {
   }
 }
 
-// 屏幕共享：把发往面试官的视频轨临时替换为屏幕轨（音频轨保持不变），
-// 停止共享或用户在系统弹窗点「停止共享」时再换回摄像头画面
+// 屏幕共享：走 LiveKit 原生 ScreenShare 轨发布，停止共享或浏览器自带「停止共享」均以服务端事件为准
 async function toggleShare() {
-  if (sharing.value) {
-    stopShare()
+  if (!room || !lkConnected.value) {
+    notify('会议未连接，暂不能共享屏幕')
     return
   }
-  if (!navigator.mediaDevices?.getDisplayMedia) {
-    notify('当前浏览器不支持屏幕共享')
-    return
-  }
-  let result = null
+  // 以 LiveKit 实际发布状态为准：停止共享会触发 LocalTrackUnpublished，不能再手动取反
+  const next = !sharing.value
   try {
-    result = await navigator.mediaDevices.getDisplayMedia({ video: true })
+    await room.localParticipant.setScreenShareEnabled(next)
+    const pub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare)
+    sharing.value = !!(pub && pub.track)
+    notify(next ? '已开始共享屏幕' : '已停止共享屏幕')
   } catch (error) {
+    const pub = room && room.localParticipant.getTrackPublication(Track.Source.ScreenShare)
+    sharing.value = !!(pub && pub.track)
     // 用户取消选择共享内容不算错误，不弹提示
-    if (error && error.name !== 'NotAllowedError') notify('屏幕共享未开启')
-    return
+    if (!error || error.name !== 'NotAllowedError') notify(next ? '屏幕共享未开启' : '停止共享失败，请重试')
   }
-  screenTrack = result.getVideoTracks()[0] || null
-  if (!screenTrack) return
-  sharing.value = true
-  // 用户通过浏览器自带的「停止共享」按钮结束时要同步收尾
-  screenTrack.onended = stopShare
-  notify('已开始共享屏幕')
-}
-
-function stopShare() {
-  if (!sharing.value && !screenTrack) return
-  sharing.value = false
-  if (screenTrack) {
-    screenTrack.onended = null
-    screenTrack.stop()
-    screenTrack = null
-  }
-  notify('已停止共享屏幕')
 }
 
 // 断开 LiveKit 房间并清空画面引用
@@ -570,11 +595,12 @@ function disconnectRoom() {
   Object.keys(remoteTracks).forEach((k) => delete remoteTracks[k])
   peerStreams.value = {}
   if (selfVideo.value) selfVideo.value.srcObject = null
+  sharing.value = false
+  remoteScreen.value = null
 }
 
 async function endMeeting() {
   showConfirm.value = false
-  stopShare()
   disconnectRoom()
   if (sessionId.value) {
     try {
@@ -722,16 +748,9 @@ async function initSession() {
   if (!sessionId.value) return
   // 拉取场次上下文：顶部信息 / 面试官列表 / 面试模式
   await refreshContext()
-  try {
-    const p = await getProgress(sessionId.value)
-    if (p.data) {
-      if (p.data.currentQuestionNo) progress.value.current = p.data.currentQuestionNo
-      if (p.data.totalQuestionNo) progress.value.total = p.data.totalQuestionNo
-      if (p.data.question && p.data.question.topic) questionText.value = p.data.question.topic
-    }
-  } catch (error) {
-    // 后端未就绪时保持空态
-  }
+  await refreshProgress()
+  // 接管状态与进度随面试官操作变化，定时刷新同步
+  if (!progressId) progressId = setInterval(refreshProgress, 5000)
   try {
     const c = await listCaptions(sessionId.value, { afterSequence: 0, limit: 50 })
     appendCaptions(c.data)
@@ -745,17 +764,29 @@ async function initSession() {
   await asr.refresh()
 }
 
+// 拉取进度与接管状态：接管期间 AI 暂停出题，由面试官主导提问
+async function refreshProgress() {
+  if (!sessionId.value) return
+  try {
+    const p = await getProgress(sessionId.value)
+    if (!p.data) return
+    if (p.data.currentQuestionNo) progress.value.current = p.data.currentQuestionNo
+    if (p.data.totalQuestionNo) progress.value.total = p.data.totalQuestionNo
+    if (p.data.question && p.data.question.topic) questionText.value = p.data.question.topic
+    takeover.value = Number(p.data.takeover) === 1
+    takeoverReason.value = p.data.takeoverReason || ''
+  } catch (error) {
+    // 接口异常时保留上一次数据
+  }
+}
+
 onBeforeUnmount(() => {
   clearInterval(timerId)
   clearInterval(heartbeatId)
   clearInterval(captionPollId)
+  clearInterval(progressId)
   clearTimeout(toastTimer)
   asr.stop()
-  if (screenTrack) {
-    screenTrack.onended = null
-    screenTrack.stop()
-    screenTrack = null
-  }
   disconnectRoom()
 })
 </script>
@@ -796,9 +827,15 @@ onBeforeUnmount(() => {
 
 .ca-banner { flex: none; height: 34px; display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(250, 173, 20, .14); border-bottom: 1px solid rgba(250, 173, 20, .28); color: #FFD591; font-size: 12px; }
 .ca-banner-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rec); }
+.ca-takeover { flex: none; height: 36px; display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(43, 127, 255, .16); border-bottom: 1px solid rgba(43, 127, 255, .32); color: #9dc0ff; font-size: 12px; }
 
 .ca-stage { flex: 1; min-height: 0; padding: 12px; display: flex; }
 .ca-video { position: relative; flex: 1; min-width: 0; border-radius: 14px; overflow: hidden; background: radial-gradient(120% 90% at 50% 20%, #1E2A44 0%, #10141C 62%, #0A0D14 100%); box-shadow: 0 24px 60px rgba(0, 0, 0, .5); }
+
+/* 屏幕共享画面：覆盖整个主视频区，含黑边完整显示 */
+.ca-screen { position: absolute; inset: 0; z-index: 5; background: #05070c; }
+.ca-screen video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ca-screen-tag { position: absolute; left: 12px; top: 12px; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(9, 14, 24, .72); border: 1px solid var(--line); color: #cfe0ff; font-size: 12px; }
 
 /* 面试官宫格：多位面试官画面并排占据主区；格子保持 16:9 并整体垂直居中，避免出现大面积黑边 */
 .ca-grid { position: absolute; inset: 0; padding: 8px; display: grid; gap: 8px; align-content: center; }

@@ -149,6 +149,16 @@ public interface IConferenceService
     public List<Map<String, Object>> getCopilot(Long userId, Long sessionId, Integer afterSequence, Integer limit);
 
     /**
+     * 面试问题参考提示：优先返回本场次面试提纲，无提纲时按岗位技能生成提示
+     */
+    public List<Map<String, Object>> getQuestionHints(Long userId, Long sessionId);
+
+    /**
+     * 面试问题参考提示偏好反馈：记录面试官对某条提示的采纳 / 忽略
+     */
+    public Map<String, Object> handleHintFeedback(Long userId, Long sessionId, Map<String, Object> body);
+
+    /**
      * 处理提词器建议
      *
      * @param action adopt-采纳，edit-编辑后采纳，ignore-忽略

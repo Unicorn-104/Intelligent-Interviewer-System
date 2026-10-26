@@ -20,6 +20,7 @@ import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.enterprise.service.ITalentPoolService;
 import com.ruoyi.system.config.AsrProperties;
 import com.ruoyi.system.mapper.ConferenceMapper;
 import com.ruoyi.system.service.IConferenceService;
@@ -59,6 +60,8 @@ public class ConferenceServiceImpl implements IConferenceService
     private static final String DOWNLOAD_CODE_KEY = "conference:download:code:";
     /** 下载验证码有效期（秒） */
     private static final int DOWNLOAD_CODE_TTL = 300;
+    /** 面试问题参考提示：无提纲时按岗位技能生成的提示条数上限 */
+    private static final int MAX_QUESTION_HINTS = 6;
     /** 非主面试官允许兜底开启面试的宽限期（毫秒）：预约开始时间后 5 分钟 */
     private static final long START_GRACE_MS = 5 * 60 * 1000L;
 
@@ -73,6 +76,10 @@ public class ConferenceServiceImpl implements IConferenceService
 
     @Autowired
     private ConferenceMapper conferenceMapper;
+
+    /** 查看候选人简历/生成面试参考提示时复用人才库既有简历查询能力 */
+    @Autowired
+    private ITalentPoolService talentPoolService;
 
     @Autowired
     private RedisCache redisCache;
@@ -608,6 +615,7 @@ public class ConferenceServiceImpl implements IConferenceService
         result.put("elapsedSeconds", state.get("elapsedSeconds"));
         result.put("remainingSeconds", state.get("remainingSeconds"));
         result.put("takeover", state.get("takeover"));
+        result.put("takeoverReason", state.get("takeoverReason"));
         if (total > 0 && answered < total)
         {
             Map<String, Object> params = new HashMap<>();
@@ -793,6 +801,77 @@ public class ConferenceServiceImpl implements IConferenceService
         params.put("afterSequence", afterSequence == null ? 0 : afterSequence);
         params.put("limit", normalizeLimit(limit, 20));
         return conferenceMapper.selectCopilot(params);
+    }
+
+    @Override
+    public List<Map<String, Object>> getQuestionHints(Long userId, Long sessionId)
+    {
+        Map<String, Object> ctx = requireAccess(userId, sessionId);
+        List<Map<String, Object>> hints = new ArrayList<>();
+        List<Map<String, Object>> outline = conferenceMapper.selectOutlineQuestions(sessionId);
+        if (outline != null && !outline.isEmpty())
+        {
+            outline.forEach(item -> item.put("source", "outline"));
+            hints.addAll(outline);
+        }
+        else
+        {
+            // 本场次暂无面试提纲时，优先按候选人简历生成个性化提问，其次按岗位技能生成
+            Long candidateId = toLong(ctx.get("candidateId"));
+            if (candidateId != null)
+            {
+                Map<String, Object> resume = talentPoolService.getTalentResume(userId, candidateId);
+                appendProjectHints(hints, resume == null ? null : resume.get("projectList"));
+                appendSkillHints(hints, resume == null ? null : resume.get("skills"), "简历技能考察");
+            }
+            if (hints.isEmpty())
+            {
+                appendSkillHints(hints, ctx.get("positionSkills"), "岗位技能考察");
+            }
+        }
+        return applyHintPreference(hints, userId, toLong(ctx.get("companyId")));
+    }
+
+    /** 面试官采纳 / 忽略某条参考提示，用于偏好学习 */
+    @Override
+    public Map<String, Object> handleHintFeedback(Long userId, Long sessionId, Map<String, Object> body)
+    {
+        Map<String, Object> ctx = requireAccess(userId, sessionId);
+        if (!"HR".equals(ctx.get("role")))
+        {
+            throw new ServiceException("仅面试官可反馈问题提示");
+        }
+        String hintKey = str(body.get("hintKey"));
+        String action = str(body.get("action"));
+        if (StringUtils.isEmpty(hintKey))
+        {
+            throw new ServiceException("提示标识不能为空");
+        }
+        if (!"adopt".equals(action) && !"ignore".equals(action))
+        {
+            throw new ServiceException("反馈动作仅支持 adopt / ignore");
+        }
+        Long companyId = toLong(ctx.get("companyId"));
+        if (companyId == null)
+        {
+            companyId = resolveCompanyId(userId);
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("userId", userId);
+        params.put("companyId", companyId);
+        params.put("hintKey", hintKey);
+        if ("adopt".equals(action))
+        {
+            conferenceMapper.upsertHintUsed(params);
+        }
+        else
+        {
+            conferenceMapper.upsertHintIgnored(params);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("hintKey", hintKey);
+        result.put("action", action);
+        return result;
     }
 
     @Override
@@ -1591,6 +1670,111 @@ public class ConferenceServiceImpl implements IConferenceService
             return defaultValue;
         }
         return Math.min(limit, 200);
+    }
+
+    /**
+     * 按面试官历史采纳 / 忽略记录排序参考提示：常采纳的前置，常忽略的后置，最多返回 6 条。
+     * 无历史记录时保持原有顺序。
+     */
+    private List<Map<String, Object>> applyHintPreference(List<Map<String, Object>> hints, Long userId, Long companyId)
+    {
+        if (hints == null || hints.isEmpty())
+        {
+            return hints;
+        }
+        Map<String, int[]> prefs = new HashMap<>();
+        if (userId != null && companyId != null)
+        {
+            List<Map<String, Object>> rows = conferenceMapper.selectHintPreferences(userId, companyId);
+            if (rows != null)
+            {
+                for (Map<String, Object> row : rows)
+                {
+                    String key = str(row.get("hintKey"));
+                    if (StringUtils.isEmpty(key))
+                    {
+                        continue;
+                    }
+                    prefs.put(key, new int[] { toInt(row.get("usedCount")), toInt(row.get("ignoredCount")) });
+                }
+            }
+        }
+        for (Map<String, Object> hint : hints)
+        {
+            int[] counts = prefs.get(str(hint.get("topic")));
+            hint.put("usedCount", counts == null ? 0 : counts[0]);
+            hint.put("ignoredCount", counts == null ? 0 : counts[1]);
+        }
+        hints.sort((a, b) -> hintScore(b) - hintScore(a));
+        return hints.size() > MAX_QUESTION_HINTS ? new ArrayList<>(hints.subList(0, MAX_QUESTION_HINTS)) : hints;
+    }
+
+    private static int hintScore(Map<String, Object> hint)
+    {
+        return toIntStatic(hint.get("usedCount")) - toIntStatic(hint.get("ignoredCount")) * 2;
+    }
+
+    private static int toIntStatic(Object value)
+    {
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
+    /** 面试参考提示：由候选人项目经历生成（最多 2 条，避免挤占技能提示） */
+    private void appendProjectHints(List<Map<String, Object>> hints, Object projects)
+    {
+        if (!(projects instanceof List<?>))
+        {
+            return;
+        }
+        int count = 0;
+        for (Object item : (List<?>) projects)
+        {
+            if (count >= 2 || hints.size() >= MAX_QUESTION_HINTS)
+            {
+                break;
+            }
+            if (!(item instanceof Map<?, ?>))
+            {
+                continue;
+            }
+            String name = str(((Map<?, ?>) item).get("name"));
+            if (StringUtils.isEmpty(name))
+            {
+                continue;
+            }
+            Map<String, Object> hint = new LinkedHashMap<>();
+            hint.put("topic", "项目经历 · " + name);
+            hint.put("hint", "请候选人介绍该项目的业务背景、本人承担的具体工作，以及可量化的最终结果。");
+            hint.put("source", "resume");
+            hints.add(hint);
+            count++;
+        }
+    }
+
+    /** 面试参考提示：由技能列表生成 */
+    private void appendSkillHints(List<Map<String, Object>> hints, Object skills, String topicPrefix)
+    {
+        if (!(skills instanceof List<?>))
+        {
+            return;
+        }
+        for (Object item : (List<?>) skills)
+        {
+            if (hints.size() >= MAX_QUESTION_HINTS)
+            {
+                break;
+            }
+            String name = item instanceof Map<?, ?> ? str(((Map<?, ?>) item).get("name")) : str(item);
+            if (StringUtils.isEmpty(name))
+            {
+                continue;
+            }
+            Map<String, Object> hint = new LinkedHashMap<>();
+            hint.put("topic", topicPrefix + " · " + name);
+            hint.put("hint", "请候选人说明在 " + name + " 上的实际使用场景、掌握程度与遇到的问题。");
+            hint.put("source", "skill");
+            hints.add(hint);
+        }
     }
 
     private static String str(Object value)
