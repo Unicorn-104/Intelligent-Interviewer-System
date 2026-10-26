@@ -21,6 +21,7 @@ import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
+import com.ruoyi.enterprise.service.RescheduleMessageService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 
@@ -32,6 +33,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     @Autowired private InterviewScheduleMapper scheduleMapper;
     @Autowired private DashboardMapper dashboardMapper;
     @Autowired private EnterpriseJobMapper jobMapper;
+    @Autowired private RescheduleMessageService rescheduleMessages;
 
     private Long company(Long userId)
     {
@@ -198,11 +200,33 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     public Map<String, Object> reschedule(Long userId, Long appointmentId, String newStartTime,
             Integer durationMin, Long interviewerId)
     {
+        Map<String, Object> result = moveAppointment(userId, appointmentId, newStartTime, durationMin, interviewerId);
+        if (rescheduleMessages != null && (!parseTime(result.get("originalStartTime")).equals(parseTime(result.get("startTime")))
+                || !parseTime(result.get("originalEndTime")).equals(parseTime(result.get("endTime")))
+                || !java.util.Objects.equals(result.get("originalInterviewerId"), result.get("interviewerId"))))
+            rescheduleMessages.changed(userId, result);
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
+    public Map<String, Object> rescheduleSilently(Long userId, Long appointmentId, String newStartTime,
+            Integer durationMin, Long interviewerId)
+    {
+        return moveAppointment(userId, appointmentId, newStartTime, durationMin, interviewerId);
+    }
+
+    private Map<String, Object> moveAppointment(Long userId, Long appointmentId, String newStartTime,
+            Integer durationMin, Long interviewerId)
+    {
         Map<String, Object> row = scheduleMapper.selectAppointmentById(appointmentId);
         if (row == null) throw new ServiceException("预约记录不存在");
         Long companyId = requireJob(userId, requiredId(row.get("positionId")));
         scheduleMapper.lockCandidate(requiredId(row.get("candidateId")));
         row = scheduleMapper.selectAppointmentById(appointmentId);
+        row.put("originalStartTime", row.get("startTime"));
+        row.put("originalEndTime", row.get("endTime"));
+        row.put("originalInterviewerId", row.get("interviewerId"));
         int status = integer(row.get("status"), -1);
         LocalDateTime oldStart = parseTime(row.get("startTime"));
         if ((status != 0 && status != 1) || !oldStart.isAfter(LocalDateTime.now(ZoneOffset.ofHours(8))))

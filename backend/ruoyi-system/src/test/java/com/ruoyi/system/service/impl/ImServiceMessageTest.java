@@ -118,6 +118,17 @@ public class ImServiceMessageTest
         assertEquals(0,jdbc.queryForObject("select count(*) from t_im_message",Integer.class));
     }
     @Test
+    void clientsCannotForgeServerGeneratedRescheduleCards()
+    {
+        var message = new ImMessage();
+        message.setSessionId(8L);
+        message.setType(5);
+        message.setContent("{\"kind\":\"interview_reschedule\",\"status\":\"approved\"}");
+        assertThrows(ServiceException.class, () -> service.sendMessage(message,11L,null));
+        assertEquals(0,jdbc.queryForObject("select count(*) from t_im_message",Integer.class));
+        verifyNoInteractions(sessions);
+    }
+    @Test
     void messageHistoryFlagsMineFromLoginAndExcludesRecalledMessages()
     {
         when(sessions.selectSessionByIdAndUser(8L,11L)).thenReturn(session());

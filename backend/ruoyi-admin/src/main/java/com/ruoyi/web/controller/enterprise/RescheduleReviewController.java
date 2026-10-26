@@ -22,6 +22,12 @@ public class RescheduleReviewController extends BaseController
         return getDataTable(requestService.list(getUserId(), status, pageNum, pageSize));
     }
 
+    @GetMapping("/{requestId}")
+    public AjaxResult detail(@PathVariable Long requestId)
+    {
+        return success(requestService.detail(getUserId(), requestId));
+    }
+
     @PutMapping("/{requestId}/review")
     public AjaxResult review(@PathVariable Long requestId, @RequestBody Map<String, String> body)
     {

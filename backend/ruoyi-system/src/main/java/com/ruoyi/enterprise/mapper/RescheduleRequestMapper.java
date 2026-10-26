@@ -17,6 +17,10 @@ public interface RescheduleRequestMapper
     Long lockAppointment(@Param("appointmentId") Long appointmentId);
     int countPending(@Param("appointmentId") Long appointmentId);
     int insertRequest(Map<String, Object> request);
+    List<Long> selectCompanyUserIds(@Param("companyId") Long companyId);
+    int insertNotification(@Param("receiverId") Long receiverId, @Param("title") String title,
+            @Param("content") String content, @Param("targetUrl") String targetUrl);
+
     int updateDecision(@Param("requestId") Long requestId, @Param("companyId") Long companyId,
             @Param("status") int status, @Param("reviewerId") Long reviewerId,
             @Param("reviewNote") String reviewNote);

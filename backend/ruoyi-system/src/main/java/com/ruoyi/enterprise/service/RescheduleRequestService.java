@@ -19,7 +19,7 @@ import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.mapper.RescheduleRequestMapper;
 import com.ruoyi.system.mapper.DashboardMapper;
 
-/** 改期申请只保存快照；审批通过与时段变更在同一事务提交，不发送通知。 */
+/** 申请、时段变更、审批结果与站内/聊天通知在同一事务提交。 */
 @Service
 public class RescheduleRequestService
 {
@@ -29,6 +29,7 @@ public class RescheduleRequestService
     @Autowired private InterviewScheduleMapper scheduleMapper;
     @Autowired private DashboardMapper dashboardMapper;
     @Autowired private IInterviewScheduleService scheduleService;
+    @Autowired private RescheduleMessageService rescheduleMessages;
 
     public List<Map<String, Object>> list(Long userId, String status, Integer pageNum, Integer pageSize)
     {
@@ -87,7 +88,9 @@ public class RescheduleRequestService
         row.put("newEndTime", start.plusSeconds(seconds).format(TIME));
         row.put("reason", explanation);
         requestMapper.insertRequest(row);
-        return requestMapper.selectRequest(number(row, "requestId"), number(row, "companyId"));
+        Map<String, Object> result = requestMapper.selectRequest(number(row, "requestId"), number(row, "companyId"));
+        if (rescheduleMessages != null) rescheduleMessages.submitted(result);
+        return result;
     }
 
     @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
@@ -126,13 +129,23 @@ public class RescheduleRequestService
                     || !number(appointment, "candidateId").equals(number(row, "candidateId")))
                 throw new ServiceException("面试归属已变化，无法审批");
             // 经 Spring 代理调用原调度事务，沿用冲突、阶段先后和面试官归属校验。
-            scheduleService.reschedule(userId, number(row, "appointmentId"),
+            scheduleService.rescheduleSilently(userId, number(row, "appointmentId"),
                     String.valueOf(row.get("newStartTime")), null, null);
         }
         int changed = requestMapper.updateDecision(requestId, companyId,
                 "approved".equals(decision) ? 1 : 2, userId, reviewNote);
         if (changed != 1) throw new ServiceException("申请状态已变化，请刷新核对");
-        return requestMapper.selectRequest(requestId, companyId);
+        Map<String, Object> result = requestMapper.selectRequest(requestId, companyId);
+        if (rescheduleMessages != null) rescheduleMessages.reviewed(userId, result);
+        return result;
+    }
+
+    public Map<String, Object> detail(Long userId, Long requestId)
+    {
+        id(requestId);
+        Map<String, Object> row = requestMapper.selectRequest(requestId, company(userId));
+        if (row == null) throw new ServiceException("申请不存在或无权访问");
+        return row;
     }
 
     private Long company(Long userId)

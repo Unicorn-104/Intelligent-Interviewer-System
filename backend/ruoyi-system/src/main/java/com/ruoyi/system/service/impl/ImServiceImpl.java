@@ -55,7 +55,7 @@ public class ImServiceImpl implements IImService
     {
         if (message == null) throw new ServiceException("消息不能为空");
         int type = message.getType() == null ? 1 : message.getType();
-        if (type < 1 || type > 5) throw new ServiceException("不支持的消息类型");
+        if (type < 1 || type > 4) throw new ServiceException("不支持的消息类型");
         String content = StringUtils.nvl(message.getContent(), "").trim();
         if ((type == 1 || type == 4) && content.isEmpty()) throw new ServiceException("消息内容不能为空");
         if ((type == 1 || type == 4) && content.length() > 1000) throw new ServiceException("消息内容不能超过1000个字符");
