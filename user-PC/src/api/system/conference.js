@@ -141,7 +141,9 @@ export function updateMedia(sessionId, data) {
 export function heartbeat(sessionId) {
   return call({
     url: '/system/conference/session/' + sessionId + '/heartbeat',
-    method: 'post'
+    method: 'post',
+    // 心跳为幂等上报，重复发送无副作用，跳过前端 1s 防重复提交拦截
+    headers: { repeatSubmit: false }
   })
 }
 
