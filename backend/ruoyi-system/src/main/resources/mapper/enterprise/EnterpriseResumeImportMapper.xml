@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.EnterpriseResumeImportMapper">
+
+    <select id="selectCompanyIdByUser" parameterType="Long" resultType="Long">
+        select bnd_company_id from t_cmp_binding
+        where bnd_user_id = #{userId} and bnd_status = 1
+        limit 1
+    </select>
+
+    <select id="selectUserIdByPhone" parameterType="String" resultType="Long">
+        select user_id from sys_user
+        where phonenumber = #{phone} and del_flag = '0'
+        limit 1
+    </select>
+
+    <select id="selectUserIdByEmail" parameterType="String" resultType="Long">
+        select user_id from sys_user
+        where email = #{email} and del_flag = '0'
+        limit 1
+    </select>
+
+    <select id="selectNickName" parameterType="Long" resultType="String">
+        select nick_name from sys_user where user_id = #{userId}
+    </select>
+
+    <select id="selectCandidate" resultType="java.util.LinkedHashMap">
+        select tal_id as talId, tal_resume_id as resumeId
+        from t_tal
+        where tal_user_id = #{userId} and tal_company_id = #{companyId}
+        limit 1
+    </select>
+
+    <insert id="insertCandidate">
+        insert into t_tal (tal_user_id, tal_company_id, tal_status)
+        values (#{userId}, #{companyId}, 0)
+    </insert>
+
+    <update id="updateCandidateResume">
+        update t_tal set tal_resume_id = #{resumeId} where tal_id = #{talId}
+    </update>
+
+    <select id="selectResumeIdByName" resultType="Long">
+        select rbs_id from t_res_base
+        where rbs_user_id = #{userId} and rbs_resume_name = #{resumeName}
+        limit 1
+    </select>
+
+</mapper>
