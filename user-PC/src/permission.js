@@ -46,7 +46,8 @@ async function denyNonCandidate() {
 
 router.beforeEach(async (to, from) => {
   NProgress.start()
-  if (to.path === '/conference-join' || to.path === '/exam-sub') {
+  // 面试邀请与问卷填写均为匿名链接入口，不要求登录
+  if (to.path === '/conference-join' || to.path === '/exam-sub' || to.path === '/survey-fill') {
     NProgress.done()
     return true
   }

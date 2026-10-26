@@ -37,4 +37,10 @@ public interface ISurveyService
 
     /** 向指定候选人发送调研问卷，生成匿名链接令牌并落发送记录 */
     public Map<String, Object> send(Long userId, Long candidateUserId, Long templateId);
+
+    /** 候选人按匿名令牌读取问卷填写内容（问卷名称、题目、企业与候选人信息、填写状态） */
+    public Map<String, Object> getFillForm(String token);
+
+    /** 候选人按匿名令牌提交问卷作答，写入回收记录并把发送记录标记为已填写 */
+    public Map<String, Object> submitFill(String token, Map<String, Object> body);
 }
