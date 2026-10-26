@@ -8,6 +8,7 @@ import '../../../widgets/async_state_card.dart';
 import '../../auth/domain/auth_session.dart';
 import '../data/interview_api.dart';
 import '../domain/interview_schedule.dart';
+import 'reschedule_request_action.dart';
 
 class InterviewDetailScreen extends StatefulWidget {
   const InterviewDetailScreen({
@@ -104,6 +105,15 @@ class _InterviewDetailScreenState extends State<InterviewDetailScreen> {
                   ),
                 ),
               ),
+              if (appointment.appointmentStatus == 0 ||
+                  appointment.appointmentStatus == 1) ...[
+                const SizedBox(height: AppSpacing.md),
+                RescheduleRequestAction(
+                  api: _api,
+                  token: widget.session.token,
+                  appointment: appointment,
+                ),
+              ],
               const SizedBox(height: AppSpacing.lg),
               if (snapshot.connectionState == ConnectionState.waiting)
                 const Center(child: CircularProgressIndicator())

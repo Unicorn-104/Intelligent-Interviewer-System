@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/network/api_client.dart';
@@ -5,6 +7,7 @@ import '../core/network/api_exception.dart';
 import '../features/auth/domain/auth_session.dart';
 import '../features/messages/data/message_api.dart';
 import '../features/messages/domain/app_message.dart';
+import '../features/messages/presentation/reschedule_message_card.dart';
 import '../theme/app_theme.dart';
 
 class HrChatScreen extends StatefulWidget {
@@ -21,40 +24,59 @@ class HrChatScreen extends StatefulWidget {
   State<HrChatScreen> createState() => _HrChatScreenState();
 }
 
-class _HrChatScreenState extends State<HrChatScreen> {
+class _HrChatScreenState extends State<HrChatScreen>
+    with WidgetsBindingObserver {
   late final ApiClient _client;
   late final MessageApi _api;
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   List<ChatMessage>? _messages;
   String? _error;
-  bool _sending = false;
+  bool _sending = false, _loadingMessages = false, _active = true;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _client = ApiClient();
     _api = MessageApi(_client);
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    _timer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (_active && !_sending) _load(silent: true);
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _active = state == AppLifecycleState.resumed;
+    if (_active && !_sending) _load(silent: true);
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _textController.dispose();
     _scrollController.dispose();
     _client.close();
     super.dispose();
   }
 
-  Future<void> _load({bool scrollToEnd = false}) async {
-    setState(() => _error = null);
+  Future<void> _load({bool scrollToEnd = false, bool silent = false}) async {
+    if (_loadingMessages) return;
+    _loadingMessages = true;
+    if (!silent) setState(() => _error = null);
     try {
       final messages = await _api.fetchHrChat(
         widget.session.token,
         widget.conversation.sourceId,
       );
       if (!mounted) return;
-      setState(() => _messages = messages.reversed.toList());
+      setState(() {
+        _messages = messages.reversed.toList();
+        _error = null;
+      });
       if (scrollToEnd) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollController.hasClients) {
@@ -67,7 +89,11 @@ class _HrChatScreenState extends State<HrChatScreen> {
         });
       }
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted && (!silent || _messages == null)) {
+        setState(() => _error = error.message);
+      }
+    } finally {
+      _loadingMessages = false;
     }
   }
 
@@ -85,9 +111,9 @@ class _HrChatScreenState extends State<HrChatScreen> {
       await _load(scrollToEnd: true);
     } on ApiException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -98,6 +124,13 @@ class _HrChatScreenState extends State<HrChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        actions: [
+          IconButton(
+            tooltip: '刷新聊天',
+            onPressed: () => _load(),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
         titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,7 +171,11 @@ class _HrChatScreenState extends State<HrChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.wifi_off_rounded, color: AppColors.muted, size: 42),
+            const Icon(
+              Icons.wifi_off_rounded,
+              color: AppColors.muted,
+              size: 42,
+            ),
             const SizedBox(height: 10),
             Text(_error!, style: Theme.of(context).textTheme.bodySmall),
             TextButton(onPressed: _load, child: const Text('重新加载')),
@@ -176,15 +213,20 @@ class _ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment:
-          message.mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+      mainAxisAlignment: message.mine
+          ? MainAxisAlignment.end
+          : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (!message.mine) ...[
           const CircleAvatar(
             radius: 18,
             backgroundColor: AppColors.primarySoft,
-            child: Icon(Icons.person_outline, color: AppColors.interactive, size: 20),
+            child: Icon(
+              Icons.person_outline,
+              color: AppColors.interactive,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 9),
         ],
@@ -196,9 +238,14 @@ class _ChatBubble extends StatelessWidget {
             children: [
               Container(
                 constraints: const BoxConstraints(maxWidth: 280),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-                  color: message.mine ? AppColors.interactive : AppColors.canvas,
+                  color: message.mine
+                      ? AppColors.interactive
+                      : AppColors.canvas,
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(12),
                     topRight: const Radius.circular(12),
@@ -209,19 +256,26 @@ class _ChatBubble extends StatelessWidget {
                       ? null
                       : Border.all(color: AppColors.hairline),
                 ),
-                child: Text(
-                  message.content,
-                  style: TextStyle(
-                    color: message.mine ? Colors.white : AppColors.body,
-                    fontSize: 14,
-                    height: 1.5,
-                  ),
-                ),
+                child: message.reschedule == null
+                    ? Text(
+                        message.content,
+                        style: TextStyle(
+                          color: message.mine ? Colors.white : AppColors.body,
+                          fontSize: 14,
+                          height: 1.5,
+                        ),
+                      )
+                    : RescheduleMessageCard(
+                        data: message.reschedule!,
+                        mine: message.mine,
+                      ),
               ),
               const SizedBox(height: 4),
               Text(
                 _formatChatTime(message.createdAt),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 10),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontSize: 10),
               ),
             ],
           ),
@@ -308,7 +362,9 @@ class _ChatComposer extends StatelessWidget {
 
 String _formatChatTime(DateTime date) {
   final now = DateTime.now();
-  final sameDay = now.year == date.year && now.month == date.month && now.day == date.day;
-  final time = '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  final sameDay =
+      now.year == date.year && now.month == date.month && now.day == date.day;
+  final time =
+      '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   return sameDay ? time : '${date.month}月${date.day}日 $time';
 }
