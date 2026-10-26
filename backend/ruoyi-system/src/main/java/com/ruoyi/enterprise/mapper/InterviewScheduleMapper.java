@@ -8,7 +8,8 @@ import org.apache.ibatis.annotations.Param;
 public interface InterviewScheduleMapper
 {
     List<Map<String, Object>> selectAppointments(@Param("companyId") Long companyId,
-            @Param("status") Integer status, @Param("from") String from, @Param("to") String to);
+            @Param("status") Integer status, @Param("from") String from, @Param("to") String to,
+            @Param("candidateId") Long candidateId);
     Map<String, Object> selectStageByIdForPosition(@Param("stageId") Long stageId,
             @Param("positionId") Long positionId);
     Map<String, Object> selectAppointmentById(@Param("appointmentId") Long appointmentId);
