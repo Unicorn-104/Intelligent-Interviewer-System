@@ -89,6 +89,15 @@ public class EnterpriseJobController extends BaseController
     }
 
     /**
+     * 复制岗位为草稿（主体与技能关联复制，不改动原岗位）
+     */
+    @PostMapping("/{posId}/duplicate")
+    public AjaxResult duplicate(@PathVariable("posId") Long posId)
+    {
+        return success(jobService.duplicateJob(getUserId(), posId));
+    }
+
+    /**
      * 删除草稿岗位（仅允许删除状态为草稿的岗位）
      */
     @DeleteMapping("/{posId}")
