@@ -84,7 +84,9 @@ export function updateMedia(sessionId, data) {
 export function heartbeat(sessionId) {
   return request({
     url: '/system/conference/session/' + sessionId + '/heartbeat',
-    method: 'post'
+    method: 'post',
+    // 心跳为幂等上报，重复发送无副作用，跳过前端 1s 防重复提交拦截
+    headers: { repeatSubmit: false }
   })
 }
 
@@ -110,6 +112,23 @@ export function issueAsrTicket(sessionId) {
   return request({
     url: '/system/conference/session/' + sessionId + '/asr/ticket',
     method: 'post'
+  })
+}
+
+// 面试问题参考提示（本场次面试提纲；无提纲时后端按岗位技能生成）
+export function getQuestionHints(sessionId) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/question-hints',
+    method: 'get'
+  })
+}
+
+// 面试问题参考提示偏好反馈（adopt-采纳，ignore-忽略）
+export function feedbackQuestionHint(sessionId, data) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/question-hints/feedback',
+    method: 'post',
+    data: data
   })
 }
 
