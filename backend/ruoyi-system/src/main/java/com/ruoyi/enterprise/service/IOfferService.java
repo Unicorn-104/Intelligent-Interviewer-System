@@ -54,4 +54,24 @@ public interface IOfferService
      * 保存个人 SMTP 发信配置（授权码 AES 加密存储；密码为空或为掩码时保留原值）
      */
     public Map<String, Object> saveMailProfile(Long userId, Map<String, Object> body);
+
+    /**
+     * 提交审批：草稿 Offer 生成待审批节点并置为审批中
+     */
+    public Map<String, Object> startApproval(Long userId, Long offerId);
+
+    /**
+     * 审批通过：节点通过后若全部节点完成则 Offer 回到可发送状态
+     */
+    public Map<String, Object> approveOffer(Long userId, Long offerId, String comment);
+
+    /**
+     * 审批拒绝：节点拒绝，Offer 退回草稿
+     */
+    public Map<String, Object> rejectApproval(Long userId, Long offerId, String comment);
+
+    /**
+     * 撤回 Offer：仅已发送状态可撤回，记录原因并通知候选人
+     */
+    public Map<String, Object> withdrawOffer(Long userId, Long offerId, String reason);
 }

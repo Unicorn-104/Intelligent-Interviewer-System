@@ -84,6 +84,48 @@ public class OfferController extends BaseController
     }
 
     /**
+     * Offer 管理页：提交审批（草稿 → 审批中）
+     */
+    @PostMapping("/{offerId}/approval/start")
+    public AjaxResult startApproval(@PathVariable("offerId") Long offerId)
+    {
+        return success(offerService.startApproval(getUserId(), offerId));
+    }
+
+    /**
+     * Offer 管理页：审批通过（节点通过，全部节点完成后可发送）
+     */
+    @PostMapping("/{offerId}/approval/approve")
+    public AjaxResult approve(@PathVariable("offerId") Long offerId,
+            @RequestBody(required = false) Map<String, Object> body)
+    {
+        String comment = body == null || body.get("comment") == null ? null : String.valueOf(body.get("comment"));
+        return success(offerService.approveOffer(getUserId(), offerId, comment));
+    }
+
+    /**
+     * Offer 管理页：审批拒绝（节点拒绝，Offer 退回草稿）
+     */
+    @PostMapping("/{offerId}/approval/reject")
+    public AjaxResult rejectApproval(@PathVariable("offerId") Long offerId,
+            @RequestBody(required = false) Map<String, Object> body)
+    {
+        String comment = body == null || body.get("comment") == null ? null : String.valueOf(body.get("comment"));
+        return success(offerService.rejectApproval(getUserId(), offerId, comment));
+    }
+
+    /**
+     * Offer 管理页：撤回已发送的录用意向书
+     */
+    @PostMapping("/{offerId}/withdraw")
+    public AjaxResult withdraw(@PathVariable("offerId") Long offerId,
+            @RequestBody Map<String, Object> body)
+    {
+        String reason = body == null || body.get("reason") == null ? null : String.valueOf(body.get("reason"));
+        return success(offerService.withdrawOffer(getUserId(), offerId, reason));
+    }
+
+    /**
      * Offer 管理页：企业候选人选项（创建表单下拉用，按投递记录关联企业）
      */
     @GetMapping("/candidate-options")

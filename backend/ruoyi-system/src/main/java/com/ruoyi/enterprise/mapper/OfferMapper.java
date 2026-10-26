@@ -84,4 +84,36 @@ public interface OfferMapper
     public int upsertMailConfig(@Param("userId") Long userId, @Param("smtpHost") String smtpHost,
             @Param("smtpPort") Integer smtpPort, @Param("ssl") Integer ssl, @Param("username") String username,
             @Param("passwordEnc") String passwordEnc);
+
+    /** 创建带审批人的审批节点 */
+    public int insertApprovalNodeWithApprover(@Param("offerId") Long offerId, @Param("nodeName") String nodeName,
+            @Param("nodeOrder") Integer nodeOrder, @Param("approverId") Long approverId,
+            @Param("status") Integer status);
+
+    /** 最早一条待审批节点 */
+    public Map<String, Object> selectPendingApproval(@Param("offerId") Long offerId);
+
+    /** 待审批节点数量 */
+    public int countPendingApprovals(@Param("offerId") Long offerId);
+
+    /** 审批节点结论落库（通过/拒绝） */
+    public int updateApprovalNode(@Param("approvalId") Long approvalId, @Param("status") Integer status,
+            @Param("comment") String comment);
+
+    /** 更新 Offer 状态 */
+    public int updateOfferStatus(@Param("offerId") Long offerId, @Param("status") Integer status);
+
+    /** 更新 Offer 审批状态 */
+    public int updateOfferApprovalStatus(@Param("offerId") Long offerId,
+            @Param("approvalStatus") Integer approvalStatus);
+
+    /** 撤回 Offer（记录原因与时间） */
+    public int updateOfferWithdraw(@Param("offerId") Long offerId, @Param("reason") String reason);
+
+    /** 候选人关联用户ID（站内消息接收人） */
+    public Long selectCandidateUserId(@Param("candidateId") Long candidateId);
+
+    /** 写入候选人站内消息 */
+    public int insertMessage(@Param("receiverId") Long receiverId, @Param("title") String title,
+            @Param("content") String content);
 }
