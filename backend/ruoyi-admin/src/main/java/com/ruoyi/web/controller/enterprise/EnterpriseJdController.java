@@ -40,6 +40,16 @@ public class EnterpriseJdController extends BaseController
     }
 
     /**
+     * 仅解析 JD 文本（不写库，供发布/编辑岗位表单回填）
+     */
+    @PostMapping("/analyze")
+    public AjaxResult analyze(@RequestBody Map<String, Object> body)
+    {
+        String jdText = body.get("jdText") == null ? null : String.valueOf(body.get("jdText"));
+        return success(jdService.analyzeJd(jdText));
+    }
+
+    /**
      * UC-01：查看岗位画像（硬性指标/软性要求/技能标签）
      */
     @GetMapping("/{posId}")

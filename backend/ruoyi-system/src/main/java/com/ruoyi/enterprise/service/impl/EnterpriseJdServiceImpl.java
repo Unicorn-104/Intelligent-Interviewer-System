@@ -45,6 +45,37 @@ public class EnterpriseJdServiceImpl implements IEnterpriseJdService
     private EnterpriseJdMapper jdMapper;
 
     @Override
+    public Map<String, Object> analyzeJd(String jdText)
+    {
+        if (jdText == null || jdText.trim().isEmpty())
+        {
+            throw new ServiceException("JD 文本不能为空");
+        }
+        return buildProfile(jdText.trim());
+    }
+
+    private Map<String, Object> buildProfile(String text)
+    {
+        // 硬性指标：学历提取（按优先级匹配首个出现的学历关键词）
+        String education = matchEducation(text);
+        // 硬性指标：年限提取（如"5年以上"）
+        String years = matchYears(text);
+        // 硬性指标：技能标签（词典匹配）
+        List<String> skills = matchSkills(text);
+        // 软性要求：词典匹配
+        List<String> softRequirements = matchSoft(text);
+
+        Map<String, Object> profile = new LinkedHashMap<>();
+        profile.put("education", education);
+        profile.put("years", years);
+        profile.put("skills", skills);
+        profile.put("softRequirements", softRequirements);
+        profile.put("summary", text.length() > 200 ? text.substring(0, 200) + "…" : text);
+        profile.put("parsedAt", DateUtils.getTime());
+        return profile;
+    }
+
+    @Override
     public Map<String, Object> parseJd(Long positionId, String jdText)
     {
         if (positionId == null)
@@ -55,25 +86,8 @@ public class EnterpriseJdServiceImpl implements IEnterpriseJdService
         {
             throw new ServiceException("JD 文本不能为空");
         }
-        String text = jdText.trim();
-
-        // 硬性指标：学历提取（按优先级匹配首个出现的学历关键词）
-        String education = matchEducation(text);
-        // 硬性指标：年限提取（如"5年以上"）
-        String years = matchYears(text);
-        // 硬性指标：技能标签（词典匹配）
-        List<String> skills = matchSkills(text);
-        // 软性要求：词典匹配
-        List<String> softRequirements = matchSoft(text);
-
-        // 画像快照（写入 t_pos.pos_jd_json）
-        Map<String, Object> profile = new LinkedHashMap<>();
-        profile.put("education", education);
-        profile.put("years", years);
-        profile.put("skills", skills);
-        profile.put("softRequirements", softRequirements);
-        profile.put("summary", text.length() > 200 ? text.substring(0, 200) + "…" : text);
-        profile.put("parsedAt", DateUtils.getTime());
+        Map<String, Object> profile = buildProfile(jdText.trim());
+        List<String> skills = (List<String>) profile.get("skills");
         String jdJson = JSON.toJSONString(profile);
 
         // 落库：画像快照 + 技能标签（先删后插，保持幂等）

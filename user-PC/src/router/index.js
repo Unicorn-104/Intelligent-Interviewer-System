@@ -172,6 +172,12 @@ export const constantRoutes = [
     meta: { title: '面试邀请' }
   },
   {
+    path: '/survey-fill',
+    component: () => import('@/views/survey-fill.vue'),
+    hidden: true,
+    meta: { title: '满意度调研' }
+  },
+  {
     path: '/exam-sub',
     component: () => import('@/views/agent/pages/exam-sub.vue'),
     hidden: true,

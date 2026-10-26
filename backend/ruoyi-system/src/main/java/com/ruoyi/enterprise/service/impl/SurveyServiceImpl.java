@@ -11,7 +11,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.enterprise.mapper.SurveyMapper;
 import com.ruoyi.enterprise.service.ISurveyService;
 
@@ -216,6 +218,136 @@ public class SurveyServiceImpl implements ISurveyService
         sent.put("candidateId", candidateId);
         sent.put("candidateName", candidate.get("candidateName"));
         return sent;
+    }
+
+    @Override
+    public Map<String, Object> getFillForm(String token)
+    {
+        Map<String, Object> dispatch = loadDispatch(token);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("templateName", dispatch.get("templateName"));
+        result.put("companyName", dispatch.get("companyName"));
+        result.put("candidateName", dispatch.get("candidateName"));
+        result.put("questions", dispatch.get("questions"));
+        result.put("sentAt", dispatch.get("sentAt"));
+        result.put("submitted", toInt(dispatch.get("status")) == 1);
+        result.put("invalid", toInt(dispatch.get("status")) == 2);
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> submitFill(String token, Map<String, Object> body)
+    {
+        Map<String, Object> dispatch = loadDispatch(token);
+        int status = toInt(dispatch.get("status"));
+        if (status == 1)
+        {
+            throw new ServiceException("该问卷已提交，无需重复填写");
+        }
+        if (status == 2)
+        {
+            throw new ServiceException("问卷链接已失效");
+        }
+        JSONObject answers = parseAnswers(body.get("answers"));
+        if (answers.isEmpty())
+        {
+            throw new ServiceException("请至少填写一道题目");
+        }
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("templateId", toLong(dispatch.get("templateId")));
+        response.put("candidateId", toLong(dispatch.get("candidateId")));
+        response.put("answers", answers.toJSONString());
+        response.put("satisfactionScore", calcSatisfaction(dispatch.get("questions"), answers));
+        surveyMapper.insertResponse(response);
+        surveyMapper.markDispatchSubmitted(toLong(dispatch.get("dispatchId")));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("submitted", true);
+        result.put("satisfactionScore", response.get("satisfactionScore"));
+        return result;
+    }
+
+    /** 按匿名令牌加载发送记录，令牌无效直接拒绝 */
+    private Map<String, Object> loadDispatch(String token)
+    {
+        Map<String, Object> dispatch = StringUtils.isEmpty(token) ? null : surveyMapper.selectDispatchByToken(token);
+        if (dispatch == null || dispatch.isEmpty())
+        {
+            throw new ServiceException("问卷链接无效或已失效");
+        }
+        return dispatch;
+    }
+
+    /** 作答内容统一转成 JSON 对象（支持前端直接传对象或 JSON 字符串） */
+    private JSONObject parseAnswers(Object raw)
+    {
+        if (raw == null)
+        {
+            return new JSONObject();
+        }
+        if (raw instanceof JSONObject)
+        {
+            return (JSONObject) raw;
+        }
+        if (raw instanceof Map)
+        {
+            return new JSONObject((Map<String, Object>) raw);
+        }
+        try
+        {
+            JSONObject parsed = JSON.parseObject(String.valueOf(raw));
+            return parsed == null ? new JSONObject() : parsed;
+        }
+        catch (Exception e)
+        {
+            throw new ServiceException("作答内容格式不合法");
+        }
+    }
+
+    /** 满意度分 = 所有评分题作答的平均值，无评分题作答时留空 */
+    private BigDecimal calcSatisfaction(Object questionsJson, JSONObject answers)
+    {
+        if (questionsJson == null)
+        {
+            return null;
+        }
+        JSONArray questions;
+        try
+        {
+            questions = JSON.parseArray(String.valueOf(questionsJson));
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+        double sum = 0;
+        int count = 0;
+        for (int i = 0; i < questions.size(); i++)
+        {
+            JSONObject question = questions.getJSONObject(i);
+            if (question == null || !"rating".equals(question.getString("type")))
+            {
+                continue;
+            }
+            Object value = answers.get(String.valueOf(question.get("qid")));
+            if (value == null || String.valueOf(value).trim().isEmpty())
+            {
+                continue;
+            }
+            try
+            {
+                sum += Double.parseDouble(String.valueOf(value).trim());
+                count++;
+            }
+            catch (NumberFormatException ignored)
+            {
+                // 非数值作答不计入满意度分
+            }
+        }
+        if (count == 0)
+        {
+            return null;
+        }
+        return new BigDecimal(sum / count).setScale(2, RoundingMode.HALF_UP);
     }
 
     /** 解析当前登录用户所属企业ID */

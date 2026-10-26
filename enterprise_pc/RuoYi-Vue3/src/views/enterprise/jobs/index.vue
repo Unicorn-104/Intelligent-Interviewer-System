@@ -1,11 +1,11 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Plus, Sparkles, GraduationCap, CalendarClock, Users, WandSparkles, ChevronRight } from '@/views/enterprise/components/icons'
+import { Search, Plus, Sparkles, GraduationCap, CalendarClock, Users, WandSparkles, ChevronRight, Pencil, Copy } from '@/views/enterprise/components/icons'
 import JobCard from '@/views/enterprise/components/JobCard.vue'
 import PublishJobModal from '@/views/enterprise/components/PublishJobModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { listJobs, jobDepartments, changeJobStatus } from '@/api/system/job'
+import { listJobs, jobDepartments, changeJobStatus, jobDetail, duplicateJob } from '@/api/system/job'
 
 const router = useRouter()
 const jobs = ref([])
@@ -100,6 +100,54 @@ async function toggleJob(job) {
 
 function notify(msg) { toast.value = msg; setTimeout(() => toast.value = '', 2200) }
 
+// 编辑已发布岗位：加载详情后复用发布弹窗（不改变岗位状态与流程模板）
+const editOpen = ref(false)
+const editJob = ref(null)
+
+async function openEdit() {
+  if (!selected.value.id) return notify('请先选择需要编辑的岗位')
+  try {
+    const res = await jobDetail(selected.value.id)
+    const data = res.data || {}
+    const job = data.job || {}
+    let jd = {}
+    try { jd = JSON.parse(job.jdJson || '{}') } catch (e) { jd = {} }
+    editJob.value = {
+      posId: job.posId,
+      title: job.title,
+      dept: job.dept,
+      city: job.city,
+      salaryMin: job.salaryMin,
+      salaryMax: job.salaryMax,
+      jobType: job.jobType,
+      education: job.education,
+      experience: job.experience,
+      description: jd.description || '',
+      requirements: jd.requirements || [],
+      responsibilities: jd.responsibilities || [],
+      skills: (data.skills || []).map(s => s.name)
+    }
+    editOpen.value = true
+  } catch (e) { /* 拦截器已提示 */ }
+}
+
+async function onEdited() {
+  editOpen.value = false
+  await fetchJobs()
+  notify('岗位信息已保存')
+}
+
+async function copyJob() {
+  if (!selected.value.id) return notify('请先选择需要复制的岗位')
+  try {
+    const res = await duplicateJob(selected.value.id)
+    const newId = res.data?.posId
+    notify(res.data?.message || '已复制为草稿岗位')
+    await fetchJobs()
+    if (newId && jobs.value.some(j => j.id === newId)) selectedId.value = newId
+  } catch (e) { /* 拦截器已提示 */ }
+}
+
 onMounted(async () => {
   const res = await jobDepartments()
   departments.value = res.data || []
@@ -135,7 +183,7 @@ onUnmounted(() => resizeObserver?.disconnect())
         <div class="profile-section"><h3>职责关键词</h3><ul><li v-for="r in selected.responsibilities" :key="r">{{ r }}</li></ul></div>
         <div class="match-box"><div><span>胜任力模型匹配度</span><b>92%</b></div><div class="meter"><i /></div><p><span>专业技能 96%</span><span>项目交付 90%</span><span>沟通协作 88%</span></p></div>
         </div>
-        <div class="analysis-actions"><button class="btn ghost-primary" @click="router.push(`/enterprise/jobs/${selected.id}`)">查看完整岗位详情<ChevronRight :size="14"/></button><button class="process-btn" @click="router.push(`/enterprise/jobs/${selected.id}/workflow`)">招聘流程配置 <ChevronRight :size="14"/></button></div>
+        <div class="analysis-actions"><div class="row-actions"><button class="btn sm" @click="openEdit"><Pencil :size="13"/>编辑</button><button class="btn sm" @click="copyJob"><Copy :size="13"/>复制</button></div><button class="btn ghost-primary" @click="router.push(`/enterprise/jobs/${selected.id}`)">查看完整岗位详情<ChevronRight :size="14"/></button><button class="process-btn" @click="router.push(`/enterprise/jobs/${selected.id}/workflow`)">招聘流程配置 <ChevronRight :size="14"/></button></div>
       </aside>
 
       <section class="card list-card">
@@ -150,10 +198,11 @@ onUnmounted(() => resizeObserver?.disconnect())
       </section>
     </div>
     <PublishJobModal v-if="publishOpen" @close="publishOpen = false" @submitted="(s) => { publishOpen = false; fetchJobs(); notify(s === 0 ? '草稿已保存' : '岗位发布成功') }" />
+    <PublishJobModal v-if="editOpen" :edit="true" :job="editJob" @close="editOpen = false" @submitted="onEdited" />
     <ToastMessage :message="toast" />
   </div>
 </template>
 
 <style scoped>
-.heading-actions{display:flex;gap:10px}.jobs-layout{display:grid;grid-template-columns:minmax(340px,38%) minmax(600px,62%);gap:16px;align-items:stretch}.analysis-card,.list-card{height:calc(100vh - 182px);min-height:540px}.analysis-card{padding:18px;display:flex;flex-direction:column}.analysis-body{flex:1;min-height:0;overflow-y:auto;padding-right:4px;margin-right:-4px}.analysis-title{display:flex;align-items:center;gap:7px}.analysis-title h2{font-size:17px}.analysis-title small{margin-left:auto;color:#9aa8ba;font-size:10px}.ai-icon{width:31px;height:31px;border-radius:9px;display:grid;place-items:center;color:#2563eb;background:#e9f1ff}.current{background:linear-gradient(135deg,#edf4ff,#f8fbff);border:1px solid #dce8fc;border-radius:12px;padding:14px;margin:15px 0}.current label{display:block;color:#7d8da5;font-size:10px;margin-bottom:7px}.current b{font-size:17px;margin-right:7px}.current p{font-size:10px;color:#8090a8;margin-top:7px}.analysis-grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid #e5ebf3;border-radius:11px;overflow:hidden}.analysis-grid>div{padding:11px 12px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid #e8edf4}.analysis-grid>div:nth-child(odd){border-right:1px solid #e8edf4}.analysis-grid>div:nth-child(n+3){border-bottom:0}.cell-head{display:flex;align-items:center;gap:6px}.mini-icon{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#4b7ae3;background:#eef4ff;flex:none}.analysis-grid small{font-size:10px;color:#91a0b4;line-height:1}.analysis-grid b{font-size:13px}.primary-text{color:#2563eb}.profile-section{margin-top:15px}.profile-section h3{font-size:12px;margin-bottom:8px}.tag-cloud{display:flex;gap:6px;flex-wrap:wrap}.tag-cloud span{padding:5px 8px;background:#edf4ff;color:#2563eb;border-radius:6px;font-size:11px}.profile-section ul{list-style:none;margin:0;padding:0}.profile-section li{display:flex;align-items:center;gap:8px;font-size:11px;color:#5b6c85;margin:7px 0}.profile-section li:before{content:'';width:5px;height:5px;border-radius:50%;background:#3b82f6;flex:none}.match-box{margin-top:13px;padding:12px;background:#f7f9fc;border-radius:10px}.match-box>div:first-child{display:flex;justify-content:space-between;font-size:11px}.match-box>div b{color:#2563eb}.meter{height:7px;background:#dce5f0;border-radius:6px;margin:8px 0}.meter i{display:block;width:92%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#1d4ed8,#0ea5e9)}.match-box p{display:flex;justify-content:space-between;color:#77869c;font-size:9px}.analysis-actions{margin-top:auto;display:flex;flex-direction:column;gap:4px}.analysis-actions .btn{width:100%}.process-btn{border:0;background:transparent;color:#2563eb;height:35px;display:flex;gap:5px;align-items:center;justify-content:center;font-size:11px}.list-card{padding:18px;display:flex;flex-direction:column}.list-head h2{font-size:19px}.list-head h2 span{font-size:11px;color:#2563eb;background:#eaf1ff;border-radius:11px;padding:4px 8px;margin-left:4px}.list-head p{font-size:10px;color:#9aa8ba;margin-top:4px}.filters{display:grid;grid-template-columns:1.5fr .8fr .72fr;gap:9px;margin:15px 0 12px}.search-box{height:38px;border:1px solid #dce4ee;border-radius:9px;display:flex;align-items:center;gap:8px;padding:0 11px;color:#8da0ba}.search-box input{width:100%;border:0;outline:0;font-size:12px}.job-list{flex:1;min-height:0;display:flex;flex-direction:column;gap:9px;overflow:auto;padding:1px 3px 1px 1px}.pagination{margin-top:auto;padding-top:12px;display:flex;align-items:center;justify-content:flex-end;gap:5px;color:#8a99ad;font-size:11px}.pagination span{margin-right:auto}.pagination button{width:29px;height:29px;border:1px solid #dde5ef;background:white;border-radius:7px;color:#6b7b92}.pagination button.active{color:white;background:#2563eb;border-color:#2563eb}
+.heading-actions{display:flex;gap:10px}.jobs-layout{display:grid;grid-template-columns:minmax(340px,38%) minmax(600px,62%);gap:16px;align-items:stretch}.analysis-card,.list-card{height:calc(100vh - 182px);min-height:540px}.analysis-card{padding:18px;display:flex;flex-direction:column}.analysis-body{flex:1;min-height:0;overflow-y:auto;padding-right:4px;margin-right:-4px}.analysis-title{display:flex;align-items:center;gap:7px}.analysis-title h2{font-size:17px}.analysis-title small{margin-left:auto;color:#9aa8ba;font-size:10px}.ai-icon{width:31px;height:31px;border-radius:9px;display:grid;place-items:center;color:#2563eb;background:#e9f1ff}.current{background:linear-gradient(135deg,#edf4ff,#f8fbff);border:1px solid #dce8fc;border-radius:12px;padding:14px;margin:15px 0}.current label{display:block;color:#7d8da5;font-size:10px;margin-bottom:7px}.current b{font-size:17px;margin-right:7px}.current p{font-size:10px;color:#8090a8;margin-top:7px}.analysis-grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid #e5ebf3;border-radius:11px;overflow:hidden}.analysis-grid>div{padding:11px 12px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid #e8edf4}.analysis-grid>div:nth-child(odd){border-right:1px solid #e8edf4}.analysis-grid>div:nth-child(n+3){border-bottom:0}.cell-head{display:flex;align-items:center;gap:6px}.mini-icon{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#4b7ae3;background:#eef4ff;flex:none}.analysis-grid small{font-size:10px;color:#91a0b4;line-height:1}.analysis-grid b{font-size:13px}.primary-text{color:#2563eb}.profile-section{margin-top:15px}.profile-section h3{font-size:12px;margin-bottom:8px}.tag-cloud{display:flex;gap:6px;flex-wrap:wrap}.tag-cloud span{padding:5px 8px;background:#edf4ff;color:#2563eb;border-radius:6px;font-size:11px}.profile-section ul{list-style:none;margin:0;padding:0}.profile-section li{display:flex;align-items:center;gap:8px;font-size:11px;color:#5b6c85;margin:7px 0}.profile-section li:before{content:'';width:5px;height:5px;border-radius:50%;background:#3b82f6;flex:none}.match-box{margin-top:13px;padding:12px;background:#f7f9fc;border-radius:10px}.match-box>div:first-child{display:flex;justify-content:space-between;font-size:11px}.match-box>div b{color:#2563eb}.meter{height:7px;background:#dce5f0;border-radius:6px;margin:8px 0}.meter i{display:block;width:92%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#1d4ed8,#0ea5e9)}.match-box p{display:flex;justify-content:space-between;color:#77869c;font-size:9px}.analysis-actions{margin-top:auto;display:flex;flex-direction:column;gap:4px}.analysis-actions .row-actions{display:flex;gap:6px}.analysis-actions .row-actions .btn{flex:1}.analysis-actions .btn{width:100%}.process-btn{border:0;background:transparent;color:#2563eb;height:35px;display:flex;gap:5px;align-items:center;justify-content:center;font-size:11px}.list-card{padding:18px;display:flex;flex-direction:column}.list-head h2{font-size:19px}.list-head h2 span{font-size:11px;color:#2563eb;background:#eaf1ff;border-radius:11px;padding:4px 8px;margin-left:4px}.list-head p{font-size:10px;color:#9aa8ba;margin-top:4px}.filters{display:grid;grid-template-columns:1.5fr .8fr .72fr;gap:9px;margin:15px 0 12px}.search-box{height:38px;border:1px solid #dce4ee;border-radius:9px;display:flex;align-items:center;gap:8px;padding:0 11px;color:#8da0ba}.search-box input{width:100%;border:0;outline:0;font-size:12px}.job-list{flex:1;min-height:0;display:flex;flex-direction:column;gap:9px;overflow:auto;padding:1px 3px 1px 1px}.pagination{margin-top:auto;padding-top:12px;display:flex;align-items:center;justify-content:flex-end;gap:5px;color:#8a99ad;font-size:11px}.pagination span{margin-right:auto}.pagination button{width:29px;height:29px;border:1px solid #dde5ef;background:white;border-radius:7px;color:#6b7b92}.pagination button.active{color:white;background:#2563eb;border-color:#2563eb}
 </style>

@@ -23,7 +23,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         insert into t_off_offer
             (ofr_candidate_id, ofr_position_id, ofr_salary_offer, ofr_onboard_date, ofr_deadline, ofr_status)
         values
-            (#{candidateId}, #{positionId}, #{salaryOffer}, #{onboardDate}, #{deadline}, 0)
+            (#{candidateId}, #{positionId}, #{salaryOffer}, #{onboardDate}, #{deadline}, 4)
     </insert>
 
     <select id="selectLastOffer" resultType="long">
@@ -70,6 +70,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                o.ofr_job_grade as jobGrade, o.ofr_approval_status as approvalStatus,
                o.ofr_status as status, o.ofr_offer_url as offerUrl,
                o.ofr_withdraw_reason as withdrawReason,
+               date_format(o.ofr_withdraw_at, '%Y-%m-%d %H:%i') as withdrawAt,
                u.nick_name as candidateName, pos.pos_title as positionTitle
         from t_off_offer o
         left join t_tal t on t.tal_id = o.ofr_candidate_id
@@ -172,6 +173,58 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         on duplicate key update
             umc_smtp_host = #{smtpHost}, umc_smtp_port = #{smtpPort},
             umc_ssl = #{ssl}, umc_username = #{username}, umc_password_enc = #{passwordEnc}
+    </insert>
+
+    <!-- ============ Offer 审批与撤回 ============ -->
+
+    <insert id="insertApprovalNodeWithApprover">
+        insert into t_offer_approval
+            (oap_offer_id, oap_node_name, oap_node_order, oap_approver_id, oap_status)
+        values
+            (#{offerId}, #{nodeName}, #{nodeOrder}, #{approverId}, #{status})
+    </insert>
+
+    <select id="selectPendingApproval" resultType="java.util.LinkedHashMap">
+        select oap_id as approvalId, oap_node_name as nodeName, oap_node_order as nodeOrder,
+               oap_approver_id as approverId, oap_status as status
+        from t_offer_approval
+        where oap_offer_id = #{offerId} and oap_status = 0
+        order by oap_node_order, oap_id
+        limit 1
+    </select>
+
+    <select id="countPendingApprovals" resultType="int">
+        select count(*) from t_offer_approval
+        where oap_offer_id = #{offerId} and oap_status = 0
+    </select>
+
+    <update id="updateApprovalNode">
+        update t_offer_approval
+        set oap_status = #{status}, oap_comment = #{comment}, oap_approved_at = now()
+        where oap_id = #{approvalId} and oap_status = 0
+    </update>
+
+    <update id="updateOfferStatus">
+        update t_off_offer set ofr_status = #{status} where ofr_id = #{offerId}
+    </update>
+
+    <update id="updateOfferApprovalStatus">
+        update t_off_offer set ofr_approval_status = #{approvalStatus} where ofr_id = #{offerId}
+    </update>
+
+    <update id="updateOfferWithdraw">
+        update t_off_offer
+        set ofr_status = 6, ofr_withdraw_reason = #{reason}, ofr_withdraw_at = now()
+        where ofr_id = #{offerId}
+    </update>
+
+    <select id="selectCandidateUserId" parameterType="Long" resultType="Long">
+        select tal_user_id from t_tal where tal_id = #{candidateId}
+    </select>
+
+    <insert id="insertMessage">
+        insert into t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content, msg_is_read)
+        values (#{receiverId}, 0, 1, #{title}, #{content}, 0)
     </insert>
 
 </mapper>

@@ -1,12 +1,14 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { CalendarSync, Sparkles, Clock3, UserRound, ChevronLeft, ChevronRight, CalendarClock, X, Link2 } from '@/views/enterprise/components/icons'
+import { useRouter } from 'vue-router'
+import { CalendarSync, Sparkles, Clock3, UserRound, ChevronLeft, ChevronRight, CalendarClock, X, Link2, FileText } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import CalendarGrid from '@/views/enterprise/components/CalendarGrid.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { listInterviews, rescheduleInterview, remindInterview, updateInterviewStatus } from '@/api/interview'
+import { listInterviews, rescheduleInterview, remindInterview, updateInterviewStatus, listInterviewerSlots, saveInterviewerSlots } from '@/api/interview'
 
+const router = useRouter()
 const calendar = ref()
 const dayModal = ref(false)
 const freeModal = ref(false)
@@ -66,6 +68,8 @@ function rebuildBlocks(){
       interviewer: a.interviewerName || '待定',
       status: STATUS_MAP[a.status] || 'pending',
       meetingUrl: a.meetingUrl || '',
+      sessionId: a.sessionId || null,
+      hrStatus: a.hrStatus == null ? null : Number(a.hrStatus),
       time: fmtHM(start) + '-' + fmtHM(end || new Date(start.getTime() + durMin*60000))
     })
   }
@@ -135,6 +139,14 @@ async function load(){
 function shiftWeek(delta){ const d = new Date(weekStart.value); d.setDate(d.getDate() + delta*7); weekStart.value = d }
 function goToday(){ weekStart.value = mondayOf(new Date()) }
 function openDay(i){ dayIndex.value = i; dayModal.value = true }
+
+// 已结束场次进入 HR 终审评估页
+function openEvaluation(){
+  if(!drawer.value?.sessionId) return
+  const sessionId = drawer.value.sessionId
+  drawer.value = null
+  router.push(`/enterprise/interviews/${sessionId}/evaluation`)
+}
 
 // 确认/取消面试安排：真实落库（apt_status 1-已确认 / 2-已取消），刷新后仍保留
 async function confirmInterview(){
@@ -210,7 +222,56 @@ async function saveAdjust(){
   }catch(e){ /* 拦截器已提示 */ }
 }
 
-function saveFree(){ freeModal.value = false; calendar.value.toggleBlocked(); notify('已更新本地空闲标记') }
+// 空闲时间：读取/保存到 t_sch_slot（按当前展示周）
+const freeSlots = ref(dayNames.map(() => ({ enabled: false, start: '09:00', end: '18:00' })))
+const freeSaving = ref(false)
+
+function pad2(n) { return String(n).padStart(2, '0') }
+function dateStrOf(dayIdx) {
+  const d = new Date(weekStart.value)
+  d.setDate(d.getDate() + dayIdx)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+const weekDayLabels = computed(() => dayNames.map((label, i) => {
+  const d = new Date(weekStart.value); d.setDate(d.getDate() + i)
+  return `${label} ${d.getMonth() + 1}/${d.getDate()}`
+}))
+
+async function openFreeModal() {
+  freeSlots.value = dayNames.map(() => ({ enabled: false, start: '09:00', end: '18:00' }))
+  freeModal.value = true
+  try {
+    const res = await listInterviewerSlots(dateStrOf(0))
+    const rows = res.data || []
+    for (const row of rows) {
+      const start = String(row.startTime || '')
+      const end = String(row.endTime || '')
+      const dayIdx = dayNames.findIndex((_, i) => start.startsWith(dateStrOf(i)))
+      if (dayIdx < 0) continue
+      const item = freeSlots.value[dayIdx]
+      item.enabled = true
+      item.start = start.slice(11, 16) || item.start
+      item.end = end.slice(11, 16) || item.end
+    }
+  } catch (e) { /* 拦截器已提示 */ }
+}
+
+async function saveFree() {
+  const slots = []
+  freeSlots.value.forEach((item, i) => {
+    if (!item.enabled) return
+    if (item.start >= item.end) { notify(`第 ${i + 1} 天的结束时间需晚于开始时间`); return }
+    slots.push({ startTime: `${dateStrOf(i)} ${item.start}:00`, endTime: `${dateStrOf(i)} ${item.end}:00` })
+  })
+  freeSaving.value = true
+  try {
+    const res = await saveInterviewerSlots(dateStrOf(0), slots)
+    freeModal.value = false
+    notify(res.data?.message || '空闲时间已保存')
+  } catch (e) { /* 拦截器已提示 */ } finally {
+    freeSaving.value = false
+  }
+}
 
 // === 拖拽调整：拖动时实时移动并把该块标记为「待调整」（紫色），确认后统一落库并通知，不再每次弹窗 ===
 function clockLabel(item, startMin){
@@ -318,7 +379,7 @@ onMounted(load)
           <div class="cal-right">
             <button v-if="pendingList.length" class="pending-cancel" @click="cancelPending">取消</button>
             <button v-if="pendingList.length" class="pending-confirm" @click="confirmPending">确认调整（{{ pendingList.length }}）</button>
-            <button class="free-btn" @click="freeModal=true"><CalendarClock :size="15"/>设置我的空闲时间</button>
+            <button class="free-btn" @click="openFreeModal"><CalendarClock :size="15"/>设置我的空闲时间</button>
           </div>
         </div>
         <!-- 状态图例（替代旧场次图例） -->
@@ -347,6 +408,7 @@ onMounted(load)
                 <p>{{ drawer.position }}</p>
               </div>
               <span class="pill" :class="drawer.status">{{ statusText[drawer.status] }}</span>
+              <span v-if="drawer.hrStatus" class="pill green">已终审</span>
               <button class="drawer-close" @click="drawer=null"><X :size="16"/></button>
             </div>
           </header>
@@ -355,6 +417,7 @@ onMounted(load)
             <div class="detail-row"><UserRound :size="14"/><div><label>面试官</label><b>{{ drawer.interviewer }}</b></div></div>
             <div class="detail-row"><Clock3 :size="14"/><div><label>面试方式</label><b>{{ drawer.meetingUrl ? '视频面试' : '线下面试' }}</b></div></div>
             <div class="detail-row"><Link2 :size="14"/><div><label>会议链接</label><b v-if="drawer.meetingUrl" class="link">{{ drawer.meetingUrl }}</b><b v-else>暂无</b></div></div>
+            <div class="detail-row"><FileText :size="14"/><div><label>面试评估</label><button v-if="drawer.sessionId && drawer.status === 'completed'" class="eval-link" @click="openEvaluation">查看评估报告</button><b v-else>面试结束后可查看</b></div></div>
           </div>
           <footer class="drawer-footer">
             <button class="btn danger-ghost" @click="cancelInterview">取消面试</button>
@@ -366,7 +429,7 @@ onMounted(load)
     </transition>
 
     <BaseModal v-if="dayModal" title="当日面试统计" width="410px" @close="dayModal=false"><div class="day-stat"><p>{{ dayLabel }}</p><strong>{{ dayStats.total }}<small> 场面试</small></strong><div><span><b>{{ dayStats.pending }}</b>待确认</span><span><b>{{ dayStats.confirmed }}</b>已确认</span><span><b>{{ dayStats.completed }}</b>已完成</span></div></div><template #footer><button class="btn primary" @click="dayModal=false">知道了</button></template></BaseModal>
-    <BaseModal v-if="freeModal" title="设置我的空闲时间" width="500px" @close="freeModal=false"><div class="free-settings"><p>选择本周可参与面试的时段，未选择的时间将在日历中显示为不可用。</p><div v-for="day in weekOptions" :key="day"><label><input type="checkbox" checked/>{{day}}</label><input class="input" value="09:00"/><span>至</span><input class="input" value="18:00"/></div></div><template #footer><button class="btn" @click="freeModal=false">取消</button><button class="btn primary" @click="saveFree">保存空闲时间</button></template></BaseModal>
+    <BaseModal v-if="freeModal" title="设置我的空闲时间" width="500px" @close="freeModal=false"><div class="free-settings"><p>选择本周可参与面试的时段，保存后写入面试官日程；取消勾选提交即清空该天空闲时间。</p><div v-for="(item, i) in freeSlots" :key="i" class="free-row"><label><input v-model="item.enabled" type="checkbox"/>{{ weekDayLabels[i] }}</label><input v-model="item.start" class="input" type="time" :disabled="!item.enabled"/><span>至</span><input v-model="item.end" class="input" type="time" :disabled="!item.enabled"/></div></div><template #footer><button class="btn" @click="freeModal=false">取消</button><button class="btn primary" :disabled="freeSaving" @click="saveFree">{{ freeSaving ? '保存中…' : '保存空闲时间' }}</button></template></BaseModal>
 
     <BaseModal v-if="adjustModal" title="调整面试时间" width="380px" @close="adjustModal=false">
       <div class="adjust-form">
@@ -482,6 +545,7 @@ onMounted(load)
 .detail-row b{font-size:12px;color:#1e293b;font-weight:500;line-height:1.4}
 .detail-row b.link{color:#2563eb}
 .detail-row b.notify-failed{color:#dc2626;display:flex;align-items:center;gap:4px}
+.detail-row .eval-link{border:0;background:transparent;padding:0;color:#2563eb;font-size:12px;font-weight:500;cursor:pointer;text-decoration:underline}
 .drawer-footer{padding:14px 20px;border-top:1px solid #e2e8f0;display:flex;gap:8px}
 .drawer-footer .btn{flex:1;white-space:nowrap;font-size:12px;padding:8px 4px}
 

@@ -24,6 +24,14 @@ public interface IEnterpriseJdService
     public Map<String, Object> parseJd(Long positionId, String jdText);
 
     /**
+     * 仅解析 JD 文本，不写库（发布/编辑岗位表单的即时解析）
+     *
+     * @param jdText JD 原始文本
+     * @return 结构化岗位画像
+     */
+    public Map<String, Object> analyzeJd(String jdText);
+
+    /**
      * 查看岗位画像（UC-01）
      *
      * @param positionId 岗位ID

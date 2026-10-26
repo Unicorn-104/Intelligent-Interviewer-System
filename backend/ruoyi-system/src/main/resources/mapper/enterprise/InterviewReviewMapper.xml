@@ -13,15 +13,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                e.evl_id as evaluationId, e.evl_overall_score as overallScore,
                e.evl_recommendation as recommendation, e.evl_hr_status as hrStatus,
                e.evl_hr_recommendation as hrRecommendation,
-               u.nick_name as candidateName, pos.pos_title as positionTitle
+               u.nick_name as candidateName, pos.pos_title as positionTitle,
+               pos.pos_company_id as companyId
         from t_int_session s
         join t_int_evaluation e on e.evl_session_id = s.ses_id
         left join t_tal t on t.tal_id = s.ses_candidate_id
         left join sys_user u on u.user_id = t.tal_user_id
         left join t_pos pos on pos.pos_id = s.ses_position_id
         <where>
+            pos.pos_company_id = #{companyId}
             <if test="status != null">
-                e.evl_hr_status = #{status}
+                and e.evl_hr_status = #{status}
             </if>
         </where>
         order by e.evl_created_at desc
@@ -37,7 +39,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                e.evl_recommendation as recommendation,
                e.evl_hr_status as hrStatus, e.evl_hr_comment as hrComment,
                e.evl_hr_recommendation as hrRecommendation,
-               u.nick_name as candidateName, pos.pos_title as positionTitle
+               u.nick_name as candidateName, pos.pos_title as positionTitle,
+               pos.pos_company_id as companyId,
+               (select max(psg.psg_sort_order) from t_process_stage psg
+                 where psg.psg_template_id = s.ses_template_id) as totalRounds
         from t_int_session s
         join t_int_evaluation e on e.evl_session_id = s.ses_id
         left join t_tal t on t.tal_id = s.ses_candidate_id
@@ -51,7 +56,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                s.ses_position_id as positionId, s.ses_interviewer_id as interviewerId,
                s.ses_template_id as templateId, s.ses_cascade_round as round,
                e.evl_overall_score as overallScore,
-               t.tal_user_id as candidateUserId, pos.pos_title as positionTitle
+               t.tal_user_id as candidateUserId, pos.pos_title as positionTitle,
+               pos.pos_company_id as companyId
         from t_int_session s
         left join t_int_evaluation e on e.evl_session_id = s.ses_id
         left join t_tal t on t.tal_id = s.ses_candidate_id

@@ -55,6 +55,10 @@ public interface TalentPoolMapper
     public int insertCareMessage(@Param("receiverId") Long receiverId, @Param("title") String title,
             @Param("content") String content);
 
+    /** 批量给本企业候选人打标签返回实际写入条数 */
+    public int insertBatchTags(@Param("companyId") Long companyId, @Param("talIds") List<Long> talIds,
+            @Param("tagName") String tagName, @Param("source") Integer source);
+
     /** 候选人档案 + 用户信息 + 简历基础 */
     public Map<String, Object> selectTalentById(@Param("companyId") Long companyId, @Param("talId") Long talId);
 

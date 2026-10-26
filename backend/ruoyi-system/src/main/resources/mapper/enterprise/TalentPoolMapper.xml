@@ -261,6 +261,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         values (#{receiverId}, 0, 1, #{title}, #{content}, 0)
     </insert>
 
+    <insert id="insertBatchTags">
+        insert into t_tal_tag (tg_candidate_id, tg_name, tg_source)
+        select tal_id, #{tagName}, #{source}
+        from t_tal
+        where tal_company_id = #{companyId}
+          and tal_id in
+        <foreach collection="talIds" item="talId" open="(" separator="," close=")">
+            #{talId}
+        </foreach>
+    </insert>
+
     <select id="selectTalentById" resultType="java.util.LinkedHashMap">
         select t.tal_id as talentId, t.tal_status as status, t.tal_matched_score as matchedScore,
                t.tal_current_round as currentRound, t.tal_resume_id as resumeId,

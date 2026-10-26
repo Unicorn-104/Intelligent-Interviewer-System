@@ -39,6 +39,11 @@ public interface IEnterpriseJobService
     public Map<String, Object> updateJob(Long userId, Long posId, Map<String, Object> form);
 
     /**
+     * 复制岗位（主体与技能关联复制为草稿，不改动原岗位）
+     */
+    public Map<String, Object> duplicateJob(Long userId, Long posId);
+
+    /**
      * 删除草稿岗位（仅允许删除状态为草稿的岗位，已产生业务数据时拒绝删除）
      */
     public Map<String, Object> deleteDraftJob(Long userId, Long posId);
