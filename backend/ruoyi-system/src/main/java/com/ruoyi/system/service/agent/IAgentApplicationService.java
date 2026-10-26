@@ -10,6 +10,7 @@ import com.ruoyi.system.domain.agent.AgentResumeOption;
 import com.ruoyi.system.domain.agent.AgentResumeDetail;
 import com.ruoyi.system.domain.agent.AgentResumeUpdateRequest;
 import org.springframework.web.multipart.MultipartFile;
+import com.ruoyi.system.domain.app.AppResumePdfDocument;
 
 /**
  * 求职者端简历与投递服务。
@@ -27,6 +28,14 @@ public interface IAgentApplicationService
     AgentResumeDetail updateResume(Long userId, Long resumeId, AgentResumeUpdateRequest request);
 
     AgentResumeDetail uploadResumeFile(Long userId, Long resumeId, MultipartFile file) throws Exception;
+
+    AgentResumeDetail parseResumePdf(MultipartFile file) throws Exception;
+
+    AgentResumeDetail createResumeWithPdf(Long userId, AgentResumeUpdateRequest request, MultipartFile file) throws Exception;
+
+    AgentResumeDetail updateResumeWithPdf(Long userId, Long resumeId, AgentResumeUpdateRequest request, MultipartFile file) throws Exception;
+
+    AppResumePdfDocument selectResumePdf(Long userId, Long resumeId);
 
     void deleteResume(Long userId, Long resumeId);
 
