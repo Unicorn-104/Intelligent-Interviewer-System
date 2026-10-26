@@ -16,8 +16,9 @@ import org.apache.ibatis.annotations.Param;
  */
 public interface InterviewReviewMapper
 {
-    /** 终审列表（会话 + 评估 + 候选人/岗位信息） */
-    public List<Map<String, Object>> selectReviewList(@Param("status") Integer status);
+    /** 终审列表（会话 + 评估 + 候选人/岗位信息，按企业隔离） */
+    public List<Map<String, Object>> selectReviewList(@Param("companyId") Long companyId,
+            @Param("status") Integer status);
 
     /** 评估报告详情（五维评分 JSON + 结构化评语 + 回放链接） */
     public Map<String, Object> selectReviewDetail(@Param("sessionId") Long sessionId);
