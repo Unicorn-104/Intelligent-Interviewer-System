@@ -43,8 +43,8 @@ public interface IConferenceService
      *
      * @param interviewerIds 被指派的面试官用户ID（按面试模式校验人数，纯AI 可为空）
      */
-    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes,
-            Integer mode, List<Long> interviewerIds);
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Long stageId,
+            Integer durationMinutes, Integer mode, List<Long> interviewerIds);
 
     /**
      * 本企业全体在职用户（HR 发起面试时选择面试官）

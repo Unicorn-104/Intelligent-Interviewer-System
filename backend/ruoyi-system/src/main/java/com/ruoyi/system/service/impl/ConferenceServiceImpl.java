@@ -45,6 +45,8 @@ public class ConferenceServiceImpl implements IConferenceService
 
     /** 未指定时长时的默认面试时长（分钟） */
     private static final int DEFAULT_INTERVIEW_MINUTES = 45;
+    /** 面试时长上限（分钟），避免异常时长把日历/预约时间拉得不可控 */
+    private static final int MAX_INTERVIEW_MINUTES = 480;
     /** 面试模式：1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工 */
     private static final int MODE_AI_ONLY = 1;
     private static final int MODE_AI_ONE = 2;
@@ -168,8 +170,8 @@ public class ConferenceServiceImpl implements IConferenceService
 
     @Override
     @Transactional
-    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes,
-            Integer mode, List<Long> interviewerIds)
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Long stageId,
+            Integer durationMinutes, Integer mode, List<Long> interviewerIds)
     {
         if (peerUserId == null)
         {
@@ -179,35 +181,57 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("不能给本人发起面试");
         }
-        Map<String, Object> talent = conferenceMapper.selectTalentByUserId(peerUserId);
+        Long companyId = resolveCompanyId(userId);
+        // 候选人必须属于当前企业，避免拿到其他企业候选人时越权发起面试
+        Map<String, Object> talent = conferenceMapper.selectTalentByUserId(peerUserId, companyId);
         if (talent == null || talent.isEmpty())
         {
-            throw new ServiceException("该联系人不是候选人，无法发起视频面试");
+            throw new ServiceException("该联系人不是本企业候选人，无法发起视频面试");
         }
         Long candidateId = toLong(talent.get("candidateId"));
-
-        int interviewMode = mode == null || mode < MODE_AI_ONLY || mode > MODE_HUMAN_ONLY ? DEFAULT_INTERVIEW_MODE : mode;
-        List<Long> selected = normalizeInterviewers(interviewerIds);
-        validateInterviewerCount(interviewMode, selected.size());
-        validateInterviewerScope(userId, selected);
-
-        // 每次发起都新建场次并签发新的随机链接：先把该候选人此前尚未结束的场次置为异常终止，
-        // 保证同一候选人同一时间只有一个活跃场次，避免重复点击时复用同一个旧链接
-        conferenceMapper.abortActiveSessionsByCandidate(candidateId);
 
         if (positionId == null)
         {
             throw new ServiceException("请选择面试岗位");
         }
-        int duration = durationMinutes == null || durationMinutes <= 0 ? DEFAULT_INTERVIEW_MINUTES : durationMinutes;
+        Long positionCompanyId = conferenceMapper.selectPositionCompanyId(positionId);
+        if (positionCompanyId == null || !positionCompanyId.equals(companyId))
+        {
+            throw new ServiceException("岗位不存在或无权访问");
+        }
+        // 面试阶段可空；传了就必须属于该岗位的流程模板
+        Map<String, Object> stage = findStage(positionId, companyId, stageId);
+
+        // 面试方式只接受 1~4；非法值直接报错，避免静默回落成「AI + 单面试官」与前端所选不一致
+        if (mode != null && (mode < MODE_AI_ONLY || mode > MODE_HUMAN_ONLY))
+        {
+            throw new ServiceException("面试方式不合法");
+        }
+        int interviewMode = mode == null ? DEFAULT_INTERVIEW_MODE : mode;
+        // 面试时长：不传用默认值；传了必须在合理区间内，避免 0 或超大值写入预约时间
+        if (durationMinutes != null && (durationMinutes < 1 || durationMinutes > MAX_INTERVIEW_MINUTES))
+        {
+            throw new ServiceException("面试时长需在 1~" + MAX_INTERVIEW_MINUTES + " 分钟之间");
+        }
+        int duration = durationMinutes == null ? DEFAULT_INTERVIEW_MINUTES : durationMinutes;
+        List<Long> selected = normalizeInterviewers(interviewerIds);
+        validateInterviewerCount(interviewMode, selected.size());
+        validateInterviewerScope(userId, selected);
+
+        // 每次发起都新建场次并签发新的随机链接：先把该候选人此前尚未结束的场次与待面试预约清理掉，
+        // 保证同一候选人同一时间只有一个活跃场次，且日历上不残留重复的「待面试」
+        conferenceMapper.abortActiveSessionsByCandidate(candidateId, companyId);
+        conferenceMapper.cancelPendingAppointments(candidateId, companyId);
+
         // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
-        // 纯AI 无面试官时，预约面试官回落到发起人，满足非空约束
+        // 纯AI 无面试官时，面试官字段回落到发起人，仅用于满足非空约束与发起人权限
         Long sessionInterviewerId = selected.isEmpty() ? userId : selected.get(0);
         Map<String, Object> appointment = new HashMap<>();
         appointment.put("candidateId", candidateId);
         appointment.put("positionId", positionId);
         appointment.put("interviewerId", sessionInterviewerId);
         appointment.put("durationMinutes", duration);
+        putStage(appointment, stage);
         conferenceMapper.insertAppointment(appointment);
 
         Map<String, Object> session = new HashMap<>();
@@ -216,32 +240,25 @@ public class ConferenceServiceImpl implements IConferenceService
         session.put("positionId", positionId);
         session.put("interviewerId", sessionInterviewerId);
         session.put("mode", interviewMode);
+        // 流程轮次与所选阶段顺序保持一致，未选阶段时按第一轮处理
+        session.put("cascadeRound", stage == null || stage.get("sortOrder") == null ? 1 : toInt(stage.get("sortOrder")));
         conferenceMapper.insertSession(session);
 
         // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
-        conferenceMapper.markCandidateInterviewing(candidateId);
+        conferenceMapper.markCandidateInterviewing(candidateId, companyId);
 
         Long sessionId = toLong(session.get("sessionId"));
         String roomId = "INTERVIEW-" + sessionId;
         String roomToken = randomToken();
         saveRoomToken(sessionId, roomId, roomToken);
 
-        // 每位被指派面试官：写入关联（首位为主面试官）+ 各自一条面试行程
+        // 每位被指派面试官：仅写入场次面试官关联（首位为主面试官），预约统一复用主预约，
+        // 避免同一时间给同一候选人生成多条重复行程
         for (int i = 0; i < selected.size(); i++)
         {
-            Long interviewerId = selected.get(i);
-            if (i > 0)
-            {
-                Map<String, Object> extra = new HashMap<>();
-                extra.put("candidateId", candidateId);
-                extra.put("positionId", positionId);
-                extra.put("interviewerId", interviewerId);
-                extra.put("durationMinutes", duration);
-                conferenceMapper.insertAppointment(extra);
-            }
             Map<String, Object> link = new HashMap<>();
             link.put("sessionId", sessionId);
-            link.put("userId", interviewerId);
+            link.put("userId", selected.get(i));
             link.put("isPrimary", i == 0 ? 1 : 0);
             conferenceMapper.insertSessionInterviewer(link);
         }
@@ -446,10 +463,20 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             return new ArrayList<>();
         }
+        Long companyId = resolveCompanyId(userId);
         Map<String, Object> params = new HashMap<>();
         params.put("peerUserId", peerUserId);
-        params.put("companyId", resolveCompanyId(userId));
-        return conferenceMapper.selectCandidatePositionsByPeer(params);
+        params.put("companyId", companyId);
+        List<Map<String, Object>> positions = conferenceMapper.selectCandidatePositionsByPeer(params);
+        // 附带每个岗位流程模板的阶段列表，供发起面试时选择阶段并按阶段带出默认设置
+        for (Map<String, Object> position : positions)
+        {
+            Map<String, Object> stageParams = new HashMap<>();
+            stageParams.put("positionId", position.get("positionId"));
+            stageParams.put("companyId", companyId);
+            position.put("stages", conferenceMapper.selectStagesByPosition(stageParams));
+        }
+        return positions;
     }
 
     @Override
@@ -1396,7 +1423,12 @@ public class ConferenceServiceImpl implements IConferenceService
                 break;
             }
         }
-        ctx.put("primaryInterviewerId", primaryId == null ? toLong(ctx.get("interviewerId")) : primaryId);
+        // 纯AI 面试无人工面试官，session_interviewer 为空时主面试官不应回落到发起人
+        if (primaryId == null && toInt(ctx.get("mode")) != MODE_AI_ONLY)
+        {
+            primaryId = toLong(ctx.get("interviewerId"));
+        }
+        ctx.put("primaryInterviewerId", primaryId);
     }
 
     /**
@@ -1451,6 +1483,35 @@ public class ConferenceServiceImpl implements IConferenceService
         result.put("completionRate", total > 0 ? Math.round(answered * 1000.0 / total) / 10.0 : 0);
         result.put("reportStatus", toInt(result.get("reportGenerated")) > 0 ? "ready" : "generating");
         return result;
+    }
+
+    /** 校验所选阶段属于该岗位的流程模板；未选阶段返回 null */
+    private Map<String, Object> findStage(Long positionId, Long companyId, Long stageId)
+    {
+        if (stageId == null)
+        {
+            return null;
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("positionId", positionId);
+        params.put("companyId", companyId);
+        for (Map<String, Object> item : conferenceMapper.selectStagesByPosition(params))
+        {
+            if (stageId.equals(toLong(item.get("stageId"))))
+            {
+                return item;
+            }
+        }
+        throw new ServiceException("所选面试阶段与岗位不匹配");
+    }
+
+    /** 把阶段信息写入预约记录，落库到 apt_stage_id / apt_stage_name / apt_stage_type / apt_stage_order */
+    private void putStage(Map<String, Object> target, Map<String, Object> stage)
+    {
+        target.put("stageId", stage == null ? null : toLong(stage.get("stageId")));
+        target.put("stageName", stage == null ? null : stage.get("name"));
+        target.put("stageType", stage == null || stage.get("type") == null ? null : toInt(stage.get("type")));
+        target.put("stageOrder", stage == null || stage.get("sortOrder") == null ? null : toInt(stage.get("sortOrder")));
     }
 
     /**

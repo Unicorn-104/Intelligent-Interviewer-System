@@ -82,8 +82,8 @@ public class ConferenceController extends BaseController
     public AjaxResult createLink(@RequestBody Map<String, Object> body)
     {
         return success(conferenceService.createRoomLink(getUserId(), longOf(body, "peerUserId"),
-                longOf(body, "positionId"), intOf(body, "durationMinutes"), intOf(body, "mode"),
-                longListOf(body, "interviewerIds")));
+                longOf(body, "positionId"), longOf(body, "stageId"), intOf(body, "durationMinutes"),
+                intOf(body, "mode"), longListOf(body, "interviewerIds")));
     }
 
     /**

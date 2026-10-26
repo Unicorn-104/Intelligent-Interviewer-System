@@ -48,8 +48,9 @@ public interface ConferenceMapper
 
     /**
      * 按用户ID查询候选人档案（用于把聊天对象解析为候选人）
+     * companyId 非空时同时限定候选人所属企业，避免跨企业发起面试
      */
-    public Map<String, Object> selectTalentByUserId(@Param("userId") Long userId);
+    public Map<String, Object> selectTalentByUserId(@Param("userId") Long userId, @Param("companyId") Long companyId);
 
     /**
      * 确保会议运行时状态记录存在（不存在则按预约时段与大纲题目数初始化）
@@ -132,6 +133,11 @@ public interface ConferenceMapper
     public int updateConsent(Map<String, Object> params);
 
     /**
+     * 查询岗位所属企业ID（发起面试时校验岗位归属）
+     */
+    public Long selectPositionCompanyId(@Param("positionId") Long positionId);
+
+    /**
      * 新增面试预约记录（HR 发起视频面试时即时创建），回填 apt_id
      */
     public int insertAppointment(Map<String, Object> params);
@@ -148,13 +154,19 @@ public interface ConferenceMapper
 
     /**
      * 把候选人此前尚未结束的场次置为异常终止（每次发起面试都新建场次前调用）
+     * companyId 限定只处理本企业岗位上的场次，避免影响其他企业的面试
      */
-    public int abortActiveSessionsByCandidate(@Param("candidateId") Long candidateId);
+    public int abortActiveSessionsByCandidate(@Param("candidateId") Long candidateId, @Param("companyId") Long companyId);
+
+    /**
+     * 取消候选人本企业下仍处于待面试的预约（重新发起面试时清理旧预约，避免日历残留）
+     */
+    public int cancelPendingAppointments(@Param("candidateId") Long candidateId, @Param("companyId") Long companyId);
 
     /**
      * 发起面试后把候选人流程状态推进为「面试中」(2)
      */
-    public int markCandidateInterviewing(@Param("candidateId") Long candidateId);
+    public int markCandidateInterviewing(@Param("candidateId") Long candidateId, @Param("companyId") Long companyId);
 
     /**
      * 候选人准备就绪，进入面试
@@ -252,9 +264,14 @@ public interface ConferenceMapper
     public int upsertStoragePolicy(Map<String, Object> params);
 
     /**
-     * 查询候选人在本企业投递过的岗位（用于 HR 发起面试时选择岗位）
+     * 查询候选人在本企业投递过的岗位（用于 HR 发起面试时选择岗位），含该岗位流程的当前阶段
      */
     public List<Map<String, Object>> selectCandidatePositionsByPeer(Map<String, Object> params);
+
+    /**
+     * 查询岗位流程模板的全部阶段（发起面试时选择阶段、按阶段带出默认面试方式与时长）
+     */
+    public List<Map<String, Object>> selectStagesByPosition(Map<String, Object> params);
 
     /**
      * 写入 / 更新某个参与者的会前检测与就绪状态（按场次 + 用户唯一）

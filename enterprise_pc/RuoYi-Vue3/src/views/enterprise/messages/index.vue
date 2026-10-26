@@ -210,12 +210,15 @@ async function loadConversations() {
 async function openConv(c) {
   newChat.value = null
   activeId.value = c.id
+  peerPositions.value = []
+  peerPositionsReady.value = false
   if (c.system) {
     await loadNotices()
     return
   }
   c.unread = 0
   loading.value = true
+  loadPeerPositions()
   try {
     await loadMessages(c.id)
     scrollToBottom()
@@ -247,6 +250,7 @@ function startChatWith(peerId, peerName) {
   activeId.value = null
   messages.value = []
   newChat.value = { peerId, peerName }
+  loadPeerPositions()
   scrollToBottom()
 }
 
@@ -350,7 +354,29 @@ const positions = ref([])
 const interviewers = ref([])
 const selectedInterviewerIds = ref([])
 const linkResult = ref(null)
-const linkForm = ref({ peerUserId: null, positionId: null, durationMinutes: 45, mode: 2 })
+const linkForm = ref({ peerUserId: null, positionId: null, stageId: null, durationMinutes: 45, mode: 2 })
+// 生成链接时锁定的阶段名，随邀请文案一起发送
+const generatedStageName = ref('')
+// 会话对方在各岗位流程中的当前阶段（聊天头部展示）
+const peerPositions = ref([])
+
+// 流程阶段类型：1-在线笔试 2-AI技术面试 3-HR综合面试 4-编程实操
+const STAGE_TYPE_LABEL = { 1: '在线笔试', 2: 'AI 技术面试', 3: 'HR 综合面试', 4: '编程实操' }
+// 阶段类型 → 默认面试方式：AI技术面试默认 AI+单面试官，HR综合面试默认 无AI纯人工，编程实操默认 纯AI
+const STAGE_TYPE_MODE = { 2: 2, 3: 4, 4: 1 }
+// 当前所选岗位可用的面试阶段（笔试不参与视频面试，直接过滤）
+const currentStages = computed(() => ((positions.value.find(p => p.positionId === linkForm.value.positionId) || {}).stages || [])
+  .filter(s => Number(s.type) !== 1))
+const currentStage = computed(() => currentStages.value.find(s => s.stageId === linkForm.value.stageId) || null)
+const peerPositionsReady = ref(false)
+const peerStageText = computed(() => {
+  if (!peerPositionsReady.value) return ''
+  if (!peerPositions.value.length) return '暂未投递简历'
+  return peerPositions.value
+    .map(p => `${p.positionTitle || '未命名岗位'} · ${p.currentStageName || '未进入流程'}`)
+    .join(' / ')
+})
+
 
 // 面试模式与面试官人数严格联动
 const MODE_HINT = { 1: '纯AI 无需面试官，本企业成员可凭链接旁听', 2: '需选择 1 位面试官', 3: '需选择至少 2 位面试官', 4: '需选择至少 1 位面试官' }
@@ -360,13 +386,18 @@ const needInterviewers = computed(() => linkForm.value.mode !== 1)
 
 // 当前会话对方用户 ID（新会话态取 newChat）
 const peerUserId = computed(() => activeConv.value?.peerId ?? newChat.value?.peerId ?? null)
+// 候选人端地址：生产环境必须在 .env.production 配置 VITE_CANDIDATE_APP_URL，否则会生成不可点击的相对链接
+const candidateBase = (import.meta.env.VITE_CANDIDATE_APP_URL || '').replace(/\/+$/, '')
 // 链接拼接规则：候选人端统一入口页 + token（权威定义，不带其它参数）
-const linkUrl = computed(() => (linkResult.value ? import.meta.env.VITE_CANDIDATE_APP_URL + '/conference-join?token=' + linkResult.value.token : ''))
+const linkUrl = computed(() => (linkResult.value ? candidateBase + '/conference-join?token=' + linkResult.value.token : ''))
+// 只有带协议头的绝对地址才能直接点击进入，相对地址一律视为不完整
+const linkComplete = computed(() => /^https?:\/\//.test(linkUrl.value))
 
 function openLinkModal() {
   const peer = peerUserId.value
   if (peer == null) { ElMessage.warning('当前会话缺少对方信息，无法发起视频面试'); return }
-  linkForm.value = { peerUserId: peer, positionId: null, durationMinutes: 45, mode: 2 }
+  linkForm.value = { peerUserId: peer, positionId: null, stageId: null, durationMinutes: 45, mode: 2 }
+  generatedStageName.value = ''
   positions.value = []
   selectedInterviewerIds.value = []
   linkResult.value = null
@@ -419,7 +450,10 @@ async function loadPositions() {
   try {
     const res = await listCandidatePositions(linkForm.value.peerUserId)
     positions.value = res.data || []
-    if (positions.value.length) linkForm.value.positionId = positions.value[0].positionId
+    if (positions.value.length) {
+      linkForm.value.positionId = positions.value[0].positionId
+      onPositionChange()
+    }
   } catch (e) {
     positions.value = []
     ElMessage.error(e?.message || '加载候选人岗位失败')
@@ -428,14 +462,56 @@ async function loadPositions() {
   }
 }
 
+// 切换岗位：优先定位候选人当前阶段（笔试阶段不参与视频面试）
+function onPositionChange() {
+  const pos = positions.value.find(p => p.positionId === linkForm.value.positionId) || {}
+  const stages = (pos.stages || []).filter(s => Number(s.type) !== 1)
+  const matched = stages.find(s => s.stageId === pos.currentStageId)
+  linkForm.value.stageId = matched ? matched.stageId : (stages[0]?.stageId ?? null)
+  applyStageDefaults()
+}
+
+// 按阶段类型带出默认面试方式，时长取流程模板中该阶段配置
+function applyStageDefaults() {
+  const stage = currentStage.value
+  if (!stage) return
+  if (stage.duration) linkForm.value.durationMinutes = Number(stage.duration)
+  const mode = STAGE_TYPE_MODE[Number(stage.type)]
+  if (mode) linkForm.value.mode = mode
+  onModeChange()
+}
+
+function stageLabel(stage) {
+  const type = STAGE_TYPE_LABEL[Number(stage.type)] || '面试'
+  return stage.duration ? `${stage.name}（${type} · ${stage.duration}分钟）` : `${stage.name}（${type}）`
+}
+
+// 聊天头部展示会话对方全部投递岗位的当前阶段
+async function loadPeerPositions() {
+  const peer = peerUserId.value
+  peerPositionsReady.value = false
+  if (peer == null) { peerPositions.value = []; return }
+  try {
+    const res = await listCandidatePositions(peer)
+    peerPositions.value = res.data || []
+  } catch (e) {
+    peerPositions.value = []
+  } finally {
+    peerPositionsReady.value = true
+  }
+}
+
 async function generateLink() {
   if (linkForm.value.positionId == null) { ElMessage.warning('请选择面试岗位'); return }
   if (!validateMode()) return
   generating.value = true
+  generatedStageName.value = currentStage.value?.name || ''
   try {
     const res = await createRoomLink({
       peerUserId: linkForm.value.peerUserId,
       positionId: linkForm.value.positionId,
+      // 阶段随场次落库，面试安排/流程流转才能读到轮次
+      stageId: linkForm.value.stageId,
       durationMinutes: linkForm.value.durationMinutes,
       mode: linkForm.value.mode,
       interviewerIds: selectedInterviewerIds.value
@@ -460,12 +536,17 @@ async function copyLink() {
 
 async function sendLinkToChat() {
   if (!linkResult.value) return
+  if (!linkComplete.value) {
+    ElMessage.error('未配置候选人端地址，链接不完整无法发送，请在 .env 中设置 VITE_CANDIDATE_APP_URL')
+    return
+  }
   try {
     const company = linkResult.value.companyName || '公司'
     const position = linkResult.value.positionTitle || '岗位'
     const modeLabel = MODE_LABEL[linkResult.value.mode ?? linkForm.value.mode] || '视频面试'
+    const inviteTag = generatedStageName.value ? `·${generatedStageName.value}·${modeLabel}` : `·${modeLabel}`
     // 以普通文本消息发送（type=1），与日常聊天一致，链接在气泡内可点击
-    const body = { type: 1, content: `【面试邀请·${modeLabel}】${company} ${position} 视频面试，请点击链接进入：${linkUrl.value}` }
+    const body = { type: 1, content: `【面试邀请${inviteTag}】${company} ${position} 视频面试，请点击链接进入：${linkUrl.value}` }
     if (activeId.value != null) body.sessionId = activeId.value
     else body.peerId = newChat.value.peerId
     await sendMessage(body)
@@ -507,7 +588,7 @@ async function openSurveyModal() {
 
 // 链接拼接规则：候选人端统一入口页 + 匿名令牌
 function surveyLinkUrl(token) {
-  return import.meta.env.VITE_CANDIDATE_APP_URL + '/survey-fill?token=' + token
+  return candidateBase + '/survey-fill?token=' + token
 }
 
 async function sendSurveyToChat() {
@@ -575,7 +656,7 @@ onBeforeUnmount(() => {
       <template v-if="activeConv">
         <header class="chat-head">
           <MiniAvatar :name="activeConv.name" :size="40" color="#356f65" :src="activeConv.avatar"/>
-          <div class="chat-head-info"><h2>{{activeConv.name}}</h2><p>{{activeConv.summary}}</p></div>
+          <div class="chat-head-info"><h2>{{activeConv.name}}<em v-if="peerStageText" class="peer-stage" :title="peerStageText">{{ peerStageText }}</em></h2><p>{{activeConv.summary}}</p></div>
           <button v-if="!activeConv.system" class="btn primary" @click="openLinkModal"><Video :size="16"/>发起视频面试</button>
         </header>
         <div v-if="activeConv.system" class="notice-stream">
@@ -664,11 +745,19 @@ onBeforeUnmount(() => {
       <div class="link-form">
         <label class="lf-row">
           <span>面试岗位</span>
-          <select v-model="linkForm.positionId" :disabled="!positions.length">
+          <select v-model="linkForm.positionId" :disabled="!positions.length" @change="onPositionChange">
             <option v-if="!positions.length" :value="null">{{ positionsLoading ? '加载中…' : '该联系人暂无投递岗位' }}</option>
             <option v-for="p in positions" :key="p.applicationId" :value="p.positionId">{{ p.positionTitle }}</option>
           </select>
         </label>
+        <label class="lf-row">
+          <span>面试阶段</span>
+          <select v-model="linkForm.stageId" :disabled="!currentStages.length" @change="applyStageDefaults">
+            <option v-if="!currentStages.length" :value="null">该岗位未配置流程阶段</option>
+            <option v-for="s in currentStages" :key="s.stageId" :value="s.stageId">{{ stageLabel(s) }}</option>
+          </select>
+        </label>
+        <p v-if="currentStage" class="lf-stage-hint">已按阶段「{{ currentStage.name }}」带出面试方式与时长，可按实际情况调整。</p>
         <label class="lf-row">
           <span>面试时长</span>
           <input class="lf-num" type="number" min="15" max="180" step="5" v-model.number="linkForm.durationMinutes" />
@@ -704,9 +793,10 @@ onBeforeUnmount(() => {
         <div v-if="linkUrl" class="lf-result">
           <label>面试链接</label>
           <input class="lf-link" :value="linkUrl" readonly />
+          <p v-if="!linkComplete" class="lf-link-warn">链接缺少候选人端域名（VITE_CANDIDATE_APP_URL 未配置），无法发送完整链接</p>
           <div class="lf-result-actions">
             <button class="lf-copy" @click="copyLink"><Copy :size="14"/>复制链接</button>
-            <button class="lf-send" @click="sendLinkToChat"><Send :size="14"/>发送到会话</button>
+            <button class="lf-send" :disabled="!linkComplete" @click="sendLinkToChat"><Send :size="14"/>发送到会话</button>
           </div>
         </div>
       </div>
@@ -747,6 +837,9 @@ onBeforeUnmount(() => {
 .lf-col{align-items:flex-start}
 .lf-interviewers{flex:1;min-width:0}
 .lf-mode-hint{color:#8392a7;font-size:10px;margin-bottom:6px}
+.lf-stage-hint{margin:-6px 0 0 76px;color:#9aa7b8;font-size:10px}
+.lf-link-warn{margin:6px 0 0;color:#d9534f;font-size:10px}
+.peer-stage{font-style:normal;font-weight:400;font-size:10px;color:#9aa7b8;min-width:0;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lf-iv-list{max-height:150px;overflow:auto;border:1px solid #dfe6ef;border-radius:8px;padding:6px}
 .lf-iv{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer}
 .lf-iv:hover{background:#f4f8ff}
