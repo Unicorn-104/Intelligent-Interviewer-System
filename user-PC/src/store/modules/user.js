@@ -6,6 +6,7 @@ import { getToken, setToken, removeToken } from '@/utils/auth'
 import { isHttp, isEmpty } from "@/utils/validate"
 import useLockStore from '@/store/modules/lock'
 import defAva from '@/assets/images/profile.jpg'
+import { hasCandidateSecurityNoticeShown, markCandidateSecurityNoticeShown } from '@/utils/agentSession'
 
 const useUserStore = defineStore(
   'user',
@@ -63,15 +64,14 @@ const useUserStore = defineStore(
             this.nickName = user.nickName
             this.avatar = avatar
             cache.session.set('pwrChrtype', res.pwdChrtype)
-            /* 初始密码提示 */
-            if(res.isDefaultModifyPwd) {
-              ElMessageBox.confirm('您的密码还是初始密码，请修改密码！',  '安全提示', {  confirmButtonText: '确定',  cancelButtonText: '取消',  type: 'warning' }).then(() => {
-                router.push({ name: 'Profile', params: { activeTab: 'resetPwd' } })
-              }).catch(() => {})
-            }
-            /* 过期密码提示 */
-            if(!res.isDefaultModifyPwd && res.isPasswordExpired) {
-              ElMessageBox.confirm('您的密码已过期，请尽快修改密码！',  '安全提示', {  confirmButtonText: '确定',  cancelButtonText: '取消',  type: 'warning' }).then(() => {
+            const showDefaultPasswordNotice = Boolean(res.isDefaultModifyPwd)
+            const showExpiredPasswordNotice = !showDefaultPasswordNotice && Boolean(res.isPasswordExpired)
+            if (!hasCandidateSecurityNoticeShown() && (showDefaultPasswordNotice || showExpiredPasswordNotice)) {
+              markCandidateSecurityNoticeShown()
+              const message = showDefaultPasswordNotice
+                ? '您的密码还是初始密码，请修改密码！'
+                : '您的密码已过期，请尽快修改密码！'
+              ElMessageBox.confirm(message, '安全提示', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }).then(() => {
                 router.push({ name: 'Profile', params: { activeTab: 'resetPwd' } })
               }).catch(() => {})
             }
