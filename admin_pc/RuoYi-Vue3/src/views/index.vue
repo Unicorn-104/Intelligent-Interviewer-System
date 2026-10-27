@@ -154,6 +154,7 @@
 import * as echarts from 'echarts'
 import { ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
+import request from '@/utils/request'
 import {
   listStats,
   listTrend,
@@ -174,6 +175,7 @@ const loadError = ref('')
 const lastUpdated = ref('')
 const router = useRouter()
 const stats = ref({})
+const aiStats = ref({ todayTotal: 0, total: 0 })
 
 let trendChart = null
 let topChart = null
@@ -231,7 +233,16 @@ const statCards = computed(() => [
     extra: '已认证 ' + (stats.value.companyActive ?? 0) + ' 家',
     icon: 'OfficeBuilding',
     iconClass: 'orange',
-    route: '/company',
+    route: '/company/company/list',
+    negative: false
+  },
+  {
+    label: '今日 AI 调用',
+    value: formatNum(aiStats.value.todayTotal),
+    extra: '总计 ' + formatNum(aiStats.value.total || 0) + ' 次',
+    icon: 'MagicStick',
+    iconClass: 'purple',
+    route: '/ai/agent',
     negative: false
   }
 ])
@@ -263,14 +274,16 @@ async function loadDashboard() {
     listApiTop(),
     listStatusDist(),
     listRecentLogs(),
-    listRecruitmentOverview()
+    listRecruitmentOverview(),
+    request({ url: '/admin/aiagent/overview' })
   ])
-  const [statsRes, trendRes, apiRes, distRes, logsRes, overviewRes] = results
+  const [statsRes, trendRes, apiRes, distRes, logsRes, overviewRes, aiRes] = results
   if (statsRes.status === 'fulfilled') stats.value = statsRes.value?.data || {}
   if (trendRes.status === 'fulfilled') initTrend(trendRes.value?.data || {})
   if (apiRes.status === 'fulfilled') initTop(apiRes.value?.data || [])
   if (distRes.status === 'fulfilled') initDist(distRes.value?.data || [])
   if (logsRes.status === 'fulfilled') recentLogs.value = logsRes.value?.data || []
+  if (aiRes.status === 'fulfilled') aiStats.value = aiRes.value?.data || {}
   if (overviewRes.status === 'fulfilled') {
     overview.value = overviewRes.value?.data || { pipeline: [], todos: [], funnel: [] }
     lastUpdated.value = overview.value.asOf || ''

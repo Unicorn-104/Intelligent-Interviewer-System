@@ -34,9 +34,10 @@
           <span v-else>0</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
         <template #default="scope">
           <el-button link type="primary" icon="View" @click="handleDetail(scope.row)">详情</el-button>
+          <el-button link type="success" icon="ChatDotRound" @click="handleDialogue(scope.row)">对话</el-button>
           <el-button
             v-if="Number(scope.row.status) === 1"
             link
@@ -128,11 +129,26 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 对话回放 -->
+    <el-dialog title="面试对话回放" v-model="dialogueOpen" width="750px" append-to-body>
+      <div v-loading="dialogueLoading" style="max-height:60vh;overflow:auto">
+        <div v-for="d in dialogueList" :key="d.dlg_id" :style="{ marginBottom:'12px', textAlign: d.dlg_role===1?'right':'left' }">
+          <el-tag size="small" :type="d.dlg_role===1?'primary':'success'">{{ d.dlg_role===1?'AI':'候选人' }}</el-tag>
+          <div :style="{ display:'inline-block', maxWidth:'70%', padding:'8px 12px', borderRadius:'8px', background: d.dlg_role===1?'#e8f0ff':'#f0f9eb', marginLeft: d.dlg_role===1?'0':'8px', marginRight: d.dlg_role===1?'8px':'0' }">
+            {{ d.dlg_content }}
+          </div>
+          <div style="font-size:11px;color:#999">{{ d.dlg_created_at }}</div>
+        </div>
+        <el-empty v-if="!dialogueLoading && dialogueList.length===0" description="无对话记录" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup name="BizInterview">
 import { listInterview, getInterview, terminateInterview } from '@/api/biz/interview'
+import request from '@/utils/request'
 
 const { proxy } = getCurrentInstance()
 
@@ -163,6 +179,9 @@ const terminateRules = ref({
   reason: [{ required: true, message: '结束原因不能为空', trigger: 'blur' }]
 })
 const authLogs = ref([])
+const dialogueOpen = ref(false)
+const dialogueLoading = ref(false)
+const dialogueList = ref([])
 
 /** 查询面试列表 */
 function getList() {
@@ -203,6 +222,16 @@ function handleTerminate(row) {
   terminateRow.value = row
   terminateForm.value = { interviewId: row.interviewId, reason: undefined }
   terminateOpen.value = true
+}
+
+/** 对话回放 */
+function handleDialogue(row) {
+  dialogueOpen.value = true
+  dialogueLoading.value = true
+  dialogueList.value = []
+  request({ url: '/admin/interview/dialogue/list', method: 'get', params: { sessionId: row.interviewId } })
+    .then((r) => { dialogueList.value = r.data || [] })
+    .finally(() => { dialogueLoading.value = false })
 }
 
 /** 提交强制结束 */
