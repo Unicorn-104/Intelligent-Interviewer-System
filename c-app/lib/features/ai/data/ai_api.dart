@@ -6,6 +6,21 @@ class AiApi {
   const AiApi(this.client);
   final ApiClient client;
 
+  Future<Map<String, dynamic>> memorySettings(String token) async =>
+      _data(await client.get('/app/ai/memory-settings', token: token));
+
+  Future<Map<String, dynamic>> setMemoryEnabled(
+    String token,
+    bool enabled,
+    int revision,
+  ) async => _data(
+    await client.put(
+      '/app/ai/memory-settings',
+      token: token,
+      body: {'enabled': enabled, 'revision': revision},
+    ),
+  );
+
   Future<Map<String, dynamic>> sessions(
     String token, {
     String? before,

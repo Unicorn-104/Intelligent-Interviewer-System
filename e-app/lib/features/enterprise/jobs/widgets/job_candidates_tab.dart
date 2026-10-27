@@ -254,12 +254,6 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
   Future<Map<String, dynamic>> _loadResume() async =>
       _id == null ? <String, dynamic>{} : await widget.loadResume(_id!);
 
-  void _unavailable(String action) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('$action功能开发中')));
-  }
-
   Widget _badge(String text, Color color) => Container(
     constraints: const BoxConstraints(minHeight: 22),
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -345,15 +339,7 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
     );
   }
 
-  Widget _scoring() => Tooltip(
-    message: '调整评分 · 功能开发中',
-    child: InkWell(
-      key: ValueKey('job-candidate-adjust-$_id'),
-      onTap: _id == null ? null : () => _unavailable('评分调整'),
-      borderRadius: BorderRadius.circular(4),
-      child: _CandidateScore(score: widget.score),
-    ),
-  );
+  Widget _scoring() => _CandidateScore(score: widget.score);
 
   @override
   Widget build(BuildContext context) => Card(
@@ -464,24 +450,14 @@ class _CandidateScore extends StatelessWidget {
               padding: const EdgeInsets.all(7),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      score?.toStringAsFixed(1) ?? '—',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: color,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    const Icon(
-                      Icons.edit_outlined,
-                      size: 14,
-                      color: AppColors.interactive,
-                    ),
-                  ],
+                child: Text(
+                  score?.toStringAsFixed(1) ?? '—',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),

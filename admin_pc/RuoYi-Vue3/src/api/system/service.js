@@ -6,6 +6,23 @@ export function listPrivacy(query) {
 export function updatePrivacy(data) {
   return request({ url: '/system/privacy', method: 'put', data: data })
 }
+export function getPrivacy(privacyId) {
+  return request({ url: '/system/privacy/' + privacyId, method: 'get' })
+}
+export function addPrivacy(data) {
+  return request({ url: '/system/privacy', method: 'post', data: data })
+}
+export function deletePrivacy(privacyIds) {
+  return request({ url: '/system/privacy/' + privacyIds, method: 'delete' })
+}
+export function chatAssistant(message, history) {
+  return request({
+    url: '/ai/assistant/chat',
+    method: 'post',
+    data: { message, history: history || [] },
+    timeout: 120000
+  })
+}
 
 export function listDataExport() {
   return request({ url: '/system/data/exportList', method: 'get' })

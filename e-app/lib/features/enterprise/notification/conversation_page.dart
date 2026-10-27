@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
@@ -16,6 +18,12 @@ import 'models/message_view_data.dart';
 import 'widgets/chat_composer.dart';
 import 'widgets/chat_job_card.dart';
 import 'widgets/message_avatar.dart';
+import 'widgets/reschedule_chat_card.dart';
+import 'widgets/chat_message_time.dart';
+import 'widgets/chat_bubble_border.dart';
+import 'widgets/share_job_sheet.dart';
+import 'widgets/shared_job_card_view.dart';
+import '../schedule/data/reschedule_review_data_source.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({
@@ -23,16 +31,21 @@ class ChatPage extends StatefulWidget {
     required this.session,
     this.source = const MessageDataSource(),
     this.pollInterval = const Duration(seconds: 8),
+    this.rescheduleSource,
   });
   final Map<String, dynamic> session;
   final MessageDataSource source;
   final Duration pollInterval;
+  final RescheduleReviewDataSource? rescheduleSource;
   @override
   State<ChatPage> createState() => _ChatPageState();
 }
 
 class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final _input = TextEditingController(), _scroll = ScrollController();
+  late final RescheduleReviewDataSource _reschedules =
+      widget.rescheduleSource ??
+      RescheduleReviewDataSource(client: widget.source.client);
   List<ConversationMessage> _messages = [];
   List<ChatQuickReply> _quick = [];
   int? _id;
@@ -59,10 +72,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       _composerExpanded = false,
       _choosingAttachment = false;
   Timer? _timer;
+  int _lastAcknowledged = 0;
+  bool _acknowledging = false;
+  static const _ownBubble = Color(0xFF95EC69);
+  static const _bubbleText = Color(0xFF161616);
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _scroll.addListener(_acknowledgeVisible);
     _id = messageId(widget.session['sessionId']);
     _load();
     _loadQuick();
@@ -70,7 +88,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _loadRecruiterProfile();
     if (widget.pollInterval > Duration.zero) {
       _timer = Timer.periodic(widget.pollInterval, (_) {
-        if (mounted && _active && !_sending && !_uncertain) _load(silent: true);
+        if (mounted &&
+            _active &&
+            !_sending &&
+            !_uncertain &&
+            ModalRoute.of(context)?.isCurrent == true) {
+          _load(silent: true);
+        }
       });
     }
   }
@@ -265,6 +289,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         onTap: _openCandidate,
         borderRadius: BorderRadius.circular(24),
         child: MessageAvatar(
+          square: true,
           name: _peerName,
           url: widget.source.avatarUrl(
             messageText(widget.session['peerAvatar'], ''),
@@ -335,6 +360,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         _ready = true;
       });
       if (follow) _bottom();
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _acknowledgeVisible(),
+      );
     } catch (error) {
       if (mounted) setState(() => _error = messageError(error));
     } finally {
@@ -383,6 +411,62 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       });
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _sendJob() async {
+    if (_sending ||
+        _fetching ||
+        _uncertain ||
+        !_ready ||
+        _peerId == null ||
+        _choosingAttachment) {
+      return;
+    }
+    setState(() => _choosingAttachment = true);
+    try {
+      final positionId = await showModalBottomSheet<int>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => FractionallySizedBox(
+          heightFactor: .85,
+          child: ShareJobSheet(source: widget.source),
+        ),
+      );
+      if (!mounted || positionId == null) return;
+      final random = Random.secure();
+      final requestId = List.generate(
+        12,
+        (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+      ).join();
+      setState(() {
+        _sending = true;
+        _error = null;
+      });
+      try {
+        final session = await widget.source.sendJobCard(
+          sessionId: _id,
+          peerId: _peerId!,
+          positionId: positionId,
+          requestId: requestId,
+        );
+        if (!mounted) return;
+        _id = session;
+        await _load();
+        _bottom();
+      } catch (error) {
+        if (!mounted) return;
+        final known = error is ApiException && error.code != null;
+        setState(() {
+          _uncertain = !known;
+          _error = known ? messageError(error) : '岗位卡片发送结果待核对，请刷新聊天记录，勿重复发送';
+        });
+      } finally {
+        if (mounted) setState(() => _sending = false);
+      }
+    } finally {
+      if (mounted) setState(() => _choosingAttachment = false);
     }
   }
 
@@ -482,6 +566,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: const Color(0xFFEDEDED),
     appBar: AppBar(
       toolbarHeight: MediaQuery.textScalerOf(context)
           .scale(40)
@@ -633,7 +718,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                 onPressed: () => _load(),
                                 child: const Text('重试加载聊天记录'),
                               ),
-                            for (final item in _messages) _bubble(item),
+                            ..._messageTimeline(),
                           ],
                         ),
                       ),
@@ -653,6 +738,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 onReloadQuick: _loadQuick,
                 onSaveQuick: _saveQuickReply,
                 onAttachment: _sendAttachment,
+                onSendJob: _sendJob,
                 onPanelChanged: (expanded) {
                   if (_composerExpanded != expanded) {
                     setState(() => _composerExpanded = expanded);
@@ -666,7 +752,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     ),
   );
   Widget _messageContent(ConversationMessage item) {
-    final color = item.mine ? AppColors.canvas : AppColors.textPrimary;
+    const color = _bubbleText;
     if (item.type == 2) {
       final url = widget.source.attachmentUrl(item.attachment);
       if (url != null) {
@@ -715,6 +801,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         );
       }
     }
+    final card = item.jobCard;
+    if (card != null) {
+      return SharedJobCardView(card: card);
+    }
+    final reschedule = item.reschedule;
+    if (reschedule != null) {
+      return RescheduleChatCard(
+        key: ValueKey('reschedule-chat-card-${item.id}'),
+        data: reschedule,
+        peerUserId: _peerId,
+        canReview: !item.mine && reschedule['status'] == 'pending',
+        source: _reschedules,
+        onChanged: () => _load(silent: true),
+      );
+    }
     if (item.type == 3) {
       return Row(
         mainAxisSize: MainAxisSize.min,
@@ -733,115 +834,248 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ],
       );
     }
-    return SelectableText(
+    return Text(
       item.display,
-      style: TextStyle(color: color, fontSize: 14, height: 1.5),
+      style: const TextStyle(color: color, fontSize: 16, height: 1.55),
     );
   }
 
-  String _timestamp(DateTime? time) {
-    final date = messageDate(time), clock = messageClock(time);
-    return date == clock ? clock : '$date $clock';
+  Future<void> _acknowledgeVisible() async {
+    if (!mounted ||
+        !_active ||
+        _acknowledging ||
+        _id == null ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        !_scroll.hasClients ||
+        _scroll.position.maxScrollExtent - _scroll.offset > 40 ||
+        !_messages.any((row) => row.deliveryStatus != null)) {
+      return;
+    }
+    final last = _messages.fold<int>(0, (id, row) => row.id > id ? row.id : id);
+    if (last <= _lastAcknowledged) return;
+    _acknowledging = true;
+    try {
+      if (await widget.source.acknowledgeRead(_id!, last)) {
+        _lastAcknowledged = last;
+      }
+    } catch (_) {
+      // 幂等游标在下次刷新重试；确认失败不能改变发送方的已读显示。
+    } finally {
+      _acknowledging = false;
+    }
   }
 
-  Widget _bubble(ConversationMessage item) => Padding(
-    key: ValueKey('chat-message-${item.id}'),
-    // Reserve the opposite avatar's 48px column and its 8px gap.
-    padding: EdgeInsets.only(
-      left: item.mine ? 56 : 0,
-      right: item.mine ? 0 : 56,
-      bottom: 12,
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: item.mine
-          ? MainAxisAlignment.end
-          : MainAxisAlignment.start,
-      children: [
-        if (!item.mine) ...[
-          _peerAvatar('chat-peer-avatar-${item.id}'),
-          const SizedBox(width: 8),
-        ],
-        Flexible(
-          child: Stack(
-            children: [
-              Padding(
-                padding: EdgeInsets.only(right: item.mine ? 7 : 0),
-                child: Container(
-                  key: ValueKey('chat-bubble-${item.id}'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: item.mine ? AppColors.interactive : AppColors.canvas,
-                    borderRadius: BorderRadius.circular(8),
-                    border: item.mine
-                        ? null
-                        : Border.all(color: AppColors.hairline),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _messageContent(item),
-                      const SizedBox(height: 4),
-                      Text(
-                        _timestamp(item.time),
-                        style: TextStyle(
-                          color: item.mine
-                              ? AppColors.canvas.withValues(alpha: .72)
-                              : AppColors.textMuted,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
+  Future<void> _messageDetails(ConversationMessage item) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '消息时间',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              item.time == null ? '时间未知' : fullChatTimestamp(item.time!),
+            ),
+            if (item.mine && item.deliveryStatus != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                item.deliveryStatus == 'read'
+                    ? '已读：对方已打开聊天并显示这批消息'
+                    : '送达：消息已保存到对方会话，暂未收到已读回执',
+              ),
+            ],
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: item.display));
+                if (context.mounted) Navigator.pop(context);
+              },
+              icon: const Icon(Icons.copy, size: 18),
+              label: const Text('复制消息'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _messageTimeline() {
+    final widgets = <Widget>[];
+    DateTime? previous;
+    for (final item in _messages) {
+      if (showChatTimestamp(item.time, previous)) {
+        widgets.add(
+          Padding(
+            key: ValueKey('chat-time-${item.id}'),
+            padding: const EdgeInsets.only(top: 8, bottom: 20),
+            child: Center(
+              child: Tooltip(
+                message: fullChatTimestamp(item.time!),
+                child: Text(
+                  chatTimestamp(item.time!),
+                  style: const TextStyle(
+                    color: Color(0xFF737373),
+                    fontSize: 12,
                   ),
                 ),
               ),
-              if (item.mine)
-                Positioned(
-                  right: 0,
-                  top: 18,
-                  child: CustomPaint(
-                    key: ValueKey('chat-bubble-tail-${item.id}'),
-                    size: const Size(7, 12),
-                    painter: const _RecruiterBubbleTailPainter(),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        if (item.mine) ...[
-          const SizedBox(width: 8),
-          Semantics(
-            label: '招聘者$_recruiterName的头像',
-            image: true,
-            child: MessageAvatar(
-              key: ValueKey('chat-recruiter-avatar-${item.id}'),
-              name: _recruiterName,
-              url: _recruiterAvatarUrl,
             ),
           ),
-        ],
+        );
+      }
+      widgets.add(_bubble(item));
+      if (item.time != null) previous = item.time;
+    }
+    return widgets;
+  }
+
+  Widget _deliveryReceipt(ConversationMessage item) => Padding(
+    padding: const EdgeInsets.only(bottom: 2),
+    child: Tooltip(
+      message: item.deliveryStatus == 'read' ? '对方已查看消息' : '消息已保存到对方会话',
+      child: Text(
+        item.deliveryStatus == 'read' ? '已读' : '送达',
+        key: ValueKey('chat-receipt-${item.id}'),
+        style: TextStyle(
+          fontSize: 11,
+          color: item.deliveryStatus == 'read'
+              ? const Color(0xFF257B4B)
+              : const Color(0xFF737373),
+        ),
+      ),
+    ),
+  );
+
+  Widget _bubble(ConversationMessage item) => Padding(
+    key: ValueKey('chat-message-${item.id}'),
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 56,
+          child: item.mine
+              ? null
+              : Align(
+                  alignment: Alignment.topLeft,
+                  child: _peerAvatar('chat-peer-avatar-${item.id}'),
+                ),
+        ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // 双方始终使用同一正文区域；尖角和回执不参与正文宽度计算。
+              final maxBodyWidth =
+                  constraints.maxWidth - 2 * ChatBubbleBorder.tailWidth;
+              double? bodyWidth;
+              if (item.type == 1 || item.type == 4) {
+                final painter = TextPainter(
+                  text: TextSpan(
+                    text: item.display,
+                    style: DefaultTextStyle.of(context).style
+                        .merge(const TextStyle(fontSize: 16, height: 1.55)),
+                  ),
+                  textDirection: Directionality.of(context),
+                  textScaler: MediaQuery.textScalerOf(context),
+                )..layout(maxWidth: maxBodyWidth - 24);
+                // 仅极短单行消息收窄，完整句子与多行消息共用双方矩形边界。
+                bodyWidth =
+                    painter.computeLineMetrics().length > 1 ||
+                        item.display.characters.length > 6
+                    ? maxBodyWidth
+                    : (painter.width.ceilToDouble() + 24).clamp(
+                        24,
+                        maxBodyWidth,
+                      );
+                painter.dispose();
+              }
+              return Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ChatBubbleBorder.tailWidth,
+                ),
+                child: Align(
+                  alignment: item.mine ? Alignment.topRight : Alignment.topLeft,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        key: ValueKey('chat-bubble-${item.id}'),
+                        width: bodyWidth,
+                        constraints: BoxConstraints(maxWidth: maxBodyWidth),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 11,
+                        ),
+                        decoration: ShapeDecoration(
+                          color: item.mine ? _ownBubble : Colors.white,
+                          shape: ChatBubbleBorder(mine: item.mine),
+                        ),
+                        child: GestureDetector(
+                          onLongPress: () => _messageDetails(item),
+                          child: _messageContent(item),
+                        ),
+                      ),
+                      // 仅标识尖角布局位置；填色和描边由气泡的完整轮廓统一绘制。
+                      Positioned(
+                        right: item.mine ? -ChatBubbleBorder.tailWidth : null,
+                        left: item.mine ? null : -ChatBubbleBorder.tailWidth,
+                        top: 18,
+                        child: SizedBox(
+                          key: ValueKey('chat-bubble-tail-${item.id}'),
+                          width: ChatBubbleBorder.tailWidth,
+                          height: 12,
+                        ),
+                      ),
+                      if (item.mine &&
+                          ['read', 'delivered'].contains(item.deliveryStatus))
+                        Positioned(
+                          right: 0,
+                          left: 0,
+                          bottom: 2,
+                          child: Align(
+                            alignment: Alignment.bottomLeft,
+                            child: FractionalTranslation(
+                              translation: const Offset(-1, 0),
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: _deliveryReceipt(item),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        SizedBox(
+          width: 56,
+          child: item.mine
+              ? Align(
+                  alignment: Alignment.topRight,
+                  child: Semantics(
+                    label: '招聘者$_recruiterName的头像',
+                    image: true,
+                    child: MessageAvatar(
+                      key: ValueKey('chat-recruiter-avatar-${item.id}'),
+                      square: true,
+                      name: _recruiterName,
+                      url: _recruiterAvatarUrl,
+                    ),
+                  ),
+                )
+              : null,
+        ),
       ],
     ),
   );
-}
-
-class _RecruiterBubbleTailPainter extends CustomPainter {
-  const _RecruiterBubbleTailPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width, size.height / 2)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(path, Paint()..color = AppColors.interactive);
-  }
-
-  @override
-  bool shouldRepaint(covariant _RecruiterBubbleTailPainter oldDelegate) =>
-      false;
 }

@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
 import '../features/auth/domain/auth_session.dart';
+import '../features/ai/data/ai_api.dart';
 import '../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -11,10 +12,12 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.onLogout,
+    this.memoryApi,
   });
 
   final AuthSession session;
   final Future<void> Function() onLogout;
+  final AiApi? memoryApi;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -32,11 +35,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _interviewNotifications = true;
   bool _chatNotifications = true;
   bool _personalizedRecommendations = true;
+  final _memoryClient = ApiClient();
+  late final _memoryApi = widget.memoryApi ?? AiApi(_memoryClient);
+  bool _memoryEnabled = false;
+  bool _memoryLoading = true;
+  bool _memorySaving = false;
+  bool _memoryLoadFailed = false;
+  int _memoryRevision = 0;
 
   @override
   void initState() {
     super.initState();
     _loadPreferences();
+    _loadMemorySettings();
+  }
+
+  @override
+  void dispose() {
+    _memoryClient.close();
+    super.dispose();
+  }
+
+  Future<void> _loadMemorySettings() async {
+    setState(() {
+      _memoryLoading = true;
+      _memoryLoadFailed = false;
+    });
+    try {
+      final settings = await _memoryApi.memorySettings(widget.session.token);
+      if (!mounted) return;
+      setState(() {
+        _memoryEnabled = settings['enabled'] == true;
+        _memoryRevision = (settings['revision'] as num).toInt();
+      });
+    } catch (_) {
+      if (mounted) setState(() => _memoryLoadFailed = true);
+    } finally {
+      if (mounted) setState(() => _memoryLoading = false);
+    }
+  }
+
+  Future<void> _setMemoryEnabled(bool enabled) async {
+    setState(() => _memorySaving = true);
+    try {
+      final settings = await _memoryApi.setMemoryEnabled(
+        widget.session.token,
+        enabled,
+        _memoryRevision,
+      );
+      if (!mounted) return;
+      setState(() {
+        _memoryEnabled = settings['enabled'] == true;
+        _memoryRevision = (settings['revision'] as num).toInt();
+      });
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error is ApiException ? error.message : '记忆设置保存失败，请稍后重试');
+      await _loadMemorySettings();
+    } finally {
+      if (mounted) setState(() => _memorySaving = false);
+    }
   }
 
   Future<void> _loadPreferences() async {
@@ -152,6 +210,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 10),
           _SettingsCard(
             children: [
+              if (_memoryLoading)
+                const ListTile(
+                  leading: Icon(
+                    Icons.psychology_outlined,
+                    color: AppColors.brand,
+                  ),
+                  title: Text('记忆'),
+                  trailing: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else if (_memoryLoadFailed)
+                _SettingsTile(
+                  icon: Icons.psychology_outlined,
+                  title: '记忆',
+                  subtitle: '加载失败，点击重试',
+                  onTap: _loadMemorySettings,
+                )
+              else
+                _PreferenceSwitch(
+                  icon: Icons.psychology_outlined,
+                  title: '记忆',
+                  value: _memoryEnabled,
+                  enabled: !_memoryLoading && !_memorySaving,
+                  onChanged: _setMemoryEnabled,
+                ),
               _PreferenceSwitch(
                 icon: Icons.auto_awesome_outlined,
                 title: '个性化职位推荐',

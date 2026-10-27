@@ -261,7 +261,7 @@ void main() {
     expect(source.sends, ['甲🌹乙']);
   });
 
-  testWidgets('加号展开只有图片和文件，面板切换互斥且返回先收起面板', (tester) async {
+  testWidgets('加号展开图片文件和岗位入口，面板切换互斥且返回先收起面板', (tester) async {
     await mountMessages(tester, ComposerSource(), chat: true);
     await toggle(tester, 'chat-more-toggle');
     expect(find.byKey(const Key('chat-attachment-panel')), findsOneWidget);

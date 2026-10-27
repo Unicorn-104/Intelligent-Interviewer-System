@@ -43,5 +43,7 @@ public interface IAgentApplicationService
 
     AgentApplication selectApplication(Long userId, Long applicationId);
 
+    AgentApplication withdrawApplication(Long userId, Long applicationId);
+
     AgentApplication createApplication(Long userId, AgentApplicationCreateRequest request);
 }

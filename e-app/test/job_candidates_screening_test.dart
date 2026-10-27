@@ -128,7 +128,7 @@ void main() {
     expect(source.starts, 0);
   });
 
-  testWidgets('姓名旁展示真实状态与阶段，右侧环形评分，未接入操作不伪造写入', (tester) async {
+  testWidgets('姓名旁展示真实状态与阶段，评分只读且数字位于圆心', (tester) async {
     final source = ScreeningSource();
     source.candidates[1].addAll({
       'statusLabel': '面试中',
@@ -168,7 +168,7 @@ void main() {
     expect(tester.getSize(ring).width, 56);
     expect(
       find.descendant(of: card, matching: find.byIcon(Icons.edit_outlined)),
-      findsOneWidget,
+      findsNothing,
     );
     final name = find.descendant(of: card, matching: find.text('合成求职者乙'));
     final education = find.descendant(
@@ -186,16 +186,10 @@ void main() {
       find.descendant(of: card, matching: find.text('96.0')),
       findsOneWidget,
     );
-    final adjust = find.byKey(const ValueKey('job-candidate-adjust-12'));
-    expect(tester.getTopLeft(adjust).dx, tester.getTopLeft(ring).dx);
-    expect(
-      tester.getTopRight(adjust).dx,
-      lessThanOrEqualTo(tester.getTopLeft(expand).dx),
-    );
-    await tester.ensureVisible(adjust);
-    await tester.tap(adjust);
-    await tester.pumpAndSettle();
-    expect(find.text('评分调整功能开发中'), findsOneWidget);
+    expect(find.byKey(const ValueKey('job-candidate-adjust-12')), findsNothing);
+    final score = find.descendant(of: card, matching: find.text('96.0'));
+    expect(tester.getCenter(score).dx, closeTo(tester.getCenter(ring).dx, .01));
+    expect(tester.getCenter(score).dy, closeTo(tester.getCenter(ring).dy, .01));
     expect(find.text('合成详情 12'), findsNothing);
     expect(find.text('录用'), findsNothing);
     expect(find.text('淘汰'), findsNothing);

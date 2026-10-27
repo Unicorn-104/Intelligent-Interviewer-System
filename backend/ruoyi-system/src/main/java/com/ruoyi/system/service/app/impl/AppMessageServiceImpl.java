@@ -16,6 +16,8 @@ public class AppMessageServiceImpl implements IAppMessageService
     @Autowired
     private AppMessageMapper messageMapper;
 
+    @Autowired private com.ruoyi.system.service.impl.ImReadReceiptService receipts;
+
     @Override
     public List<AppMessageSummary> selectMessages(Long userId, Integer limit)
     {
@@ -65,7 +67,9 @@ public class AppMessageServiceImpl implements IAppMessageService
             throw new ServiceException("会话标识不能为空");
         }
         int safeLimit = limit == null ? 100 : Math.max(1, Math.min(limit, 200));
-        return messageMapper.selectHrChatMessages(userId, sessionId, safeLimit);
+        List<AppChatMessage> rows = messageMapper.selectHrChatMessages(userId, sessionId, safeLimit);
+        if (receipts != null) receipts.decorateCandidate(userId, sessionId, rows);
+        return rows;
     }
 
     @Override

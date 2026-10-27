@@ -6,8 +6,9 @@ import '../../../widgets/skeleton_list.dart';
 import 'data/reschedule_review_data_source.dart';
 
 class RescheduleReviewPage extends StatefulWidget {
-  const RescheduleReviewPage({super.key, this.source});
+  const RescheduleReviewPage({super.key, this.source, this.initialRequestId});
   final RescheduleReviewDataSource? source;
+  final int? initialRequestId;
 
   @override
   State<RescheduleReviewPage> createState() => _RescheduleReviewPageState();
@@ -28,7 +29,37 @@ class _RescheduleReviewPageState extends State<RescheduleReviewPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    final requestId = widget.initialRequestId;
+    if (requestId == null) {
+      _load();
+    } else {
+      _loadSpecific(requestId);
+    }
+  }
+
+  Future<void> _loadSpecific(int requestId) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await _source.detail(requestId);
+      final row = RescheduleRequest.fromJson(data);
+      if (!mounted) return;
+      setState(() {
+        _records
+          ..clear()
+          ..add(row);
+        _filterIndex = _statuses.indexOf(row.status);
+        _total = 1;
+        _nextPage = 1;
+      });
+    } catch (error) {
+      if (mounted)
+        setState(() => _error = RescheduleReviewDataSource.errorMessage(error));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _load({bool more = false}) async {

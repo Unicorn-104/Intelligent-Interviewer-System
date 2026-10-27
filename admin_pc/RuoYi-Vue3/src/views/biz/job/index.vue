@@ -16,6 +16,9 @@
         <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
         <el-button icon="Refresh" @click="resetQuery">重置</el-button>
       </el-form-item>
+      <el-form-item>
+        <el-checkbox v-model="hideOffline">隐藏已下架</el-checkbox>
+      </el-form-item>
     </el-form>
 
     <el-row :gutter="10" class="mb8">
@@ -38,6 +41,7 @@
             <el-table-column label="岗位名称" align="center" prop="jobName" :show-overflow-tooltip="true" />
             <el-table-column label="薪资" align="center" prop="salary" width="110" />
             <el-table-column label="城市" align="center" prop="city" width="80" />
+            <!-- 风控功能未上线，暂时隐藏
             <el-table-column label="风险等级" align="center" width="80">
               <template #default="scope">
                 <el-tag v-if="scope.row.riskLevel !== null && scope.row.riskLevel !== undefined && scope.row.riskLevel !== ''"
@@ -53,6 +57,7 @@
                 <span v-else>-</span>
               </template>
             </el-table-column>
+            -->
             <el-table-column label="状态" align="center" width="90">
               <template #default="scope">
                 <el-tag :type="statusTag(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag>
@@ -192,6 +197,7 @@ const loading = ref(true)
 const showSearch = ref(true)
 const total = ref(0)
 const activeNames = ref([])
+const hideOffline = ref(true)
 const auditOpen = ref(false)
 const offOpen = ref(false)
 const detailOpen = ref(false)
@@ -217,8 +223,11 @@ const detailSalary = computed(() => {
 })
 
 const companyGroups = computed(() => {
+  const filtered = hideOffline.value
+    ? jobList.value.filter((r) => Number(r.status) !== 2 && Number(r.status) !== 3)
+    : jobList.value
   const map = new Map()
-  jobList.value.forEach((row) => {
+  filtered.forEach((row) => {
     const key = row.companyName || '未知企业'
     if (!map.has(key)) map.set(key, [])
     map.get(key).push(row)

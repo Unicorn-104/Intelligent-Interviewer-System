@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/network/api_client.dart';
@@ -5,6 +7,10 @@ import '../core/network/api_exception.dart';
 import '../features/auth/domain/auth_session.dart';
 import '../features/messages/data/message_api.dart';
 import '../features/messages/domain/app_message.dart';
+import '../features/messages/presentation/reschedule_message_card.dart';
+import '../features/messages/presentation/shared_job_card_view.dart';
+import '../features/messages/presentation/shared_job_detail_screen.dart';
+import '../features/jobs/data/job_api.dart';
 import '../theme/app_theme.dart';
 
 class HrChatScreen extends StatefulWidget {
@@ -12,50 +18,87 @@ class HrChatScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.conversation,
+    this.messageApi,
+    this.sharedJobApi,
+    this.pollInterval = const Duration(seconds: 8),
   });
 
   final AuthSession session;
   final AppMessage conversation;
+  final MessageApi? messageApi;
+  final JobApi? sharedJobApi;
+  final Duration pollInterval;
 
   @override
   State<HrChatScreen> createState() => _HrChatScreenState();
 }
 
-class _HrChatScreenState extends State<HrChatScreen> {
+class _HrChatScreenState extends State<HrChatScreen>
+    with WidgetsBindingObserver {
   late final ApiClient _client;
   late final MessageApi _api;
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   List<ChatMessage>? _messages;
   String? _error;
-  bool _sending = false;
+  bool _sending = false, _loadingMessages = false, _active = true;
+  Timer? _timer;
+  bool _acknowledging = false;
+  int _lastAcknowledged = 0;
 
   @override
   void initState() {
     super.initState();
     _client = ApiClient();
-    _api = MessageApi(_client);
+    _api = widget.messageApi ?? MessageApi(_client);
+    _scrollController.addListener(_acknowledgeVisible);
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    if (widget.pollInterval > Duration.zero) {
+      _timer = Timer.periodic(widget.pollInterval, (_) {
+        if (_active && !_sending && ModalRoute.of(context)?.isCurrent == true) {
+          _load(silent: true);
+        }
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _active = state == AppLifecycleState.resumed;
+    if (_active && !_sending) _load(silent: true);
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _textController.dispose();
     _scrollController.dispose();
     _client.close();
     super.dispose();
   }
 
-  Future<void> _load({bool scrollToEnd = false}) async {
-    setState(() => _error = null);
+  Future<void> _load({bool scrollToEnd = false, bool silent = false}) async {
+    if (_loadingMessages) return;
+    final follow =
+        _messages == null ||
+        !_scrollController.hasClients ||
+        _scrollController.position.maxScrollExtent - _scrollController.offset <
+            80;
+    _loadingMessages = true;
+    if (!silent) setState(() => _error = null);
     try {
       final messages = await _api.fetchHrChat(
         widget.session.token,
         widget.conversation.sourceId,
       );
       if (!mounted) return;
-      setState(() => _messages = messages.reversed.toList());
-      if (scrollToEnd) {
+      setState(() {
+        _messages = messages.reversed.toList();
+        _error = null;
+      });
+      if (scrollToEnd || follow) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollController.hasClients) {
             _scrollController.animateTo(
@@ -66,8 +109,49 @@ class _HrChatScreenState extends State<HrChatScreen> {
           }
         });
       }
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _acknowledgeVisible(),
+      );
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted && (!silent || _messages == null)) {
+        setState(() => _error = error.message);
+      }
+    } finally {
+      _loadingMessages = false;
+    }
+  }
+
+  Future<void> _acknowledgeVisible() async {
+    final messages = _messages;
+    if (!mounted ||
+        !_active ||
+        _acknowledging ||
+        messages == null ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        !_scrollController.hasClients ||
+        _scrollController.position.maxScrollExtent - _scrollController.offset >
+            40 ||
+        !messages.any((row) => row.deliveryStatus != null)) {
+      return;
+    }
+    final last = messages.fold<int>(
+      0,
+      (id, row) => row.messageId > id ? row.messageId : id,
+    );
+    if (last <= _lastAcknowledged) return;
+    _acknowledging = true;
+    try {
+      if (await _api.acknowledgeRead(
+        widget.session.token,
+        widget.conversation.sourceId,
+        last,
+      )) {
+        _lastAcknowledged = last;
+      }
+    } catch (_) {
+      // 下次刷新只重试幂等已读确认，消息不会重新发送。
+    } finally {
+      _acknowledging = false;
     }
   }
 
@@ -85,9 +169,9 @@ class _HrChatScreenState extends State<HrChatScreen> {
       await _load(scrollToEnd: true);
     } on ApiException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -98,6 +182,13 @@ class _HrChatScreenState extends State<HrChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        actions: [
+          IconButton(
+            tooltip: '刷新聊天',
+            onPressed: () => _load(),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
         titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,7 +229,11 @@ class _HrChatScreenState extends State<HrChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.wifi_off_rounded, color: AppColors.muted, size: 42),
+            const Icon(
+              Icons.wifi_off_rounded,
+              color: AppColors.muted,
+              size: 42,
+            ),
             const SizedBox(height: 10),
             Text(_error!, style: Theme.of(context).textTheme.bodySmall),
             TextButton(onPressed: _load, child: const Text('重新加载')),
@@ -162,29 +257,45 @@ class _HrChatScreenState extends State<HrChatScreen> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 22),
         itemCount: messages.length,
         separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (context, index) => _ChatBubble(message: messages[index]),
+        itemBuilder: (context, index) => _ChatBubble(
+          message: messages[index],
+          session: widget.session,
+          sharedJobApi: widget.sharedJobApi,
+        ),
       ),
     );
   }
 }
 
 class _ChatBubble extends StatelessWidget {
-  const _ChatBubble({required this.message});
+  const _ChatBubble({
+    required this.message,
+    required this.session,
+    this.sharedJobApi,
+  });
+  final JobApi? sharedJobApi;
+
+  final AuthSession session;
 
   final ChatMessage message;
 
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment:
-          message.mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+      mainAxisAlignment: message.mine
+          ? MainAxisAlignment.end
+          : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (!message.mine) ...[
           const CircleAvatar(
             radius: 18,
             backgroundColor: AppColors.primarySoft,
-            child: Icon(Icons.person_outline, color: AppColors.interactive, size: 20),
+            child: Icon(
+              Icons.person_outline,
+              color: AppColors.interactive,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 9),
         ],
@@ -196,9 +307,14 @@ class _ChatBubble extends StatelessWidget {
             children: [
               Container(
                 constraints: const BoxConstraints(maxWidth: 280),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-                  color: message.mine ? AppColors.interactive : AppColors.canvas,
+                  color: message.mine
+                      ? const Color(0xFF95EC69)
+                      : AppColors.canvas,
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(12),
                     topRight: const Radius.circular(12),
@@ -209,19 +325,42 @@ class _ChatBubble extends StatelessWidget {
                       ? null
                       : Border.all(color: AppColors.hairline),
                 ),
-                child: Text(
-                  message.content,
-                  style: TextStyle(
-                    color: message.mine ? Colors.white : AppColors.body,
-                    fontSize: 14,
-                    height: 1.5,
-                  ),
-                ),
+                child: message.jobCard != null
+                    ? SharedJobCardView(
+                        card: message.jobCard!,
+                        candidate: true,
+                        onTap: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) => SharedJobDetailScreen(
+                              positionId: message.jobCard!.positionId,
+                              api: sharedJobApi,
+                              session: session,
+                            ),
+                          ),
+                        ),
+                      )
+                    : message.type == 6
+                    ? const Text('岗位卡片暂不可用，请联系招聘者重新发送')
+                    : message.reschedule == null
+                    ? Text(
+                        message.content,
+                        style: TextStyle(
+                          color: AppColors.body,
+                          fontSize: 16,
+                          height: 1.55,
+                        ),
+                      )
+                    : RescheduleMessageCard(
+                        data: message.reschedule!,
+                        mine: false,
+                      ),
               ),
               const SizedBox(height: 4),
               Text(
-                _formatChatTime(message.createdAt),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 10),
+                '${_formatChatTime(message.createdAt)}${message.mine && ['read', 'delivered'].contains(message.deliveryStatus) ? (message.deliveryStatus == 'read' ? ' · 已读' : ' · 送达') : ''}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontSize: 10),
               ),
             ],
           ),
@@ -308,7 +447,9 @@ class _ChatComposer extends StatelessWidget {
 
 String _formatChatTime(DateTime date) {
   final now = DateTime.now();
-  final sameDay = now.year == date.year && now.month == date.month && now.day == date.day;
-  final time = '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  final sameDay =
+      now.year == date.year && now.month == date.month && now.day == date.day;
+  final time =
+      '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   return sameDay ? time : '${date.month}月${date.day}日 $time';
 }

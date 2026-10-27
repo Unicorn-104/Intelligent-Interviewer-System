@@ -30,6 +30,9 @@ import com.ruoyi.enterprise.mapper.RescheduleRequestMapper;
 import com.ruoyi.enterprise.service.impl.InterviewScheduleServiceImpl;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
+import com.ruoyi.system.mapper.ImMessageMapper;
+import com.ruoyi.system.mapper.ImSessionMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /** 仅随机 H2 内存库与合成数据；不加载应用数据源、不连接业务数据库。 */
 public class RescheduleRequestServiceTest
@@ -39,11 +42,44 @@ public class RescheduleRequestServiceTest
     private InterviewScheduleServiceImpl schedules;
     private RescheduleRequestMapper requests;
     private DashboardMapper companies;
+    private RescheduleMessageService notifications;
     private DriverManagerDataSource dataSource;
     public static String dateFormat(Timestamp time, String pattern)
     {
         return time == null ? null : time.toLocalDateTime().format(DateTimeFormatter.ofPattern(
                 pattern.contains("%s") ? "yyyy-MM-dd HH:mm:ss" : "yyyy-MM-dd HH:mm"));
+    }
+    // H2 不提供 MySQL JSON_* 函数；只适配 JSON 运算，Mapper SQL 与生产代码相同。
+    private static final ObjectMapper JSON = new ObjectMapper();
+    public static boolean jsonValid(String value) {
+        try { return value != null && JSON.readTree(value) != null; }
+        catch (Exception ex) { return false; }
+    }
+    public static String jsonExtract(String value, String path) throws Exception {
+        if (!jsonValid(value)) return null;
+        var node = JSON.readTree(value).get(path.substring(2));
+        return node == null ? null : node.toString();
+    }
+    public static String jsonUnquote(String value) throws Exception {
+        return value == null ? null : JSON.readTree(value).asText();
+    }
+    public static String jsonSet(String value, String key, String status, String noteKey, String note) throws Exception {
+        var node = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(value);
+        node.put(key.substring(2), status);
+        node.put(noteKey.substring(2), note);
+        return node.toString();
+    }
+    private org.springframework.core.io.Resource mysqlResource(String path) throws Exception {
+        String xml = new ClassPathResource(path).getContentAsString(java.nio.charset.StandardCharsets.UTF_8)
+                .replace("sysdate()", "current_timestamp");
+        for (String side : List.of("a", "b")) {
+            String column = "ims_unread_" + side;
+            xml = xml.replace("if(ims_user_" + side + "_id = #{receiverId}, " + column + " + 1, " + column + ")",
+                    "case when ims_user_" + side + "_id = #{receiverId} then " + column + " + 1 else " + column + " end");
+            xml = xml.replace("if(ims_user_" + side + "_id = #{userId}, 0, " + column + ")",
+                    "case when ims_user_" + side + "_id = #{userId} then 0 else " + column + " end");
+        }
+        return new org.springframework.core.io.ByteArrayResource(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8), path);
     }
     private <T> T transactional(T target, Class<T> type)
     {
@@ -59,8 +95,16 @@ public class RescheduleRequestServiceTest
                 + ";MODE=MySQL;DATABASE_TO_UPPER=false;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=5000", "sa", "");
         jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("CREATE ALIAS date_format FOR 'com.ruoyi.enterprise.service.RescheduleRequestServiceTest.dateFormat'");
+        for (String function : List.of("json_valid:jsonValid", "json_extract:jsonExtract",
+                "json_unquote:jsonUnquote", "json_set:jsonSet")) {
+            var names = function.split(":");
+            jdbc.execute("CREATE ALIAS " + names[0] + " FOR 'com.ruoyi.enterprise.service.RescheduleRequestServiceTest." + names[1] + "'");
+        }
         for (String sql : List.of(
             "create table sys_user(user_id bigint primary key, status varchar(1), nick_name varchar(100))",
+            "create table t_im_session(ims_id bigint auto_increment primary key, ims_user_a_id bigint, ims_user_b_id bigint, ims_last_message varchar(255), ims_last_message_at timestamp, ims_unread_a int default 0, ims_unread_b int default 0, ims_created_at timestamp, ims_updated_at timestamp)",
+            "create table t_im_message(imsg_id bigint auto_increment primary key, imsg_session_id bigint, imsg_sender_id bigint, imsg_type int, imsg_content varchar(16000), imsg_attachment_url varchar(500), imsg_is_recalled int default 0, imsg_created_at timestamp)",
+            "create table t_msg(msg_id bigint auto_increment primary key, msg_receiver_id bigint, msg_sender_id bigint, msg_type int, msg_title varchar(255), msg_content varchar(4000), msg_is_read int, msg_target_url varchar(500))",
             "create table t_tal(tal_id bigint primary key, tal_user_id bigint, tal_status int default 0, tal_updated_at timestamp)",
             "create table t_pos(pos_id bigint primary key, pos_company_id bigint, pos_title varchar(100), pos_process_template_id bigint)",
             "create table t_process_instance(pin_candidate_id bigint, pin_position_id bigint)",
@@ -73,7 +117,7 @@ public class RescheduleRequestServiceTest
             "insert into t_tal(tal_id,tal_user_id) values(11,101),(12,102)",
             "insert into t_pos values(7,1,'合成岗位',1),(8,2,'另一企业岗位',2)",
             "insert into t_process_instance values(11,7),(12,7)",
-            "insert into t_cmp_binding values(1,19,1),(1,20,1)",
+            "insert into t_cmp_binding values(1,9,1),(1,19,1),(1,20,1)",
             "insert into t_process_stage values(31,1,'在线笔试',1,1),(32,1,'技术面试',2,2)")) jdbc.execute(sql);
         Path directory = Path.of("").toAbsolutePath();
         while (directory != null && !Files.exists(directory.resolve("e-app/new.sql"))) directory = directory.getParent();
@@ -87,16 +131,24 @@ public class RescheduleRequestServiceTest
         jdbc.execute(ddl); // 本段幂等执行，历史SQL不参与。
         var factory = new SqlSessionFactoryBean();
         factory.setDataSource(dataSource);
+        factory.setTypeAliasesPackage("com.ruoyi.system.domain");
         var paging = new com.github.pagehelper.PageInterceptor();
         var pagingProperties = new java.util.Properties();
         pagingProperties.setProperty("helperDialect", "h2");
         paging.setProperties(pagingProperties);
         factory.setPlugins(paging);
         factory.setMapperLocations(new ClassPathResource("mapper/enterprise/InterviewScheduleMapper.xml"),
-                new ClassPathResource("mapper/enterprise/RescheduleRequestMapper.xml"));
+                new ClassPathResource("mapper/enterprise/RescheduleRequestMapper.xml"),
+                mysqlResource("mapper/system/ImSessionMapper.xml"),
+                mysqlResource("mapper/system/ImMessageMapper.xml"));
         var template = new SqlSessionTemplate(factory.getObject());
         var scheduleMapper = template.getMapper(InterviewScheduleMapper.class);
         requests = template.getMapper(RescheduleRequestMapper.class);
+        var notificationTarget = new RescheduleMessageService();
+        ReflectionTestUtils.setField(notificationTarget,"requests",requests);
+        ReflectionTestUtils.setField(notificationTarget,"sessions",template.getMapper(ImSessionMapper.class));
+        ReflectionTestUtils.setField(notificationTarget,"messages",template.getMapper(ImMessageMapper.class));
+        notifications = transactional(notificationTarget, RescheduleMessageService.class);
         companies = mock(DashboardMapper.class);
         when(companies.selectCompanyIdByUser(9L)).thenReturn(1L);
         when(companies.selectCompanyIdByUser(19L)).thenReturn(1L);
@@ -107,6 +159,7 @@ public class RescheduleRequestServiceTest
         ReflectionTestUtils.setField(scheduleTarget,"scheduleMapper",scheduleMapper);
         ReflectionTestUtils.setField(scheduleTarget,"dashboardMapper",companies);
         ReflectionTestUtils.setField(scheduleTarget,"jobMapper",jobs);
+        ReflectionTestUtils.setField(scheduleTarget,"rescheduleMessages",notifications);
         schedules = transactional(scheduleTarget, InterviewScheduleServiceImpl.class);
         service = buildService(requests, scheduleMapper);
     }
@@ -117,6 +170,7 @@ public class RescheduleRequestServiceTest
         ReflectionTestUtils.setField(target,"scheduleMapper",scheduleMapper);
         ReflectionTestUtils.setField(target,"dashboardMapper",companies);
         ReflectionTestUtils.setField(target,"scheduleService",schedules);
+        ReflectionTestUtils.setField(target,"rescheduleMessages",notifications);
         return transactional(target, RescheduleRequestService.class);
     }
     private long appointment(long candidate, long interviewer, String time)
@@ -296,6 +350,92 @@ public class RescheduleRequestServiceTest
         duplicate.remove("requestId");
         assertThrows(org.springframework.dao.DuplicateKeyException.class, () -> requests.insertRequest(duplicate));
         assertEquals(1,requests.countPending(appointment));
+    }
+
+    private int count(String table) {
+        return jdbc.queryForObject("select count(*) from " + table, Integer.class);
+    }
+    @Test void submittedRequestCreatesChatCardsSystemNoticesAndUnreadForAllRecruiters() throws Exception {
+        long appointment = appointment(11,19,"2099-01-02 09:00"), request = request(appointment);
+        assertEquals(3, count("t_im_message"));
+        assertEquals(3, count("t_msg"));
+        assertEquals(3, count("t_im_session"));
+        for (var row : jdbc.queryForList("select * from t_im_message")) {
+            assertEquals(101L, ((Number) row.get("imsg_sender_id")).longValue());
+            assertEquals(5, ((Number) row.get("imsg_type")).intValue());
+            var card = JSON.readTree(String.valueOf(row.get("imsg_content")));
+            assertEquals(request, card.get("requestId").asLong());
+            assertEquals("pending", card.get("status").asText());
+        }
+        assertEquals(3, jdbc.queryForObject("select sum(ims_unread_a) from t_im_session",Integer.class));
+        assertEquals(0, jdbc.queryForObject("select sum(ims_unread_b) from t_im_session",Integer.class));
+        assertTrue(jdbc.queryForList("select msg_target_url from t_msg",String.class).stream()
+                .allMatch(url -> url.equals("/enterprise/interview/reschedule-requests/" + request)));
+    }
+    @Test void directChangeSendsOneCardAndNoticeToCandidateAndRetryDoesNotNotifyAgain() throws Exception {
+        long appointment = appointment(11,19,"2099-01-02 09:00");
+        schedules.reschedule(9L,appointment,"2099-01-04 09:00",null,null);
+        var card = JSON.readTree(jdbc.queryForObject("select imsg_content from t_im_message",String.class));
+        assertEquals("changed",card.get("status").asText());
+        assertEquals("2099-01-02 09:00",card.get("originalStartTime").asText());
+        assertEquals("2099-01-04 09:45:00",card.get("newEndTime").asText());
+        assertEquals("合成候选人",card.get("candidateName").asText());
+        assertEquals(101L,jdbc.queryForObject("select msg_receiver_id from t_msg",Long.class));
+        assertEquals(1,jdbc.queryForObject("select ims_unread_b from t_im_session",Integer.class));
+        schedules.reschedule(9L,appointment,"2099-01-04 09:00",null,null);
+        assertEquals(1,count("t_im_message"));
+        assertEquals(1,count("t_msg"));
+    }
+    @Test void approvalUpdatesAllOriginalCardsAndNotifiesOnceWithoutDuplicateDirectChangeCard() throws Exception {
+        long appointment = appointment(11,19,"2099-01-02 09:00"), request = request(appointment);
+        service.review(9L,request,"approved","合成同意说明");
+        assertEquals(6,count("t_im_message"));
+        assertEquals(4,count("t_msg"));
+        for (String content : jdbc.queryForList("select imsg_content from t_im_message",String.class)) {
+            var card = JSON.readTree(content);
+            assertEquals("approved",card.get("status").asText());
+            assertEquals("合成同意说明",card.get("reviewNote").asText());
+        }
+        service.review(19L,request,"approved",null);
+        assertEquals(6,count("t_im_message"));
+        assertEquals(4,count("t_msg"));
+    }
+    @Test void legacyRequestWithoutOriginalCardCanStillBeReviewed() {
+        long appointment = appointment(11,19,"2099-01-02 09:00"), request = request(appointment);
+        jdbc.update("delete from t_im_message");
+        assertEquals("rejected",service.review(9L,request,"rejected","合成拒绝说明").get("status"));
+        assertEquals(3,count("t_im_message"));
+    }
+    @Test void failedNotificationRollsBackDirectChangeAndAllChatWrites() {
+        long appointment = appointment(11,19,"2099-01-02 09:00");
+        jdbc.execute("alter table t_msg add constraint reject_notice check(msg_receiver_id <> 101)");
+        assertThrows(RuntimeException.class, () -> schedules.reschedule(9L,appointment,"2099-01-04 09:00",null,null));
+        assertEquals("2099-01-02 09:00:00",requests.selectAppointment(appointment).get("startTime"));
+        assertEquals(1,count("t_sch_slot"));
+        assertEquals(0,count("t_im_session"));
+        assertEquals(0,count("t_im_message"));
+        assertEquals(0,count("t_msg"));
+    }
+    @Test void failedSubmissionNoticeRollsBackRequestAndCards() {
+        long appointment = appointment(11,19,"2099-01-02 09:00");
+        jdbc.execute("alter table t_msg add constraint reject_notice check(msg_receiver_id <> 20)");
+        assertThrows(RuntimeException.class, () -> request(appointment));
+        assertEquals(0,count("t_sch_reschedule_request"));
+        assertEquals(0,count("t_im_session"));
+        assertEquals(0,count("t_im_message"));
+        assertEquals(0,count("t_msg"));
+    }
+    @Test void failedReviewNoticeRollsBackAppointmentDecisionAndOriginalCardStatus() throws Exception {
+        long appointment = appointment(11,19,"2099-01-02 09:00"), request = request(appointment);
+        jdbc.execute("alter table t_msg add constraint reject_notice check(msg_receiver_id <> 101)");
+        assertThrows(RuntimeException.class, () -> service.review(9L,request,"approved",null));
+        assertEquals("pending",requests.selectRequest(request,1L).get("status"));
+        assertEquals("2099-01-02 09:00:00",requests.selectAppointment(appointment).get("startTime"));
+        assertEquals(1,count("t_sch_slot"));
+        assertEquals(3,count("t_im_message"));
+        assertEquals(3,count("t_msg"));
+        for (String content : jdbc.queryForList("select imsg_content from t_im_message",String.class))
+            assertEquals("pending",JSON.readTree(content).get("status").asText());
     }
 
 }

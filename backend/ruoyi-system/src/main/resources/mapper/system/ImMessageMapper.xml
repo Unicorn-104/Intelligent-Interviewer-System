@@ -28,6 +28,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         values (#{sessionId}, #{senderId}, #{type}, #{content}, #{attachmentUrl}, sysdate())
     </insert>
 
+    <update id="updateRescheduleCards">
+        update t_im_message
+        set imsg_content = json_set(imsg_content, '$.status', #{status}, '$.reviewNote', #{reviewNote})
+        where imsg_type = 5 and json_valid(imsg_content)
+          and json_unquote(json_extract(imsg_content, '$.kind')) = 'interview_reschedule'
+          and json_unquote(json_extract(imsg_content, '$.requestId')) = cast(#{requestId} as char)
+    </update>
+
     <select id="selectQuickReplies" resultType="java.util.LinkedHashMap">
         select id, category, content from t_im_quick_reply order by id
     </select>

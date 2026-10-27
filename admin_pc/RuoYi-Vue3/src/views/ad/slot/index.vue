@@ -412,7 +412,7 @@ function slotTypeLabel(val) {
 
 function slotTypeTag(val) {
   const item = slotTypeOptions.find((o) => o.value === val)
-  return item ? item.tag : ''
+  return item ? item.tag : 'info'
 }
 
 /** 投放端显示 */
@@ -423,7 +423,7 @@ function targetLabel(val) {
 
 function targetTag(val) {
   const item = targetOptions.find((o) => o.value === val)
-  return item ? item.tag : ''
+  return item ? item.tag : 'info'
 }
 
 /** 多选框选中数据 */

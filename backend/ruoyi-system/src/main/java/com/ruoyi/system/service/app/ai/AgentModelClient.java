@@ -58,6 +58,12 @@ public class AgentModelClient
     public Reply complete(ModelProvider provider, ArrayNode messages, JsonNode tools,
             Consumer<String> delta, long deadlineNanos) throws Exception
     {
+        return complete(provider, messages, tools, delta, deadlineNanos, MAX_OUTPUT_TOKENS);
+    }
+
+    public Reply complete(ModelProvider provider, ArrayNode messages, JsonNode tools,
+            Consumer<String> delta, long deadlineNanos, int maxOutputTokens) throws Exception
+    {
         String url = provider.getMppApiUrl();
         URI uri = URI.create(url == null || url.isBlank() ? "https://api.deepseek.com/chat/completions" : url);
         // A provider is administrator-controlled. Never accept endpoints from the conversation.
@@ -79,7 +85,7 @@ public class AgentModelClient
         body.put("stream", true);
         body.putObject("stream_options").put("include_usage", true);
         body.put("temperature", 0.2);
-        body.put("max_tokens", MAX_OUTPUT_TOKENS);
+        body.put("max_tokens", Math.max(128, Math.min(MAX_OUTPUT_TOKENS, maxOutputTokens)));
         HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofMillis(remaining))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + provider.getMppApiKey())

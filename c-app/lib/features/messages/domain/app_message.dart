@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'shared_job_card.dart';
+
 enum AppMessageCategory { hr, system, company }
 
 class ChatMessage {
@@ -7,27 +10,47 @@ class ChatMessage {
     required this.content,
     required this.mine,
     required this.createdAt,
+    this.type = 1,
+    this.deliveryStatus,
   });
-
-  final int messageId;
-  final int senderId;
+  final int messageId, senderId, type;
+  final String? deliveryStatus;
   final String content;
   final bool mine;
   final DateTime createdAt;
+  SharedJobCard? get jobCard => SharedJobCard.parse(type, content);
 
-  factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    return ChatMessage(
-      messageId: AppMessage._asInt(json['messageId']),
-      senderId: AppMessage._asInt(json['senderId']),
-      content: json['content']?.toString() ?? '',
-      mine: json['mine'] == true || json['mine']?.toString() == '1',
-      createdAt:
-          DateTime.tryParse(
-            (json['createdAt']?.toString() ?? '').replaceFirst(' ', 'T'),
-          ) ??
-          DateTime.fromMillisecondsSinceEpoch(0),
-    );
+  Map<String, dynamic>? get reschedule {
+    if (type != 5) return null;
+    try {
+      final raw = jsonDecode(content);
+      if (raw is! Map ||
+          raw['kind'] != 'interview_reschedule' ||
+          raw['version'] != 1) {
+        return null;
+      }
+      return Map<String, dynamic>.from(raw);
+    } catch (_) {
+      return null;
+    }
   }
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+    messageId: AppMessage._asInt(json['messageId']),
+    senderId: AppMessage._asInt(json['senderId']),
+    content: json['content']?.toString() ?? '',
+    mine: json['mine'] == true || json['mine']?.toString() == '1',
+    type: int.tryParse('${json['type']}') ?? 1,
+    deliveryStatus:
+        ['read', 'delivered', 'received'].contains(json['deliveryStatus'])
+        ? json['deliveryStatus'] as String
+        : null,
+    createdAt:
+        DateTime.tryParse(
+          (json['createdAt']?.toString() ?? '').replaceFirst(' ', 'T'),
+        ) ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+  );
 }
 
 class AppMessage {
@@ -54,9 +77,17 @@ class AppMessage {
   final String? badge;
 
   int? get companyId {
-    if (category != AppMessageCategory.company || targetUrl == null) return null;
+    if (category != AppMessageCategory.company || targetUrl == null) {
+      return null;
+    }
     final uri = Uri.tryParse(targetUrl!);
-    if (uri == null || uri.hasScheme || uri.hasAuthority || uri.pathSegments.length != 2 || uri.pathSegments.first != 'companies') return null;
+    if (uri == null ||
+        uri.hasScheme ||
+        uri.hasAuthority ||
+        uri.pathSegments.length != 2 ||
+        uri.pathSegments.first != 'companies') {
+      return null;
+    }
     final id = int.tryParse(uri.pathSegments[1]);
     return id != null && id > 0 ? id : null;
   }

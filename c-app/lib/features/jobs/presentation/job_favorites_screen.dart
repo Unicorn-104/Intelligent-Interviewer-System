@@ -1,3 +1,4 @@
+import 'application_resume_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/network/api_client.dart';
@@ -61,26 +62,16 @@ class _JobFavoritesScreenState extends State<JobFavoritesScreen> {
   }
 
   Future<bool> _apply(Job job) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认投递'),
-        content: Text('将默认简历投递给「${job.company}」的“${job.title}”岗位？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('暂不投递'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('确认投递'),
-          ),
-        ],
-      ),
+    final resumeId = await chooseApplicationResume(
+      context,
+      token: widget.session.token,
+      job: job,
     );
-    if (!mounted || confirmed != true) return false;
+    if (!mounted || resumeId == null) return false;
     try {
-      await JobApi(_client).apply(widget.session.token, job.positionId);
+      await JobApi(
+        _client,
+      ).apply(widget.session.token, job.positionId, resumeId: resumeId);
       if (mounted) _showMessage('投递成功');
       return true;
     } on ApiException catch (error) {

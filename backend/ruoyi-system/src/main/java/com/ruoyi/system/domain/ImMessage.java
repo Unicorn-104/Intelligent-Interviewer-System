@@ -22,7 +22,7 @@ public class ImMessage extends BaseEntity
     /** 发送者认证ID */
     private Long senderId;
 
-    /** 类型：1-文本，2-图片，3-文件，4-表情，5-系统 */
+    /** 类型：1-文本，2-图片，3-文件，4-表情，5-系统，6-岗位卡片（业务服务生成） */
     private Integer type;
 
     /** 消息内容 */
@@ -43,6 +43,11 @@ public class ImMessage extends BaseEntity
 
     /** 查询结果：是否本人发送（不入库） */
     private Boolean isMine;
+
+    /** read / delivered；未部署回执表时为空，不伪造已读。 */
+    private String deliveryStatus;
+    public String getDeliveryStatus() { return deliveryStatus; }
+    public void setDeliveryStatus(String value) { deliveryStatus = value; }
 
     public Long getMessageId()
     {

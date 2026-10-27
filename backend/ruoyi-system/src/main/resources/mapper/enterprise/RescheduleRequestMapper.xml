@@ -76,4 +76,15 @@
             rsr_review_note = #{reviewNote}, rsr_reviewed_at = now()
         where rsr_id = #{requestId} and rsr_company_id = #{companyId} and rsr_status = 0
     </update>
+    <select id="selectCompanyUserIds" resultType="long">
+        select distinct b.bnd_user_id
+        from t_cmp_binding b join sys_user u on u.user_id = b.bnd_user_id
+        where b.bnd_company_id = #{companyId} and b.bnd_status = 1 and u.status = '0'
+        order by b.bnd_user_id
+    </select>
+    <insert id="insertNotification">
+        insert into t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content,
+                           msg_is_read, msg_target_url)
+        values (#{receiverId}, 0, 1, #{title}, #{content}, 0, #{targetUrl})
+    </insert>
 </mapper>
