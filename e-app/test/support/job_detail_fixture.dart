@@ -1,3 +1,4 @@
+import 'package:enterprise_recruiter/core/network/api_exception.dart';
 import 'package:enterprise_recruiter/features/enterprise/jobs/data/job_detail_data_source.dart';
 
 import 'talent_detail_fixture.dart';
@@ -164,5 +165,42 @@ final class DetailFakeSource extends JobDetailDataSource {
         'startTime': '2026-10-20 10:00:00',
       },
     ];
+  }
+
+  int previewCalls = 0;
+  bool deleteFailure = false;
+  final List<int> deletedJobs = [];
+
+  @override
+  Future<Map<String, dynamic>> loadCandidatePreview(int id) async {
+    previewCalls++;
+    return {
+      'id': id,
+      'title': 'Java工程师',
+      'salaryText': '18K-28K·月薪',
+      'workCity': '杭州',
+      'experienceRequired': '3-5年',
+      'educationText': '本科',
+      'jobTypeText': '全职',
+      'statusText': '在招',
+      'responsibilities': ['开发接口', '维护服务'],
+      'requirements': ['熟悉Java'],
+      'skills': ['Spring'],
+      'companyName': '测试企业',
+      'companyLogoUrl': '',
+      'companyIndustry': '互联网',
+      'companySize': '100-499人',
+      'companyCity': '杭州',
+      'companyAddress': '西湖区',
+      'companyIntro': '专注招聘的企业',
+    };
+  }
+
+  @override
+  Future<void> deleteJob(int id) async {
+    if (deleteFailure) {
+      throw const ApiException('该岗位已有投递、面试等业务数据，无法删除；可将岗位改为停招或下线');
+    }
+    deletedJobs.add(id);
   }
 }

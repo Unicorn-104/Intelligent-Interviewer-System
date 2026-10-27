@@ -7,6 +7,7 @@ import '../talent/talent_detail_page.dart';
 import '../talent/models/talent_detail_view_data.dart';
 import 'data/job_detail_data_source.dart';
 import 'job_interviews_page.dart';
+import 'job_preview_page.dart';
 import 'job_publish_page.dart';
 import 'models/job_detail_view_data.dart';
 import 'widgets/job_basic_info_tab.dart';
@@ -47,6 +48,8 @@ class _JobDetailPageState extends State<JobDetailPage>
   bool _editingWorkflow = false;
   bool _screening = false;
   bool _editingJob = false;
+  bool _previewing = false;
+  bool _deletingJob = false;
   DateTimeRange? _interviewRange;
 
   int get _positionId {
@@ -402,6 +405,68 @@ class _JobDetailPageState extends State<JobDetailPage>
     );
   }
 
+  Future<void> _preview() async {
+    if (_previewing) return;
+    setState(() => _previewing = true);
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => JobPreviewPage(
+            positionId: _positionId,
+            load: () => widget.source.loadCandidatePreview(_positionId),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _previewing = false);
+    }
+  }
+
+  Future<void> _deleteJob() async {
+    if (_deletingJob) return;
+    final title = jobValue(
+      _detail.data?.job['title'] ?? widget.job['title'],
+      fallback: '该岗位',
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除岗位'),
+        content: Text(
+          '确认删除岗位「$title」吗？删除后不可恢复。\n已有投递、面试等业务数据的岗位无法删除，可改为停招或下线。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            key: const Key('job-delete-confirm'),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deletingJob = true);
+    try {
+      await widget.source.deleteJob(_positionId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('岗位已删除')));
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(jobDetailError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _deletingJob = false);
+    }
+  }
+
   void _openInterviews() {
     final job = _detail.data?.job;
     final id = jobPositiveId(job?['posId']);
@@ -454,6 +519,8 @@ class _JobDetailPageState extends State<JobDetailPage>
             onReload: _loadDetail,
             onReloadProfile: _loadProfile,
             onInterviews: _openInterviews,
+            onPreview: _preview,
+            onDelete: _deletingJob ? null : _deleteJob,
             onEdit:
                 _editingJob || _parsing || _savingWorkflow || _editingWorkflow
                 ? null

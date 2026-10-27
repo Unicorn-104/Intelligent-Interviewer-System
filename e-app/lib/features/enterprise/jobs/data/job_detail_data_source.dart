@@ -46,6 +46,9 @@ class JobDetailDataSource {
 
   Future<void> saveWorkflow(int id, Map<String, Object?> body) =>
       jobs.saveJobWorkflow(id, body);
+  Future<void> deleteJob(int id) => jobs.deleteJob(id);
+  Future<Map<String, dynamic>> loadCandidatePreview(int id) =>
+      jobs.getCandidateJobPreview(id);
   Future<List<Map<String, dynamic>>> loadInterviews({
     required int pageNum,
     int pageSize = 50,
