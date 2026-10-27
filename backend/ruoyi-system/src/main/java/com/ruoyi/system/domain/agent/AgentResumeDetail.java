@@ -37,6 +37,11 @@ public class AgentResumeDetail
     private Long fileSize;
     private String fileUrl;
 
+    private String parseMethod;
+    private String structureMethod;
+    private String unmappedText;
+    private List<String> parseWarnings = new ArrayList<>();
+
     @JsonIgnore
     private String filePath;
 
@@ -87,6 +92,17 @@ public class AgentResumeDetail
     public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
     public String getFileUrl() { return fileUrl; }
     public void setFileUrl(String fileUrl) { this.fileUrl = fileUrl; }
+    public String getParseMethod() { return parseMethod; }
+    public void setParseMethod(String parseMethod) { this.parseMethod = parseMethod; }
+    public String getStructureMethod() { return structureMethod; }
+    public void setStructureMethod(String structureMethod) { this.structureMethod = structureMethod; }
+    public String getUnmappedText() { return unmappedText; }
+    public void setUnmappedText(String unmappedText) { this.unmappedText = unmappedText; }
+    public List<String> getParseWarnings() { return parseWarnings; }
+    public void setParseWarnings(List<String> parseWarnings)
+    {
+        this.parseWarnings = parseWarnings == null ? new ArrayList<>() : parseWarnings;
+    }
     public String getFilePath() { return filePath; }
     public void setFilePath(String filePath) { this.filePath = filePath; }
     public List<AgentResumeEducation> getEducations() { return educations; }
