@@ -3,7 +3,6 @@ package com.ruoyi.system.service.app.pdf;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.net.InetSocketAddress;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicInteger;
 import com.sun.net.httpserver.HttpServer;
@@ -16,9 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.config.ResumeStructureProperties;
-import com.ruoyi.system.domain.ModelProvider;
 import com.ruoyi.system.domain.app.AppResume;
-import com.ruoyi.system.service.IModelProviderService;
 import com.ruoyi.system.service.app.impl.AppResumeServiceImpl;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -254,26 +251,6 @@ class ResumeAiStructurerTest
     }
 
     @Test
-    void usesEnabledDatabaseProviderWhenEnvironmentCredentialIsMissing() throws Exception
-    {
-        properties.setApiKey("");
-        ModelProvider provider = new ModelProvider();
-        provider.setMppStatus(1);
-        provider.setMppApiUrl(properties.getApiUrl());
-        provider.setMppModelName("synthetic-model");
-        provider.setMppApiKey("database-api-credential");
-        IModelProviderService modelProviderService = mock(IModelProviderService.class);
-        when(modelProviderService.selectModelProviderList(any(ModelProvider.class))).thenReturn(List.of(provider));
-
-        ResumeAiStructurer ai = new ResumeAiStructurer(properties);
-        ReflectionTestUtils.setField(ai, "modelProviderService", modelProviderService);
-        assertTrue(ai.isConfigured());
-        ai.structure(SYNTHETIC_TEXT);
-        assertEquals("database-api-credential", auth.get());
-        assertEquals("synthetic-model", captured.get().path("model").asText());
-    }
-
-    @Test
     void timeoutHasReadableBusinessMessage()
     {
         delay = 1500;
@@ -307,7 +284,6 @@ class ResumeAiStructurerTest
         ResumePdfParser parser = mock(ResumePdfParser.class);
         when(parser.parse(any(byte[].class))).thenReturn(new ResumePdfParser.Result(SYNTHETIC_TEXT, "OCR"));
         ResumeAiStructurer ai = mock(ResumeAiStructurer.class);
-        when(ai.isConfigured()).thenReturn(true);
         when(ai.structure(SYNTHETIC_TEXT)).thenThrow(new ServiceException("AI 简历编排超时"));
         AppResumeServiceImpl service = new AppResumeServiceImpl();
         ReflectionTestUtils.setField(service, "pdfParser", parser);

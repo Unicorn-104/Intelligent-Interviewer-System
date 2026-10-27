@@ -61,7 +61,7 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { isValidAccountOrPhone, isValidPhoneNumber, isValidSmsCode } from '@/utils/agentValidation'
 import { sendSmsCode } from '@/api/login'
 import useUserStore from '@/store/modules/user'
-import { clearCandidateSession, resetCandidateSecurityNotice } from '@/utils/agentSession'
+import { clearCandidateSession } from '@/utils/agentSession'
 import { removeToken } from '@/utils/auth'
 
 const route = useRoute()
@@ -141,7 +141,6 @@ async function handleSubmit() {
 
 function resetCandidateLoginState() {
   clearCandidateSession()
-  resetCandidateSecurityNotice()
   removeToken()
   userStore.$reset()
 }

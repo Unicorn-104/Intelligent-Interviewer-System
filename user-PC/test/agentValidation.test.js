@@ -8,7 +8,6 @@ import {
   isValidSmsCode,
   validateAvatarFile,
   validateResumeFile,
-  validateResumeAttachment,
   validateResumeDraft
 } from '../src/utils/agentValidation.js'
 
@@ -46,12 +45,6 @@ test('简历上传只接收限额以内的 PDF', () => {
   assert.equal(validateResumeFile({ name: 'resume.pdf', type: 'application/pdf', size: FILE_LIMITS.resumeBytes + 1 }).valid, false)
 })
 
-test('多附件校验格式与大小', () => {
-  assert.deepEqual(validateResumeAttachment({ name: '作品集.pdf', size: 1 }), { valid: true })
-  assert.deepEqual(validateResumeAttachment({ name: '证书.docx', size: 1 }), { valid: true })
-  assert.equal(validateResumeAttachment({ name: '脚本.exe', size: 1 }).valid, false)
-  assert.equal(validateResumeAttachment({ name: '作品集.pdf', size: FILE_LIMITS.attachmentBytes + 1 }).valid, false)
-})
 test('简历草稿校验关键字段和数量上限', () => {
   const validDraft = { title: 'AI 产品经理', name: '林晓雨', email: 'lin@example.com', targetRole: 'AI 产品经理', skillCount: 8 }
   assert.deepEqual(validateResumeDraft(validDraft), { valid: true })
