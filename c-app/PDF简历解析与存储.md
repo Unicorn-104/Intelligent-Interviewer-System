@@ -90,7 +90,9 @@ AI 结果仅供辅助，用户仍须逐项核对。
 回滚代码时保留字段及原文件，避免影响其他客户端的数据。
 
 新增 PDF 的下载使用 C-APP 的鉴权接口；其他客户端现有的
-`/common/download/resource` 不能读取新的私有文件引用，尚未为其他客户端增加下载适配。
+`/common/download/resource` 不能读取新的私有文件引用。企业端（E-APP）已增加
+适配：`GET /enterprise/talent/{talId}/resume/pdf` 在校验候选人归属本企业、
+简历归属候选人且已保存附件后内联返回 `application/pdf`，文件名沿用原始文件名。
 已存在的 `/profile/...pdf` 附件仍可在校验当前用户归属后通过 C-APP 读取。
 
 ## 接口和字段

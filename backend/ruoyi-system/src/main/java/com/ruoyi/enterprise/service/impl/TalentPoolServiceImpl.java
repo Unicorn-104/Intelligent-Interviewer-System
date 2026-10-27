@@ -13,8 +13,12 @@ import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.TalentPoolMapper;
 import com.ruoyi.enterprise.service.IScreeningService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
+import com.ruoyi.system.domain.app.AppResume;
+import com.ruoyi.system.domain.app.AppResumePdfDocument;
 import com.ruoyi.system.mapper.DashboardMapper;
+import com.ruoyi.system.mapper.app.AppResumeMapper;
 import com.ruoyi.system.service.IEnterpriseJobService;
+import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
 
 /**
  * 企业端 - 人才库服务实现
@@ -38,6 +42,12 @@ public class TalentPoolServiceImpl implements ITalentPoolService
 
     @Autowired
     private IEnterpriseJobService enterpriseJobService;
+
+    @Autowired
+    private AppResumeMapper appResumeMapper;
+
+    @Autowired
+    private ResumePdfStorage resumePdfStorage;
 
     @Override
     public List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
@@ -298,7 +308,55 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         int filled = 5 - missingFields.size();
         result.put("integrity", filled * 20);
         result.put("missingFields", missingFields);
+        result.put("fileName", resumeFileName(resumeId));
         return result;
+    }
+
+    @Override
+    public AppResumePdfDocument getTalentResumePdf(Long userId, Long talId)
+    {
+        Map<String, Object> talent = talentPoolMapper.selectTalentById(resolveCompanyId(userId), talId);
+        if (talent == null)
+        {
+            throw new ServiceException("候选人不存在");
+        }
+        Long resumeId = talent.get("resumeId") == null ? null
+                : Long.valueOf(String.valueOf(talent.get("resumeId")));
+        if (resumeId == null)
+        {
+            throw new ServiceException("该候选人暂无关联简历");
+        }
+        Long candidateUserId = talent.get("userId") == null ? null
+                : Long.valueOf(String.valueOf(talent.get("userId")));
+        if (candidateUserId == null || candidateUserId <= 0)
+        {
+            throw new ServiceException("候选人账号无效，无法读取原始简历");
+        }
+        // 不带用户条件的查询仅限此处：已先校验候选人归属本企业，再校验简历归属候选人本人
+        AppResume resume = appResumeMapper.selectResumeById(resumeId);
+        if (resume == null || !candidateUserId.equals(resume.getUserId()))
+        {
+            throw new ServiceException("简历不存在或无权访问");
+        }
+        if (resume.getFilePath() == null || resume.getFilePath().isBlank())
+        {
+            throw new ServiceException("该简历未保存原始 PDF");
+        }
+        return new AppResumePdfDocument(resumePdfStorage.read(candidateUserId, resume.getFilePath()),
+                resume.getFileName());
+    }
+
+    /** 读取简历原始附件文件名；无附件或简历不可用时返回 null，不影响结构化数据展示。 */
+    private String resumeFileName(Long resumeId)
+    {
+        if (resumeId == null)
+        {
+            return null;
+        }
+        AppResume resume = appResumeMapper.selectResumeById(resumeId);
+        return resume == null || resume.getFilePath() == null || resume.getFilePath().isBlank()
+                || resume.getFileName() == null || resume.getFileName().isBlank()
+                ? null : resume.getFileName();
     }
 
     @Override

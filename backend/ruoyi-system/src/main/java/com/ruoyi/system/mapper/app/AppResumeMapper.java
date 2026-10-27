@@ -10,6 +10,8 @@ public interface AppResumeMapper
     List<AppResume> selectResumeList(@Param("userId") Long userId);
     AppResume selectResume(@Param("resumeId") Long resumeId, @Param("userId") Long userId);
     AppResume selectResumeForUpdate(@Param("resumeId") Long resumeId, @Param("userId") Long userId);
+    /** 不带用户条件的主键查询：仅供企业端在校验候选人归属后使用，C-App 不得直接调用。 */
+    AppResume selectResumeById(@Param("resumeId") Long resumeId);
     List<AppResume.Education> selectEducations(Long resumeId);
     List<AppResume.Work> selectWorks(Long resumeId);
     List<AppResume.Project> selectProjects(Long resumeId);
