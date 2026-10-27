@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.EnterpriseSystemNoticeMapper">
+    <select id="lockRecipient" resultType="long">
+        select user_id from sys_user where user_id=#{userId} and status='0' and del_flag='0' for update
+    </select>
+    <select id="recipients" resultType="long">
+        select distinct u.user_id from sys_user u join t_cmp_binding b on b.bnd_user_id=u.user_id
+        where u.user_id &gt; #{afterId} and u.status='0' and u.del_flag='0' and b.bnd_status=1
+        order by u.user_id limit 100
+    </select>
+    <select id="applications" resultType="java.util.LinkedHashMap">
+        select a.app_id as id,p.pos_title as positionName,u.nick_name as candidateName,
+          concat('/enterprise/system-events/applications/',a.app_id) as target
+        from t_app_record a join t_pos p on p.pos_id=a.app_position_id
+        join t_tal t on t.tal_id=a.app_candidate_id left join sys_user u on u.user_id=t.tal_user_id
+        where p.pos_company_id=#{companyId} and a.app_created_at &gt;= #{since}
+          and not exists(select 1 from t_msg m where m.msg_receiver_id=#{userId}
+            and m.msg_target_url=concat('/enterprise/system-events/applications/',a.app_id))
+        order by a.app_created_at,a.app_id limit 50
+    </select>
+    <select id="upcoming" resultType="java.util.LinkedHashMap">
+        select a.apt_id as id,p.pos_title as positionName,u.nick_name as candidateName,
+          a.apt_start_time as startTime,
+          concat('/enterprise/system-events/interviews/',a.apt_id,'/upcoming/',date_format(a.apt_start_time,'%Y%m%d%H%i')) as target
+        from t_sch_appointment a join t_pos p on p.pos_id=a.apt_position_id
+        join t_tal t on t.tal_id=a.apt_candidate_id left join sys_user u on u.user_id=t.tal_user_id
+        where p.pos_company_id=#{companyId} and a.apt_status in (0,1)
+          and a.apt_start_time &gt;= #{now} and a.apt_start_time &lt;= #{until}
+          and not exists(select 1 from t_msg m where m.msg_receiver_id=#{userId}
+            and m.msg_target_url=concat('/enterprise/system-events/interviews/',a.apt_id,'/upcoming/',date_format(a.apt_start_time,'%Y%m%d%H%i')))
+        order by a.apt_start_time,a.apt_id limit 50
+    </select>
+    <select id="reports" resultType="java.util.LinkedHashMap">
+        select e.evl_id as id,p.pos_title as positionName,u.nick_name as candidateName,
+          concat('/enterprise/system-events/reports/',e.evl_id) as target
+        from t_int_evaluation e join t_int_session s on s.ses_id=e.evl_session_id
+        join t_pos p on p.pos_id=s.ses_position_id
+        join t_tal t on t.tal_id=s.ses_candidate_id left join sys_user u on u.user_id=t.tal_user_id
+        where p.pos_company_id=#{companyId} and e.evl_created_at &gt;= #{since}
+          and not exists(select 1 from t_msg m where m.msg_receiver_id=#{userId}
+            and m.msg_target_url=concat('/enterprise/system-events/reports/',e.evl_id))
+        order by e.evl_created_at,e.evl_id limit 50
+    </select>
+    <select id="interviewStates" resultType="java.util.LinkedHashMap">
+        select a.apt_id as id,p.pos_title as positionName,u.nick_name as candidateName,
+          case a.apt_status when 1 then '面试安排已确认' when 2 then '面试安排已取消' end as title,
+          concat('/enterprise/system-events/interviews/',a.apt_id,'/status/',a.apt_status) as target
+        from t_sch_appointment a join t_pos p on p.pos_id=a.apt_position_id
+        join t_tal t on t.tal_id=a.apt_candidate_id left join sys_user u on u.user_id=t.tal_user_id
+        where p.pos_company_id=#{companyId} and a.apt_status in (1,2) and a.apt_updated_at &gt;= #{since}
+          and not exists(select 1 from t_msg m where m.msg_receiver_id=#{userId}
+            and m.msg_target_url=concat('/enterprise/system-events/interviews/',a.apt_id,'/status/',a.apt_status))
+        order by a.apt_updated_at,a.apt_id limit 50
+    </select>
+    <select id="ownNotification" resultType="java.util.LinkedHashMap">
+        select msg_target_url as target from t_msg where msg_id=#{messageId} and msg_receiver_id=#{userId}
+    </select>
+    <select id="applicationTarget" resultType="java.util.LinkedHashMap">
+        select a.app_id as applicationId,t.tal_id as candidateId,p.pos_id as positionId,
+          p.pos_title as positionTitle,u.nick_name as candidateName
+        from t_app_record a join t_pos p on p.pos_id=a.app_position_id
+        join t_tal t on t.tal_id=a.app_candidate_id left join sys_user u on u.user_id=t.tal_user_id
+        where a.app_id=#{id} and p.pos_company_id=#{companyId}
+    </select>
+    <select id="interviewTarget" resultType="java.util.LinkedHashMap">
+        select a.apt_id as appointmentId,t.tal_id as candidateId,p.pos_id as positionId,
+          p.pos_title as positionTitle,u.nick_name as candidateName,a.apt_interviewer_id as interviewerId,
+          a.apt_status as status,date_format(a.apt_start_time,'%Y-%m-%d %H:%i:%s') as startTime,
+          date_format(a.apt_end_time,'%Y-%m-%d %H:%i:%s') as endTime
+        from t_sch_appointment a join t_pos p on p.pos_id=a.apt_position_id
+        join t_tal t on t.tal_id=a.apt_candidate_id left join sys_user u on u.user_id=t.tal_user_id
+        where a.apt_id=#{id} and p.pos_company_id=#{companyId}
+    </select>
+    <select id="reportTarget" resultType="java.util.LinkedHashMap">
+        select e.evl_id as evaluationId,s.ses_id as sessionId,t.tal_id as candidateId,
+          p.pos_id as positionId,p.pos_title as positionTitle,u.nick_name as candidateName,
+          e.evl_overall_score as overallScore,cast(e.evl_dimension_scores as char) as dimensionScores,
+          e.evl_summary as summary,e.evl_advantages as advantages,e.evl_risks as risks,
+          e.evl_gaps as gaps,e.evl_recommendation as recommendation,s.ses_appointment_id as appointmentId,
+          date_format(coalesce(s.ses_start_at,e.evl_created_at),'%Y-%m-%d %H:%i:%s') as startedAt
+        from t_int_evaluation e join t_int_session s on s.ses_id=e.evl_session_id
+        join t_pos p on p.pos_id=s.ses_position_id
+        join t_tal t on t.tal_id=s.ses_candidate_id left join sys_user u on u.user_id=t.tal_user_id
+        where e.evl_id=#{id} and p.pos_company_id=#{companyId}
+    </select>
+    <insert id="insertNotice">
+        insert into t_msg(msg_receiver_id,msg_sender_id,msg_type,msg_title,msg_content,msg_is_read,msg_target_url)
+        select #{userId},0,#{type},#{title},#{content},0,#{target}
+        where not exists(select 1 from t_msg where msg_receiver_id=#{userId} and msg_target_url=#{target})
+    </insert>
+</mapper>

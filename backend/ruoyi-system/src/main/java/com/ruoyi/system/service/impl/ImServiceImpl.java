@@ -27,6 +27,9 @@ public class ImServiceImpl implements IImService
     @Autowired
     private ImMessageMapper messageMapper;
 
+    @Autowired private ImReadReceiptService receipts;
+    @Autowired private com.ruoyi.enterprise.service.EnterpriseSystemNoticeService systemNotices;
+
     @Override
     public List<ImSession> selectSessionList(Long userId)
     {
@@ -46,6 +49,7 @@ public class ImServiceImpl implements IImService
         {
             msg.setIsMine(userId.equals(msg.getSenderId()));
         }
+        if (receipts != null) receipts.decorate(userId, session, list);
         return list;
     }
 
@@ -145,6 +149,7 @@ public class ImServiceImpl implements IImService
     @Override
     public List<Map<String, Object>> selectNotifications(Long userId, Long beforeId, Integer limit)
     {
+        if (beforeId == null && systemNotices != null) systemNotices.refresh(userId);
         return messageMapper.selectNotifications(userId, beforeId, limit == null ? 50 : Math.max(1, Math.min(limit, 100)));
     }
 
