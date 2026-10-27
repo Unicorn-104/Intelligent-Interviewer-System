@@ -419,20 +419,26 @@ class AppAiServiceTest
     }
 
     @Test
-    void memoryIsAlwaysEnabledIncludingLegacyDisabledAccountsAndSensitiveValuesAreRejected() throws Exception
+    void memorySwitchPersistsAndDisabledMemoryIsExcludedFromContext() throws Exception
     {
         assertThrows(ServiceException.class, () -> memory.change(17L,
                 new AppAiMemoryService.Change("save", "city", "fake@example.com", null, 0L)));
         memory.change(17L, new AppAiMemoryService.Change("save", "city", "SYNTHETIC_CITY", null, 0L));
-        assertThrows(ServiceException.class, () -> memory.change(17L,
-                new AppAiMemoryService.Change("settings", null, null, false, 1L)));
-        memories.change(17L, 0, 0); // Simulate an account that disabled memory in the previous version.
-        assertEquals(true, memory.read(17L).get("enabled"));
+        var settings = memory.change(17L,
+                new AppAiMemoryService.Change("settings", null, null, false, 1L));
+        assertEquals(false, settings.get("enabled"));
+        assertFalse(settings.containsKey("items"));
+        assertEquals(false, memory.read(17L).get("enabled"));
+        assertEquals(false, memory.settings(17L).get("enabled"));
         String runId = service.start(17L, session(), request("request-0000000001")).get("id").toString();
         assertEquals("COMPLETED", await(runId).get("status"));
         var context = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.node.ArrayNode.class);
         verify(model).complete(any(), context.capture(), any(), any(), anyLong());
-        assertTrue(context.getValue().toString().contains("SYNTHETIC_CITY"));
+        assertFalse(context.getValue().toString().contains("SYNTHETIC_CITY"));
+        memory.change(17L, new AppAiMemoryService.Change("settings", null, null, true, 2L));
+        assertEquals(true, memory.settings(17L).get("enabled"));
+        assertThrows(ServiceException.class, () -> memory.change(17L,
+                new AppAiMemoryService.Change("settings", null, null, false, 2L)));
     }
 
     @Test

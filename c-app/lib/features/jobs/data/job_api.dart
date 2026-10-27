@@ -85,8 +85,12 @@ class JobApi {
     });
   }
 
-  Future<void> apply(String token, int positionId) async {
-    await _client.post('/app/jobs/$positionId/apply', token: token);
+  Future<void> apply(String token, int positionId, {int? resumeId}) async {
+    await _client.post(
+      '/app/jobs/$positionId/apply',
+      token: token,
+      body: resumeId == null ? null : {'resumeId': resumeId},
+    );
   }
 
   Future<List<Job>> recommendJobs(

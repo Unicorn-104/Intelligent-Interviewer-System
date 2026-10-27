@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestBody;
 import com.ruoyi.common.annotation.Log;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
@@ -35,11 +36,13 @@ public class AppJobController extends BaseController
         return success(jobService.selectJobs(getUserId(), keyword, filter, limit));
     }
 
+    public record ApplyRequest(Long resumeId) { }
+
     @Log(title = "C端岗位投递", businessType = BusinessType.INSERT)
     @PostMapping("/jobs/{positionId}/apply")
-    public AjaxResult apply(@PathVariable Long positionId)
+    public AjaxResult apply(@PathVariable Long positionId, @RequestBody(required = false) ApplyRequest request)
     {
-        jobService.apply(getUserId(), positionId);
+        jobService.apply(getUserId(), positionId, request == null ? null : request.resumeId());
         return success("投递成功");
     }
 }

@@ -31,6 +31,53 @@ class _ApplicationDetailScreenState extends State<ApplicationDetailScreen> {
   ApiClient? _ownedClient;
   late final ApplicationApi _api;
   late Future<JobApplication> _future;
+  bool _withdrawing = false;
+
+  Future<void> _withdraw() async {
+    if (_withdrawing) return;
+    setState(() => _withdrawing = true);
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('撤回投递？'),
+          content: const Text('撤回后保留投递记录，暂不支持向同一岗位重复投递。确定撤回吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('暂不撤回'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('确认撤回'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      final item = await _api.withdraw(
+        widget.session.token,
+        widget.applicationId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _future = Future.value(item);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已撤回投递')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error is ApiException ? error.message : '撤回失败，请刷新后重试'),
+        ),
+      );
+      await _reload();
+    } finally {
+      if (mounted) setState(() => _withdrawing = false);
+    }
+  }
 
   @override
   void initState() {
@@ -41,7 +88,9 @@ class _ApplicationDetailScreenState extends State<ApplicationDetailScreen> {
 
   Future<void> _reload() async {
     final future = _api.detail(widget.session.token, widget.applicationId);
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     try {
       await future;
     } catch (_) {
@@ -103,6 +152,13 @@ class _ApplicationDetailScreenState extends State<ApplicationDetailScreen> {
                   ),
                 ),
               ),
+              if (item.canWithdraw) ...[
+                const SizedBox(height: AppSpacing.md),
+                OutlinedButton(
+                  onPressed: _withdrawing ? null : _withdraw,
+                  child: Text(_withdrawing ? '正在处理…' : '撤回投递'),
+                ),
+              ],
               const SizedBox(height: AppSpacing.xxl),
               const SectionHeader(title: '投递进度', subtitle: '进度随企业处理结果更新'),
               const SizedBox(height: AppSpacing.md),

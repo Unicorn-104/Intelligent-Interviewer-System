@@ -112,10 +112,11 @@
                    when 0 then '待筛选' when 1 then '已通过初筛' when 2 then '初筛未通过'
                    when 3 then '已约面' when 4 then '待笔试' when 5 then '笔试中'
                    when 6 then '笔试通过' when 7 then '笔试未通过' when 8 then '笔试缺考'
+                   when 9 then '已撤回'
                    else '处理中' end as statusLabel,
                case ar.app_status
                    when 0 then 20 when 1 then 40 when 3 then 70 when 4 then 50
-                   when 5 then 60 when 6 then 80 when 2 then 100 when 7 then 100 when 8 then 100
+                   when 5 then 60 when 6 then 80 when 2 then 100 when 7 then 100 when 8 then 100 when 9 then 100
                    else 30 end as progress
         from t_app_record ar
         join t_tal t on t.tal_id = ar.app_candidate_id
@@ -134,6 +135,11 @@
 
     <select id="selectCompanyIdByPositionId" resultType="long">
         select pos_company_id from t_pos where pos_id = #{positionId} and pos_status = 1
+    </select>
+
+    <select id="selectOwnedResumeId" resultType="long">
+        select rbs_id from t_res_base
+        where rbs_id = #{resumeId} and rbs_user_id = #{userId} and rbs_status = 1
     </select>
 
     <select id="selectCandidateId" resultType="long">

@@ -3,7 +3,7 @@
 <mapper namespace="com.ruoyi.system.mapper.app.AppAiMemoryMapper">
     <insert id="initialize">
         insert into t_capp_ai_memory_state(user_id) values(#{userId})
-        on duplicate key update enabled=1
+        on duplicate key update user_id=user_id
     </insert>
     <select id="state" resultType="map">
         select enabled,revision,forget_before_id as fence from t_capp_ai_memory_state where user_id=#{userId}
@@ -49,4 +49,112 @@
         from t_capp_ai_session where id=#{sessionId} and user_id=#{userId}
         on duplicate key update content=#{content},through_id=#{through},revision=#{revision},updated_at=current_timestamp(3)
     </insert>
+    <insert id="enqueueExtraction">
+        insert ignore into t_capp_ai_memory_extract_job(run_id,user_id,session_id,status,attempts,next_attempt_at,created_at,updated_at)
+        values(#{runId},#{userId},#{sessionId},'PENDING',0,current_timestamp(3),current_timestamp(3),current_timestamp(3))
+    </insert>
+    <select id="nextExtractionJob" resultType="map">
+        select run_id as runId,user_id as userId,session_id as sessionId,attempts
+        from t_capp_ai_memory_extract_job
+        where (status='PENDING' and next_attempt_at&lt;=current_timestamp(3))
+           or (status='PROCESSING' and lease_until&lt;current_timestamp(3))
+        order by created_at limit 1
+    </select>
+    <update id="claimExtractionJob">
+        update t_capp_ai_memory_extract_job set status='PROCESSING',attempts=attempts+1,
+            lease_until=date_add(current_timestamp(3),interval 2 minute),updated_at=current_timestamp(3)
+        where run_id=#{runId} and ((status='PENDING' and next_attempt_at&lt;=current_timestamp(3))
+            or (status='PROCESSING' and lease_until&lt;current_timestamp(3)))
+    </update>
+    <select id="extractionSource" resultType="map">
+        select m.id as messageId,m.content,r.id as runId,r.session_id as sessionId
+        from t_capp_ai_message m
+        join t_capp_ai_run r on r.id=m.run_id
+        join t_capp_ai_session s on s.id=r.session_id and s.user_id=r.user_id
+        join t_capp_ai_memory_state ms on ms.user_id=r.user_id and ms.enabled=1
+        where r.id=#{runId} and r.user_id=#{userId} and r.status='COMPLETED' and m.role='user'
+        and m.id &gt; ms.forget_before_id
+    </select>
+    <select id="activeItems" resultType="map">
+        select id,memory_type as memoryType,content,revision,updated_at as updatedAt
+        from t_capp_ai_memory_item where user_id=#{userId} and status='ACTIVE'
+        order by updated_at desc limit #{limit}
+    </select>
+    <select id="activeItem" resultType="map">
+        select id,user_id as userId,memory_type as memoryType,content,content_hash as contentHash,
+               status,revision,updated_at as updatedAt
+        from t_capp_ai_memory_item where id=#{id} and user_id=#{userId} and status='ACTIVE'
+    </select>
+    <select id="activeItemsByIds" resultType="map">
+        select id,memory_type as memoryType,content,revision,updated_at as updatedAt
+        from t_capp_ai_memory_item where user_id=#{userId} and status='ACTIVE' and id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+    <insert id="insertItem">
+        insert into t_capp_ai_memory_item(id,user_id,memory_type,content,content_hash,status,revision,created_at,updated_at)
+        values(#{id},#{userId},#{memoryType},#{content},#{contentHash},'ACTIVE',1,current_timestamp(3),current_timestamp(3))
+    </insert>
+    <insert id="addEvidence">
+        insert ignore into t_capp_ai_memory_evidence(memory_id,user_id,session_id,run_id,message_id,evidence,created_at)
+        values(#{memoryId},#{userId},#{sessionId},#{runId},#{messageId},#{evidence},current_timestamp(3))
+    </insert>
+    <select id="findDuplicate" resultType="map">
+        select id,revision from t_capp_ai_memory_item where user_id=#{userId} and content_hash=#{contentHash} and status='ACTIVE'
+        order by updated_at desc limit 1
+    </select>
+    <update id="supersede">
+        update t_capp_ai_memory_item set status='SUPERSEDED',superseded_by=#{replacementId},revision=revision+1,updated_at=current_timestamp(3)
+        where id=#{id} and user_id=#{userId} and status='ACTIVE'
+    </update>
+    <update id="updateItem">
+        update t_capp_ai_memory_item set content=#{content},content_hash=#{contentHash},revision=revision+1,updated_at=current_timestamp(3)
+        where id=#{id} and user_id=#{userId} and status='ACTIVE'
+    </update>
+    <update id="deleteItem">
+        update t_capp_ai_memory_item set status='DELETED',revision=revision+1,updated_at=current_timestamp(3)
+        where id=#{id} and user_id=#{userId} and status='ACTIVE'
+    </update>
+    <insert id="enqueueVector">
+        insert ignore into t_capp_ai_memory_vector_outbox(memory_id,user_id,revision,operation,status,attempts,next_attempt_at,created_at,updated_at)
+        values(#{id},#{userId},#{revision},#{operation},'PENDING',0,current_timestamp(3),current_timestamp(3),current_timestamp(3))
+    </insert>
+    <select id="nextVectorJob" resultType="map">
+        select id,memory_id as memoryId,user_id as userId,revision,operation,attempts
+        from t_capp_ai_memory_vector_outbox
+        where (status='PENDING' and next_attempt_at&lt;=current_timestamp(3))
+           or (status='PROCESSING' and lease_until&lt;current_timestamp(3))
+        order by id limit 1
+    </select>
+    <update id="claimVectorJob">
+        update t_capp_ai_memory_vector_outbox set status='PROCESSING',attempts=attempts+1,
+            lease_until=date_add(current_timestamp(3),interval 2 minute),updated_at=current_timestamp(3)
+        where id=#{id} and ((status='PENDING' and next_attempt_at&lt;=current_timestamp(3))
+            or (status='PROCESSING' and lease_until&lt;current_timestamp(3)))
+    </update>
+    <select id="vectorItem" resultType="map">
+        select id,user_id as userId,memory_type as memoryType,content,status,revision
+        from t_capp_ai_memory_item where id=#{id} and user_id=#{userId}
+    </select>
+    <update id="completeExtractionJob">
+        update t_capp_ai_memory_extract_job set status='COMPLETED',lease_until=null,updated_at=current_timestamp(3) where run_id=#{runId}
+    </update>
+    <update id="retryExtractionJob">
+        update t_capp_ai_memory_extract_job set status='PENDING',last_error_type=#{errorType},
+            lease_until=null,next_attempt_at=date_add(current_timestamp(3),interval #{delaySeconds} second),updated_at=current_timestamp(3)
+        where run_id=#{runId}
+    </update>
+    <update id="failExtractionJob">
+        update t_capp_ai_memory_extract_job set status='FAILED',lease_until=null,last_error_type=#{errorType},updated_at=current_timestamp(3) where run_id=#{runId}
+    </update>
+    <update id="completeVectorJob">
+        update t_capp_ai_memory_vector_outbox set status='COMPLETED',lease_until=null,last_error_type=null,updated_at=current_timestamp(3) where id=#{id}
+    </update>
+    <update id="retryVectorJob">
+        update t_capp_ai_memory_vector_outbox set status='PENDING',last_error_type=#{errorType},
+            lease_until=null,next_attempt_at=date_add(current_timestamp(3),interval #{delaySeconds} second),updated_at=current_timestamp(3)
+        where id=#{id}
+    </update>
+    <update id="failVectorJob">
+        update t_capp_ai_memory_vector_outbox set status='FAILED',lease_until=null,last_error_type=#{errorType},updated_at=current_timestamp(3) where id=#{id}
+    </update>
 </mapper>

@@ -52,6 +52,21 @@ class AppAiMemoryControllerTest
     }
 
     @Test
+    void settingsOnlyExposeSwitchAndUseAuthenticatedIdentity() throws Exception
+    {
+        when(service.settings(17L)).thenReturn(Map.of("enabled", true, "revision", 0));
+        mvc.perform(get("/app/ai/memory-settings?userId=18")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(true))
+                .andExpect(jsonPath("$.data.items").doesNotExist());
+        verify(service).settings(17L);
+        when(service.change(eq(17L), any())).thenReturn(Map.of("enabled", false, "revision", 1));
+        mvc.perform(put("/app/ai/memory-settings").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":false,\"revision\":0,\"userId\":18}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.enabled").value(false));
+        verify(service).change(17L, new AppAiMemoryService.Change("settings", null, null, false, 0L));
+    }
+
+    @Test
     void malformedMemoryJsonReturnsGenericMessageWithoutPrivateValue() throws Exception
     {
         mvc.perform(post("/app/ai/memories").contentType(MediaType.APPLICATION_JSON)

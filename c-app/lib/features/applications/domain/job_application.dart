@@ -17,6 +17,7 @@ class JobApplication {
     this.resumeName,
     this.matchedScore,
     this.timeline = const [],
+    this.canWithdraw = false,
   });
 
   final int id;
@@ -34,6 +35,7 @@ class JobApplication {
   final String? resumeName;
   final num? matchedScore;
   final List<ApplicationTimeline> timeline;
+  final bool canWithdraw;
 
   factory JobApplication.fromJson(Map<String, dynamic> json) {
     final id = int.tryParse('${json['id']}');
@@ -47,6 +49,7 @@ class JobApplication {
       status: json['status']?.toString() ?? '',
       statusText: json['statusText']?.toString() ?? '待处理',
       statusCode: int.tryParse('${json['statusCode']}'),
+      canWithdraw: json['canWithdraw'] == true,
       appliedAt: json['appliedAt']?.toString(),
       updatedAt: json['updatedAt']?.toString(),
       locationText: json['locationText']?.toString(),

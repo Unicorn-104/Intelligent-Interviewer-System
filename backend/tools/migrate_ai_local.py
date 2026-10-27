@@ -23,7 +23,8 @@ def main():
                 if "--verify-only" not in sys.argv[1:]:
                     for name in ("migration_capp_ai_agent_20261020.sql", "migration_capp_ai_memory_20261021.sql",
                                  "migration_capp_ai_history_actions_20261021.sql",
-                                 "migration_capp_ai_task_context_20261021.sql"):
+                                 "migration_capp_ai_task_context_20261021.sql",
+                                 "migration_capp_ai_long_term_memory_20261027.sql"):
                         migration = Path(__file__).resolve().parents[1] / "doc" / name
                         sql = re.sub(r"(?m)^\s*--.*$", "", migration.read_text(encoding="utf-8-sig"))
                         for statement in sql.split(";"):
@@ -48,6 +49,13 @@ def main():
                 )
                 if cursor.fetchone()[0] != 2:
                     raise RuntimeError("AI task context migration verification failed")
+                cursor.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() "
+                    "AND table_name IN ('t_capp_ai_memory_item','t_capp_ai_memory_evidence',"
+                    "'t_capp_ai_memory_extract_job','t_capp_ai_memory_vector_outbox')"
+                )
+                if cursor.fetchone()[0] != 4:
+                    raise RuntimeError("AI long-term memory migration verification failed")
         print("Local MySQL connected; AI conversation tables and task-context columns verified.")
         return 0
     except Exception as error:
