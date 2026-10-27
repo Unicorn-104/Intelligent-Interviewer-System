@@ -251,7 +251,7 @@ void main() {
       expect(tail.left, closeTo(ownBubble.right, .01));
       expect(tail.right, closeTo(recruiterAvatar.left - 8, .01));
       expect(tail.center.dy, closeTo(recruiterAvatar.center.dy, .01));
-      expect(find.byKey(const ValueKey('chat-bubble-tail-1')), findsNothing);
+      expect(find.byKey(const ValueKey('chat-bubble-tail-1')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -385,13 +385,13 @@ void main() {
     await mountMessages(tester, source);
     expect(find.text('合成候选人'), findsOneWidget);
     expect(find.text('已收到面试安排'), findsOneWidget);
-    expect(find.text('系统通知'), findsOneWidget);
+    expect(find.text('系统消息'), findsOneWidget);
     expect(find.text('演示数据'), findsNothing);
     expect(source.readCalls, 0);
     expect(source.readAllCalls, 0);
-    await tester.tap(find.byKey(const Key('messages-tab-1')));
-    await tester.pumpAndSettle();
-    expect(find.text('企业端 AI Agent 会话功能开发中'), findsOneWidget);
+    expect(find.byKey(const Key('messages-tab-1')), findsNothing);
+    expect(find.text('合成候选人'), findsOneWidget);
+    expect(source.readCalls, 0);
     expect(source.sends, isEmpty);
   });
   testWidgets('全部已读调用现有IM和系统接口，防重复且成功后回读', (tester) async {
@@ -429,7 +429,8 @@ void main() {
     source.notices = [];
     await tester.tap(find.text('重试加载消息'));
     await tester.pumpAndSettle();
-    expect(find.text('暂无消息'), findsOneWidget);
+    expect(find.text('暂无聊天会话'), findsOneWidget);
+    expect(find.byKey(const Key('messages-system')), findsOneWidget);
   });
   testWidgets('打开会话读取真实历史后标为已读，常用语展开后点击直接发送', (tester) async {
     final source = FakeMessageSource();

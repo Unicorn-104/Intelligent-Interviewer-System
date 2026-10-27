@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
 import '../../../widgets/skeleton_list.dart';
 import 'data/message_data_source.dart';
 import 'models/message_view_data.dart';
+import 'system_message_detail_page.dart';
+import 'system_notice_destination.dart';
+import 'widgets/system_notice_bubble.dart';
 import '../schedule/data/reschedule_review_data_source.dart';
 import '../schedule/reschedule_review_page.dart';
 
@@ -15,7 +20,10 @@ class SystemNotificationsPage extends StatefulWidget {
       _SystemNotificationsPageState();
 }
 
-class _SystemNotificationsPageState extends State<SystemNotificationsPage> {
+class _SystemNotificationsPageState extends State<SystemNotificationsPage>
+    with WidgetsBindingObserver {
+  Timer? _timer;
+  bool _active = true, _fetching = false;
   List<SystemMessage> _items = [];
   bool _loading = true, _more = false, _loadingMore = false, _action = false;
   String? _error;
@@ -23,16 +31,36 @@ class _SystemNotificationsPageState extends State<SystemNotificationsPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_active && !_action && ModalRoute.of(context)?.isCurrent == true) {
+        _load(silent: true);
+      }
+    });
   }
 
-  Future<void> _load({bool more = false}) async {
-    if (_loadingMore || (more && (!_more || _loading))) return;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _active = state == AppLifecycleState.resumed;
+    if (_active && !_action) _load(silent: true);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _load({bool more = false, bool silent = false}) async {
+    if (_fetching || _loadingMore || (more && (!_more || _loading))) return;
+    _fetching = true;
     final request = ++_request;
     setState(() {
       if (more) {
         _loadingMore = true;
-      } else {
+      } else if (!silent) {
         _loading = true;
       }
       _error = null;
@@ -59,6 +87,7 @@ class _SystemNotificationsPageState extends State<SystemNotificationsPage> {
         setState(() => _error = messageError(error));
       }
     } finally {
+      _fetching = false;
       if (mounted && request == _request) {
         setState(() {
           _loading = false;
@@ -94,53 +123,50 @@ class _SystemNotificationsPageState extends State<SystemNotificationsPage> {
         if (mounted) await _load();
         return;
       }
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: AppColors.canvas,
-        builder: (context) => Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      item.title,
-                      style: const TextStyle(
-                        color: AppColors.brand,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: '关闭',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              Text(
-                '${messageDate(item.time)} ${messageClock(item.time)}',
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: SelectableText(item.content),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => SystemMessageDetailPage(message: item.read),
         ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(messageError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _action = false);
+    }
+  }
+
+  Future<void> _openRelated(SystemMessage item) async {
+    if (_action) return;
+    if (item.rescheduleRequestId != null) {
+      await _open(item);
+      return;
+    }
+    final target = item.raw['targetUrl']?.toString() ?? '';
+    if (!target.startsWith('/enterprise/system-events/')) {
+      await _open(item);
+      return;
+    }
+    setState(() => _action = true);
+    try {
+      final destination = SystemNoticeDestination(
+        await widget.source.loadNotificationDestination(item.id),
+      );
+      if (destination.id('messageId') != item.id) {
+        throw const FormatException('通知详情不匹配');
+      }
+      if (!mounted) return;
+      if (!item.isRead) await widget.source.readNotification(item.id);
+      if (!mounted) return;
+      setState(
+        () => _items = _items
+            .map((row) => row.id == item.id ? row.read : row)
+            .toList(),
+      );
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(builder: (_) => destination.page(widget.source)),
       );
     } catch (error) {
       if (mounted) {
@@ -154,14 +180,44 @@ class _SystemNotificationsPageState extends State<SystemNotificationsPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('系统通知')),
+    backgroundColor: AppColors.background,
+    appBar: AppBar(
+      leading: const BackButton(),
+      backgroundColor: AppColors.background,
+      surfaceTintColor: Colors.transparent,
+      titleSpacing: 0,
+      toolbarHeight: 64,
+      title: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '系统消息',
+            style: TextStyle(
+              color: AppColors.brand,
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: 2),
+          Text(
+            '系统通知',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+    ),
+    bottomNavigationBar: const SystemNoticeFooter(),
     body: _loading
         ? const SkeletonList(rows: 4)
         : RefreshIndicator(
             onRefresh: () => _load(),
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               children: [
                 if (_error != null) ...[
                   Text(_error!, style: const TextStyle(color: AppColors.error)),
@@ -181,65 +237,25 @@ class _SystemNotificationsPageState extends State<SystemNotificationsPage> {
                           color: AppColors.textMuted,
                         ),
                         SizedBox(height: 12),
-                        Text('暂无系统通知'),
+                        Text('暂无系统消息'),
+                        SizedBox(height: 8),
+                        Text(
+                          '面试状态、简历投递和报告通知将在这里显示',
+                          textAlign: TextAlign.center,
+                        ),
                       ],
                     ),
                   ),
                 for (final item in _items)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Card(
-                      child: ListTile(
-                        key: ValueKey('system-message-${item.id}'),
-                        onTap: _action ? null : () => _open(item),
-                        leading: Icon(
-                          item.isRead
-                              ? Icons.notifications_none
-                              : Icons.notifications_active_outlined,
-                          color: item.isRead
-                              ? AppColors.textMuted
-                              : AppColors.interactive,
-                        ),
-                        title: Text(
-                          item.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: AppColors.brand,
-                            fontWeight: item.isRead
-                                ? FontWeight.w400
-                                : FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.content,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                messageDate(item.time),
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        trailing: item.isRead
-                            ? null
-                            : const Icon(
-                                Icons.circle,
-                                color: AppColors.error,
-                                size: 8,
-                              ),
-                      ),
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: SystemNoticeBubble(
+                      key: ValueKey('system-message-${item.id}'),
+                      bodyKey: ValueKey('system-notice-body-${item.id}'),
+                      timeKey: ValueKey('system-notice-time-${item.id}'),
+                      message: item,
+                      onTap: _action ? null : () => _open(item),
+                      onDetails: _action ? null : () => _openRelated(item),
                     ),
                   ),
                 if (_more)

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'shared_job_card.dart';
 
 enum AppMessageCategory { hr, system, company }
 
@@ -10,11 +11,15 @@ class ChatMessage {
     required this.mine,
     required this.createdAt,
     this.type = 1,
+    this.deliveryStatus,
   });
   final int messageId, senderId, type;
+  final String? deliveryStatus;
   final String content;
   final bool mine;
   final DateTime createdAt;
+  SharedJobCard? get jobCard => SharedJobCard.parse(type, content);
+
   Map<String, dynamic>? get reschedule {
     if (type != 5) return null;
     try {
@@ -36,6 +41,10 @@ class ChatMessage {
     content: json['content']?.toString() ?? '',
     mine: json['mine'] == true || json['mine']?.toString() == '1',
     type: int.tryParse('${json['type']}') ?? 1,
+    deliveryStatus:
+        ['read', 'delivered', 'received'].contains(json['deliveryStatus'])
+        ? json['deliveryStatus'] as String
+        : null,
     createdAt:
         DateTime.tryParse(
           (json['createdAt']?.toString() ?? '').replaceFirst(' ', 'T'),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
@@ -7,6 +9,7 @@ import 'models/message_view_data.dart';
 import 'system_notifications_page.dart';
 import 'conversation_page.dart';
 import 'widgets/message_avatar.dart';
+import 'widgets/system_message_icon.dart';
 
 // 保留旧聊天页导入入口，运行时仅使用真实接口。
 export 'conversation_page.dart' show ChatPage;
@@ -18,22 +21,43 @@ class MessageCenterPage extends StatefulWidget {
   State<MessageCenterPage> createState() => _MessageCenterPageState();
 }
 
-class _MessageCenterPageState extends State<MessageCenterPage> {
+class _MessageCenterPageState extends State<MessageCenterPage>
+    with WidgetsBindingObserver {
   List<MessageSession> _sessions = [];
   NotificationSlice? _notifications;
   bool _loading = true, _action = false;
-  int _tab = 0, _request = 0;
+  int _request = 0;
+  Timer? _refreshTimer;
   String? _sessionsError, _notificationsError;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    _startPolling();
   }
 
-  Future<void> _load() async {
+  void _startPolling() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (ModalRoute.of(context)?.isCurrent == true) _load(silent: true);
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startPolling();
+      _load();
+    } else {
+      _refreshTimer?.cancel();
+    }
+  }
+
+  Future<void> _load({bool silent = false}) async {
     if (_action) return;
     final request = ++_request;
-    setState(() => _loading = true);
+    if (!silent) setState(() => _loading = true);
     await Future.wait([
       () async {
         try {
@@ -113,8 +137,7 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
     if (_action) return;
     setState(() => _action = true);
     try {
-      await Navigator.push(
-        context,
+      await Navigator.of(context, rootNavigator: true).push<void>(
         MaterialPageRoute<void>(
           builder: (_) => SystemNotificationsPage(source: widget.source),
         ),
@@ -128,6 +151,13 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
   int get _unread =>
       _sessions.fold(0, (sum, item) => sum + item.unread) +
       (_notifications?.unreadCount ?? 0);
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppColors.background,
@@ -163,82 +193,17 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
                 '候选人沟通与系统通知统一管理',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    for (final (index, label) in ['全部', 'AI Agent'].indexed)
-                      Expanded(
-                        child: TextButton(
-                          key: ValueKey('messages-tab-$index'),
-                          style: TextButton.styleFrom(
-                            backgroundColor: _tab == index
-                                ? AppColors.interactive
-                                : AppColors.background,
-                            foregroundColor: _tab == index
-                                ? AppColors.canvas
-                                : AppColors.textMuted,
-                            minimumSize: const Size(0, 40),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          onPressed: () => setState(() => _tab = index),
-                          child: Text(
-                            label,
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
-        Expanded(child: _tab == 1 ? _agentEmpty() : _list()),
+        Expanded(child: _list()),
       ],
-    ),
-  );
-  Widget _agentEmpty() => const Center(
-    child: Padding(
-      padding: EdgeInsets.all(28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.smart_toy_outlined,
-            color: AppColors.accentPurple,
-            size: 48,
-          ),
-          SizedBox(height: 16),
-          Text(
-            'AI Agent',
-            style: TextStyle(
-              color: AppColors.brand,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            '企业端 AI Agent 会话功能开发中',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-          ),
-        ],
-      ),
     ),
   );
   Widget _list() {
     if (_loading) return const SkeletonList(rows: 5);
     final notifications = _notifications;
-    final hasSystem = notifications != null && notifications.items.isNotEmpty;
+    final latest = notifications?.items.firstOrNull;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -269,66 +234,49 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
                 ),
               ),
             ),
-          if (_sessions.isEmpty &&
-              !hasSystem &&
-              _sessionsError == null &&
-              _notificationsError == null)
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _row(
+                  key: const Key('messages-system'),
+                  name: '系统消息',
+                  preview: _notificationsError != null
+                      ? '通知暂时无法读取，点击重试'
+                      : latest == null
+                      ? '面试提醒、投递动态、报告通知'
+                      : latest.title,
+                  time: latest?.time,
+                  unread: notifications?.unreadCount ?? 0,
+                  system: true,
+                  onTap: _openSystem,
+                ),
+                for (final item in _sessions) ...[
+                  const Divider(
+                    height: 1,
+                    indent: 76,
+                    color: AppColors.hairline,
+                  ),
+                  _row(
+                    key: ValueKey('message-session-${item.id}'),
+                    name: item.name,
+                    preview: item.preview,
+                    time: item.time,
+                    unread: item.unread,
+                    avatar: widget.source.avatarUrl(item.avatar),
+                    onTap: () => _openSession(item),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (_sessions.isEmpty && _sessionsError == null)
             const Padding(
-              padding: EdgeInsets.all(36),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.chat_bubble_outline,
-                    color: AppColors.textMuted,
-                    size: 44,
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    '暂无消息',
-                    style: TextStyle(color: AppColors.brand, fontSize: 17),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    '新的会话和系统通知将在这里显示',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-                  ),
-                ],
-              ),
-            )
-          else
-            Card(
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  if (hasSystem)
-                    _row(
-                      key: const Key('messages-system'),
-                      name: '系统通知',
-                      preview: notifications.items.first.title,
-                      time: notifications.items.first.time,
-                      unread: notifications.unreadCount,
-                      system: true,
-                      onTap: _openSystem,
-                    ),
-                  for (final (index, item) in _sessions.indexed) ...[
-                    if (index > 0 || hasSystem)
-                      const Divider(
-                        height: 1,
-                        indent: 76,
-                        color: AppColors.hairline,
-                      ),
-                    _row(
-                      key: ValueKey('message-session-${item.id}'),
-                      name: item.name,
-                      preview: item.preview,
-                      time: item.time,
-                      unread: item.unread,
-                      avatar: widget.source.avatarUrl(item.avatar),
-                      onTap: () => _openSession(item),
-                    ),
-                  ],
-                ],
+              padding: EdgeInsets.all(32),
+              child: Text(
+                '暂无聊天会话',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textMuted),
               ),
             ),
         ],
@@ -352,7 +300,10 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       child: Row(
         children: [
-          MessageAvatar(name: name, url: avatar, system: system),
+          if (system)
+            const SystemMessageIcon()
+          else
+            MessageAvatar(name: name, url: avatar),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -386,14 +337,21 @@ class _MessageCenterPageState extends State<MessageCenterPage> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                messageDate(time),
+                time == null && system ? '' : messageDate(time),
                 style: const TextStyle(
                   color: AppColors.textMuted,
                   fontSize: 10,
                 ),
               ),
               const SizedBox(height: 10),
-              MessageUnreadBadge(count: unread),
+              if (!system || unread > 0)
+                MessageUnreadBadge(count: unread)
+              else
+                const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: AppColors.textMuted,
+                ),
             ],
           ),
         ],

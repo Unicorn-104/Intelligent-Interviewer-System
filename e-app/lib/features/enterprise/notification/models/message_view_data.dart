@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'shared_job_card.dart';
+
 class ChatQuickReply {
   const ChatQuickReply({
     required this.id,
@@ -65,6 +67,7 @@ class ConversationMessage {
     this.content,
     this.attachment,
     this.time,
+    this.deliveryStatus,
   );
   factory ConversationMessage.fromJson(Map<String, dynamic> row) {
     final id = messageId(row['messageId']);
@@ -79,20 +82,27 @@ class ConversationMessage {
       messageText(row['content'], ''),
       messageText(row['attachmentUrl'], ''),
       messageTime(row['sendTime']),
+      ['read', 'delivered', 'received'].contains(row['deliveryStatus'])
+          ? row['deliveryStatus'] as String
+          : null,
     );
   }
   final int id, type;
+  final String? deliveryStatus;
   final bool mine;
   final String content, attachment;
   final DateTime? time;
+  SharedJobCard? get jobCard => SharedJobCard.parse(type, content);
+
   Map<String, dynamic>? get reschedule {
     if (type != 5) return null;
     try {
       final value = jsonDecode(content);
       if (value is! Map ||
           value['kind'] != 'interview_reschedule' ||
-          value['version'] != 1)
+          value['version'] != 1) {
         return null;
+      }
       return Map<String, dynamic>.from(value);
     } catch (_) {
       return null;
@@ -102,6 +112,7 @@ class ConversationMessage {
   String get display => switch (type) {
     2 => '[图片]${content.isEmpty ? '' : ' $content'}',
     3 => '[文件]${content.isEmpty ? '' : ' $content'}',
+    6 => jobCard == null ? '[岗位卡片暂不可用]' : '[岗位] ${jobCard!.title}',
     _ => content.isEmpty ? '消息内容为空' : content,
   };
 }
@@ -138,14 +149,16 @@ class SystemMessage {
         uri.hasScheme ||
         uri.hasAuthority ||
         uri.hasQuery ||
-        uri.hasFragment)
+        uri.hasFragment) {
       return null;
+    }
     final parts = uri.pathSegments;
     if (parts.length != 4 ||
         parts[0] != 'enterprise' ||
         parts[1] != 'interview' ||
-        parts[2] != 'reschedule-requests')
+        parts[2] != 'reschedule-requests') {
       return null;
+    }
     return messageId(parts[3]);
   }
 
