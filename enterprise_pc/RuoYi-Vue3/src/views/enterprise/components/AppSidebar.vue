@@ -49,6 +49,7 @@ const menus = reactive([
     ] }
 ])
 const openGroup = ref(null)
+const helpOpen = ref(false)
 const active = (item) => item.match.includes(route.name)
 // 进入任意页面自动展开所在分组（单开：同时只展开一组）
 watch(() => route.name, (name) => {
@@ -78,11 +79,20 @@ function toggle(item) {
         </div>
       </div>
     </nav>
-    <div class="support">
+    <button class="support" @click="helpOpen = true">
       <div class="support-icon">?</div>
       <div><b>需要帮助？</b><small>查看使用指南</small></div>
-    </div>
+    </button>
     <span class="version">TalentFlow v1.0</span>
+    <el-dialog v-model="helpOpen" title="使用指南" width="540px">
+      <div class="guide">
+        <p><b>1. 发布岗位</b>：招聘总览右上角「快速发布岗位」，或进入「岗位管理」新建、导入岗位与草稿。</p>
+        <p><b>2. 候选人初筛</b>：在「候选人与初筛」的待初筛投递、AI 初筛中处理简历，可批量打标签与更新状态。</p>
+        <p><b>3. 面试与笔试</b>：在「面试与笔试」安排面试、发起视频会议，并录入面试评价。</p>
+        <p><b>4. Offer 管理</b>：候选人通过面试后，在「Offer 管理」发起并跟踪 Offer 流程。</p>
+        <p><b>5. 消息与协作</b>：顶栏铃铛与「消息中心」查看候选人消息、面试邀约与系统通知。</p>
+      </div>
+    </el-dialog>
   </aside>
 </template>
 
@@ -101,9 +111,12 @@ a.active .arrow { color: #143988; }
 .sub-menu a { height: 34px; font-size: 12px; padding: 0 13px 0 45px; border-radius: 8px; color: #8fa4d0; gap: 0; }
 .sub-menu a:hover { color: white; background: rgba(255,255,255,.06); }
 .sub-menu a.sub-active { color: #dce7ff; background: rgba(220,231,255,.14); font-weight: 600; box-shadow: none; }
-.support { margin-top: auto; display: flex; align-items: center; gap: 9px; color: #dce7ff; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.06); border-radius: 11px; padding: 11px; }
+.support { margin-top: auto; display: flex; align-items: center; gap: 9px; color: #dce7ff; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.06); border-radius: 11px; padding: 11px; width: 100%; font: inherit; text-align: left; cursor: pointer; }
+.support:hover { background: rgba(255,255,255,.12); }
 .support-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: white; background: #2d5bc3; font-weight: 700; }
 .support b { display: block; font-size: 11px; }
 .support small { color: #8fa4d0; font-size: 10px; }
+.guide p { margin: 0 0 10px; font-size: 13px; line-height: 1.7; color: #46536a; }
+.guide b { color: #1f2937; }
 .version { color: #687da9; text-align: center; font-size: 10px; margin-top: 13px; }
 </style>

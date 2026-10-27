@@ -159,24 +159,13 @@ public class CandidateExamServiceImpl implements ICandidateExamService
                 asInt(record.get("durationMin"), 0), asTime(record.get("endAt")));
         if (deadline != null && !now.isBefore(deadline))
         {
+            // 超时到达的保存请求：先落库最后一次作答，再按规则自动交卷，避免最后一轮答案丢失
+            persistAnswers(recordId, answers);
             Map<String, Object> expired = expireRecord(userId, record);
             expired.put("timeout", true);
             return expired;
         }
-        int saved = 0;
-        if (answers == null)
-        {
-            answers = new ArrayList<>();
-        }
-        for (Map<String, Object> answer : answers)
-        {
-            Long questionId = asLong(answer.get("questionId"));
-            if (questionId != null)
-            {
-                saved += candidateExamMapper.updateAnswerContent(recordId, questionId,
-                        asString(answer.get("content")));
-            }
-        }
+        int saved = persistAnswers(recordId, answers);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("recordId", recordId);
         result.put("saved", saved);
@@ -194,27 +183,37 @@ public class CandidateExamServiceImpl implements ICandidateExamService
                 asInt(record.get("durationMin"), 0), asTime(record.get("endAt")));
         if (deadline != null && !now.isBefore(deadline))
         {
-            // 超时到达后的交卷请求：按自动交卷规则处理，保证幂等
+            // 超时到达后的交卷请求：先落库最后一次作答，再按自动交卷规则处理，保证幂等
+            persistAnswers(recordId, answers);
             Map<String, Object> expired = expireRecord(userId, record);
             expired.put("timeout", true);
             return expired;
         }
-        if (answers != null)
-        {
-            for (Map<String, Object> answer : answers)
-            {
-                Long questionId = asLong(answer.get("questionId"));
-                if (questionId != null)
-                {
-                    candidateExamMapper.updateAnswerContent(recordId, questionId,
-                            asString(answer.get("content")));
-                }
-            }
-        }
+        persistAnswers(recordId, answers);
         candidateExamMapper.updateRecordSubmitted(recordId);
         tryGrade(recordId);
         Map<String, Object> fresh = candidateExamMapper.selectRecordForCandidate(userId, recordId);
         return submittedResult(fresh, false);
+    }
+
+    /** 逐题落库作答内容，返回实际更新行数（无答案行时返回 0） */
+    private int persistAnswers(Long recordId, List<Map<String, Object>> answers)
+    {
+        if (answers == null)
+        {
+            return 0;
+        }
+        int saved = 0;
+        for (Map<String, Object> answer : answers)
+        {
+            Long questionId = asLong(answer.get("questionId"));
+            if (questionId != null)
+            {
+                saved += candidateExamMapper.updateAnswerContent(recordId, questionId,
+                        asString(answer.get("content")));
+            }
+        }
+        return saved;
     }
 
     /** 交卷判分入口：失败不阻断交卷结果返回，续考时会补判一次 */

@@ -30,7 +30,8 @@ function handleReLogin() {
         userStore.roles = [];
         userStore.permissions = [];
       }).finally(() => {
-        location.href = '/enterprise';
+        // 跳到位于 vite base(/enterprise/) 内的登录页，避免 '/enterprise' 缺少斜杠被开发服务器 404
+        location.href = '/enterprise/login';
       })
     }).catch(() => {
       isRelogin.show = false;

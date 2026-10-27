@@ -1,5 +1,7 @@
 package com.ruoyi.system.service.impl;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -94,15 +96,23 @@ public class DashboardServiceImpl implements IDashboardService
         Map<String, Object> finalReview = dashboardMapper.selectTodoFinalReview(companyId);
         if (finalReview != null)
         {
-            todos.add(todo("待终审候选人", "cyan", "/enterprise/jobs",
+            String talId = str(finalReview, "talId");
+            String go = StringUtils.isEmpty(talId) ? "/enterprise/candidates" : "/enterprise/candidates/" + talId + "/process";
+            todos.add(todo("待终审候选人", "cyan", go,
                     str(finalReview, "positionTitle") + " · " + str(finalReview, "candidateName")));
         }
 
         Map<String, Object> upcoming = dashboardMapper.selectTodoUpcomingInterview(companyId);
         if (upcoming != null)
         {
-            todos.add(todo("即将开始的面试", "orange", "/enterprise/meeting/ai",
-                    str(upcoming, "positionTitle") + " · " + str(upcoming, "candidateName") + " · " + str(upcoming, "startTime")));
+            String peerId = str(upcoming, "peerId");
+            String candidateName = str(upcoming, "candidateName");
+            // 即将开始的面试直接定位到该候选人的消息会话
+            String go = StringUtils.isEmpty(peerId)
+                    ? "/enterprise/messages"
+                    : "/enterprise/messages?peerId=" + peerId + "&peerName=" + URLEncoder.encode(candidateName, StandardCharsets.UTF_8);
+            todos.add(todo("即将开始的面试", "orange", go,
+                    str(upcoming, "positionTitle") + " · " + candidateName + " · " + str(upcoming, "startTime")));
         }
         return todos;
     }

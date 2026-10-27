@@ -347,6 +347,15 @@ async function saveSubjective() {
 function answerText(a) {
   return a.answer == null || String(a.answer).trim() === '' ? '（未作答）' : String(a.answer)
 }
+function optKey(i) { return String.fromCharCode(65 + i) }
+// 把 "AC"/"A,C" 这类选择型作答归一化为选项字母数组；判断题的"对/错"不参与选项高亮
+function choiceKeys(v) {
+  const s = String(v == null ? '' : v).trim().toUpperCase()
+  if (!/[A-Z]/.test(s) || /[^A-Z\s,，、;；]/.test(s)) return []
+  return s.replace(/[^A-Z]/g, '').split('')
+}
+function answerKeys(a) { return choiceKeys(a.answer) }
+function stdKeys(a) { return choiceKeys(a.stdAnswer) }
 
 function switchTab(t) {
   tab.value = t
@@ -531,7 +540,7 @@ onMounted(() => {
             <td>{{ row.passThreshold }}</td>
             <td><span v-if="PASS_META[row.passStatus]" class="pill" :class="PASS_META[row.passStatus][1]">{{ PASS_META[row.passStatus][0] }}</span><span v-else class="muted">未判分</span></td>
             <td class="ops">
-              <button class="icon-btn" title="查看报告" @click="openReport(row)"><Eye :size="14"/></button>
+              <button class="btn sm" @click="openReport(row)"><Eye :size="14"/>查看答题</button>
             </td>
           </tr>
           <tr v-if="!rList.length"><td colspan="10"><div class="empty">暂无已交卷的笔试记录</div></td></tr>
@@ -786,7 +795,7 @@ onMounted(() => {
     <!-- ============ 成绩报告详情弹层 ============ -->
     <div v-if="reportModal.open" class="mask" @click.self="reportModal.open = false">
       <div class="modal wide">
-        <header><h3>笔试报告 · 记录 #{{ reportModal.data ? reportModal.data.recordId : '' }}</h3><button class="icon-btn" @click="reportModal.open = false"><X :size="15"/></button></header>
+        <header><h3>笔试报告 · {{ reportModal.data ? (reportModal.data.candidateName || ('记录 #' + reportModal.data.recordId)) : '' }}</h3><button class="icon-btn" @click="reportModal.open = false"><X :size="15"/></button></header>
         <div class="body">
           <div v-if="reportModal.loading" class="empty">报告加载中…</div>
           <template v-else-if="reportModal.data">
@@ -805,31 +814,44 @@ onMounted(() => {
             </div>
             <div class="sub-block">
               <div class="sub-head"><b>逐题作答与判分（{{ (reportModal.data.answers || []).length }} 题）</b></div>
-              <table class="tbl inner">
-                <thead><tr><th style="width:34px">#</th><th>题型</th><th class="wide">题干</th><th>候选人作答</th><th>参考答案</th><th>得分</th><th>判定</th></tr></thead>
-                <tbody>
-                  <tr v-for="(a, i) in reportModal.data.answers" :key="a.eanId">
-                    <td>{{ i + 1 }}</td>
-                    <td><span class="pill sm" :class="a.type <= 3 ? '' : 'purple'">{{ typeLabel(a.type) }}</span></td>
-                    <td class="wide ellipsis" :title="a.content">{{ a.content }}</td>
-                    <td class="ans-cell">{{ answerText(a) }}</td>
-                    <td class="ans-cell muted">{{ a.stdAnswer || '—' }}</td>
-                    <td>
-                      <template v-if="a.type <= 3">{{ a.score == null ? '—' : a.score }} / {{ a.maxScore }}</template>
-                      <template v-else-if="Number(reportModal.data.passStatus) === 2">
+              <div class="qa-list">
+                <div v-for="(a, i) in reportModal.data.answers" :key="a.eanId" class="qa-item">
+                  <div class="qa-head">
+                    <span class="qa-no">第 {{ i + 1 }} 题</span>
+                    <span class="pill sm" :class="a.type <= 3 ? '' : 'purple'">{{ typeLabel(a.type) }}</span>
+                    <span class="qa-score">
+                      <template v-if="Number(a.type) > 3 && Number(reportModal.data.passStatus) === 2">
                         <input class="input tiny-input" type="number" :min="0" :max="Number(a.maxScore)" v-model="reportModal.scores[a.questionId]"/>
-                        <span class="muted tiny"> / {{ a.maxScore }}</span>
+                        <span class="muted tiny"> / {{ a.maxScore }} 分</span>
                       </template>
-                      <template v-else>{{ a.score == null ? '—' : a.score }} / {{ a.maxScore }}</template>
-                    </td>
-                    <td>
-                      <span v-if="a.type <= 3 && a.isCorrect != null" class="pill sm" :class="Number(a.isCorrect) === 1 ? 'green' : 'red'">{{ Number(a.isCorrect) === 1 ? '正确' : '错误' }}</span>
-                      <span v-else-if="a.type <= 3" class="muted tiny">未判</span>
-                      <span v-else class="muted tiny">待人工评</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                      <template v-else>{{ a.score == null ? '—' : a.score }} / {{ a.maxScore }} 分</template>
+                    </span>
+                    <span v-if="a.type <= 3" class="pill sm" :class="a.isCorrect == null ? '' : (Number(a.isCorrect) === 1 ? 'green' : 'red')">
+                      {{ a.isCorrect == null ? '未判' : (Number(a.isCorrect) === 1 ? '正确' : '错误') }}
+                    </span>
+                    <span v-else class="muted tiny">{{ Number(reportModal.data.passStatus) === 2 ? '待人工评分' : '已评分' }}</span>
+                  </div>
+                  <div class="qa-content">{{ a.content || '（题干缺失）' }}</div>
+                  <div v-if="(a.options || []).length" class="qa-options">
+                    <div v-for="(opt, j) in a.options" :key="j" class="qa-opt"
+                         :class="{ picked: answerKeys(a).includes(optKey(j)), right: stdKeys(a).includes(optKey(j)) }">
+                      <b>{{ optKey(j) }}</b>
+                      <span>{{ optText(opt) }}</span>
+                      <em v-if="answerKeys(a).includes(optKey(j))" class="tag-cand">候选人选择</em>
+                      <em v-if="stdKeys(a).includes(optKey(j))" class="tag-right">正确答案</em>
+                    </div>
+                  </div>
+                  <div class="qa-answer">
+                    <label>候选人作答</label>
+                    <pre :class="{ blank: answerText(a) === '（未作答）' }">{{ answerText(a) }}</pre>
+                  </div>
+                  <div v-if="Number(a.type) > 3" class="qa-answer">
+                    <label>参考答案</label>
+                    <pre>{{ a.stdAnswer || '—' }}</pre>
+                  </div>
+                  <div v-else class="qa-std-line">参考答案：{{ a.stdAnswer || '—' }}</div>
+                </div>
+              </div>
             </div>
             <div v-if="Number(reportModal.data.passStatus) === 2" class="sub-block">
               <div class="sub-head"><b>终判评语（可选）</b></div>
@@ -913,6 +935,25 @@ onMounted(() => {
 .report-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:11px 14px;background:#f7faff;border:1px solid var(--line);border-radius:11px;padding:13px 15px}
 .rm-item{display:flex;flex-direction:column;gap:3px;font-size:13px;min-width:0}
 .rm-item b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ans-cell{max-width:170px;white-space:pre-wrap;word-break:break-all;font-size:12px}
+.qa-list{display:flex;flex-direction:column;gap:10px;max-height:44vh;overflow:auto}
+.qa-item{border:1px solid var(--line);border-radius:11px;padding:12px 14px}
+.qa-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.qa-no{font-size:12.5px;font-weight:700;color:#26364d}
+.qa-score{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#40516a}
+.qa-content{font-size:12.5px;color:#26364d;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.qa-options{display:flex;flex-direction:column;gap:6px;margin-top:9px}
+.qa-opt{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:12px;color:#40516a;line-height:1.55}
+.qa-opt b{flex:none;color:#8392a7}
+.qa-opt>span{flex:1;min-width:0;word-break:break-word}
+.qa-opt em{font-style:normal;flex:none;font-size:10px;padding:1px 7px;border-radius:9px;white-space:nowrap;margin-top:1px}
+.qa-opt.picked{border-color:#8eb2fa;background:#f2f7ff}
+.qa-opt.right{border-color:#16a34a;background:#f0fbf4}
+.tag-cand{background:#dbeafe;color:#2563eb}
+.tag-right{background:#dcfce7;color:#16a34a}
+.qa-answer{display:flex;gap:10px;align-items:flex-start;margin-top:9px}
+.qa-answer label{flex:none;width:64px;color:#8392a7;font-size:11.5px;padding-top:7px}
+.qa-answer pre{flex:1;min-width:0;margin:0;background:#f7f9fc;border:1px solid #eef2f7;border-radius:9px;padding:8px 11px;font-size:12.5px;line-height:1.6;color:#26364d;font-family:inherit;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
+.qa-answer pre.blank{color:#9aa7b8}
+.qa-std-line{margin-top:8px;font-size:11.5px;color:#8392a7;word-break:break-word}
 .comment-box{background:#f7faff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px;white-space:pre-wrap;word-break:break-all}
 </style>

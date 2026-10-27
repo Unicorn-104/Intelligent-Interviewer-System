@@ -59,7 +59,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectTodoFinalReview" parameterType="Long" resultType="java.util.HashMap">
-        select u.nick_name as candidateName, p.pos_title as positionTitle
+        select t.tal_id as talId, u.nick_name as candidateName, p.pos_title as positionTitle
         from t_tal t
         join sys_user u on u.user_id = t.tal_user_id
         join t_process_instance i on i.pin_id = t.tal_process_instance_id
@@ -70,7 +70,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectTodoUpcomingInterview" parameterType="Long" resultType="java.util.HashMap">
-        select u.nick_name as candidateName, p.pos_title as positionTitle,
+        select u.nick_name as candidateName, t.tal_user_id as peerId, p.pos_title as positionTitle,
                date_format(a.apt_start_time, '%m-%d %H:%i') as startTime
         from t_sch_appointment a
         join t_pos p on p.pos_id = a.apt_position_id
