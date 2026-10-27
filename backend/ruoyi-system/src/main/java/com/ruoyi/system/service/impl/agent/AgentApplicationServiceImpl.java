@@ -301,10 +301,35 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
                 application.getAppliedAt());
         if (statusTimeline != null)
         {
-            timeline.addAll(statusTimeline);
+            for (AgentTimeline node : statusTimeline)
+            {
+                if (Integer.valueOf(9).equals(application.getStatusCode()) && node.getOccurredAt() != null
+                        && application.getUpdatedAt() != null && node.getOccurredAt().after(application.getUpdatedAt())) continue;
+                timeline.add(node);
+            }
         }
         application.setTimeline(timeline);
+        if (Integer.valueOf(9).equals(application.getStatusCode()))
+            timeline.add(new AgentTimeline("withdrawn", "closed", "已撤回", "你已撤回本次投递，原投递记录保留",
+                    application.getUpdatedAt()));
         return application;
+    }
+
+    @Override
+    @Transactional
+    public AgentApplication withdrawApplication(Long userId, Long applicationId)
+    {
+        if (applicationId == null || applicationId <= 0 || userId == null || userId <= 0)
+            throw new ServiceException("投递记录参数无效", 400);
+        if (applicationMapper.lockWithdrawalCandidate(userId, applicationId) == null)
+            throw new ServiceException("投递记录不存在或无权访问", 404);
+        AgentApplication application = applicationMapper.selectApplicationById(userId, applicationId);
+        if (application == null) throw new ServiceException("投递记录不存在或无权访问", 404);
+        if (Integer.valueOf(9).equals(application.getStatusCode())) return selectApplication(userId, applicationId);
+        if (!Boolean.TRUE.equals(application.getCanWithdraw())
+                || applicationMapper.withdrawApplication(userId, applicationId) != 1)
+            throw new ServiceException("投递已进入招聘流程或状态已更新，无法撤回，请刷新后查看", 409);
+        return selectApplication(userId, applicationId);
     }
 
     @Override
@@ -719,7 +744,7 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         return switch (code)
         {
             case 3, 5, 6 -> "interview";
-            case 2, 7, 8 -> "closed";
+            case 2, 7, 8, 9 -> "closed";
             default -> "active";
         };
     }
@@ -741,6 +766,7 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
             case 6 -> "笔试通过";
             case 7 -> "笔试未通过";
             case 8 -> "笔试缺考";
+            case 9 -> "已撤回";
             default -> "投递处理中";
         };
     }

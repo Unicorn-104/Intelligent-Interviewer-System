@@ -42,6 +42,7 @@ Desktop.ini
 ######################################################################
 target/
 build/
+.kotlin/
 !**/src/**/build/
 !.mvn/wrapper/maven-wrapper.jar
 !.gradle/wrapper/gradle-wrapper.jar

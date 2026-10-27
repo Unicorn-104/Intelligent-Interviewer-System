@@ -21,4 +21,29 @@ public interface AppAiMemoryMapper
             @Param("after") long after, @Param("before") long before);
     int saveSummary(@Param("userId") Long userId, @Param("sessionId") String sessionId,
             @Param("content") String content, @Param("through") long through, @Param("revision") long revision);
+    int enqueueExtraction(@Param("runId") String runId, @Param("userId") Long userId, @Param("sessionId") String sessionId);
+    Map<String, Object> nextExtractionJob();
+    int claimExtractionJob(@Param("runId") String runId);
+    Map<String, Object> extractionSource(@Param("runId") String runId, @Param("userId") Long userId);
+    List<Map<String, Object>> activeItems(@Param("userId") Long userId, @Param("limit") int limit);
+    Map<String, Object> activeItem(@Param("id") String id, @Param("userId") Long userId);
+    List<Map<String, Object>> activeItemsByIds(@Param("ids") List<String> ids, @Param("userId") Long userId);
+    int insertItem(Map<String, Object> item);
+    int addEvidence(Map<String, Object> evidence);
+    Map<String, Object> findDuplicate(@Param("userId") Long userId, @Param("contentHash") String contentHash);
+    int supersede(@Param("id") String id, @Param("userId") Long userId, @Param("replacementId") String replacementId);
+    int updateItem(@Param("id") String id, @Param("userId") Long userId,
+            @Param("content") String content, @Param("contentHash") String contentHash);
+    int deleteItem(@Param("id") String id, @Param("userId") Long userId);
+    int enqueueVector(@Param("id") String id, @Param("userId") Long userId,
+            @Param("revision") long revision, @Param("operation") String operation);
+    Map<String, Object> nextVectorJob();
+    int claimVectorJob(@Param("id") long id);
+    Map<String, Object> vectorItem(@Param("id") String id, @Param("userId") Long userId);
+    int completeExtractionJob(@Param("runId") String runId);
+    int retryExtractionJob(@Param("runId") String runId, @Param("errorType") String errorType, @Param("delaySeconds") int delaySeconds);
+    int failExtractionJob(@Param("runId") String runId, @Param("errorType") String errorType);
+    int completeVectorJob(@Param("id") long id);
+    int retryVectorJob(@Param("id") long id, @Param("errorType") String errorType, @Param("delaySeconds") int delaySeconds);
+    int failVectorJob(@Param("id") long id, @Param("errorType") String errorType);
 }

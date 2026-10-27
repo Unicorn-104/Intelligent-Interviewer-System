@@ -21,6 +21,7 @@ public interface AppJobMapper
                                                           @Param("limit") Integer limit);
 
     Long selectDefaultResumeId(@Param("userId") Long userId);
+    Long selectOwnedResumeId(@Param("userId") Long userId, @Param("resumeId") Long resumeId);
 
     Long selectCompanyIdByPositionId(@Param("positionId") Long positionId);
 

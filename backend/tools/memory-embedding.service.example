@@ -1,0 +1,26 @@
+[Unit]
+Description=C-App personal memory embedding service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=capp
+Group=capp
+WorkingDirectory=/opt/capp/backend
+Environment=PYTHONUNBUFFERED=1
+Environment=MEMORY_EMBEDDING_HOST=127.0.0.1
+Environment=MEMORY_EMBEDDING_PORT=8091
+Environment=MEMORY_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+Environment=MEMORY_EMBEDDING_CACHE_DIR=/var/lib/capp-memory/models
+Environment=MEMORY_EMBEDDING_PRELOAD=true
+EnvironmentFile=/etc/capp/memory-embedding.env
+ExecStart=/opt/capp/memory-venv/bin/python /opt/capp/backend/tools/memory_embedding_service.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

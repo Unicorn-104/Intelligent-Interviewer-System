@@ -177,4 +177,10 @@ public class AgentApplicationController extends BaseController
     {
         return success(applicationService.selectApplication(getUserId(), applicationId));
     }
+
+    @PostMapping("/applications/{applicationId}/withdraw")
+    public AjaxResult withdraw(@PathVariable("applicationId") Long applicationId)
+    {
+        return success(applicationService.withdrawApplication(getUserId(), applicationId));
+    }
 }
