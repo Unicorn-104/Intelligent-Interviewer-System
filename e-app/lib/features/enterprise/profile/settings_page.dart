@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
+import 'company_info_page.dart';
 
 /// 保留旧页面入口，企业管理概览同时复用于“我的”主页。
 class EnterpriseSettingsPage extends StatelessWidget {
@@ -111,6 +112,8 @@ class _EnterpriseManagementPanelState extends State<EnterpriseManagementPanel> {
           style: TextStyle(color: AppColors.muted, fontSize: 12),
         ),
         const SizedBox(height: 16),
+        _companyInfoEntry(),
+        const SizedBox(height: 12),
         if (_loading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
@@ -149,6 +152,62 @@ class _EnterpriseManagementPanelState extends State<EnterpriseManagementPanel> {
           ),
         ],
       ],
+    ),
+  );
+
+  Future<void> _openCompanyInfo() async {
+    await Navigator.of(context)
+        .push<void>(MaterialPageRoute(builder: (_) => const CompanyInfoPage()));
+  }
+
+  Widget _companyInfoEntry() => Material(
+    color: AppColors.primarySoft,
+    borderRadius: BorderRadius.circular(8),
+    child: InkWell(
+      key: const Key('profile-company-info'),
+      borderRadius: BorderRadius.circular(8),
+      onTap: _openCompanyInfo,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: AppColors.canvas,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.business_outlined,
+                color: AppColors.interactive,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '企业信息',
+                    style: TextStyle(
+                      color: AppColors.body,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    '查看与编辑求职者可见的企业资料',
+                    style: TextStyle(fontSize: 11, color: AppColors.muted),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.muted, size: 20),
+          ],
+        ),
+      ),
     ),
   );
 
