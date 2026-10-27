@@ -11,15 +11,9 @@ class TalentStatusBadge extends StatelessWidget {
   static (IconData, Color) visualFor(Object? status) =>
       switch (int.tryParse('$status')) {
         0 => (Icons.person_add_alt_1, AppColors.muted),
-        1 => (Icons.check_circle_outline, AppColors.success),
         2 => (Icons.arrow_forward, AppColors.interactive),
         3 => (Icons.cancel_outlined, AppColors.error),
         4 => (Icons.check_circle, AppColors.success),
-        5 => (Icons.verified, AppColors.success),
-        6 => (Icons.logout, AppColors.muted),
-        7 => (Icons.people_outline, AppColors.interactive),
-        8 => (Icons.block, AppColors.error),
-        9 => (Icons.pause_circle_outline, AppColors.warning),
         _ => (Icons.help_outline, AppColors.muted),
       };
 

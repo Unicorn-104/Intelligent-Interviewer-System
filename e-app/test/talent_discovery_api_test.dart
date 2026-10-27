@@ -51,7 +51,7 @@ void main() {
               pageNum == 4 ? 1 : 20,
               (index) => <String, dynamic>{
                 'talentId': (pageNum - 1) * 20 + index + 1,
-                'status': 1,
+                'status': 2,
                 'jobDirection': '合成Java方向',
                 'archiveSource': 3,
                 'tags': 'Java',
@@ -65,7 +65,7 @@ void main() {
         tag: ' Java ',
         direction: ' 合成Java方向 ',
         archiveSource: 3,
-        status: 1,
+        status: 2,
         pageNum: page,
       );
       expect(result.nextPage, page + 1);
@@ -78,7 +78,7 @@ void main() {
       'tag': 'Java',
       'direction': '合成Java方向',
       'archiveSource': 3,
-      'status': 1,
+      'status': 2,
       'pageNum': 4,
       'pageSize': 20,
     });

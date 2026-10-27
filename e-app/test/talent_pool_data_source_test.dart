@@ -89,17 +89,17 @@ void main() {
             expect(tag, '精确标签');
             if (pageNum == 1) {
               return [
-                poolRow(1, status: 1, tags: 'Java, 协作,Java'),
+                poolRow(1, status: 0, tags: 'Java, 协作,Java'),
                 ...poolRows(2, 19, status: 2),
               ];
             }
             return [
-              poolRow(21, status: '1', tags: 'Vue'),
+              poolRow(21, status: '0', tags: 'Vue'),
               poolRow(22, status: null),
             ];
           },
     );
-    final result = await source.load(keyword: '搜索', tag: '精确标签', status: 1);
+    final result = await source.load(keyword: '搜索', tag: '精确标签', status: 0);
     expect(calls, [1, 2]);
     expect(result.rows.map((row) => row['talentId']), [1, 21]);
     expect(result.tags, ['Java', '协作', 'Vue']);
@@ -118,10 +118,10 @@ void main() {
             required int pageSize,
           }) async {
             calls.add(pageNum);
-            return poolRows((pageNum - 1) * 20 + 1, 20, status: 1);
+            return poolRows((pageNum - 1) * 20 + 1, 20, status: 0);
           },
     );
-    final result = await source.load(status: 1);
+    final result = await source.load(status: 0);
     expect(calls, [1, 2, 3]);
     expect(result.rows.length, 60);
     expect(result.scannedPages, 3);
@@ -185,10 +185,10 @@ void main() {
             required int pageNum,
             required int pageSize,
           }) async => pageNum == 1
-          ? poolRows(1, 20, status: 1)
-          : [poolRow(20, status: 1), poolRow(21, status: 1)],
+          ? poolRows(1, 20, status: 0)
+          : [poolRow(20, status: 0), poolRow(21, status: 0)],
     );
-    final result = await source.load(status: 1);
+    final result = await source.load(status: 0);
     expect(result.rows.length, 21);
     expect(result.rows.last['talentId'], 21);
   });

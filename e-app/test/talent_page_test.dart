@@ -214,11 +214,11 @@ void main() {
 
   testWidgets('新搜索按钮与键盘继续使用原查询逻辑，保留已选筛选条件', (tester) async {
     final fixture = _PoolFixture([
-      candidateRow(11, status: 1, name: '合成目标'),
+      candidateRow(11, status: 0, name: '合成目标'),
       candidateRow(12, status: 2, name: '合成其他'),
     ]);
     await _openPool(tester, fixture);
-    await choosePoolStatus(tester, 1);
+    await choosePoolStatus(tester, 0);
     final before = fixture.calls.length;
     await tester.enterText(find.byKey(const Key('talent-search')), ' 目标 ');
     await tester.tap(find.byKey(const Key('talent-search-submit')));
@@ -263,7 +263,7 @@ void main() {
   }
 
   testWidgets('统一筛选入口展开后提供全部招聘状态，取消不应用草稿', (tester) async {
-    final fixture = _PoolFixture([candidateRow(11, status: 1)]);
+    final fixture = _PoolFixture([candidateRow(11, status: 2)]);
     await _openPool(tester, fixture);
     expect(find.byKey(const Key('talent-filter-open')), findsOneWidget);
     expect(find.byType(ChoiceChip), findsNothing);
@@ -271,7 +271,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('talent-filter-category-1')));
     await tester.pumpAndSettle();
-    for (var status = 0; status <= 9; status++) {
+    for (final status in const [0, 2, 3, 4]) {
       final finder = find.byKey(ValueKey('talent-filter-status-$status'));
       expect(finder, findsOneWidget);
       expect(
@@ -279,11 +279,11 @@ void main() {
         findsOneWidget,
       );
     }
-    await tester.tap(find.byKey(const Key('talent-filter-status-1')));
+    await tester.tap(find.byKey(const Key('talent-filter-status-2')));
     await tester.tap(find.byKey(const Key('talent-filter-close')));
     await tester.pumpAndSettle();
     expect(fixture.calls, hasLength(1));
-    await choosePoolStatus(tester, 1);
+    await choosePoolStatus(tester, 2);
     expect(find.byKey(const Key('talent-card-11')), findsOneWidget);
     expect(find.byTooltip('筛选(1)'), findsOneWidget);
     await choosePoolStatus(tester, null);
@@ -300,7 +300,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('talent-card-11')),
-        matching: find.text('面试中'),
+        matching: find.text('待面试'),
       ),
       findsOneWidget,
     );
@@ -316,14 +316,14 @@ void main() {
 
   testWidgets('关键词与状态组合筛选，不发送标签条件，清除恢复第一页', (tester) async {
     final fixture = _PoolFixture([
-      candidateRow(1, status: 1, name: '目标甲', tags: '前端'),
-      candidateRow(2, status: 2, name: '目标乙', tags: '前端'),
-      candidateRow(3, status: 1, name: '其他', tags: 'Java'),
+      candidateRow(1, status: 2, name: '目标甲', tags: '前端'),
+      candidateRow(2, status: 3, name: '目标乙', tags: '前端'),
+      candidateRow(3, status: 0, name: '其他', tags: 'Java'),
     ]);
     await _openPool(tester, fixture);
     await searchPool(tester, ' 目标 ');
     expect(fixture.calls.last['keyword'], '目标');
-    await choosePoolStatus(tester, 1);
+    await choosePoolStatus(tester, 2);
     expect(fixture.calls.last, {
       'keyword': '目标',
       'tag': null,
@@ -361,10 +361,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(fixture.calls.length, before);
     expect(find.byKey(const Key('talent-filter-tag')), findsNothing);
-    await choosePoolStatus(tester, 9);
+    await choosePoolStatus(tester, 3);
     expect(fixture.calls.last['tag'], isNull);
     expect(find.text('当前条件无匹配'), findsOneWidget);
-    expect(find.textContaining('状态：${talentStatus(9)}'), findsOneWidget);
+    expect(find.textContaining('状态：${talentStatus(3)}'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('talent-clear')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('talent-card-11')), findsOneWidget);
@@ -439,10 +439,10 @@ void main() {
 
   testWidgets('状态筛选三页上限有明确提示且不能继续加载', (tester) async {
     final fixture = _PoolFixture(
-      List.generate(70, (i) => candidateRow(i + 1, status: 1)),
+      List.generate(70, (i) => candidateRow(i + 1, status: 2)),
     );
     await _openPool(tester, fixture);
-    await choosePoolStatus(tester, 1);
+    await choosePoolStatus(tester, 2);
     expect(fixture.calls.skip(1).map((call) => call['pageNum']), [1, 2, 3]);
     await reachPool(tester, find.text('结果较多，请补充关键词'));
     expect(find.text('已加载 60 位候选人'), findsOneWidget);
@@ -453,7 +453,7 @@ void main() {
   testWidgets('三页扫描无匹配不得误报全局空结果，状态模式无加载更多', (tester) async {
     final fixture = _PoolFixture(List.generate(70, (i) => candidateRow(i + 1)));
     await _openPool(tester, fixture);
-    await choosePoolStatus(tester, 1);
+    await choosePoolStatus(tester, 0);
     expect(fixture.calls.skip(1).map((call) => call['pageNum']), [1, 2, 3]);
     expect(find.text('结果较多，请补充关键词'), findsOneWidget);
     expect(find.text('当前条件无匹配'), findsNothing);
@@ -482,8 +482,8 @@ void main() {
     await reachPool(tester, find.byKey(const ValueKey('talent-load-more')));
     await tester.tap(find.byKey(const ValueKey('talent-load-more')));
     await tester.pump();
-    fixture.rows = [candidateRow(300, status: 1, name: '新状态结果')];
-    await choosePoolStatus(tester, 1);
+    fixture.rows = [candidateRow(300, status: 2, name: '新状态结果')];
+    await choosePoolStatus(tester, 2);
     expect(find.text('新状态结果'), findsOneWidget);
     gate.complete([candidateRow(21)]);
     await tester.pumpAndSettle();
@@ -528,15 +528,15 @@ void main() {
     testWidgets('候选人列表和筛选在 $size 无溢出', (tester) async {
       const longTag = '用于合成测试的长标签名称用于核对窄屏展示';
       final fixture = _PoolFixture([
-        candidateRow(11, status: 9, name: '合成的较长候选人名称用于核对布局', tags: longTag),
+        candidateRow(11, status: 3, name: '合成的较长候选人名称用于核对布局', tags: longTag),
       ]);
       await _openPool(tester, fixture, size: size);
-      await choosePoolStatus(tester, 9);
+      await choosePoolStatus(tester, 3);
       expect(find.byType(TalentStatusBadge), findsOneWidget);
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('talent-card-11')),
-          matching: find.text('流程挂起'),
+          matching: find.text('已淘汰'),
         ),
         findsOneWidget,
       );
