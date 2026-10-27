@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.validation.annotation.Validated;
 
-/** OCR 文本的 AI 字段编排；环境变量或私有配置优先，后台启用的模型 Provider 可作为兜底。 */
+/** OCR 文本的 AI 字段编排；密钥只从本机环境或私有配置读取。 */
 @Configuration
 @PropertySource("classpath:resume-pdf.properties")
 @ConfigurationProperties(prefix = "app.resume.structure")

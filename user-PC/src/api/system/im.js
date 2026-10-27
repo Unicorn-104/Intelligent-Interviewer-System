@@ -25,8 +25,7 @@ export function sendImMessage(data) {
 export function markImSessionRead(sessionId) {
   return request({
     url: `/system/im/sessions/${sessionId}/read`,
-    method: 'put',
-    headers: { repeatSubmit: false }
+    method: 'put'
   })
 }
 

@@ -1,11 +1,9 @@
 export const FILE_LIMITS = Object.freeze({
   avatarBytes: 3 * 1024 * 1024,
-  resumeBytes: 10 * 1024 * 1024,
-  attachmentBytes: 20 * 1024 * 1024
+  resumeBytes: 10 * 1024 * 1024
 })
 
 const AVATAR_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
-const ATTACHMENT_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'])
 
 export function isValidPhoneNumber(value) {
   return /^1[3-9]\d{9}$/.test(String(value || '').trim())
@@ -39,13 +37,6 @@ export function validateResumeFile(file) {
   return { valid: true }
 }
 
-export function validateResumeAttachment(file) {
-  if (!file) return { valid: false, message: '请选择附件文件' }
-  const extension = String(file.name || '').split('.').pop().toLowerCase()
-  if (!ATTACHMENT_EXTENSIONS.has(extension)) return { valid: false, message: '附件仅支持 PDF、Word、JPG 或 PNG 格式' }
-  if (file.size > FILE_LIMITS.attachmentBytes) return { valid: false, message: '单个附件不能超过 20MB' }
-  return { valid: true }
-}
 export function validateResumeDraft({ title, name, email, targetRole, skillCount }) {
   const normalizedTitle = String(title || '').trim()
   if (!normalizedTitle || normalizedTitle.length > 60) return { valid: false, message: '简历名称应为 1-60 个字符' }

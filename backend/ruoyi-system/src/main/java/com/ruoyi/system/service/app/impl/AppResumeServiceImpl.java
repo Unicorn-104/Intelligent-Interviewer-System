@@ -198,8 +198,7 @@ public class AppResumeServiceImpl implements IAppResumeService
         ResumePdfParser.Result parsed = pdfParser.parse(pdfBytes);
         String text = parsed.text();
         AppResume draft;
-        boolean aiConfigured = aiStructurer.isConfigured();
-        if (aiConfigured)
+        if (structureProperties.isEnabled())
         {
             draft = aiStructurer.structure(text);
         }
@@ -207,10 +206,7 @@ public class AppResumeServiceImpl implements IAppResumeService
         {
             draft = parseStructured(text);
             draft.setStructureMethod("RULE");
-            String warning = structureProperties.isEnabled()
-                    ? "后端未配置 AI API 密钥，已使用本地 OCR/规则识别；请对照原 PDF 核对结果"
-                    : "AI 编排已关闭，规则识别结果可能遗漏不同标题下的信息，请对照原文核对";
-            draft.setParseWarnings(List.of(warning));
+            draft.setParseWarnings(List.of("AI 编排已关闭，规则识别结果可能遗漏不同标题下的信息，请对照原文核对"));
         }
         String baseName = originalFilename == null ? "扫描简历" : originalFilename.replaceFirst("(?i)\\.pdf$", "");
         draft.setResumeName(trimTo(baseName, 100));

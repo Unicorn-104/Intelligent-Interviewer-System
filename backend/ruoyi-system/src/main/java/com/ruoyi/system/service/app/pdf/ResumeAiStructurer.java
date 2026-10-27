@@ -8,7 +8,6 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -20,10 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.config.ResumeStructureProperties;
-import com.ruoyi.system.domain.ModelProvider;
 import com.ruoyi.system.domain.app.AppResume;
-import com.ruoyi.system.service.IModelProviderService;
-import org.springframework.beans.factory.annotation.Autowired;
 
 /** 将任意简历标题和布局转换为已有简历表字段，不让模型决定用户或附件信息。 */
 @Service
@@ -65,24 +61,15 @@ public class ResumeAiStructurer
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NEVER).build();
 
-    @Autowired(required = false)
-    private IModelProviderService modelProviderService;
-
     public ResumeAiStructurer(ResumeStructureProperties properties)
     {
         this.properties = properties;
         permits = new Semaphore(properties.getMaxConcurrentRequests());
     }
 
-    public boolean isConfigured()
-    {
-        return properties.isEnabled() && resolveSettings().configured();
-    }
-
     public AppResume structure(String text)
     {
-        AiSettings settings = resolveSettings();
-        if (!settings.configured())
+        if (properties.getApiKey() == null || properties.getApiKey().isBlank())
             throw new ServiceException("AI 简历编排尚未配置，请设置后端 API 密钥");
         if (text == null || text.isBlank()) throw new ServiceException("没有可编排的简历文字");
         if (text.length() > properties.getMaxInputChars()) throw new ServiceException("简历文字过长，请上传精简后的 PDF 重试");
@@ -95,15 +82,15 @@ public class ResumeAiStructurer
             for (int attempt = 0; attempt < 2; attempt++)
             {
                 ObjectNode body = mapper.createObjectNode();
-                body.put("model", settings.model());
+                body.put("model", properties.getModel());
                 body.put("temperature", 0);
                 body.put("max_tokens", properties.getMaxTokens());
                 body.put("stream", false);
                 body.putObject("response_format").put("type", "json_object");
                 body.set("messages", messages);
-                HttpRequest request = HttpRequest.newBuilder(endpoint(settings.apiUrl()))
+                HttpRequest request = HttpRequest.newBuilder(endpoint())
                         .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
-                        .header("Authorization", "Bearer " + settings.apiKey())
+                        .header("Authorization", "Bearer " + properties.getApiKey())
                         .header("Content-Type", "application/json; charset=utf-8")
                         .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body), StandardCharsets.UTF_8)).build();
                 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -161,56 +148,14 @@ public class ResumeAiStructurer
         finally { permits.release(); }
     }
 
-    private URI endpoint(String apiUrl)
+    private URI endpoint()
     {
-        URI uri = URI.create(apiUrl);
+        URI uri = URI.create(properties.getApiUrl());
         boolean local = Set.of("127.0.0.1", "localhost", "[::1]", "::1").contains(uri.getHost() == null ? "" : uri.getHost());
         if (uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null
                 || !("https".equalsIgnoreCase(uri.getScheme()) || local && "http".equalsIgnoreCase(uri.getScheme())))
             throw new ServiceException("AI API 地址必须使用 HTTPS");
         return uri;
-    }
-
-    private AiSettings resolveSettings()
-    {
-        if (hasText(properties.getApiKey()))
-            return new AiSettings(properties.getApiUrl(), properties.getModel(), properties.getApiKey());
-        if (modelProviderService == null)
-            return AiSettings.empty();
-        try
-        {
-            List<ModelProvider> providers = modelProviderService.selectModelProviderList(new ModelProvider());
-            return providers.stream()
-                    .filter(provider -> Integer.valueOf(1).equals(provider.getMppStatus()))
-                    .filter(provider -> hasText(provider.getMppApiKey()))
-                    .findFirst()
-                    .map(provider -> new AiSettings(
-                            blankToDefault(provider.getMppApiUrl(), properties.getApiUrl()),
-                            blankToDefault(provider.getMppModelName(), properties.getModel()),
-                            provider.getMppApiKey()))
-                    .orElseGet(AiSettings::empty);
-        }
-        catch (RuntimeException error)
-        {
-            log.warn("读取 AI 模型配置失败，将使用本地简历识别：{}", error.getMessage());
-            return AiSettings.empty();
-        }
-    }
-
-    private static String blankToDefault(String value, String fallback)
-    {
-        return hasText(value) ? value : fallback;
-    }
-
-    private static boolean hasText(String value)
-    {
-        return value != null && !value.isBlank();
-    }
-
-    private record AiSettings(String apiUrl, String model, String apiKey)
-    {
-        static AiSettings empty() { return new AiSettings("", "", ""); }
-        boolean configured() { return hasText(apiKey); }
     }
 
     private AppResume decode(String content) throws IOException
