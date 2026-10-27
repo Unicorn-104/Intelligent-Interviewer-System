@@ -7,6 +7,7 @@ import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import { listSessions, listMessages, sendMessage, readSession, readAll, uploadFile, listQuickReplies, saveQuickReply, deleteQuickReply } from '@/api/system/im'
 import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice } from '@/api/system/conference'
 import { listSurveyTemplates, sendSurvey } from '@/api/survey'
+import { listPapers, listSchedules, createSchedule } from '@/api/exam'
 import { refreshUnread, totalUnread } from '@/views/enterprise/store/unread'
 import { match as pinyinMatch } from 'pinyin-pro'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
@@ -124,16 +125,20 @@ function scrollToBottom() {
 }
 
 // 将文本消息中的 http(s) 链接拆分为可点击片段，普通聊天消息里的链接可直接打开
+// 历史消息可能只存了相对路径（早期版本未拼接候选人端地址），渲染时按候选人端地址补全
 function linkParts(text) {
   if (!text) return []
   const parts = []
-  const re = /https?:\/\/[^\s]+/g
+  const re = /(https?:\/\/[^\s]+|\/(?:conference-join|survey-fill)\?[^\s]+)/g
   let last = 0
   let m
   while ((m = re.exec(text))) {
     if (m.index > last) parts.push({ text: text.slice(last, m.index) })
-    parts.push({ text: m[0], href: m[0] })
-    last = m.index + m[0].length
+    const raw = m[0]
+    // 相对链接补全为完整地址，展示文字也使用完整地址，与满意度调研消息保持一致
+    const href = raw.startsWith('/') ? (candidateBase ? candidateBase + raw : '') : raw
+    parts.push(href ? { text: href, href } : { text: raw })
+    last = m.index + raw.length
   }
   if (last < text.length) parts.push({ text: text.slice(last) })
   return parts
@@ -344,6 +349,109 @@ function openRecordings() {
     path: '/enterprise/conference/records',
     query: { candidateUserId: peer, candidateName: activeConv.value?.name || '' }
   })
+}
+
+// ---------- 发送笔试：选择试卷，复用有效考试安排（没有则自动创建），把答题链接发到会话 ----------
+const examOpen = ref(false)
+const examLoading = ref(false)
+const examSending = ref(false)
+const examPapers = ref([])
+const selectedPaperKey = ref(null)
+
+function pad2(n) { return String(n).padStart(2, '0') }
+function fmtMinute(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+function toTs(v) {
+  if (!v) return null
+  const t = new Date(String(v).replace(/-/g, '/').replace('T', ' ')).getTime()
+  return isNaN(t) ? null : t
+}
+
+async function openExamModal() {
+  const peer = peerUserId.value
+  if (peer == null) { ElMessage.warning('当前会话缺少对方信息，无法发送笔试'); return }
+  selectedPaperKey.value = null
+  examPapers.value = []
+  examOpen.value = true
+  examLoading.value = true
+  try {
+    if (!peerPositionsReady.value) await loadPeerPositions()
+    const papers = []
+    for (const pos of peerPositions.value || []) {
+      const res = await listPapers(pos.positionId).catch(() => null)
+      for (const p of res?.data || []) {
+        if (Number(p.status) !== 1) continue
+        papers.push({
+          ...p,
+          positionId: pos.positionId,
+          positionTitle: pos.positionTitle || p.positionTitle,
+          key: `${pos.positionId}-${p.paperId}`
+        })
+      }
+    }
+    examPapers.value = papers
+  } finally {
+    examLoading.value = false
+  }
+}
+
+async function sendExamToChat() {
+  const peer = peerUserId.value
+  const paper = examPapers.value.find(p => p.key === selectedPaperKey.value)
+  if (peer == null || !paper) { ElMessage.warning('请选择要发送的试卷'); return }
+  if (!candidateBase) { ElMessage.error('未配置候选人端地址，无法生成完整链接'); return }
+  examSending.value = true
+  try {
+    let scheduleId = null
+    let deadline = ''
+    const sres = await listSchedules({ positionId: paper.positionId, pageNum: 1, pageSize: 50 }).catch(() => null)
+    const nowTs = Date.now()
+    // 只复用当前正在有效窗口内的安排（已开始且未结束），否则新建，避免发出去的是过期或未开始链接
+    const hit = (sres?.rows || []).find(s => {
+      if (Number(s.paperId) !== Number(paper.paperId)) return false
+      if (Number(s.status) >= 2) return false
+      const start = toTs(s.startAt)
+      const end = toTs(s.endAt)
+      return (start == null || start <= nowTs) && (end == null || end > nowTs)
+    })
+    if (hit) {
+      scheduleId = hit.scheduleId
+      deadline = hit.endAt || ''
+    } else {
+      const now = new Date()
+      const end = new Date(now.getTime() + 7 * 24 * 3600 * 1000)
+      deadline = fmtMinute(end)
+      const res = await createSchedule({
+        positionId: paper.positionId,
+        paperId: paper.paperId,
+        startAt: fmtMinute(now),
+        endAt: deadline,
+        maxAttempts: 1,
+        passThreshold: Math.min(60, Number(paper.totalScore) || 60),
+        forceDualCamera: 0,
+        submitRule: { autoSubmit: true, allowEarly: true, autosaveInterval: 30 }
+      })
+      scheduleId = res?.data
+    }
+    if (!scheduleId) throw new Error('创建考试安排失败')
+    const url = `${candidateBase}/agent/exam?scheduleId=${scheduleId}`
+    const deadlineText = deadline ? `，考试截止 ${deadline}` : ''
+    const body = {
+      type: 1,
+      content: `【在线笔试】${paper.positionTitle || '应聘岗位'}《${paper.name}》${deadlineText}，请点击链接进入笔试作答：${url}`
+    }
+    if (activeId.value != null) body.sessionId = activeId.value
+    else body.peerId = newChat.value.peerId
+    await sendMessage(body)
+    examOpen.value = false
+    await afterSend()
+    ElMessage.success('笔试链接已发送')
+  } catch (e) {
+    ElMessage.error(e?.message || '发送笔试失败')
+  } finally {
+    examSending.value = false
+  }
 }
 
 // ---------- 发起视频面试：生成会议链接 ----------
@@ -707,7 +815,8 @@ onBeforeUnmount(() => {
             <button title="表情" @click="emojiOpen=!emojiOpen"><Smile :size="18"/></button>
             <button title="发送文件" @click="pickFile"><Paperclip :size="18"/></button>
             <button title="发送调研文件" @click="openSurveyModal"><MessageSquareText :size="18"/></button>
-            <button class="rec-btn" @click="openRecordings"><Play :size="16"/>查看录制</button>
+            <button title="发送笔试" @click="openExamModal"><FileText :size="18"/></button>
+            <button title="查看录制" @click="openRecordings"><Play :size="18"/></button>
             <button class="quick" v-if="templates.length" @click="useTemplate(templates[0].content)"><Zap :size="15"/>快捷回复</button>
             <input ref="fileInput" type="file" style="display:none" @change="onFileChange" />
           </div>
@@ -819,11 +928,29 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </BaseModal>
+
+    <BaseModal v-if="examOpen" title="发送笔试" width="480px" @close="examOpen=false">
+      <div class="survey-form">
+        <p class="sf-tip">选择要发送给「{{ activeConv?.name || '当前候选人' }}」的试卷；若该试卷暂无有效考试安排，系统会自动创建一个 7 天内的考试安排。</p>
+        <p v-if="examLoading" class="sf-empty">加载中…</p>
+        <p v-else-if="!examPapers.length" class="sf-empty">该候选人投递岗位下暂无启用试卷，请先在「在线笔试 → 试卷」中创建并启用</p>
+        <div v-else class="sf-list">
+          <label v-for="p in examPapers" :key="p.key" class="sf-item" :class="{ on: selectedPaperKey === p.key }">
+            <input type="radio" :value="p.key" v-model="selectedPaperKey" />
+            <div><b>{{ p.name }}</b><small>{{ p.positionTitle }} · {{ p.durationMin }} 分钟 · {{ p.totalScore }} 分</small></div>
+          </label>
+        </div>
+        <div class="sf-foot">
+          <button class="btn" @click="examOpen=false">取消</button>
+          <button class="btn primary" :disabled="examSending || !selectedPaperKey" @click="sendExamToChat"><Send :size="14"/>{{ examSending ? '发送中…' : '发送' }}</button>
+        </div>
+      </div>
+    </BaseModal>
   </div>
 </template>
 
 <style scoped>
-.messages-page{height:calc(100vh - 64px);padding:24px;display:grid;grid-template-columns:292px minmax(540px,1fr) 260px;grid-template-rows:minmax(0,1fr);gap:1px;overflow:hidden}.conversation-panel,.chat-panel,.template-panel{background:white;border:1px solid #e5ebf3}.conversation-panel{border-radius:14px 0 0 14px;overflow:hidden;display:flex;flex-direction:column}.search-row{display:flex;align-items:center;gap:8px;margin:14px;flex:none}.conversation-search{height:38px;flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#f2f5f9;border-radius:9px;padding:0 11px;color:#8999af}.conversation-search input{width:100%;border:0;outline:0;background:transparent;font-size:11px}.read-all{width:38px;height:38px;flex:none;border:1px solid #e0e7f0;border-radius:9px;background:white;color:#64748b;display:grid;place-items:center;cursor:pointer}.read-all:hover:not(:disabled){border-color:#8eb2fa;color:#2563eb}.read-all:disabled{opacity:.4;cursor:not-allowed}.conversation-list{overflow:auto;flex:1}.conversation-list article{height:77px;border-top:1px solid #e8edf4;display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:0 14px;position:relative;cursor:pointer}.conversation-list article.active{background:#edf4ff}.conversation-list article>div{min-width:0}.conversation-list h3{font-size:12px}.conversation-list p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#7d8ca1;font-size:10px;margin-top:5px}.conversation-list time{position:absolute;right:14px;top:13px;color:#98a5b7;font-size:9px}.conversation-list em{position:absolute;right:14px;bottom:11px;width:19px;height:19px;border-radius:50%;background:#2563eb;color:white;font-style:normal;font-size:9px;display:grid;place-items:center;line-height:1}.empty-list{border-top:1px solid #e8edf4;text-align:center;color:#98a5b7;font-size:10px;padding:24px 0;margin:0}.chat-panel{display:flex;flex-direction:column;min-height:0;overflow:hidden}.chat-head{height:86px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;gap:10px;padding:0 16px;flex:none}.chat-head-info{flex:1;min-width:0}.chat-head h2{font-size:14px;display:flex;gap:6px;align-items:center}.chat-head p{display:block;color:#7c8ca3;font-size:9px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.message-stream{flex:1;overflow:auto;background:#f8fafc;padding:18px 18px 10px}.stream-loading{text-align:center;color:#98a5b7;font-size:10px}.message-row{display:flex;flex-direction:column;align-items:flex-start;margin-bottom:17px}.message-row.me{align-items:flex-end}.bubble{max-width:76%;padding:11px 13px;border-radius:5px 13px 13px 13px;background:#eaf1ff;font-size:11px;line-height:1.55;white-space:pre-wrap;word-break:break-word}.message-row.me .bubble{background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px}.bubble-link{color:#2563eb;text-decoration:underline;word-break:break-all;cursor:pointer}.file-bubble{display:flex;align-items:center;gap:7px;text-decoration:none;color:inherit;cursor:pointer}.file-bubble svg{color:#2563eb;flex:none}.file-bubble b{font-weight:500;font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-bubble small{color:#2563eb;font-size:9px}.img-bubble{padding:4px}.img-bubble img{max-width:220px;max-height:180px;border-radius:8px;display:block}.message-row time{color:#9aa7b8;font-size:9px;margin-top:4px}.message-row.system{align-items:center;margin:5px 0 17px}.system-line{color:#95a2b4;font-size:9px;display:flex;align-items:center;width:80%;gap:8px}.system-line:before,.system-line:after{content:'';height:1px;background:#e5ebf3;flex:1}.chat-empty{flex:1;display:grid;place-items:center;color:#98a5b7;font-size:12px}.composer{min-height:86px;border-top:1px solid #e5ebf3;padding:8px 15px;position:relative;flex:none}.composer-tools{height:28px;display:flex;gap:5px;align-items:center}.composer-tools button{border:0;background:none;color:#64748b;padding:4px;cursor:pointer}.composer-tools .quick{margin-left:auto;display:flex;align-items:center;gap:5px;color:#2563eb;font-size:10px}.composer-tools .rec-btn{display:flex;align-items:center;gap:4px;color:#2563eb;font-size:10px}.composer-tools .rec-btn:hover{color:#1d4ed8}.composer>div:last-child{display:flex;gap:8px;align-items:flex-end}.composer textarea{min-height:36px;max-height:96px;flex:1;border:0;outline:0;border-radius:8px;background:#f0f4f9;padding:9px 11px;font-size:11px;resize:none;font-family:inherit;line-height:1.5}.send{height:36px;border:0;border-radius:8px;background:#2563eb;color:white;padding:0 13px;display:flex;align-items:center;gap:6px;cursor:pointer}.emoji-pop{position:absolute;left:14px;bottom:80px;background:white;border:1px solid #e0e7f0;border-radius:10px;padding:8px;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;box-shadow:0 8px 24px rgba(30,41,59,.14);z-index:5}.emoji-pop button{border:0;background:none;font-size:16px;padding:4px;border-radius:6px;cursor:pointer}.emoji-pop button:hover{background:#f0f4f9}.template-panel{border-radius:0 14px 14px 0;display:flex;flex-direction:column;overflow:hidden}.template-panel header{height:60px;padding:0 14px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;justify-content:space-between}.template-panel header span{font-size:12px;font-weight:700;display:flex;align-items:center;gap:7px}.template-panel header svg{color:#2563eb}.template-panel header small{color:#9aa7b8;font-size:8px}.template-list{padding:12px;display:flex;flex-direction:column;gap:9px;overflow:auto}.template-list button{border:1px solid #e0e7f0;border-radius:8px;background:white;padding:8px 9px;text-align:left;cursor:pointer}.template-list button:hover{border-color:#8eb2fa;background:#f8fbff}.template-list label{display:block;color:#8392a7;font-size:9px;margin-bottom:4px}.template-list span{font-size:10px;line-height:1.45;color:#40516a}.ai-tip{margin:3px 12px;padding:10px;background:#edf4ff;color:#2563eb;border-radius:9px;display:flex;gap:7px}.ai-tip svg{flex:none}.ai-tip p{font-size:9px;color:#6a7d99;line-height:1.45}.ai-tip b{color:#315b9e;display:block}.manage{height:42px;border:0;border-top:1px solid #e5ebf3;background:white;color:#2563eb;margin-top:auto;display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;cursor:pointer}
+.messages-page{height:calc(100vh - 64px);padding:24px;display:grid;grid-template-columns:292px minmax(540px,1fr) 260px;grid-template-rows:minmax(0,1fr);gap:1px;overflow:hidden}.conversation-panel,.chat-panel,.template-panel{background:white;border:1px solid #e5ebf3}.conversation-panel{border-radius:14px 0 0 14px;overflow:hidden;display:flex;flex-direction:column}.search-row{display:flex;align-items:center;gap:8px;margin:14px;flex:none}.conversation-search{height:38px;flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#f2f5f9;border-radius:9px;padding:0 11px;color:#8999af}.conversation-search input{width:100%;border:0;outline:0;background:transparent;font-size:11px}.read-all{width:38px;height:38px;flex:none;border:1px solid #e0e7f0;border-radius:9px;background:white;color:#64748b;display:grid;place-items:center;cursor:pointer}.read-all:hover:not(:disabled){border-color:#8eb2fa;color:#2563eb}.read-all:disabled{opacity:.4;cursor:not-allowed}.conversation-list{overflow:auto;flex:1}.conversation-list article{height:77px;border-top:1px solid #e8edf4;display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:0 14px;position:relative;cursor:pointer}.conversation-list article.active{background:#edf4ff}.conversation-list article>div{min-width:0}.conversation-list h3{font-size:12px}.conversation-list p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#7d8ca1;font-size:10px;margin-top:5px}.conversation-list time{position:absolute;right:14px;top:13px;color:#98a5b7;font-size:9px}.conversation-list em{position:absolute;right:14px;bottom:11px;width:19px;height:19px;border-radius:50%;background:#2563eb;color:white;font-style:normal;font-size:9px;display:grid;place-items:center;line-height:1}.empty-list{border-top:1px solid #e8edf4;text-align:center;color:#98a5b7;font-size:10px;padding:24px 0;margin:0}.chat-panel{display:flex;flex-direction:column;min-height:0;overflow:hidden}.chat-head{height:86px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;gap:10px;padding:0 16px;flex:none}.chat-head-info{flex:1;min-width:0}.chat-head h2{font-size:14px;display:flex;gap:6px;align-items:center}.chat-head p{display:block;color:#7c8ca3;font-size:9px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.message-stream{flex:1;overflow:auto;background:#f8fafc;padding:18px 18px 10px}.stream-loading{text-align:center;color:#98a5b7;font-size:10px}.message-row{display:flex;flex-direction:column;align-items:flex-start;margin-bottom:17px}.message-row.me{align-items:flex-end}.bubble{max-width:76%;padding:11px 13px;border-radius:5px 13px 13px 13px;background:#eaf1ff;font-size:11px;line-height:1.55;white-space:pre-wrap;word-break:break-word}.message-row.me .bubble{background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px}.bubble-link{color:#2563eb;text-decoration:underline;word-break:break-all;cursor:pointer}.file-bubble{display:flex;align-items:center;gap:7px;text-decoration:none;color:inherit;cursor:pointer}.file-bubble svg{color:#2563eb;flex:none}.file-bubble b{font-weight:500;font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-bubble small{color:#2563eb;font-size:9px}.img-bubble{padding:4px}.img-bubble img{max-width:220px;max-height:180px;border-radius:8px;display:block}.message-row time{color:#9aa7b8;font-size:9px;margin-top:4px}.message-row.system{align-items:center;margin:5px 0 17px}.system-line{color:#95a2b4;font-size:9px;display:flex;align-items:center;width:80%;gap:8px}.system-line:before,.system-line:after{content:'';height:1px;background:#e5ebf3;flex:1}.chat-empty{flex:1;display:grid;place-items:center;color:#98a5b7;font-size:12px}.composer{min-height:86px;border-top:1px solid #e5ebf3;padding:8px 15px;position:relative;flex:none}.composer-tools{height:28px;display:flex;gap:5px;align-items:center}.composer-tools button{border:0;background:none;color:#64748b;padding:4px;cursor:pointer}.composer-tools .quick{margin-left:auto;display:flex;align-items:center;gap:5px;color:#2563eb;font-size:10px}.composer>div:last-child{display:flex;gap:8px;align-items:flex-end}.composer textarea{min-height:36px;max-height:96px;flex:1;border:0;outline:0;border-radius:8px;background:#f0f4f9;padding:9px 11px;font-size:11px;resize:none;font-family:inherit;line-height:1.5}.send{height:36px;border:0;border-radius:8px;background:#2563eb;color:white;padding:0 13px;display:flex;align-items:center;gap:6px;cursor:pointer}.emoji-pop{position:absolute;left:14px;bottom:80px;background:white;border:1px solid #e0e7f0;border-radius:10px;padding:8px;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;box-shadow:0 8px 24px rgba(30,41,59,.14);z-index:5}.emoji-pop button{border:0;background:none;font-size:16px;padding:4px;border-radius:6px;cursor:pointer}.emoji-pop button:hover{background:#f0f4f9}.template-panel{border-radius:0 14px 14px 0;display:flex;flex-direction:column;overflow:hidden}.template-panel header{height:60px;padding:0 14px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;justify-content:space-between}.template-panel header span{font-size:12px;font-weight:700;display:flex;align-items:center;gap:7px}.template-panel header svg{color:#2563eb}.template-panel header small{color:#9aa7b8;font-size:8px}.template-list{padding:12px;display:flex;flex-direction:column;gap:9px;overflow:auto}.template-list button{border:1px solid #e0e7f0;border-radius:8px;background:white;padding:8px 9px;text-align:left;cursor:pointer}.template-list button:hover{border-color:#8eb2fa;background:#f8fbff}.template-list label{display:block;color:#8392a7;font-size:9px;margin-bottom:4px}.template-list span{font-size:10px;line-height:1.45;color:#40516a}.ai-tip{margin:3px 12px;padding:10px;background:#edf4ff;color:#2563eb;border-radius:9px;display:flex;gap:7px}.ai-tip svg{flex:none}.ai-tip p{font-size:9px;color:#6a7d99;line-height:1.45}.ai-tip b{color:#315b9e;display:block}.manage{height:42px;border:0;border-top:1px solid #e5ebf3;background:white;color:#2563eb;margin-top:auto;display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;cursor:pointer}
 .tpl-manage{display:flex;flex-direction:column;gap:12px}.tpl-form{display:flex;gap:8px}.tpl-form input{height:34px;border:1px solid #dfe6ef;border-radius:8px;padding:0 10px;font-size:12px;outline:none}.tpl-form input:focus{border-color:#2563eb}.tpl-form .cat{width:140px;flex:none}.tpl-form .cnt{flex:1;min-width:0}.tpl-form .save{height:34px;flex:none;border:0;border-radius:8px;background:#2563eb;color:white;padding:0 14px;font-size:11px;cursor:pointer}.tpl-form .cancel{height:34px;flex:none;border:1px solid #dfe6ef;border-radius:8px;background:white;color:#64748b;padding:0 12px;font-size:11px;cursor:pointer}
 .tpl-rows{max-height:340px;overflow:auto;border:1px solid #eef2f7;border-radius:9px}.tpl-row{display:grid;grid-template-columns:96px 1fr 88px;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid #f2f5f9;font-size:11px}.tpl-row:last-child{border-bottom:0}.tpl-row.on{background:#f4f8ff}.tpl-row label{color:#8392a7;font-size:10px}.tpl-row span{color:#40516a;line-height:1.45;word-break:break-word}.tpl-row .ops{display:flex;gap:8px;justify-content:flex-end}.tpl-row .ops button{border:0;background:none;color:#2563eb;font-size:10px;cursor:pointer;padding:0}.tpl-row .ops button.del{color:#ef4444}.none{padding:20px;text-align:center;color:#9aa7b9;font-size:11px}
 .link-form{display:flex;flex-direction:column;gap:14px}
