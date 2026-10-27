@@ -81,4 +81,13 @@ public interface EnterpriseSettingsMapper
     public int deleteStatusLogs(@Param("talIds") List<Long> talIds);
 
     public int deleteCandidates(@Param("companyId") Long companyId, @Param("talIds") List<Long> talIds);
+
+    /** 当前企业对外展示信息 */
+    public Map<String, Object> selectOwnCompany(@Param("companyId") Long companyId);
+
+    /** 更新当前企业对外展示信息（不含认证与状态字段） */
+    public int updateOwnCompany(@Param("companyId") Long companyId, @Param("name") String name,
+            @Param("industry") String industry, @Param("size") String size, @Param("city") String city,
+            @Param("address") String address, @Param("website") String website,
+            @Param("intro") String intro, @Param("logoUrl") String logoUrl);
 }

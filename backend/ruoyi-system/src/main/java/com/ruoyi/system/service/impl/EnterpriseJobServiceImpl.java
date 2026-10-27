@@ -288,7 +288,7 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
     {
         if (posId == null)
         {
-            throw new ServiceException("请选择要删除的草稿岗位", ErrorCode.BAD_REQUEST);
+            throw new ServiceException("请选择要删除的岗位", ErrorCode.BAD_REQUEST);
         }
         Long companyId = resolveCompanyId(userId);
         Map<String, Object> job = jobMapper.selectJobById(posId, companyId);
@@ -296,10 +296,10 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         {
             throw new ServiceException("岗位不存在或无权访问");
         }
-        Integer status = job.get("status") == null ? null : ((Number) job.get("status")).intValue();
-        if (status == null || status != 0)
+        // 任何状态都可删，但已有投递、面试等业务数据时拒绝，避免级联删除真实数据
+        if (jobMapper.countJobBusinessData(posId) > 0)
         {
-            throw new ServiceException("仅支持删除草稿状态的岗位");
+            throw new ServiceException("该岗位已有投递、面试等业务数据，无法删除；可将岗位改为停招或下线");
         }
         try
         {
@@ -312,7 +312,7 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         }
         catch (DataIntegrityViolationException e)
         {
-            // 岗位已被投递、面试等业务数据引用，禁止删除，事务回滚保证技能关联不被误删
+            // 删除校验后仍有新引用时兜底保护，事务回滚保证技能关联不被误删
             throw new ServiceException("该岗位已有关联的投递、面试等业务数据，无法删除");
         }
         Map<String, Object> result = new LinkedHashMap<>();
@@ -525,6 +525,49 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         result.put("templateId", templateId);
         result.put("version", fresh == null ? null : fresh.get("version"));
         return result;
+    }
+
+    @Override
+    @Transactional
+    public Long ensureProcessInstance(Long companyId, Long candidateId, Long positionId)
+    {
+        if (companyId == null || companyId <= 0 || candidateId == null || candidateId <= 0 || positionId == null || positionId <= 0)
+        {
+            throw new ServiceException("投递流程参数无效");
+        }
+        // 锁岗位行，避免并发投递重复建模板/实例
+        Map<String, Object> job = jobMapper.selectJobForUpdate(positionId, companyId);
+        if (job == null)
+        {
+            throw new ServiceException("岗位不存在或无权访问");
+        }
+        Map<String, Object> existing = jobMapper.selectProcessInstance(candidateId, positionId);
+        if (existing != null)
+        {
+            return ((Number) existing.get("pinId")).longValue();
+        }
+        Long templateId = job.get("templateId") == null ? null : Long.valueOf(String.valueOf(job.get("templateId")));
+        if (templateId == null)
+        {
+            // 岗位尚未配置招聘流程时建空模板并绑定，保证实例模板外键成立；
+            // 企业后续编辑流程会走版本+1 重建阶段的既有逻辑。
+            jobMapper.insertTemplate(companyId, positionId, "岗位招聘流程");
+            templateId = jobMapper.selectLatestTemplateIdByPos(positionId);
+            jobMapper.bindPosTemplate(positionId, companyId, templateId);
+        }
+        Map<String, Object> instance = new LinkedHashMap<>();
+        instance.put("candidateId", candidateId);
+        instance.put("positionId", positionId);
+        instance.put("templateId", templateId);
+        instance.put("stageId", jobMapper.selectFirstStageIdByPosition(positionId));
+        if (jobMapper.insertProcessInstance(instance) != 1 || instance.get("pinId") == null)
+        {
+            throw new ServiceException("投递流程实例创建失败，请稍后重试");
+        }
+        Long pinId = ((Number) instance.get("pinId")).longValue();
+        jobMapper.updateApplicationInstance(candidateId, positionId, pinId);
+        jobMapper.updateTalentInstanceIfAbsent(candidateId, pinId);
+        return pinId;
     }
 
     private String buildStageConfig(Map<String, Object> s)

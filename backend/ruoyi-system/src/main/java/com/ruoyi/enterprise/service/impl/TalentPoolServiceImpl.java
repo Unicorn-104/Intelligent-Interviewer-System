@@ -7,12 +7,14 @@ import com.ruoyi.enterprise.domain.TalentSearchCriteria;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.TalentPoolMapper;
 import com.ruoyi.enterprise.service.IScreeningService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
 import com.ruoyi.system.mapper.DashboardMapper;
+import com.ruoyi.system.service.IEnterpriseJobService;
 
 /**
  * 企业端 - 人才库服务实现
@@ -33,6 +35,9 @@ public class TalentPoolServiceImpl implements ITalentPoolService
 
     @Autowired
     private IScreeningService screeningService;
+
+    @Autowired
+    private IEnterpriseJobService enterpriseJobService;
 
     @Override
     public List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
@@ -145,6 +150,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     }
 
     @Override
+    @Transactional
     public Map<String, Object> reapplyTalent(Long userId, Long talId, Long positionId)
     {
         Long companyId = resolveCompanyId(userId);
@@ -171,6 +177,8 @@ public class TalentPoolServiceImpl implements ITalentPoolService
             throw new ServiceException("候选人暂无关联简历，无法转投递");
         }
         talentPoolMapper.insertApplication(talId, positionId, resumeId);
+        // 与求职者自主投递一致，同步创建流程实例供企业端岗位详情/漏斗/筛选使用
+        enterpriseJobService.ensureProcessInstance(companyId, talId, positionId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("talentId", talId);
         result.put("positionId", positionId);

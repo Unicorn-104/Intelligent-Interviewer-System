@@ -156,6 +156,21 @@ public class EnterpriseSettingsController extends BaseController
         return success(result);
     }
 
+    // ==================== 企业信息 ====================
+
+    @GetMapping("/company")
+    public AjaxResult company()
+    {
+        // 企业资料归属严格校验，未绑定账号不回落默认公司
+        return success(settingsService.companyInfo(settingsService.requireCompanyId(getUserId())));
+    }
+
+    @PutMapping("/company")
+    public AjaxResult saveCompany(@RequestBody Map<String, Object> body)
+    {
+        return success(settingsService.updateCompanyInfo(settingsService.requireCompanyId(getUserId()), body));
+    }
+
     private String str(Map<String, Object> body, String key)
     {
         Object v = body.get(key);

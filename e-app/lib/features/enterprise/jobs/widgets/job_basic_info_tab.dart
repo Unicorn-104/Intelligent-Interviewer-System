@@ -14,6 +14,8 @@ class JobBasicInfoTab extends StatelessWidget {
     required this.onReloadProfile,
     required this.onInterviews,
     this.onEdit,
+    this.onPreview,
+    this.onDelete,
     required this.jdSection,
     required this.workflowSection,
     required this.workflowTimeline,
@@ -24,6 +26,8 @@ class JobBasicInfoTab extends StatelessWidget {
   final VoidCallback onReloadProfile;
   final VoidCallback onInterviews;
   final VoidCallback? onEdit;
+  final VoidCallback? onPreview;
+  final VoidCallback? onDelete;
   final Widget jdSection;
   final Widget workflowSection;
   final Widget workflowTimeline;
@@ -89,6 +93,42 @@ class JobBasicInfoTab extends StatelessWidget {
                         label: const Text('查看面试安排'),
                       ),
                     ),
+                    if (onPreview != null)
+                      SizedBox(
+                        width: narrow ? constraints.maxWidth : null,
+                        child: OutlinedButton.icon(
+                          key: const Key('job-preview-entry'),
+                          onPressed: onPreview,
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 46),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: const Icon(Icons.visibility_outlined, size: 18),
+                          label: const Text('预览'),
+                        ),
+                      ),
+                    if (onDelete != null)
+                      SizedBox(
+                        width: narrow ? constraints.maxWidth : null,
+                        child: OutlinedButton.icon(
+                          key: const Key('job-delete-entry'),
+                          onPressed: onDelete,
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 46),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            foregroundColor: AppColors.error,
+                            side: const BorderSide(color: AppColors.error),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: const Text('删除岗位'),
+                        ),
+                      ),
                   ],
                 );
               },
@@ -139,8 +179,27 @@ class JobBasicInfoTab extends StatelessWidget {
               '工作性质：${jobTypes[int.tryParse('${job['jobType']}')] ?? '未提供'}',
             ),
             Text('岗位状态：${statuses[int.tryParse('${job['status']}')] ?? '未提供'}'),
-            Text('发布日期：${jobValue(job['date'], fallback: '未提供')}'),
-            Text('投递人数：${jobValue(data.funnel['total'], fallback: '未提供')}'),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _highlightChip(
+                  key: const Key('job-basic-published'),
+                  icon: Icons.calendar_today_outlined,
+                  label: '发布日期：${jobValue(job['date'], fallback: '未提供')}',
+                  background: AppColors.primarySoft,
+                  foreground: AppColors.brand,
+                ),
+                _highlightChip(
+                  key: const Key('job-basic-applicants'),
+                  icon: Icons.group_outlined,
+                  label: '投递人数：${jobValue(data.funnel['total'], fallback: '未提供')}',
+                  background: AppColors.interactiveSoft,
+                  foreground: AppColors.interactive,
+                ),
+              ],
+            ),
           ]),
           _section('职责要求', [_description(data)]),
           _section('技能', [_skills()]),
@@ -151,6 +210,37 @@ class JobBasicInfoTab extends StatelessWidget {
       ),
     );
   }
+
+  /// 资料卡高亮项：投递人数、发布日期等关键信息以彩色胶囊突出展示。
+  Widget _highlightChip({
+    required Key key,
+    required IconData icon,
+    required String label,
+    required Color background,
+    required Color foreground,
+  }) => Container(
+    key: key,
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: background,
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: foreground),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: foreground,
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _section(String? title, List<Widget> children) => Container(
     margin: const EdgeInsets.only(bottom: 16),

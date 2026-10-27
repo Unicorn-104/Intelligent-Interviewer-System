@@ -108,4 +108,34 @@ public interface EnterpriseJobMapper
      * 查询模板阶段（含富配置 json）
      */
     public List<Map<String, Object>> selectStagesByTemplate(@Param("templateId") Long templateId);
+
+    /**
+     * 候选人+岗位的流程实例（幂等检查）
+     */
+    public Map<String, Object> selectProcessInstance(@Param("candidateId") Long candidateId, @Param("positionId") Long positionId);
+
+    /**
+     * 岗位模板的首个阶段（按排序），无模板或无阶段返回 null
+     */
+    public Long selectFirstStageIdByPosition(@Param("positionId") Long positionId);
+
+    /**
+     * 插入投递流程实例；回填自增 pinId 到入参 map
+     */
+    public int insertProcessInstance(Map<String, Object> instance);
+
+    /**
+     * 投递记录回填流程实例 id
+     */
+    public int updateApplicationInstance(@Param("candidateId") Long candidateId, @Param("positionId") Long positionId, @Param("instanceId") Long instanceId);
+
+    /**
+     * 候选人主档回填流程实例 id（已有实例时保持不变）
+     */
+    public int updateTalentInstanceIfAbsent(@Param("talentId") Long talentId, @Param("instanceId") Long instanceId);
+
+    /**
+     * 岗位已产生的业务数据量（投递/流程实例/面试）
+     */
+    public int countJobBusinessData(@Param("posId") Long posId);
 }

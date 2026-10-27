@@ -50,7 +50,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </insert>
 
     <select id="selectJobForUpdate" resultType="java.util.LinkedHashMap">
-        select pos_id as "posId", pos_status as status, pos_jd_json as "jdJson"
+        select pos_id as "posId", pos_status as status, pos_jd_json as "jdJson",
+               pos_process_template_id as "templateId"
         from t_pos
         where pos_id = #{posId} and pos_company_id = #{companyId}
         for update
@@ -122,22 +123,23 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectTemplateByPos" resultType="java.util.LinkedHashMap">
-        select t.ptl_id as templateId, t.ptl_name as name, t.ptl_version as version
+        select t.ptl_id as "templateId", t.ptl_name as name, t.ptl_version as version
         from t_pos p
         join t_process_template t on t.ptl_id = p.pos_process_template_id
         where p.pos_id = #{posId} and p.pos_company_id = #{companyId}
     </select>
 
     <select id="selectStagesByTemplate" resultType="java.util.LinkedHashMap">
-        select psg_id as stageId, psg_name as name, psg_type as type, psg_sort_order as sortOrder,
+        select psg_id as "stageId", psg_name as name, psg_type as type, psg_sort_order as "sortOrder",
                psg_is_required as required, psg_pass_threshold as threshold,
-               psg_interviewer_config_json as configJson
+               psg_interviewer_config_json as "configJson"
         from t_process_stage
         where psg_template_id = #{templateId}
         order by psg_sort_order
     </select>
 
-    <insert id="insertTemplate" useGeneratedKeys="true" keyProperty="templateId">
+    <!-- 多参数调用不支持回填自增主键；新模板 id 由 selectLatestTemplateIdByPos 回查 -->
+    <insert id="insertTemplate">
         insert into t_process_template (ptl_company_id, ptl_name, ptl_position_id, ptl_version, ptl_status)
         values (#{companyId}, #{name}, #{posId}, 'v1.0', 1)
     </insert>
@@ -169,5 +171,45 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         insert into t_process_stage (psg_template_id, psg_name, psg_type, psg_sort_order, psg_is_required, psg_pass_threshold, psg_interviewer_config_json)
         values (#{templateId}, #{name}, #{type}, #{sortOrder}, #{required}, #{threshold}, #{configJson})
     </insert>
+
+    <!-- ============ 投递流程实例（候选人投递后企业端可见性） ============ -->
+
+    <select id="selectProcessInstance" resultType="java.util.LinkedHashMap">
+        select pin_id as "pinId", pin_template_id as "templateId", pin_current_stage_id as "stageId"
+        from t_process_instance
+        where pin_candidate_id = #{candidateId} and pin_position_id = #{positionId}
+        limit 1
+    </select>
+
+    <select id="selectFirstStageIdByPosition" resultType="java.lang.Long">
+        select s.psg_id
+        from t_pos p
+        join t_process_stage s on s.psg_template_id = p.pos_process_template_id
+        where p.pos_id = #{positionId}
+        order by s.psg_sort_order
+        limit 1
+    </select>
+
+    <insert id="insertProcessInstance" parameterType="map" useGeneratedKeys="true" keyProperty="pinId" keyColumn="pin_id">
+        insert into t_process_instance (pin_candidate_id, pin_position_id, pin_template_id, pin_current_stage_id, pin_status, pin_start_at)
+        values (#{candidateId}, #{positionId}, #{templateId}, #{stageId}, 0, now())
+    </insert>
+
+    <update id="updateApplicationInstance">
+        update t_app_record set app_process_instance_id = #{instanceId}
+        where app_candidate_id = #{candidateId} and app_position_id = #{positionId}
+    </update>
+
+    <update id="updateTalentInstanceIfAbsent">
+        update t_tal set tal_process_instance_id = #{instanceId}
+        where tal_id = #{talentId} and tal_process_instance_id is null
+    </update>
+
+    <!-- 岗位已产生的业务数据量（投递/流程实例/面试），删除前校验 -->
+    <select id="countJobBusinessData" resultType="int">
+        select (select count(*) from t_app_record ar where ar.app_position_id = #{posId})
+             + (select count(*) from t_process_instance pi where pi.pin_position_id = #{posId})
+             + (select count(*) from t_sch_appointment a where a.apt_position_id = #{posId})
+    </select>
 
 </mapper>

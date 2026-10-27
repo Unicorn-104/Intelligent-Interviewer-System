@@ -333,7 +333,6 @@ void main() {
     await pumpDetail(tester, source);
     final jd = find.byKey(const PageStorageKey('job-jd-expansion-1'));
     final flow = find.byKey(const PageStorageKey('job-workflow-expansion-1'));
-    expect(jd, findsOneWidget);
     final basicScrollable = find
         .descendant(
           of: find.byType(JobBasicInfoTab),
@@ -346,6 +345,7 @@ void main() {
       scrollable: basicScrollable,
       maxScrolls: 20,
     );
+    expect(jd, findsOneWidget);
     await tester.ensureVisible(jd);
     await tester.pumpAndSettle();
     await tester.tap(jd);

@@ -8,6 +8,7 @@
 
 library;
 
+import '../../core/network/api_exception.dart';
 import '../../core/network/enterprise_api_client.dart';
 
 /// UC-01：岗位列表（关键词/部门/状态筛选 + 分页）。
@@ -110,4 +111,23 @@ Future<void> saveJobWorkflow(int positionId, Map<String, Object?> body) async {
     '/system/enterprise/jobs/$positionId/workflow',
     body: body,
   );
+}
+
+/// UC-01：删除岗位（仅无投递/面试等业务数据的岗位可删，后端校验拒绝级联删除）。
+/// 已对接：DELETE /system/enterprise/jobs/{posId}
+Future<void> deleteJob(int positionId) async {
+  await EnterpriseApiClient().delete('/system/enterprise/jobs/$positionId');
+}
+
+/// 求职者端岗位详情（岗位预览复用，读取求职者视角的最新展示数据）。
+/// 已对接：GET /agent/v1/jobs/{jobId}
+Future<Map<String, dynamic>> getCandidateJobPreview(int positionId) async {
+  final response = await EnterpriseApiClient().get(
+    '/agent/v1/jobs/$positionId',
+  );
+  final data = response['data'];
+  if (data is! Map) {
+    throw const ApiException('岗位预览数据格式不正确');
+  }
+  return Map<String, dynamic>.from(data);
 }

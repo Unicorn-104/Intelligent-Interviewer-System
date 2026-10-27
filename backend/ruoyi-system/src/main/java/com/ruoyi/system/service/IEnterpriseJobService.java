@@ -65,4 +65,10 @@ public interface IEnterpriseJobService
      * 保存岗位流程配置（无模板则创建，有则版本+1 重建阶段）
      */
     public Map<String, Object> saveWorkflow(Long userId, Long posId, String templateName, List<Map<String, Object>> stages);
+
+    /**
+     * 确保候选人+岗位存在投递流程实例，返回实例 id。
+     * 岗位无模板时先建空模板并绑定；已有实例时幂等返回，不重复创建。
+     */
+    public Long ensureProcessInstance(Long companyId, Long candidateId, Long positionId);
 }

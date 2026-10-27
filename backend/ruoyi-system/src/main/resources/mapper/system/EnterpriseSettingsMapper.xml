@@ -184,4 +184,29 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <foreach collection="talIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
     </delete>
 
+    <!-- ============ 企业信息 ============ -->
+
+    <select id="selectOwnCompany" resultType="java.util.LinkedHashMap">
+        select cmp_id as "id", cmp_name as name, cmp_industry as industry, cmp_size as size,
+               cmp_city as city, cmp_address as address, cmp_website as website,
+               cmp_intro as intro, cmp_logo_url as "logoUrl",
+               cmp_verify_status as "verifyStatus", cmp_status as status
+        from t_cmp
+        where cmp_id = #{companyId}
+    </select>
+
+    <update id="updateOwnCompany">
+        update t_cmp
+        set cmp_name = #{name},
+            cmp_industry = #{industry},
+            cmp_size = #{size},
+            cmp_city = #{city},
+            cmp_address = #{address},
+            cmp_website = #{website},
+            cmp_intro = #{intro},
+            cmp_logo_url = #{logoUrl},
+            cmp_updated_at = now()
+        where cmp_id = #{companyId}
+    </update>
+
 </mapper>

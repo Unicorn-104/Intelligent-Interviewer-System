@@ -13,6 +13,9 @@ public interface IEnterpriseSettingsService
     /** 解析当前用户所属公司（未绑定默认公司1） */
     public Long resolveCompanyId(Long userId);
 
+    /** 解析当前用户所属公司（未绑定直接报错，不回落默认公司） */
+    public Long requireCompanyId(Long userId);
+
     public List<Map<String, Object>> listTemplates(Long companyId);
 
     public int saveTemplate(Long companyId, Long id, String title, String content, Integer channel, Integer status);
@@ -36,4 +39,10 @@ public interface IEnterpriseSettingsService
     public int changeMemberStatus(Long companyId, Long userId, boolean enabled);
 
     public Map<String, Object> inviteMember(Long companyId, String userName, String nickName, String email, String dept, Long roleId);
+
+    /** 当前企业对外展示信息（求职者企业主页同源字段） */
+    public Map<String, Object> companyInfo(Long companyId);
+
+    /** 更新当前企业对外展示信息，返回最新企业信息 */
+    public Map<String, Object> updateCompanyInfo(Long companyId, Map<String, Object> form);
 }
