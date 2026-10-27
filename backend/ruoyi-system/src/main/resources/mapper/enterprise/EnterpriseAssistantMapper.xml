@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.EnterpriseAssistantMapper">
+    <sql id="owned">
+        s.acs_user_id=#{userId} and s.acs_status=7
+        and exists(select 1 from t_ai_chat_message marker where marker.acm_session_id=s.acs_id
+            and marker.acm_role=0 and marker.acm_intent=concat('enterprise:',#{companyId}))
+    </sql>
+    <sql id="sessionColumns">
+        s.acs_id as id, coalesce((select left(m.acm_content,40) from t_ai_chat_message m
+            where m.acm_session_id=s.acs_id and m.acm_role=1 order by m.acm_id limit 1),'新对话') as title,
+        date_format(s.acs_updated_at,'%Y-%m-%d %H:%i:%s') as updatedAt,
+        (select max(r.acm_id) from t_ai_chat_message r where r.acm_session_id=s.acs_id
+            and r.acm_role=2 and right(r.acm_intent,2)=':R') as activeRunId
+    </sql>
+    <insert id="createSession" useGeneratedKeys="true" keyProperty="id" keyColumn="acs_id">
+        insert into t_ai_chat_session(acs_user_id,acs_status) values(#{userId},7)
+    </insert>
+    <insert id="insertMessage" useGeneratedKeys="true" keyProperty="id" keyColumn="acm_id">
+        insert into t_ai_chat_message(acm_session_id,acm_role,acm_content,acm_intent)
+        values(#{sessionId},#{role},#{content},#{intent})
+    </insert>
+    <select id="session" resultType="java.util.LinkedHashMap" flushCache="true" useCache="false">
+        select <include refid="sessionColumns"/> from t_ai_chat_session s where s.acs_id=#{id} and <include refid="owned"/>
+    </select>
+    <select id="lockSession" resultType="long">
+        select acs_id from t_ai_chat_session where acs_id=#{id} and acs_user_id=#{userId} and acs_status=7 for update
+    </select>
+    <select id="sessions" resultType="java.util.LinkedHashMap">
+        select <include refid="sessionColumns"/> from t_ai_chat_session s where <include refid="owned"/>
+        <if test="before != null">and s.acs_id &lt; #{before}</if>
+        order by s.acs_id desc limit 21
+    </select>
+    <select id="messages" resultType="java.util.LinkedHashMap" flushCache="true" useCache="false">
+        select acm_id as id,case acm_role when 1 then 'user' else 'assistant' end as role,
+            acm_content as content,case when acm_role=2 then right(acm_intent,1) else null end as state
+        from t_ai_chat_message where acm_session_id=#{sessionId} and acm_role in (1,2)
+        <if test="before != null">and acm_id &lt; #{before}</if>
+        order by acm_id desc limit #{limit}
+    </select>
+    <select id="request" resultType="java.util.LinkedHashMap" flushCache="true" useCache="false">
+        select r.acm_id as id,u.acm_content as input from t_ai_chat_message u join t_ai_chat_message r
+          on r.acm_session_id=u.acm_session_id and r.acm_role=2
+          and r.acm_intent like concat('r:',u.acm_id,':%')
+        where u.acm_session_id=#{sessionId} and u.acm_role=1 and u.acm_intent=#{intent} limit 1
+    </select>
+    <select id="run" resultType="java.util.LinkedHashMap" flushCache="true" useCache="false">
+        select m.acm_id as id,m.acm_session_id as sessionId,m.acm_content as content,
+            right(m.acm_intent,1) as state
+        from t_ai_chat_message m join t_ai_chat_session s on s.acs_id=m.acm_session_id
+        where m.acm_id=#{id} and m.acm_role=2 and m.acm_intent like 'r:%' and <include refid="owned"/>
+    </select>
+    <update id="expire">
+        update t_ai_chat_message set acm_intent=concat(left(acm_intent,length(acm_intent)-1),'F')
+        where acm_session_id=#{sessionId} and acm_role=2 and right(acm_intent,2)=':R'
+          and acm_created_at &lt; date_sub(current_timestamp,interval 150 second)
+    </update>
+    <select id="active" resultType="int">
+        select count(*) from t_ai_chat_message where acm_session_id=#{sessionId} and acm_role=2 and right(acm_intent,2)=':R'
+    </select>
+    <update id="updateRun">
+        update t_ai_chat_message set acm_content=#{content},
+            acm_intent=concat(left(acm_intent,length(acm_intent)-1),#{state})
+        where acm_id=#{id} and acm_role=2 and right(acm_intent,2)=':R'
+    </update>
+    <update id="touch">update t_ai_chat_session set acs_updated_at=current_timestamp where acs_id=#{id}</update>
+    <delete id="deleteMessages">delete from t_ai_chat_message where acm_session_id=#{id}</delete>
+    <delete id="deleteSession">delete from t_ai_chat_session where acs_id=#{id} and acs_user_id=#{userId} and acs_status=7</delete>
+    <select id="jobs" resultType="java.util.LinkedHashMap">
+        select pos_id as id,pos_title as title,pos_work_city as city,pos_status as status,
+            pos_salary_min as salaryMin,pos_salary_max as salaryMax
+        from t_pos where pos_company_id=#{companyId}
+        <if test="keyword != null">and pos_title like concat('%',#{keyword},'%')</if>
+        order by pos_id desc limit 15
+    </select>
+    <select id="job" resultType="java.util.LinkedHashMap">
+        select pos_id as id,pos_title as title,pos_work_city as city,pos_status as status,
+            pos_salary_min as salaryMin,pos_salary_max as salaryMax,pos_experience_required as experience,
+            pos_education_required as education,left(cast(pos_jd_json as char),8000) as description
+        from t_pos where pos_company_id=#{companyId} and pos_id=#{id}
+    </select>
+</mapper>
