@@ -14,6 +14,7 @@ import 'package:enterprise_recruiter/features/enterprise/notification/system_mes
 import 'package:enterprise_recruiter/features/enterprise/notification/widgets/system_message_icon.dart';
 
 import 'message_center_page_test.dart' show FakeMessageSource, mountMessages;
+import 'support/fake_enterprise_ai_source.dart';
 
 SystemMessage notice(
   int id,
@@ -116,7 +117,10 @@ void main() {
           ),
           body: Navigator(
             onGenerateRoute: (_) => MaterialPageRoute<void>(
-              builder: (_) => MessageCenterPage(source: source),
+              builder: (_) => MessageCenterPage(
+                source: source,
+                assistantSource: FakeEnterpriseAiSource(),
+              ),
             ),
           ),
         ),
@@ -294,7 +298,10 @@ void main() {
         theme: theme,
         home: RepaintBoundary(
           key: const ValueKey('notice-preview'),
-          child: MessageCenterPage(source: source),
+          child: MessageCenterPage(
+            source: source,
+            assistantSource: FakeEnterpriseAiSource(),
+          ),
         ),
       ),
     );

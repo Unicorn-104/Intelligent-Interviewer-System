@@ -10,13 +10,21 @@ import 'system_notifications_page.dart';
 import 'conversation_page.dart';
 import 'widgets/message_avatar.dart';
 import 'widgets/system_message_icon.dart';
+import '../assistant/enterprise_ai_launcher.dart';
+import '../assistant/enterprise_ai_page.dart';
+import '../assistant/enterprise_ai_data_source.dart';
 
 // 保留旧聊天页导入入口，运行时仅使用真实接口。
 export 'conversation_page.dart' show ChatPage;
 
 class MessageCenterPage extends StatefulWidget {
-  const MessageCenterPage({super.key, this.source = const MessageDataSource()});
+  const MessageCenterPage({
+    super.key,
+    this.source = const MessageDataSource(),
+    this.assistantSource,
+  });
   final MessageDataSource source;
+  final EnterpriseAiDataSource? assistantSource;
   @override
   State<MessageCenterPage> createState() => _MessageCenterPageState();
 }
@@ -27,6 +35,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   NotificationSlice? _notifications;
   bool _loading = true, _action = false;
   int _request = 0;
+  bool _assistantOpen = false;
   Timer? _refreshTimer;
   String? _sessionsError, _notificationsError;
   @override
@@ -148,6 +157,24 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     if (mounted) await _load();
   }
 
+  Future<void> _openAssistant() async {
+    if (_assistantOpen) return;
+    _assistantOpen = true;
+    try {
+      await Navigator.of(context, rootNavigator: true).push<void>(
+        MaterialPageRoute(
+          builder: (_) => EnterpriseAiPage(
+            source:
+                widget.assistantSource ??
+                EnterpriseAiDataSource(client: widget.source.client),
+          ),
+        ),
+      );
+    } finally {
+      _assistantOpen = false;
+    }
+  }
+
   int get _unread =>
       _sessions.fold(0, (sum, item) => sum + item.unread) +
       (_notifications?.unreadCount ?? 0);
@@ -180,24 +207,27 @@ class _MessageCenterPageState extends State<MessageCenterPage>
         ),
       ],
     ),
-    body: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          color: AppColors.canvas,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                '候选人沟通与系统通知统一管理',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-              ),
-            ],
+    body: EnterpriseAiLauncher(
+      onPressed: _openAssistant,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: AppColors.canvas,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '候选人沟通与系统通知统一管理',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+              ],
+            ),
           ),
-        ),
-        Expanded(child: _list()),
-      ],
+          Expanded(child: _list()),
+        ],
+      ),
     ),
   );
   Widget _list() {

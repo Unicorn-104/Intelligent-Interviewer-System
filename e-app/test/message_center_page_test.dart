@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'support/fake_enterprise_ai_source.dart';
+
 import 'package:enterprise_recruiter/features/enterprise/notification/models/chat_context.dart';
 import 'package:enterprise_recruiter/features/enterprise/notification/widgets/message_avatar.dart';
 import 'package:enterprise_recruiter/features/enterprise/profile/models/profile_view_data.dart';
@@ -171,7 +173,10 @@ Future<void> mountMessages(
       theme: AppTheme.light,
       home: chat
           ? ChatPage(session: sessionJson(), source: source, pollInterval: poll)
-          : MessageCenterPage(source: source),
+          : MessageCenterPage(
+              source: source,
+              assistantSource: FakeEnterpriseAiSource(),
+            ),
     ),
   );
   await tester.pumpAndSettle();
@@ -390,6 +395,11 @@ void main() {
     expect(source.readCalls, 0);
     expect(source.readAllCalls, 0);
     expect(find.byKey(const Key('messages-tab-1')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('ai-assistant-orb')));
+    await tester.pumpAndSettle();
+    expect(find.text('AI 招聘助手'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('enterprise-ai-close')));
+    await tester.pumpAndSettle();
     expect(find.text('合成候选人'), findsOneWidget);
     expect(source.readCalls, 0);
     expect(source.sends, isEmpty);
