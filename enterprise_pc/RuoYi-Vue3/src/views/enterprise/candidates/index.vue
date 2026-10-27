@@ -1,6 +1,6 @@
 <script setup>
-import { computed, ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { Search, Upload, Tags, SlidersHorizontal, ArrowUpRight, UserRoundCheck, FileText, Send, ChevronRight, GraduationCap, BriefcaseBusiness, Bookmark } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
@@ -9,9 +9,12 @@ import { listTalents, getTalentResume, updateTalentStatus, batchTalentTags } fro
 import { batchImportResumes } from '@/api/resume'
 
 const router = useRouter()
+const route = useRoute()
 const toast = ref('')
 const loading = ref(false)
 const keyword = ref('')
+// 顶栏搜索跳转时通过 ?keyword= 带入关键字
+keyword.value = typeof route.query.keyword === 'string' ? route.query.keyword : ''
 const statusFilter = ref('')
 const batchStatus = ref('')
 const selected = ref([])
@@ -56,6 +59,11 @@ async function load() {
 }
 
 function search() { pageNum.value = 1; load() }
+// 已在该页面时再次使用顶栏搜索，跟随 query 变化重新查询
+watch(() => route.query.keyword, (kw) => {
+  keyword.value = typeof kw === 'string' ? kw : ''
+  search()
+})
 function step(delta) {
   const next = pageNum.value + delta
   if (next < 1 || (next - 1) * pageSize >= total.value) return

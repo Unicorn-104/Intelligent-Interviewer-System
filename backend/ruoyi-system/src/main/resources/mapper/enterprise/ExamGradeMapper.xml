@@ -10,6 +10,7 @@
         select r.erc_id as recordId, r.erc_status as status, r.erc_pass_status as passStatus,
                r.erc_total_score as totalScore, r.erc_candidate_id as talId,
                t.tal_user_id as candidateUserId,
+               ifnull(u.real_name, u.nick_name) as candidateName,
                s.esd_id as scheduleId, s.esd_position_id as positionId,
                s.esd_paper_id as paperId, s.esd_pass_threshold as passThreshold,
                s.esd_auto_flow_json as autoFlow,
@@ -23,6 +24,7 @@
         join t_exam_paper p on p.epa_id = s.esd_paper_id
         join t_pos pos on pos.pos_id = s.esd_position_id
         join t_tal t on t.tal_id = r.erc_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
         left join t_exam_result res on res.ers_record_id = r.erc_id
         where r.erc_id = #{recordId}
     </sql>

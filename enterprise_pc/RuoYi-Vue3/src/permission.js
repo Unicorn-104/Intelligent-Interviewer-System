@@ -11,7 +11,9 @@ import usePermissionStore from '@/store/modules/permission'
 
 NProgress.configure({ showSpinner: false });
 
-const whiteList = ['/login', '/register'];
+// 登录页统一使用 /enterprise/login：该路径位于 vite base(/enterprise/) 之内，刷新时不会被开发服务器拦截
+const LOGIN_PATH = '/enterprise/login';
+const whiteList = [LOGIN_PATH, '/login', '/register'];
 
 // 企业端准入角色：超级管理员 + 企业超级管理员(biz_1)/招聘HR(biz_2)/面试官(biz_3)
 // 求职者(biz_4)、运营(biz_5)等其他角色禁止进入本端任何页面
@@ -32,7 +34,7 @@ function denyNonEnterprise(next) {
     userStore.roles = []
     userStore.permissions = []
     ElMessage.error('您的账号无企业端访问权限，请前往求职者端登录')
-    next({ path: '/login', replace: true })
+    next({ path: LOGIN_PATH, replace: true })
     NProgress.done()
   })
 }
@@ -42,8 +44,8 @@ router.beforeEach((to, from, next) => {
   if (getToken()) {
     to.meta.title && useSettingsStore().setTitle(to.meta.title)
     /* has token*/
-    if (to.path === '/login') {
-      next({ path: '/' })
+    if (to.path === LOGIN_PATH || to.path === '/login') {
+      next({ path: '/enterprise/dashboard' })
       NProgress.done()
     } else if (whiteList.indexOf(to.path) !== -1) {
       next()
@@ -77,7 +79,7 @@ router.beforeEach((to, from, next) => {
           userStore.roles = []
           userStore.permissions = []
           ElMessage.error(err)
-          next({ path: '/login', replace: true })
+          next({ path: LOGIN_PATH, replace: true })
           NProgress.done()
         })
       } else {
@@ -90,7 +92,7 @@ router.beforeEach((to, from, next) => {
       // 在免登录白名单，直接进入
       next()
     } else {
-      next(`/login?redirect=${to.fullPath}`) // 否则全部重定向到登录页
+      next(`${LOGIN_PATH}?redirect=${to.fullPath}`) // 否则全部重定向到登录页
       NProgress.done()
     }
   }

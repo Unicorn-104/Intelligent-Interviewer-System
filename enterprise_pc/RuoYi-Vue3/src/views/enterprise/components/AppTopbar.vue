@@ -14,6 +14,14 @@ defineProps({ title: String })
 const router = useRouter()
 const userStore = useUserStore()
 
+const searchKeyword = ref('')
+function doSearch() {
+  const kw = searchKeyword.value.trim()
+  if (!kw) return
+  router.push({ path: '/enterprise/candidates', query: { keyword: kw } })
+  searchKeyword.value = ''
+}
+
 const nickName = computed(() => userStore.nickName || userStore.name || '未登录')
 const account = computed(() => userStore.name || '--')
 
@@ -28,7 +36,8 @@ function handleLogout() {
     type: 'warning'
   }).then(() => {
     userStore.logOut().then(() => {
-      location.href = '/login'
+      // 必须落在 vite base(/enterprise/) 内，避免整页跳转到 /login 后被开发服务器/部署环境拦截
+      location.href = '/enterprise/login'
     })
   }).catch(() => {})
 }
@@ -110,7 +119,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); if (bellCloseTimer) clearTi
   <header class="topbar">
     <div class="crumb"><span>工作台</span><b>/</b><strong>{{ title }}</strong></div>
     <div class="actions">
-      <label class="search"><Search :size="17" /><input placeholder="搜索候选人、岗位或消息" /></label>
+      <label class="search"><Search :size="17" /><input v-model="searchKeyword" placeholder="搜索候选人、岗位或消息" @keyup.enter="doSearch" /></label>
       <div class="bell-wrap" @mouseenter="openBell" @mouseover="openBell" @mouseleave="closeBell">
         <button class="bell" title="消息中心" @click="goMessages"><Bell :size="19" /><i v-if="unreadTotal > 0" /></button>
         <div v-show="bellOpen" class="bell-pop">

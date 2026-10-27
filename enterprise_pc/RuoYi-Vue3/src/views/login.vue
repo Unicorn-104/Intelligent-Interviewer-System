@@ -125,7 +125,7 @@ function handleLogin() {
           }
           return acc;
         }, {});
-        router.push(redirect.value ? redirect.value : { path: "/", query: otherQueryParams });
+        router.push(redirect.value ? redirect.value : { path: "/enterprise/dashboard", query: otherQueryParams });
       }).catch(() => {
         loading.value = false;
         // 重新获取验证码
