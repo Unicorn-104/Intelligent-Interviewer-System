@@ -14,6 +14,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.InterviewReviewMapper;
 import com.ruoyi.enterprise.service.IInterviewReviewService;
+import com.ruoyi.system.mapper.DashboardMapper;
 
 /**
  * 企业端 - HR 终审与级联流转服务实现
@@ -46,18 +47,22 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     @Autowired
     private InterviewReviewMapper reviewMapper;
 
+    @Autowired
+    private DashboardMapper dashboardMapper;
+
     @Override
     public List<Map<String, Object>> listReviews(Long userId, Integer status, Integer pageNum, Integer pageSize)
     {
+        Long companyId = resolveCompanyId(userId);
         PageUtils.startPage(pageNum, pageSize);
-        return reviewMapper.selectReviewList(status);
+        return reviewMapper.selectReviewList(companyId, status);
     }
 
     @Override
     public Map<String, Object> getReviewDetail(Long userId, Long sessionId)
     {
         Map<String, Object> detail = reviewMapper.selectReviewDetail(sessionId);
-        if (detail == null)
+        if (detail == null || !resolveCompanyId(userId).equals(asLong(detail.get("companyId"))))
         {
             throw new ServiceException("面试记录或评估结果不存在");
         }
@@ -68,11 +73,13 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     }
 
     @Override
-    public Map<String, Object> confirm(Long userId, Long sessionId, Boolean isFinal)
+    public Map<String, Object> confirm(Long userId, Long sessionId, Boolean isFinal,
+            Integer recommendation, String comment)
     {
-        Map<String, Object> session = requireSession(sessionId);
-        // UC-12 步骤8：确认通过
-        reviewMapper.updateHrStatus(sessionId, HR_CONFIRMED, 1, null);
+        Map<String, Object> session = requireSession(userId, sessionId);
+        // UC-12 步骤8：确认通过（HR 结论与评语随确认一同落库）
+        reviewMapper.updateHrStatus(sessionId, HR_CONFIRMED,
+                recommendation == null ? 1 : recommendation, comment);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", sessionId);
         result.put("hrStatus", HR_CONFIRMED);
@@ -90,9 +97,10 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     }
 
     @Override
-    public Map<String, Object> adjust(Long userId, Long sessionId, Map<String, Object> dims)
+    public Map<String, Object> adjust(Long userId, Long sessionId, Map<String, Object> dims,
+            Integer recommendation, String comment)
     {
-        requireSession(sessionId);
+        requireSession(userId, sessionId);
         if (dims == null || dims.isEmpty())
         {
             throw new ServiceException("调整的五维评分不能为空");
@@ -105,7 +113,9 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         }
         double overall = round(total / dims.size());
         reviewMapper.updateDimensionScores(sessionId, JSON.toJSONString(dims), overall);
-        reviewMapper.updateHrStatus(sessionId, HR_ADJUSTED, 1, "调整后通过");
+        reviewMapper.updateHrStatus(sessionId, HR_ADJUSTED,
+                recommendation == null ? 1 : recommendation,
+                comment == null || comment.isBlank() ? "调整后通过" : comment);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", sessionId);
         result.put("overallScore", overall);
@@ -117,7 +127,7 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     @Override
     public Map<String, Object> reject(Long userId, Long sessionId, String reason)
     {
-        Map<String, Object> session = requireSession(sessionId);
+        Map<String, Object> session = requireSession(userId, sessionId);
         // UC-12 步骤10：驳回淘汰——候选人状态"已淘汰"（触发器自动写状态日志）+ 感谢信
         reviewMapper.updateHrStatus(sessionId, HR_CONFIRMED, 0, reason);
         reviewMapper.updateTalStatus(Long.valueOf(String.valueOf(session.get("candidateId"))), TAL_REJECTED);
@@ -134,7 +144,7 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     @Override
     public Map<String, Object> cascade(Long userId, Long sessionId)
     {
-        return cascadeInternal(requireSession(sessionId));
+        return cascadeInternal(requireSession(userId, sessionId));
     }
 
     /** UC-15 级联流转核心：按级联规则阈值判断，达标创建下一轮预约，未达标淘汰 */
@@ -190,14 +200,25 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         return result;
     }
 
-    private Map<String, Object> requireSession(Long sessionId)
+    private Map<String, Object> requireSession(Long userId, Long sessionId)
     {
         Map<String, Object> session = reviewMapper.selectSessionBase(sessionId);
-        if (session == null)
+        if (session == null || !resolveCompanyId(userId).equals(asLong(session.get("companyId"))))
         {
             throw new ServiceException("面试记录不存在");
         }
         return session;
+    }
+
+    private Long resolveCompanyId(Long userId)
+    {
+        Long companyId = dashboardMapper.selectCompanyIdByUser(userId);
+        return companyId == null ? 1L : companyId;
+    }
+
+    private Long asLong(Object value)
+    {
+        return value == null ? null : Long.valueOf(String.valueOf(value));
     }
 
     private double round(double value)

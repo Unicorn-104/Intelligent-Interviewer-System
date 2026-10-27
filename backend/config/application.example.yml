@@ -2,6 +2,21 @@
 # application.yml 已被 Git 忽略；不要在此示例文件中填写真实密钥。
 # 从 backend/ 目录启动后端时，Spring Boot 自动加载 config/application.yml。
 app:
+  ai:
+    memory:
+      worker-delay-ms: ${CAPP_MEMORY_WORKER_DELAY_MS:2000}
+      vector:
+        enabled: ${CAPP_MEMORY_VECTOR_ENABLED:true}
+        qdrant-url: ${QDRANT_URL:http://127.0.0.1:6333}
+        qdrant-api-key: ${QDRANT_API_KEY:}
+        collection: ${QDRANT_MEMORY_COLLECTION:capp_user_memory_bge_small_zh_v1}
+        embedding-url: ${MEMORY_EMBEDDING_URL:http://127.0.0.1:8091/v1/embeddings}
+        embedding-api-key: ${MEMORY_EMBEDDING_TOKEN:}
+        embedding-model: ${MEMORY_EMBEDDING_MODEL:BAAI/bge-small-zh-v1.5}
+        dimension: ${MEMORY_EMBEDDING_DIMENSION:512}
+        min-score: ${MEMORY_MIN_SCORE:0.45}
+        connect-timeout-seconds: 3
+        request-timeout-seconds: 10
   resume:
     structure:
       enabled: true
@@ -22,3 +37,9 @@ app:
       ws-base-url: wss://asr.cloud.tencent.com/asr/v2
       expire-seconds: 300
       vad-silence-time: 1000
+
+# 避免 MyBatis DEBUG 日志输出个人记忆、证据和对话原文。
+logging:
+  level:
+    com.ruoyi.system.mapper.app.AppAiMemoryMapper: INFO
+    com.ruoyi.system.mapper.app.AppAiMapper: INFO

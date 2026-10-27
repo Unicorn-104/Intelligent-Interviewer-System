@@ -44,8 +44,18 @@ public class AppJobServiceImpl implements IAppJobService
     @Override
     @Transactional
     public void apply(Long userId, Long positionId)
+    { apply(userId, positionId, null); }
+
+    @Override
+    @Transactional
+    public void apply(Long userId, Long positionId, Long selectedResumeId)
     {
-        Long resumeId = jobMapper.selectDefaultResumeId(userId);
+        if (selectedResumeId != null && selectedResumeId <= 0)
+            throw new ServiceException("请选择有效简历", 400);
+        Long resumeId = selectedResumeId == null ? jobMapper.selectDefaultResumeId(userId)
+                : jobMapper.selectOwnedResumeId(userId, selectedResumeId);
+        if (selectedResumeId != null && resumeId == null)
+            throw new ServiceException("所选简历不存在或不可用，请重新选择", 400);
         if (resumeId == null)
         {
             throw new ServiceException("请先在简历页完善至少一份简历");

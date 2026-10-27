@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intelligent_interviewer/core/network/api_client.dart';
 import 'package:intelligent_interviewer/features/auth/domain/auth_session.dart';
@@ -28,6 +29,7 @@ void main() {
   testWidgets(
     'AI entry overlays root navigation and closes without losing message scroll',
     (tester) async {
+      FlutterSecureStorage.setMockInitialValues({});
       tester.view.physicalSize = const Size(320, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);

@@ -14,7 +14,11 @@
         u.nick_name as candidateName, t.tal_user_id as candidateUserId,
         pos.pos_title as positionTitle, pos.pos_company_id as companyId,
         iu.nick_name as interviewerName,
-        (select max(ses_id) from t_int_session where ses_appointment_id = a.apt_id) as sessionId
+        (select max(ses_id) from t_int_session where ses_appointment_id = a.apt_id) as sessionId,
+        (select e.evl_hr_status from t_int_session s
+           join t_int_evaluation e on e.evl_session_id = s.ses_id
+          where s.ses_appointment_id = a.apt_id
+          order by s.ses_id desc limit 1) as hrStatus
     </sql>
     <sql id="appointmentJoins">
         from t_sch_appointment a
@@ -30,6 +34,7 @@
         <if test="status != null">and a.apt_status = #{status}</if>
         <if test="from != null and from != ''">and a.apt_end_time &gt; #{from}</if>
         <if test="to != null and to != ''">and a.apt_start_time &lt; #{to}</if>
+        <if test="candidateId != null">and a.apt_candidate_id = #{candidateId}</if>
         order by a.apt_start_time, a.apt_id
     </select>
     <select id="selectAppointmentById" resultType="java.util.LinkedHashMap">

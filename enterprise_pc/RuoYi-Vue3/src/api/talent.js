@@ -103,3 +103,12 @@ export function updateTalentStatus(talIds, status) {
     data: { talIds, status }
   })
 }
+
+// 批量为候选人添加标签（写入 t_tal_tag）
+export function batchTalentTags(talIds, tagName) {
+  return request({
+    url: '/enterprise/talent/tags/batch',
+    method: 'post',
+    data: { talIds, tagName, source: 1 }
+  })
+}

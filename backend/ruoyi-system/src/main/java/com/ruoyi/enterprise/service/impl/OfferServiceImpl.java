@@ -31,6 +31,19 @@ public class OfferServiceImpl implements IOfferService
     /** Offer 状态：4-草稿 */
     private static final int OFR_DRAFT = 4;
 
+    /** Offer 状态：5-审批中 */
+    private static final int OFR_APPROVING = 5;
+
+    /** Offer 状态：6-已撤回 */
+    private static final int OFR_WITHDRAWN = 6;
+
+    /** 审批状态：0-未审批，1-审批中，2-已通过，3-已拒绝 */
+    private static final int APPROVAL_RUNNING = 1;
+
+    private static final int APPROVAL_PASSED = 2;
+
+    private static final int APPROVAL_REJECTED = 3;
+
     /** 发信账号类型：个人 SMTP 直发（其余一律按企业邮箱处理） */
     private static final String SENDER_PERSONAL = "personal";
 
@@ -71,19 +84,140 @@ public class OfferServiceImpl implements IOfferService
                 : String.valueOf(body.get("onboardDate"));
         String deadline = body == null || body.get("deadline") == null ? null
                 : String.valueOf(body.get("deadline"));
-        // UC-12 步骤9：生成录用意向书（状态=已发送）+ 发起审批节点
+        // UC-12 步骤9：终面通过后生成录用意向书草稿，由 HR 补充薪资/入职信息后提交审批并发送
         offerMapper.insertOffer(candidateId, positionId, salaryOffer, onboardDate, deadline);
         Long offerId = offerMapper.selectLastOffer(candidateId);
-        offerMapper.insertApprovalNode(offerId, "HR 发起", 1, 0);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("offerId", offerId);
         result.put("candidateId", candidateId);
         result.put("positionId", positionId);
         result.put("salaryOffer", salaryOffer);
         result.put("onboardDate", onboardDate);
-        result.put("status", OFR_SENT);
-        result.put("message", "录用意向书已生成并通过邮件/短信发送（模拟），等待候选人确认");
+        result.put("status", OFR_DRAFT);
+        result.put("message", "录用意向书草稿已生成，请前往 Offer 管理补充信息后提交审批");
         return result;
+    }
+
+    @Override
+    public Map<String, Object> startApproval(Long userId, Long offerId)
+    {
+        Map<String, Object> offer = requireOffer(userId, offerId);
+        if (toInt(offer.get("status")) != OFR_DRAFT)
+        {
+            throw new ServiceException("仅草稿状态的 Offer 可提交审批");
+        }
+        // 已存在待审批节点时直接复用，避免重复提交生成重复节点
+        if (offerMapper.countPendingApprovals(offerId) == 0)
+        {
+            offerMapper.insertApprovalNodeWithApprover(offerId, "企业负责人审批", 1, userId, 0);
+        }
+        offerMapper.updateOfferApprovalStatus(offerId, APPROVAL_RUNNING);
+        offerMapper.updateOfferStatus(offerId, OFR_APPROVING);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("offerId", offerId);
+        result.put("status", OFR_APPROVING);
+        result.put("approvalStatus", APPROVAL_RUNNING);
+        result.put("message", "已提交审批，审批通过后可发送录用意向书");
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> approveOffer(Long userId, Long offerId, String comment)
+    {
+        Map<String, Object> offer = requireOffer(userId, offerId);
+        if (toInt(offer.get("status")) != OFR_APPROVING)
+        {
+            throw new ServiceException("当前 Offer 不在审批中");
+        }
+        Map<String, Object> node = offerMapper.selectPendingApproval(offerId);
+        if (node == null)
+        {
+            throw new ServiceException("没有待处理的审批节点");
+        }
+        if (node.get("approverId") != null && !userId.equals(toLong(node.get("approverId"))))
+        {
+            throw new ServiceException("当前用户不是该审批节点的审批人");
+        }
+        offerMapper.updateApprovalNode(toLong(node.get("approvalId")), 1, blankToNull(comment));
+        boolean finished = offerMapper.countPendingApprovals(offerId) == 0;
+        if (finished)
+        {
+            offerMapper.updateOfferApprovalStatus(offerId, APPROVAL_PASSED);
+            offerMapper.updateOfferStatus(offerId, OFR_DRAFT);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("offerId", offerId);
+        result.put("finished", finished);
+        result.put("status", finished ? OFR_DRAFT : OFR_APPROVING);
+        result.put("approvalStatus", finished ? APPROVAL_PASSED : APPROVAL_RUNNING);
+        result.put("message", finished ? "审批已全部通过，可发送录用意向书" : "当前节点审批通过，等待后续节点");
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> rejectApproval(Long userId, Long offerId, String comment)
+    {
+        Map<String, Object> offer = requireOffer(userId, offerId);
+        if (toInt(offer.get("status")) != OFR_APPROVING)
+        {
+            throw new ServiceException("当前 Offer 不在审批中");
+        }
+        Map<String, Object> node = offerMapper.selectPendingApproval(offerId);
+        if (node == null)
+        {
+            throw new ServiceException("没有待处理的审批节点");
+        }
+        if (node.get("approverId") != null && !userId.equals(toLong(node.get("approverId"))))
+        {
+            throw new ServiceException("当前用户不是该审批节点的审批人");
+        }
+        offerMapper.updateApprovalNode(toLong(node.get("approvalId")), 2,
+                StringUtils.isEmpty(comment) ? "审批驳回" : comment);
+        offerMapper.updateOfferApprovalStatus(offerId, APPROVAL_REJECTED);
+        offerMapper.updateOfferStatus(offerId, OFR_DRAFT);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("offerId", offerId);
+        result.put("status", OFR_DRAFT);
+        result.put("approvalStatus", APPROVAL_REJECTED);
+        result.put("message", "审批已驳回，Offer 退回草稿，可修改后重新提交");
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> withdrawOffer(Long userId, Long offerId, String reason)
+    {
+        Map<String, Object> offer = requireOffer(userId, offerId);
+        if (toInt(offer.get("status")) != OFR_SENT)
+        {
+            throw new ServiceException("仅已发送状态且候选人未处理的 Offer 可撤回");
+        }
+        if (StringUtils.isEmpty(reason))
+        {
+            throw new ServiceException("请填写撤回原因");
+        }
+        offerMapper.updateOfferWithdraw(offerId, reason);
+        Long candidateUserId = offerMapper.selectCandidateUserId(toLong(offer.get("candidateId")));
+        if (candidateUserId != null)
+        {
+            offerMapper.insertMessage(candidateUserId, "录用意向书已撤回",
+                    "您好，" + str(offer.get("positionTitle")) + " 岗位的录用意向书已被企业撤回。撤回原因：" + reason);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("offerId", offerId);
+        result.put("status", OFR_WITHDRAWN);
+        result.put("withdrawReason", reason);
+        result.put("message", "Offer 已撤回并同步通知候选人");
+        return result;
+    }
+
+    private Map<String, Object> requireOffer(Long userId, Long offerId)
+    {
+        Map<String, Object> offer = offerMapper.selectOfferById(offerId, resolveCompanyId(userId));
+        if (offer == null)
+        {
+            throw new ServiceException("Offer 不存在或无权访问");
+        }
+        return offer;
     }
 
     @Override

@@ -62,7 +62,20 @@ export default defineConfig(({ mode, command }) => {
         '/dev-api': {
           target: proxyTarget,
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/dev-api/, '')
+          rewrite: (p) => p.replace(/^\/dev-api/, ''),
+          proxyTimeout: 0,
+          timeout: 0,
+          configure: (proxy) => {
+            proxy.on('proxyRes', (proxyRes, req, res) => {
+              const ct = proxyRes.headers['content-type'] || '';
+              if (ct.includes('text/event-stream')) {
+                res.setHeader('Content-Type', 'text/event-stream;charset=UTF-8');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.flushHeaders?.();
+              }
+            });
+          }
         },
         '^/v3/api-docs/(.*)': {
           target: proxyTarget,

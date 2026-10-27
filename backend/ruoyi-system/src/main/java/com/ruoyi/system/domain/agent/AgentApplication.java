@@ -27,6 +27,7 @@ public class AgentApplication
     private String statusText;
     private BigDecimal matchedScore;
     private Boolean duplicate;
+    private Boolean canWithdraw;
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private Date appliedAt;
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
@@ -66,6 +67,8 @@ public class AgentApplication
     public BigDecimal getMatchedScore() { return matchedScore; }
     public void setMatchedScore(BigDecimal matchedScore) { this.matchedScore = matchedScore; }
     public Boolean getDuplicate() { return duplicate; }
+    public Boolean getCanWithdraw() { return canWithdraw; }
+    public void setCanWithdraw(Boolean canWithdraw) { this.canWithdraw = canWithdraw; }
     public void setDuplicate(Boolean duplicate) { this.duplicate = duplicate; }
     public Date getAppliedAt() { return appliedAt; }
     public void setAppliedAt(Date appliedAt) { this.appliedAt = appliedAt; }

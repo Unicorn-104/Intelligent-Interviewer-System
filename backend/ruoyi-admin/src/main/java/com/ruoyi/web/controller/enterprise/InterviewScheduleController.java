@@ -41,10 +41,12 @@ public class InterviewScheduleController extends BaseController
     public TableDataInfo list(@RequestParam(required = false) Integer status,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
+            @RequestParam(required = false) Long candidateId,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize)
     {
-        return getDataTable(scheduleService.listAppointments(getUserId(), status, from, to, pageNum, pageSize));
+        return getDataTable(scheduleService.listAppointments(getUserId(), status, from, to,
+                candidateId, pageNum, pageSize));
     }
 
     /**

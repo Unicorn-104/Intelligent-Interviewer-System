@@ -53,11 +53,11 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
 
     @Override
     public List<Map<String, Object>> listAppointments(Long userId, Integer status, String from,
-            String to, Integer pageNum, Integer pageSize)
+            String to, Long candidateId, Integer pageNum, Integer pageSize)
     {
         Long companyId = company(userId);
         PageUtils.startPage(pageNum, pageSize);
-        return scheduleMapper.selectAppointments(companyId, status, from, to);
+        return scheduleMapper.selectAppointments(companyId, status, from, to, candidateId);
     }
 
     @Override

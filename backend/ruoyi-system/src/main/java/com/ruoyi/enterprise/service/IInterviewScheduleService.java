@@ -16,7 +16,7 @@ public interface IInterviewScheduleService
      * 面试日程列表（UC-07）：预约记录 + 候选人/岗位/面试官信息
      */
     public List<Map<String, Object>> listAppointments(Long userId, Integer status, String from,
-            String to, Integer pageNum, Integer pageSize);
+            String to, Long candidateId, Integer pageNum, Integer pageSize);
 
     /**
      * 发起面试邀约（UC-07）：占用面试官时段 + 创建预约记录 + 生成会议链接

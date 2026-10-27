@@ -1,5 +1,6 @@
 package com.ruoyi.web.controller.enterprise;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -60,7 +61,10 @@ public class InterviewReviewController extends BaseController
     public AjaxResult confirm(@PathVariable("sessionId") Long sessionId, @RequestBody(required = false) Map<String, Object> body)
     {
         Boolean isFinal = body == null ? null : asBool(body.get("isFinal"));
-        return success(reviewService.confirm(getUserId(), sessionId, isFinal));
+        Integer recommendation = body == null || body.get("recommendation") == null ? null
+                : Integer.valueOf(String.valueOf(body.get("recommendation")));
+        String comment = body == null || body.get("comment") == null ? null : String.valueOf(body.get("comment"));
+        return success(reviewService.confirm(getUserId(), sessionId, isFinal, recommendation, comment));
     }
 
     /**
@@ -69,7 +73,21 @@ public class InterviewReviewController extends BaseController
     @PutMapping("/{sessionId}/adjust")
     public AjaxResult adjust(@PathVariable("sessionId") Long sessionId, @RequestBody Map<String, Object> body)
     {
-        return success(reviewService.adjust(getUserId(), sessionId, body));
+        // 维度评分以数字键提交（1-5），recommendation/comment 为 HR 可选结论
+        Map<String, Object> dims = new LinkedHashMap<>();
+        if (body != null)
+        {
+            body.forEach((key, value) -> {
+                if (key != null && key.matches("\\d+"))
+                {
+                    dims.put(key, value);
+                }
+            });
+        }
+        Integer recommendation = body == null || body.get("recommendation") == null ? null
+                : Integer.valueOf(String.valueOf(body.get("recommendation")));
+        String comment = body == null || body.get("comment") == null ? null : String.valueOf(body.get("comment"));
+        return success(reviewService.adjust(getUserId(), sessionId, dims, recommendation, comment));
     }
 
     /**

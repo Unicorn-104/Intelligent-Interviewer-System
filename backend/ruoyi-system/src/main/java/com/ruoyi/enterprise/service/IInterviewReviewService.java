@@ -25,12 +25,14 @@ public interface IInterviewReviewService
     /**
      * 确认通过（UC-12 步骤8-9）：终面 → Offer 流程；非终面 → 级联下一轮
      */
-    public Map<String, Object> confirm(Long userId, Long sessionId, Boolean isFinal);
+    public Map<String, Object> confirm(Long userId, Long sessionId, Boolean isFinal,
+            Integer recommendation, String comment);
 
     /**
      * 调整后通过（UC-12 步骤8）：修改五维评分后确认（重算综合分）
      */
-    public Map<String, Object> adjust(Long userId, Long sessionId, Map<String, Object> dims);
+    public Map<String, Object> adjust(Long userId, Long sessionId, Map<String, Object> dims,
+            Integer recommendation, String comment);
 
     /**
      * 驳回淘汰（UC-12 步骤10）：淘汰归档人才库 + 感谢信

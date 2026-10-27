@@ -1,3 +1,4 @@
+import '../../jobs/presentation/application_resume_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/network/api_client.dart';
@@ -62,27 +63,17 @@ class _CompanyScreenState extends State<CompanyScreen> {
 
   Future<bool> _apply(Job job) async {
     if (_applyingId != null) return false;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认投递'),
-        content: Text('将默认简历投递给「${job.company}」的“${job.title}”岗位？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('暂不投递'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('确认投递'),
-          ),
-        ],
-      ),
+    final resumeId = await chooseApplicationResume(
+      context,
+      token: widget.session.token,
+      job: job,
     );
-    if (!mounted || confirmed != true) return false;
+    if (!mounted || resumeId == null) return false;
     setState(() => _applyingId = job.positionId);
     try {
-      await JobApi(_client).apply(widget.session.token, job.positionId);
+      await JobApi(
+        _client,
+      ).apply(widget.session.token, job.positionId, resumeId: resumeId);
       if (!mounted) return false;
       _controller.markApplied(job.positionId);
       ScaffoldMessenger.of(

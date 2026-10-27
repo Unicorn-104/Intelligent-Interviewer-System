@@ -43,8 +43,8 @@ public interface IConferenceService
      *
      * @param interviewerIds 被指派的面试官用户ID（按面试模式校验人数，纯AI 可为空）
      */
-    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Integer durationMinutes,
-            Integer mode, List<Long> interviewerIds);
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Long stageId,
+            Integer durationMinutes, Integer mode, List<Long> interviewerIds);
 
     /**
      * 本企业全体在职用户（HR 发起面试时选择面试官）
@@ -147,6 +147,16 @@ public interface IConferenceService
      * 增量拉取提词器建议
      */
     public List<Map<String, Object>> getCopilot(Long userId, Long sessionId, Integer afterSequence, Integer limit);
+
+    /**
+     * 面试问题参考提示：优先返回本场次面试提纲，无提纲时按岗位技能生成提示
+     */
+    public List<Map<String, Object>> getQuestionHints(Long userId, Long sessionId);
+
+    /**
+     * 面试问题参考提示偏好反馈：记录面试官对某条提示的采纳 / 忽略
+     */
+    public Map<String, Object> handleHintFeedback(Long userId, Long sessionId, Map<String, Object> body);
 
     /**
      * 处理提词器建议

@@ -199,6 +199,59 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         return result;
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> duplicateJob(Long userId, Long posId)
+    {
+        Map<String, Object> source = jobMapper.selectJobById(posId, resolveCompanyId(userId));
+        if (source == null)
+        {
+            throw new ServiceException("岗位不存在或无权访问");
+        }
+        Map<String, Object> form = new LinkedHashMap<>();
+        String title = str(source.get("title")) + "（副本）";
+        form.put("title", title.length() > 100 ? title.substring(0, 100) : title);
+        form.put("dept", source.get("dept"));
+        form.put("city", source.get("city"));
+        form.put("experience", source.get("experience"));
+        form.put("salaryMin", source.get("salaryMin"));
+        form.put("salaryMax", source.get("salaryMax"));
+        form.put("education", source.get("education"));
+        form.put("jobType", source.get("jobType"));
+        Map<String, Object> jd = new LinkedHashMap<>();
+        String jdJson = str(source.get("jdJson"));
+        if (StringUtils.isNotEmpty(jdJson))
+        {
+            Map<String, Object> parsed = JSON.parseObject(jdJson);
+            if (parsed != null)
+            {
+                jd = parsed;
+            }
+        }
+        for (String key : List.of("description", "responsibilities", "requirements"))
+        {
+            if (jd.get(key) != null && !String.valueOf(jd.get(key)).isEmpty())
+            {
+                form.put(key, jd.get(key));
+            }
+        }
+        List<Map<String, Object>> skills = new ArrayList<>();
+        for (Map<String, Object> skill : jdMapper.selectPositionSkills(posId))
+        {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("name", skill.get("name"));
+            row.put("required", skill.get("required"));
+            skills.add(row);
+        }
+        form.put("skills", skills);
+        // 副本强制保存为草稿，避免直接进入在招状态
+        form.put("status", 0);
+        Map<String, Object> result = createJob(userId, form);
+        result.put("sourcePosId", posId);
+        result.put("message", "已复制为草稿岗位，请核对后发布");
+        return result;
+    }
+
     private Map<String, Object> validatedJob(Map<String, Object> form, Map<String, Object> existingJd)
     {
         Map<String, Object> job = new LinkedHashMap<>();

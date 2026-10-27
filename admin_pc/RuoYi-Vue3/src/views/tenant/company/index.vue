@@ -17,6 +17,10 @@
         <div class="stat-num">{{ stats.rejected }}</div>
         <div class="stat-label">已拒绝</div>
       </div>
+      <div class="stat-card" style="background:#fff7e6;border-left:4px solid #faad14" @click="quickFilter('expiring')">
+        <div class="stat-num" style="color:#faad14">{{ stats.expiring || 0 }}</div>
+        <div class="stat-label">30天内到期</div>
+      </div>
     </div>
 
     <el-card shadow="never" class="search-card">

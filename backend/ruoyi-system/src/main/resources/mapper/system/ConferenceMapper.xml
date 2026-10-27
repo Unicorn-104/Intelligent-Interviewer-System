@@ -28,7 +28,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         ifnull(u.nick_name, u.user_name)   as candidateName,
         u.avatar                          as candidateAvatar,
         t.tal_status                      as candidateStatus,
-        ifnull(iu.nick_name, iu.user_name) as interviewerName,
+        case when s.ses_mode = 1 then null else ifnull(iu.nick_name, iu.user_name) end as interviewerName,
         date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as appointmentStartAt,
         date_format(a.apt_end_time, '%Y-%m-%d %H:%i')   as appointmentEndAt,
         timestampdiff(minute, a.apt_start_time, a.apt_end_time) as durationMinutes,
@@ -118,7 +118,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from t_tal t
         left join sys_user u on u.user_id = t.tal_user_id
         where t.tal_user_id = #{userId}
+        <if test="companyId != null">and t.tal_company_id = #{companyId}</if>
         limit 1
+    </select>
+
+    <!-- 岗位归属企业（发起面试时校验岗位是否属于当前企业） -->
+    <select id="selectPositionCompanyId" resultType="java.lang.Long">
+        select pos_company_id from t_pos where pos_id = #{positionId}
     </select>
 
     <select id="selectPositionSkills" resultType="java.util.LinkedHashMap">
@@ -138,12 +144,27 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by tsl_created_at asc, tsl_id asc
     </select>
 
+    <!-- 只终止本企业岗位上的活跃场次，避免影响其他企业正在进行的面试 -->
     <update id="abortActiveSessionsByCandidate">
         update t_int_session
         set ses_status = 3,
             ses_end_at = ifnull(ses_end_at, sysdate()),
             ses_updated_at = sysdate()
         where ses_candidate_id = #{candidateId} and ses_status in (0, 1)
+          and exists (select 1 from t_pos p where p.pos_id = t_int_session.ses_position_id
+                       and p.pos_company_id = #{companyId})
+    </update>
+
+    <!-- 重新发起面试前取消本企业下仍待面试的旧预约，避免日历残留多条待面试 -->
+    <update id="cancelPendingAppointments">
+        update t_sch_appointment a
+        join t_pos p on p.pos_id = a.apt_position_id
+        set a.apt_status = 2,
+            a.apt_cancel_reason = '重新发起面试',
+            a.apt_updated_at = sysdate()
+        where a.apt_candidate_id = #{candidateId}
+          and p.pos_company_id = #{companyId}
+          and a.apt_status in (0, 1)
     </update>
 
     <!-- 发起面试后把候选人流程状态推进为「面试中」(2)；已面试中/已淘汰/已录用保持不变 -->
@@ -151,16 +172,20 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_tal
         set tal_status = 2,
             tal_updated_at = sysdate()
-        where tal_id = #{candidateId} and tal_status not in (2, 3, 4)
+        where tal_id = #{candidateId} and tal_company_id = #{companyId} and tal_status not in (2, 3, 4)
     </update>
 
     <insert id="insertAppointment" parameterType="java.util.Map" useGeneratedKeys="true" keyProperty="appointmentId">
         insert into t_sch_appointment
             (apt_candidate_id, apt_position_id, apt_interviewer_id, apt_start_time, apt_end_time,
+             apt_stage_id, apt_stage_name, apt_stage_type, apt_stage_order,
              apt_status, apt_created_at, apt_updated_at)
         values
             (#{candidateId}, #{positionId}, #{interviewerId}, sysdate(),
-             date_add(sysdate(), interval #{durationMinutes} minute), 1, sysdate(), sysdate())
+             date_add(sysdate(), interval #{durationMinutes} minute),
+             #{stageId,jdbcType=BIGINT}, #{stageName,jdbcType=VARCHAR},
+             #{stageType,jdbcType=TINYINT}, #{stageOrder,jdbcType=INTEGER},
+             1, sysdate(), sysdate())
     </insert>
 
     <insert id="insertSession" parameterType="java.util.Map" useGeneratedKeys="true" keyProperty="sessionId">
@@ -168,7 +193,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             (ses_appointment_id, ses_candidate_id, ses_position_id, ses_interviewer_id, ses_cascade_round,
              ses_mode, ses_status, ses_created_at, ses_updated_at)
         values
-            (#{appointmentId}, #{candidateId}, #{positionId}, #{interviewerId}, 1,
+            (#{appointmentId}, #{candidateId}, #{positionId}, #{interviewerId}, #{cascadeRound,jdbcType=TINYINT},
              #{mode}, 0, sysdate(), sysdate())
     </insert>
 
@@ -184,13 +209,37 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select a.app_id      as applicationId,
                p.pos_id      as positionId,
                p.pos_title   as positionTitle,
-               a.app_status  as appStatus
+               a.app_status  as appStatus,
+               t.tal_id      as candidateId,
+               cur.psg_id    as currentStageId,
+               cur.psg_name  as currentStageName,
+               cur.psg_type  as currentStageType,
+               cur.psg_sort_order as currentStageSort,
+               (select count(*) from t_process_stage s2 where s2.psg_template_id = p.pos_process_template_id) as totalStages
         from t_app_record a
         join t_pos p on p.pos_id = a.app_position_id
         join t_tal t on t.tal_id = a.app_candidate_id
+        left join t_process_instance pi on pi.pin_id = (
+            select pi2.pin_id from t_process_instance pi2
+            where pi2.pin_candidate_id = t.tal_id and pi2.pin_position_id = p.pos_id
+            order by pi2.pin_id desc limit 1)
+        left join t_process_stage cur on cur.psg_id = pi.pin_current_stage_id
         where t.tal_user_id = #{peerUserId}
           and p.pos_company_id = #{companyId}
         order by a.app_updated_at desc
+    </select>
+
+    <select id="selectStagesByPosition" resultType="java.util.LinkedHashMap">
+        select psg.psg_id      as stageId,
+               psg.psg_name    as name,
+               psg.psg_type    as type,
+               psg.psg_sort_order as sortOrder,
+               cast(json_unquote(json_extract(psg.psg_interviewer_config_json, '$.duration')) as signed) as duration
+        from t_pos p
+        join t_process_stage psg on psg.psg_template_id = p.pos_process_template_id
+        where p.pos_id = #{positionId}
+          and p.pos_company_id = #{companyId}
+        order by psg.psg_sort_order
     </select>
 
     <insert id="upsertParticipantState">
@@ -366,6 +415,38 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by oln_order asc, oln_id asc
         limit #{offset}, 1
     </select>
+
+    <select id="selectOutlineQuestions" resultType="java.util.LinkedHashMap">
+        select oln_id          as questionId,
+               oln_topic       as topic,
+               oln_description as hint,
+               oln_dimension   as dimension
+        from t_int_outline
+        where oln_session_id = #{sessionId}
+        order by oln_order asc, oln_id asc
+    </select>
+
+    <select id="selectHintPreferences" resultType="java.util.LinkedHashMap">
+        select hip_hint_key      as hintKey,
+               hip_used_count    as usedCount,
+               hip_ignored_count as ignoredCount
+        from t_int_hint_preference
+        where hip_user_id = #{userId} and hip_company_id = #{companyId}
+    </select>
+
+    <insert id="upsertHintUsed">
+        insert into t_int_hint_preference
+            (hip_user_id, hip_company_id, hip_hint_key, hip_used_count, hip_ignored_count)
+        values (#{userId}, #{companyId}, #{hintKey}, 1, 0)
+        on duplicate key update hip_used_count = hip_used_count + 1, hip_updated_at = sysdate()
+    </insert>
+
+    <insert id="upsertHintIgnored">
+        insert into t_int_hint_preference
+            (hip_user_id, hip_company_id, hip_hint_key, hip_used_count, hip_ignored_count)
+        values (#{userId}, #{companyId}, #{hintKey}, 0, 1)
+        on duplicate key update hip_ignored_count = hip_ignored_count + 1, hip_updated_at = sysdate()
+    </insert>
 
     <select id="selectCopilot" resultType="java.util.LinkedHashMap">
         select cpt_id               as id,
@@ -592,7 +673,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                s.ses_mode as mode,
                r.rcd_access_level as recAccessLevel,
                date_format(r.rcd_expires_at, '%Y-%m-%d') as recExpiresAt,
-               ifnull(iu.nick_name, iu.user_name) as primaryInterviewerName
+               case when s.ses_mode = 1 then null else ifnull(iu.nick_name, iu.user_name) end as primaryInterviewerName
         from t_int_recording r
         join t_int_session s on s.ses_id = r.rcd_session_id
         join t_pos p on p.pos_id = s.ses_position_id

@@ -70,4 +70,13 @@ public interface SurveyMapper
 
     /** 新增调研发送记录 */
     public int insertDispatch(Map<String, Object> dispatch);
+
+    /** 按匿名填写令牌查询发送记录（含模板题目、候选人与企业信息，用于候选人填写页） */
+    public Map<String, Object> selectDispatchByToken(@Param("token") String token);
+
+    /** 新增调研回收记录 */
+    public int insertResponse(Map<String, Object> response);
+
+    /** 标记发送记录为已填写 */
+    public int markDispatchSubmitted(@Param("dispatchId") Long dispatchId);
 }

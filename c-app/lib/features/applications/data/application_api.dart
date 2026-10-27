@@ -33,4 +33,14 @@ class ApplicationApi {
     if (data is! Map) throw const ApiException('投递详情格式不正确，请重试');
     return JobApplication.fromJson(Map<String, dynamic>.from(data));
   }
+
+  Future<JobApplication> withdraw(String token, int applicationId) async {
+    final response = await client.post(
+      '/agent/v1/applications/$applicationId/withdraw',
+      token: token,
+    );
+    final data = response['data'];
+    if (data is! Map) throw const ApiException('撤回结果格式不正确，请刷新后查看');
+    return JobApplication.fromJson(Map<String, dynamic>.from(data));
+  }
 }

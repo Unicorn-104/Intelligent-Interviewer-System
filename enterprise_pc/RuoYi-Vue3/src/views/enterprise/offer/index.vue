@@ -1,10 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Plus, Send, FileText, Mail, CircleCheck, Timer, Users, Building2, UserRound, ChevronRight, AlertTriangle, BriefcaseBusiness } from '@/views/enterprise/components/icons'
+import { Plus, Send, FileText, Mail, CircleCheck, Timer, Users, Building2, UserRound, ChevronRight, AlertTriangle, BriefcaseBusiness, RotateCcw, CircleX } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { listOffers, getOffer, createOffer, sendOffer, listCandidateOptions, getMailProfile } from '@/api/offer'
+import { listOffers, getOffer, createOffer, sendOffer, listCandidateOptions, getMailProfile, startOfferApproval, approveOffer, rejectOffer, withdrawOffer } from '@/api/offer'
 import { listJobs } from '@/api/system/job'
 
 const toast = ref('')
@@ -93,6 +93,72 @@ async function confirmSend() {
   }
 }
 
+// 提交审批
+async function startApprovalRow(row) {
+  try {
+    const res = await startOfferApproval(row.offerId)
+    notify(res.data?.message || res.msg || '已提交审批')
+    await load()
+    if (detail.value && detail.value.offerId === row.offerId) openDetail(row)
+  } catch (e) { /* 拦截器已提示 */ }
+}
+
+// 审批通过/拒绝
+const approvalOpen = ref(false)
+const approvalRow = ref(null)
+const approvalMode = ref('approve')
+const approvalComment = ref('')
+const approvalBusy = ref(false)
+
+function openApproval(row, mode) {
+  approvalRow.value = row
+  approvalMode.value = mode
+  approvalComment.value = ''
+  approvalOpen.value = true
+}
+
+async function submitApproval() {
+  if (approvalMode.value === 'reject' && !approvalComment.value.trim()) {
+    notify('请填写驳回意见')
+    return
+  }
+  approvalBusy.value = true
+  try {
+    const action = approvalMode.value === 'approve' ? approveOffer : rejectOffer
+    const res = await action(approvalRow.value.offerId, approvalComment.value.trim())
+    notify(res.data?.message || res.msg || '审批已处理')
+    approvalOpen.value = false
+    await load()
+  } catch (e) { /* 拦截器已提示 */ } finally {
+    approvalBusy.value = false
+  }
+}
+
+// 撤回 Offer
+const withdrawOpen = ref(false)
+const withdrawRow = ref(null)
+const withdrawReason = ref('')
+const withdrawBusy = ref(false)
+
+function openWithdraw(row) {
+  withdrawRow.value = row
+  withdrawReason.value = ''
+  withdrawOpen.value = true
+}
+
+async function submitWithdraw() {
+  if (!withdrawReason.value.trim()) { notify('请填写撤回原因'); return }
+  withdrawBusy.value = true
+  try {
+    const res = await withdrawOffer(withdrawRow.value.offerId, withdrawReason.value.trim())
+    notify(res.data?.message || res.msg || 'Offer 已撤回')
+    withdrawOpen.value = false
+    await load()
+  } catch (e) { /* 拦截器已提示 */ } finally {
+    withdrawBusy.value = false
+  }
+}
+
 async function openCreate() {
   createOpen.value = true
   if (!candidates.value.length) {
@@ -168,9 +234,13 @@ onMounted(load)
           <time>{{ row.sentAt }}</time>
           <div class="ops">
             <button @click="openDetail(row)"><FileText :size="13" />详情</button>
+            <button v-if="row.status === 4" @click="startApprovalRow(row)"><CircleCheck :size="13" />提交审批</button>
             <button v-if="row.status === 4" :disabled="sending === row.offerId" @click="openSender(row)">
               <Mail :size="13" />{{ sending === row.offerId ? '发送中' : '发送' }}
             </button>
+            <button v-if="row.status === 5" @click="openApproval(row, 'approve')"><CircleCheck :size="13" />通过</button>
+            <button v-if="row.status === 5" @click="openApproval(row, 'reject')"><CircleX :size="13" />拒绝</button>
+            <button v-if="row.status === 0" @click="openWithdraw(row)"><RotateCcw :size="13" />撤回</button>
           </div>
         </article>
       </div>
@@ -208,8 +278,44 @@ onMounted(load)
         </ol>
       </div>
       <template #footer>
+        <button v-if="detail.status === 4" class="btn" @click="startApprovalRow(detail)"><CircleCheck :size="14" />提交审批</button>
         <button v-if="detail.status === 4" class="btn primary" @click="openSender(detail); detail = null"><Send :size="14" />发送录用意向书与入职指引</button>
+        <button v-if="detail.status === 0" class="btn" @click="openWithdraw(detail); detail = null"><RotateCcw :size="14" />撤回</button>
         <button class="btn" @click="detail = null">关闭</button>
+      </template>
+    </BaseModal>
+
+    <!-- 审批通过 / 拒绝 -->
+    <BaseModal v-if="approvalOpen" :title="approvalMode === 'approve' ? '审批通过' : '审批拒绝'" width="420px" @close="approvalOpen = false">
+      <div class="form-grid">
+        <div class="f-item full">
+          <label>候选人：{{ approvalRow?.candidateName || '—' }} · 岗位：{{ approvalRow?.positionTitle || '—' }}</label>
+        </div>
+        <div class="f-item full">
+          <label>{{ approvalMode === 'approve' ? '审批意见（选填）' : '驳回意见 *' }}</label>
+          <textarea v-model="approvalComment" class="textarea" rows="3" :placeholder="approvalMode === 'approve' ? '同意录用' : '请说明驳回原因'" />
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn" @click="approvalOpen = false">取消</button>
+        <button class="btn primary" :disabled="approvalBusy" @click="submitApproval">{{ approvalBusy ? '处理中…' : '确认' }}</button>
+      </template>
+    </BaseModal>
+
+    <!-- 撤回 Offer -->
+    <BaseModal v-if="withdrawOpen" title="撤回录用意向书" width="420px" @close="withdrawOpen = false">
+      <div class="form-grid">
+        <div class="f-item full">
+          <label>候选人：{{ withdrawRow?.candidateName || '—' }} · 岗位：{{ withdrawRow?.positionTitle || '—' }}</label>
+        </div>
+        <div class="f-item full">
+          <label>撤回原因 *</label>
+          <textarea v-model="withdrawReason" class="textarea" rows="3" placeholder="如岗位编制调整，暂停招聘" />
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn" @click="withdrawOpen = false">取消</button>
+        <button class="btn primary" :disabled="withdrawBusy" @click="submitWithdraw">{{ withdrawBusy ? '撤回中…' : '确认撤回' }}</button>
       </template>
     </BaseModal>
 

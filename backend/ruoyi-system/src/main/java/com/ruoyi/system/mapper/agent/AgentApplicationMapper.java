@@ -62,6 +62,10 @@ public interface AgentApplicationMapper
 
     AgentApplication selectApplicationById(@Param("userId") Long userId, @Param("applicationId") Long applicationId);
 
+    Long lockWithdrawalCandidate(@Param("userId") Long userId, @Param("applicationId") Long applicationId);
+
+    int withdrawApplication(@Param("userId") Long userId, @Param("applicationId") Long applicationId);
+
     AgentApplication selectExistingApplication(@Param("userId") Long userId, @Param("jobId") Long jobId);
 
     Long selectCandidateId(@Param("userId") Long userId, @Param("companyId") Long companyId);

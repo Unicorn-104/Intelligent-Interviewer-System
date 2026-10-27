@@ -82,8 +82,8 @@ public class ConferenceController extends BaseController
     public AjaxResult createLink(@RequestBody Map<String, Object> body)
     {
         return success(conferenceService.createRoomLink(getUserId(), longOf(body, "peerUserId"),
-                longOf(body, "positionId"), intOf(body, "durationMinutes"), intOf(body, "mode"),
-                longListOf(body, "interviewerIds")));
+                longOf(body, "positionId"), longOf(body, "stageId"), intOf(body, "durationMinutes"),
+                intOf(body, "mode"), longListOf(body, "interviewerIds")));
     }
 
     /**
@@ -260,6 +260,24 @@ public class ConferenceController extends BaseController
             @RequestParam(required = false) Integer limit)
     {
         return success(conferenceService.getCopilot(getUserId(), sessionId, afterSequence, limit));
+    }
+
+    /**
+     * 面试问题参考提示：优先返回本场次面试提纲，无提纲时按岗位技能生成
+     */
+    @GetMapping("/session/{sessionId}/question-hints")
+    public AjaxResult questionHints(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.getQuestionHints(getUserId(), sessionId));
+    }
+
+    /**
+     * 面试问题参考提示偏好反馈（adopt-采纳，ignore-忽略）
+     */
+    @PostMapping("/session/{sessionId}/question-hints/feedback")
+    public AjaxResult hintFeedback(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.handleHintFeedback(getUserId(), sessionId, body));
     }
 
     /**

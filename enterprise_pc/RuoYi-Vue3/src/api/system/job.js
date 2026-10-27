@@ -47,6 +47,24 @@ export function parseJdDocument(file) {
   })
 }
 
+// 复制岗位为草稿（复制主体与技能关联）
+export function duplicateJob(posId) {
+  return request({
+    url: `/system/enterprise/jobs/${posId}/duplicate`,
+    method: 'post'
+  })
+}
+
+// AI 解析 JD 文本（仅解析回填表单，不写库）
+export function parseJdText(jdText) {
+  return request({
+    url: '/enterprise/jd/analyze',
+    method: 'post',
+    data: { jdText },
+    timeout: 60000
+  })
+}
+
 // 覆盖更新岗位内容（导入解析确认命中重复岗位时使用，不改动岗位状态与流程模板）
 export function updateJob(posId, data) {
   return request({

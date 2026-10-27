@@ -5,8 +5,8 @@ import { Search, Upload, Tags, SlidersHorizontal, ArrowUpRight, UserRoundCheck, 
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { api, reserveApi } from '@/views/enterprise/api/contract'
-import { listTalents, getTalentResume, updateTalentStatus } from '@/api/talent'
+import { listTalents, getTalentResume, updateTalentStatus, batchTalentTags } from '@/api/talent'
+import { batchImportResumes } from '@/api/resume'
 
 const router = useRouter()
 const toast = ref('')
@@ -72,8 +72,63 @@ function toggleSelectAll() {
   selected.value = allSelected.value ? [] : talents.value.map(t => t.talentId)
 }
 
-function importResume() { reserveApi({ method: 'POST', path: '/api/v1/enterprise/resumes/import', body: ['files', 'positionId', 'deduplicate'] }, { files: [], positionId: 1, deduplicate: true }); notify('已预留企业简历批量导入接口') }
-function batchTag() { if (!selected.value.length) return notify('请先选择候选人'); reserveApi(api.candidates.batchTags, { candidateIds: selected.value, tagId: 10, action: 'add' }); notify(`已为 ${selected.value.length} 位候选人加入标签`) }
+// 简历批量导入：上传 PDF，按手机号/邮箱匹配已注册候选人账号
+const importOpen = ref(false)
+const importFiles = ref([])
+const importDeduplicate = ref(true)
+const importing = ref(false)
+const importResults = ref([])
+
+function importResume() {
+  importFiles.value = []
+  importResults.value = []
+  importDeduplicate.value = true
+  importOpen.value = true
+}
+
+function onImportFileChange(e) {
+  importFiles.value = Array.from(e.target.files || [])
+}
+
+async function submitImport() {
+  if (!importFiles.value.length) return notify('请选择需要导入的 PDF 简历')
+  importing.value = true
+  try {
+    const formData = new FormData()
+    importFiles.value.forEach(f => formData.append('files', f))
+    formData.append('deduplicate', importDeduplicate.value)
+    const res = await batchImportResumes(formData)
+    importResults.value = res.data || []
+    const success = importResults.value.filter(r => r.status === 'success').length
+    notify(`导入完成：成功 ${success} 份，其余见结果清单`)
+    if (success) await load()
+  } catch (e) { /* 拦截器已提示 */ } finally {
+    importing.value = false
+  }
+}
+
+// 批量加标签：真实写入 t_tal_tag
+const tagOpen = ref(false)
+const tagNameInput = ref('')
+const tagBusy = ref(false)
+
+function batchTag() {
+  if (!selected.value.length) return notify('请先选择候选人')
+  tagNameInput.value = ''
+  tagOpen.value = true
+}
+
+async function submitTag() {
+  if (!tagNameInput.value.trim()) return notify('请填写标签名称')
+  tagBusy.value = true
+  try {
+    const res = await batchTalentTags(selected.value, tagNameInput.value.trim())
+    notify(res.data?.message || '标签已添加')
+    tagOpen.value = false
+  } catch (e) { /* 拦截器已提示 */ } finally {
+    tagBusy.value = false
+  }
+}
 
 async function submitStatus() {
   if (!selected.value.length) return notify('请先选择候选人')
@@ -197,6 +252,42 @@ onMounted(load)
       </template>
     </BaseModal>
 
+    <BaseModal v-if="importOpen" title="导入简历" width="560px" @close="importOpen = false">
+      <div class="import-body">
+        <p class="import-hint">支持 PDF 简历批量上传。系统会解析简历中的手机号/邮箱匹配已注册候选人账号，匹配成功后写入候选人档案；未匹配的文件会逐条给出原因。</p>
+        <label class="file-picker">
+          <input type="file" accept=".pdf" multiple @change="onImportFileChange" />
+          <span>选择 PDF 文件（可多选）</span>
+        </label>
+        <p v-if="importFiles.length" class="file-count">已选择 {{ importFiles.length }} 个文件</p>
+        <label class="dedup-line"><input v-model="importDeduplicate" type="checkbox" />跳过已在人才库或同名简历的候选人</label>
+        <div v-if="importResults.length" class="import-results">
+          <div v-for="(item, i) in importResults" :key="i" class="import-row">
+            <span class="file-name">{{ item.fileName }}</span>
+            <span class="pill" :class="item.status === 'success' ? 'green' : item.status === 'duplicate' ? 'gray' : 'red'">
+              {{ item.status === 'success' ? '成功' : item.status === 'duplicate' ? '重复' : '失败' }}
+            </span>
+            <small>{{ item.message }}<template v-if="item.candidateName"> · {{ item.candidateName }}</template></small>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn" @click="importOpen = false">关闭</button>
+        <button class="btn primary" :disabled="importing || !importFiles.length" @click="submitImport">{{ importing ? '导入中…' : '开始导入' }}</button>
+      </template>
+    </BaseModal>
+
+    <BaseModal v-if="tagOpen" title="批量加标签" width="400px" @close="tagOpen = false">
+      <div class="tag-body">
+        <p class="import-hint">将为已选择的 {{ selected.length }} 位候选人添加同一标签。</p>
+        <input v-model="tagNameInput" class="input" placeholder="如：前端 · 高潜" maxlength="20" />
+      </div>
+      <template #footer>
+        <button class="btn" @click="tagOpen = false">取消</button>
+        <button class="btn primary" :disabled="tagBusy" @click="submitTag">{{ tagBusy ? '保存中…' : '确认添加' }}</button>
+      </template>
+    </BaseModal>
+
     <ToastMessage :message="toast" />
   </div>
 </template>
@@ -238,6 +329,7 @@ onMounted(load)
 .d-item label{display:block;font-size:9px;color:#8da0ba;margin-bottom:4px}
 .d-item b{font-size:12px;color:#1e293b;font-weight:500}
 .resume-block{margin-top:16px;border-top:1px dashed #e2e8f0;padding-top:13px}
+.import-hint{font-size:10px;color:#7b8ba3;line-height:1.65}.file-picker{margin-top:12px;display:flex;align-items:center;justify-content:center;border:1px dashed #b9cbe4;border-radius:9px;padding:18px;cursor:pointer;color:#2563eb;font-size:11px;background:#f7faff}.file-picker input{display:none}.file-count{font-size:10px;color:#4b6078;margin-top:8px}.dedup-line{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:10px;color:#63758f}.import-results{margin-top:12px;max-height:240px;overflow:auto;border-top:1px solid #eef2f7}.import-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #eef2f7;font-size:10px}.import-row .file-name{flex:1;min-width:180px;color:#334155;word-break:break-all}.import-row small{width:100%;color:#8291a5;font-size:9px}.tag-body .input{margin-top:10px}
 .resume-block h3{display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;margin-bottom:10px}
 .resume-list{list-style:none;display:flex;flex-direction:column;gap:9px}
 .resume-list li{background:#f7f9fc;border-radius:9px;padding:9px 12px}

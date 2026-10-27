@@ -1,3 +1,4 @@
+import '../features/jobs/presentation/application_resume_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../core/network/api_client.dart';
@@ -66,9 +67,20 @@ class _RecommendJobsScreenState extends State<RecommendJobsScreen> {
 
   Future<bool> _apply(Job job) async {
     if (_applyingId != null) return false;
+    final resumeId = await chooseApplicationResume(
+      context,
+      token: widget.session.token,
+      job: job,
+      preferredResumeId: widget.resume.resumeId,
+    );
+    if (!mounted || resumeId == null) return false;
     setState(() => _applyingId = job.positionId);
     try {
-      await _api.apply(widget.session.token, job.positionId);
+      await _api.apply(
+        widget.session.token,
+        job.positionId,
+        resumeId: resumeId,
+      );
       if (mounted) {
         setState(() {
           _jobs = [

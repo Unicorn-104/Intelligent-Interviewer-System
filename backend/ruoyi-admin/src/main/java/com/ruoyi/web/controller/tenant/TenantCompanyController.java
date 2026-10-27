@@ -196,6 +196,14 @@ public class TenantCompanyController extends BaseController {
         result.put("approved", approved);
         result.put("rejected", rejected);
         result.put("total", pending + approved + rejected);
+        try {
+            Long expiring = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM t_cmp WHERE cmp_verify_status=1 AND cmp_expire_date IS NOT NULL AND cmp_expire_date > NOW() AND cmp_expire_date <= DATE_ADD(NOW(), INTERVAL 30 DAY)",
+                    Long.class);
+            result.put("expiring", expiring == null ? 0 : expiring);
+        } catch (Exception e) {
+            result.put("expiring", 0);
+        }
         return success(result);
     }
 

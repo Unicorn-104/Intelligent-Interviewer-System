@@ -14,6 +14,7 @@ const toast = ref('')
 
 const record = ref({
   id: route.query.id ? String(route.query.id) : '',
+  sessionId: null,
   candidate: '',
   position: '',
   date: '',
@@ -141,6 +142,7 @@ async function initPlayback() {
     if (!d) return
     recUrl.value = d.recUrl || ''
     loadFailed.value = false
+    record.value.sessionId = d.sessionId || null
     record.value.duration = d.durationSec || 0
     record.value.candidate = d.candidateName || ''
     record.value.position = d.positionTitle || ''
@@ -171,6 +173,14 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', closeRate)
 })
 
+function openEvaluation() {
+  if (!record.value.sessionId) {
+    notify('该场次暂无评估报告')
+    return
+  }
+  router.push(`/enterprise/interviews/${record.value.sessionId}/evaluation`)
+}
+
 function closeRate(event) {
   if (!event.target.closest('.rate-box')) rateOpen.value = false
 }
@@ -189,7 +199,7 @@ function closeRate(event) {
         </div>
         <div class="head-actions">
           <button class="btn sm" @click="notify('下载需短信二次验证，请前往录制列表操作')"><Download :size="15" />下载</button>
-          <button class="btn sm" @click="notify('已打开面试评估报告')"><FileText :size="15" />评估报告</button>
+          <button class="btn sm" @click="openEvaluation"><FileText :size="15" />评估报告</button>
         </div>
       </div>
     </header>

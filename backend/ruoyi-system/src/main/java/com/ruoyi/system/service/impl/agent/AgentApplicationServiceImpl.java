@@ -1,6 +1,8 @@
 package com.ruoyi.system.service.impl.agent;
 
 import java.math.BigDecimal;
+import java.io.IOException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Collections;
@@ -11,11 +13,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import com.ruoyi.common.config.RuoYiConfig;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
-import com.ruoyi.common.utils.file.FileUtils;
-import com.ruoyi.common.utils.file.FileUploadUtils;
 import com.ruoyi.system.domain.agent.AgentApplication;
 import com.ruoyi.system.domain.agent.AgentApplicationCreateRequest;
 import com.ruoyi.system.domain.agent.AgentApplicationQuery;
@@ -32,9 +33,14 @@ import com.ruoyi.system.domain.agent.AgentResumeSkill;
 import com.ruoyi.system.domain.agent.AgentTimeline;
 import com.ruoyi.system.domain.agent.AgentResumeUpdateRequest;
 import com.ruoyi.system.domain.agent.AgentResumeWork;
+import com.ruoyi.system.domain.app.AppResume;
+import com.ruoyi.system.domain.app.AppResumePdfDocument;
 import com.ruoyi.system.mapper.agent.AgentApplicationMapper;
 import com.ruoyi.system.mapper.agent.AgentJobMapper;
 import com.ruoyi.system.service.agent.IAgentApplicationService;
+import com.ruoyi.system.service.app.IAppResumeService;
+import com.ruoyi.system.service.app.pdf.ResumePdfParser;
+import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
 
 /**
  * 求职者端简历与投递服务实现。
@@ -47,6 +53,15 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
 
     @Autowired
     private AgentJobMapper jobMapper;
+
+    @Autowired
+    private IAppResumeService appResumeService;
+
+    @Autowired
+    private ResumePdfParser pdfParser;
+
+    @Autowired
+    private ResumePdfStorage pdfStorage;
 
     @Override
     public List<AgentResumeOption> selectResumeOptions(Long userId, Long jobId)
@@ -141,49 +156,99 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
     }
 
     @Override
+    public AgentResumeDetail parseResumePdf(MultipartFile file) throws Exception
+    {
+        byte[] bytes = readPdf(file);
+        AppResume parsed = appResumeService.parsePdf(bytes, file.getOriginalFilename());
+        AgentResumeDetail draft = toAgentResume(parsed);
+        if (draft.getEducations().isEmpty() && draft.getWorks().isEmpty()
+                && draft.getProjects().isEmpty() && draft.getSkills().isEmpty()
+                && StringUtils.isEmpty(draft.getJobDirection()))
+        {
+            throw new ServiceException("暂未识别到可用的简历信息，请上传更清晰的 PDF");
+        }
+        draft.setFileName(file.getOriginalFilename());
+        draft.setFileSize(file.getSize());
+        return draft;
+    }
+
+    @Override
+    @Transactional
+    public AgentResumeDetail createResumeWithPdf(Long userId, AgentResumeUpdateRequest request,
+            MultipartFile file) throws Exception
+    {
+        validateResumeRequest(request);
+        byte[] bytes = readPdf(file);
+        ResumePdfStorage.StoredPdf stored = pdfStorage.store(userId, bytes, file.getOriginalFilename());
+        registerPdfCleanup(userId, stored, null);
+        int activeResumeCount = applicationMapper.countActiveResumes(userId);
+        if (activeResumeCount >= 10)
+        {
+            throw new ServiceException("最多只能创建10份有效简历");
+        }
+        AgentResumeRecord record = new AgentResumeRecord();
+        record.setUserId(userId);
+        record.setResumeName(request.getResumeName().trim());
+        record.setJobDirection(trimToNull(request.getJobDirection()));
+        record.setIsDefault(activeResumeCount == 0 ? 1 : 0);
+        if (applicationMapper.insertResume(record) <= 0 || record.getId() == null)
+        {
+            throw new ServiceException("创建简历失败，请稍后重试");
+        }
+        AgentResumeDetail resume = buildResume(userId, record.getId(), request);
+        if (applicationMapper.updateResumeBase(resume) <= 0
+                || applicationMapper.updateResumeFile(userId, record.getId(), stored.reference(),
+                        stored.name(), stored.size()) <= 0)
+        {
+            throw new ServiceException("保存简历失败，请稍后重试");
+        }
+        replaceResumeEntries(record.getId(), request);
+        return selectResume(userId, record.getId());
+    }
+
+    @Override
+    @Transactional
+    public AgentResumeDetail updateResumeWithPdf(Long userId, Long resumeId,
+            AgentResumeUpdateRequest request, MultipartFile file) throws Exception
+    {
+        validateResumeRequest(request);
+        AgentResumeDetail existing = requireResume(userId, resumeId);
+        byte[] bytes = readPdf(file);
+        ResumePdfStorage.StoredPdf stored = pdfStorage.store(userId, bytes, file.getOriginalFilename());
+        registerPdfCleanup(userId, stored, existing.getFilePath());
+        AgentResumeDetail resume = buildResume(userId, resumeId, request);
+        if (applicationMapper.updateResumeBase(resume) <= 0
+                || applicationMapper.updateResumeFile(userId, resumeId, stored.reference(),
+                        stored.name(), stored.size()) <= 0)
+        {
+            throw new ServiceException("保存简历失败，请稍后重试");
+        }
+        replaceResumeEntries(resumeId, request);
+        return selectResume(userId, resumeId);
+    }
+
+    @Override
+    public AppResumePdfDocument selectResumePdf(Long userId, Long resumeId)
+    {
+        AgentResumeDetail resume = requireResume(userId, resumeId);
+        if (StringUtils.isEmpty(resume.getFilePath()))
+        {
+            throw new ServiceException("该简历尚未上传 PDF");
+        }
+        return new AppResumePdfDocument(pdfStorage.read(userId, resume.getFilePath()), resume.getFileName());
+    }
+    @Override
     @Transactional
     public AgentResumeDetail uploadResumeFile(Long userId, Long resumeId, MultipartFile file) throws Exception
     {
-        if (file == null || file.isEmpty())
-        {
-            throw new ServiceException("请选择 PDF 简历文件");
-        }
-        if (file.getSize() > 10 * 1024 * 1024L)
-        {
-            throw new ServiceException("简历文件不能超过10MB");
-        }
-        String originalFilename = file.getOriginalFilename();
-        if (StringUtils.isEmpty(originalFilename) || !originalFilename.toLowerCase().endsWith(".pdf"))
-        {
-            throw new ServiceException("仅支持 PDF 格式的简历文件");
-        }
-        String contentType = file.getContentType();
-        if (StringUtils.isNotEmpty(contentType)
-                && !"application/pdf".equalsIgnoreCase(contentType)
-                && !"application/octet-stream".equalsIgnoreCase(contentType))
-        {
-            throw new ServiceException("上传文件类型不是 PDF");
-        }
-
         AgentResumeDetail existing = requireResume(userId, resumeId);
-        String baseDir = RuoYiConfig.getUploadPath() + "/resume/" + userId;
-        String filePath = FileUploadUtils.upload(baseDir, file, new String[] { "pdf" }, true);
-        try
+        byte[] bytes = readPdf(file);
+        ResumePdfStorage.StoredPdf stored = pdfStorage.store(userId, bytes, file.getOriginalFilename());
+        registerPdfCleanup(userId, stored, existing.getFilePath());
+        if (applicationMapper.updateResumeFile(userId, resumeId, stored.reference(),
+                stored.name(), stored.size()) <= 0)
         {
-            if (applicationMapper.updateResumeFile(userId, resumeId, filePath, originalFilename, file.getSize()) <= 0)
-            {
-                throw new ServiceException("保存简历文件信息失败");
-            }
-        }
-        catch (Exception exception)
-        {
-            FileUtils.deleteFile(RuoYiConfig.getProfile() + FileUtils.stripPrefix(filePath));
-            throw exception;
-        }
-
-        if (StringUtils.isNotEmpty(existing.getFilePath()) && !existing.getFilePath().equals(filePath))
-        {
-            FileUtils.deleteFile(RuoYiConfig.getProfile() + FileUtils.stripPrefix(existing.getFilePath()));
+            throw new ServiceException("保存简历文件信息失败");
         }
         return selectResume(userId, resumeId);
     }
@@ -201,10 +266,7 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         {
             applicationMapper.promoteFirstActiveResume(userId);
         }
-        if (StringUtils.isNotEmpty(existing.getFilePath()))
-        {
-            FileUtils.deleteFile(RuoYiConfig.getProfile() + FileUtils.stripPrefix(existing.getFilePath()));
-        }
+        registerDeletedPdfCleanup(userId, existing.getFilePath());
     }
 
     @Override
@@ -239,10 +301,35 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
                 application.getAppliedAt());
         if (statusTimeline != null)
         {
-            timeline.addAll(statusTimeline);
+            for (AgentTimeline node : statusTimeline)
+            {
+                if (Integer.valueOf(9).equals(application.getStatusCode()) && node.getOccurredAt() != null
+                        && application.getUpdatedAt() != null && node.getOccurredAt().after(application.getUpdatedAt())) continue;
+                timeline.add(node);
+            }
         }
         application.setTimeline(timeline);
+        if (Integer.valueOf(9).equals(application.getStatusCode()))
+            timeline.add(new AgentTimeline("withdrawn", "closed", "已撤回", "你已撤回本次投递，原投递记录保留",
+                    application.getUpdatedAt()));
         return application;
+    }
+
+    @Override
+    @Transactional
+    public AgentApplication withdrawApplication(Long userId, Long applicationId)
+    {
+        if (applicationId == null || applicationId <= 0 || userId == null || userId <= 0)
+            throw new ServiceException("投递记录参数无效", 400);
+        if (applicationMapper.lockWithdrawalCandidate(userId, applicationId) == null)
+            throw new ServiceException("投递记录不存在或无权访问", 404);
+        AgentApplication application = applicationMapper.selectApplicationById(userId, applicationId);
+        if (application == null) throw new ServiceException("投递记录不存在或无权访问", 404);
+        if (Integer.valueOf(9).equals(application.getStatusCode())) return selectApplication(userId, applicationId);
+        if (!Boolean.TRUE.equals(application.getCanWithdraw())
+                || applicationMapper.withdrawApplication(userId, applicationId) != 1)
+            throw new ServiceException("投递已进入招聘流程或状态已更新，无法撤回，请刷新后查看", 409);
+        return selectApplication(userId, applicationId);
     }
 
     @Override
@@ -311,6 +398,153 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         return created;
     }
 
+    private byte[] readPdf(MultipartFile file) throws IOException
+    {
+        if (file == null || file.isEmpty())
+        {
+            throw new ServiceException("请选择 PDF 简历文件");
+        }
+        String originalFilename = file.getOriginalFilename();
+        if (StringUtils.isEmpty(originalFilename) || !originalFilename.toLowerCase().endsWith(".pdf"))
+        {
+            throw new ServiceException("仅支持 PDF 格式的简历文件");
+        }
+        if (file.getSize() > 10 * 1024 * 1024L)
+        {
+            throw new ServiceException("简历文件不能超过10MB");
+        }
+        byte[] bytes = file.getBytes();
+        pdfParser.validate(bytes);
+        return bytes;
+    }
+
+    private void validateResumeRequest(AgentResumeUpdateRequest request)
+    {
+        if (request == null || StringUtils.isEmpty(request.getResumeName()))
+        {
+            throw new ServiceException("简历名称不能为空");
+        }
+        validateResumeEntries(request);
+    }
+
+    private AgentResumeDetail buildResume(Long userId, Long resumeId, AgentResumeUpdateRequest request)
+    {
+        AgentResumeDetail resume = new AgentResumeDetail();
+        resume.setId(resumeId);
+        resume.setUserId(userId);
+        resume.setResumeName(request.getResumeName().trim());
+        resume.setJobDirection(trimToNull(request.getJobDirection()));
+        resume.setRealName(trimToNull(request.getRealName()));
+        resume.setGender(trimToNull(request.getGender()));
+        resume.setWorkStatus(trimToNull(request.getWorkStatus()));
+        resume.setCurrentCity(trimToNull(request.getCurrentCity()));
+        resume.setPhone(trimToNull(request.getPhone()));
+        resume.setEmail(trimToNull(request.getEmail()));
+        resume.setTargetRole(trimToNull(request.getTargetRole()));
+        resume.setSalaryExpectation(trimToNull(request.getSalaryExpectation()));
+        resume.setTargetCity(trimToNull(request.getTargetCity()));
+        resume.setArrivalTime(trimToNull(request.getArrivalTime()));
+        return resume;
+    }
+
+    private AgentResumeDetail toAgentResume(AppResume source)
+    {
+        AgentResumeDetail target = new AgentResumeDetail();
+        target.setResumeName(source.getResumeName());
+        target.setJobDirection(source.getJobDirection());
+        target.setStructureMethod(source.getStructureMethod());
+        target.setParseMethod(source.getParseMethod());
+        target.setUnmappedText(source.getUnmappedText());
+        target.setParseWarnings(source.getParseWarnings());
+        for (AppResume.Education item : source.getEducations())
+        {
+            AgentResumeEducation education = new AgentResumeEducation();
+            education.setSchool(item.getSchool());
+            education.setMajor(item.getMajor());
+            education.setDegree(item.getDegree());
+            education.setGpa(item.getGpa());
+            education.setStartDate(toDate(item.getStartDate()));
+            education.setEndDate(toDate(item.getEndDate()));
+            education.setDescription(item.getDescription());
+            target.getEducations().add(education);
+        }
+        for (AppResume.Work item : source.getWorks())
+        {
+            AgentResumeWork work = new AgentResumeWork();
+            work.setCompany(item.getCompany());
+            work.setPosition(item.getPosition());
+            work.setDepartment(item.getDepartment());
+            work.setStartDate(toDate(item.getStartDate()));
+            work.setEndDate(toDate(item.getEndDate()));
+            work.setCurrent(item.getCurrent());
+            work.setSalaryRange(item.getSalaryRange());
+            work.setDescription(item.getDescription());
+            target.getWorks().add(work);
+        }
+        for (AppResume.Project item : source.getProjects())
+        {
+            AgentResumeProject project = new AgentResumeProject();
+            project.setName(item.getName());
+            project.setRole(item.getRole());
+            project.setStartDate(toDate(item.getStartDate()));
+            project.setEndDate(toDate(item.getEndDate()));
+            project.setDescription(item.getDescription());
+            project.setTechStack(item.getTechStack());
+            target.getProjects().add(project);
+        }
+        for (AppResume.Skill item : source.getSkills())
+        {
+            AgentResumeSkill skill = new AgentResumeSkill();
+            skill.setName(item.getName());
+            skill.setLevel(item.getLevel());
+            target.getSkills().add(skill);
+        }
+        return target;
+    }
+
+    private Date toDate(LocalDate value)
+    {
+        return value == null ? null : java.sql.Date.valueOf(value);
+    }
+
+    private void registerPdfCleanup(Long userId, ResumePdfStorage.StoredPdf stored, String previousReference)
+    {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization()
+        {
+            @Override
+            public void afterCompletion(int status)
+            {
+                if (status != STATUS_COMMITTED)
+                {
+                    pdfStorage.delete(userId, stored.reference());
+                }
+                else if (StringUtils.isNotEmpty(previousReference))
+                {
+                    pdfStorage.delete(userId, previousReference);
+                }
+            }
+        });
+    }
+
+    private void registerDeletedPdfCleanup(Long userId, String reference)
+    {
+        if (StringUtils.isEmpty(reference))
+        {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization()
+        {
+            @Override
+            public void afterCompletion(int status)
+            {
+                if (status == STATUS_COMMITTED)
+                {
+                    pdfStorage.delete(userId, reference);
+                }
+            }
+        });
+    }
+
     private AgentJob requireActiveJob(Long jobId, Long userId)
     {
         AgentJob job = jobMapper.selectJobById(jobId, userId);
@@ -343,7 +577,7 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
     {
         if (StringUtils.isNotEmpty(resume.getFilePath()))
         {
-            resume.setFileUrl("/common/download/resource?resource=" + resume.getFilePath());
+            resume.setFileUrl("/agent/v1/resumes/" + resume.getId() + "/file");
         }
     }
 
@@ -510,7 +744,7 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         return switch (code)
         {
             case 3, 5, 6 -> "interview";
-            case 2, 7, 8 -> "closed";
+            case 2, 7, 8, 9 -> "closed";
             default -> "active";
         };
     }
@@ -532,6 +766,7 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
             case 6 -> "笔试通过";
             case 7 -> "笔试未通过";
             case 8 -> "笔试缺考";
+            case 9 -> "已撤回";
             default -> "投递处理中";
         };
     }

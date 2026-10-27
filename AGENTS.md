@@ -1,5 +1,14 @@
 # Project Memory
 
+## 长期记忆增量交付（2026-10-27）
+
+- 本轮分支为 `feature/capp-long-term-memory-MZR`，从最新 `origin/dev` 创建；主功能为长期记忆，姓名缩写由用户明确指定为 `MZR`。
+- 用户随后明确要求「全部当一个提交，写主要功能，长期记忆」，因此本轮将长期记忆、必要的服务器适配、简历选择投递及撤回投递增量汇总为一个 Conventional Commit；此例外不改变后续任务默认的子功能原子提交规则。
+- 具体范围、验证、发布门禁与回滚见 [提交与发布规范](c-app/提交与发布规范.md) 的「长期记忆增量交付」，部署要求见 [个人长期记忆与 Qdrant](backend/doc/capp_ai_long_term_memory_qdrant.md)。
+- 使用独立 worktree 整理，保留原工作区及最新 dev 的 PDF、消息、岗位和其他端实现；不以本地旧文件整体覆盖远端代码。
+- 仅提交 `backend/`、`c-app/` 与必要的项目 memory。排除本机账号和业务数据、测试岗位数据、已有 SQL 删除、私有配置、模型缓存、日志、产物及其他端修改。
+- 授权包括创建、提交、推送 feature 分支和统一创建到 dev 的 PR；不包含合并 PR、直接推送 dev/main、创建发布标签或推进 dev 到 main。未完成服务器环境验收时保持 Draft，并明确验证边界。
+
 本文件是仓库级长期协作记忆。开发、提交、推送或创建 PR 前必须阅读并遵守：
 
 - `docs/spec/development.md`

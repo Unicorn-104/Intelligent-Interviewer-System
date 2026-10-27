@@ -129,6 +129,27 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     }
 
     @Override
+    public Map<String, Object> batchTags(Long userId, List<Long> talIds, String tagName, Integer source)
+    {
+        Long companyId = resolveCompanyId(userId);
+        if (talIds == null || talIds.isEmpty())
+        {
+            throw new ServiceException("请选择候选人");
+        }
+        if (tagName == null || tagName.trim().isEmpty())
+        {
+            throw new ServiceException("请填写标签名称");
+        }
+        int inserted = talentPoolMapper.insertBatchTags(companyId, talIds, tagName.trim(),
+                source == null ? 1 : source);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("inserted", inserted);
+        result.put("tagName", tagName.trim());
+        result.put("message", "已为 " + inserted + " 位候选人添加标签「" + tagName.trim() + "」");
+        return result;
+    }
+
+    @Override
     @Transactional
     public Map<String, Object> reapplyTalent(Long userId, Long talId, Long positionId)
     {

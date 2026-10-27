@@ -1,6 +1,7 @@
 package com.ruoyi.system.service.app.ai;
 
 import java.util.Map;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,7 +15,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import static com.ruoyi.system.service.app.ai.AgentTools.fields;
 
-/** Only the authenticated user can confirm persistent preferences. Models cannot write them. */
+/** Owns confirmed preferences and session summaries; extracted personal facts are delegated to the memory service. */
 @Service
 public class AppAiMemoryService
 {
@@ -23,12 +24,26 @@ public class AppAiMemoryService
     private final AppAiMemoryMapper mapper;
     private final AppAiMapper chats;
     private final AgentModelClient model;
+    private final AppAiLongTermMemoryService longTerm;
     private final TransactionTemplate transaction;
     private final ObjectMapper json = new ObjectMapper();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public AppAiMemoryService(AppAiMemoryMapper mapper, AppAiMapper chats, AgentModelClient model,
+            AppAiLongTermMemoryService longTerm, PlatformTransactionManager manager)
+    { this(mapper, chats, model, manager, longTerm); }
+
+    /** Backward-compatible constructor used by isolated service tests. */
+    AppAiMemoryService(AppAiMemoryMapper mapper, AppAiMapper chats, AgentModelClient model,
             PlatformTransactionManager manager)
-    { this.mapper = mapper; this.chats = chats; this.model = model; transaction = new TransactionTemplate(manager); }
+    { this(mapper, chats, model, manager, null); }
+
+    private AppAiMemoryService(AppAiMemoryMapper mapper, AppAiMapper chats, AgentModelClient model,
+            PlatformTransactionManager manager, AppAiLongTermMemoryService longTerm)
+    {
+        this.mapper = mapper; this.chats = chats; this.model = model; this.longTerm = longTerm;
+        transaction = new TransactionTemplate(manager);
+    }
 
     public record Change(String action, String key, String value, Boolean enabled, Long revision) { }
     public record Context(String data, long fence, long through, int calls, int tokens) { }
@@ -43,6 +58,31 @@ public class AppAiMemoryService
         });
     }
 
+    public Map<String, Object> settings(Long userId)
+    {
+        initialize(userId);
+        var state = mapper.state(userId);
+        return fields("enabled", number(state, "enabled") == 1, "revision", number(state, "revision"));
+    }
+
+    public Map<String, Object> longTermMemories(Long userId)
+    {
+        initialize(userId);
+        return fields("items", longTerm == null ? List.of() : longTerm.list(userId));
+    }
+
+    public Map<String, Object> updateLongTermMemory(Long userId, String id,
+            AppAiLongTermMemoryService.UpdateRequest request)
+    {
+        if (request == null) throw new ServiceException("记忆参数无效", 400);
+        return fields("item", longTerm.update(userId, id, request.content(), request.revision()));
+    }
+
+    public void deleteLongTermMemory(Long userId, String id)
+    {
+        longTerm.delete(userId, id);
+    }
+
     public Map<String, Object> change(Long userId, Change change)
     {
         initialize(userId);
@@ -53,8 +93,14 @@ public class AppAiMemoryService
             if (number(state, "revision") != change.revision()) throw new ServiceException("记忆已更新，请刷新后重试", 409);
             if (mapper.active(userId) > 0) throw new ServiceException("请先停止正在生成的回答，再修改记忆", 409);
             long fence = number(state, "fence");
+            int enabled = (int)number(state, "enabled");
             switch (change.action())
             {
+                case "settings" -> {
+                    if (change.enabled() == null) throw new ServiceException("记忆参数无效", 400);
+                    enabled = Boolean.TRUE.equals(change.enabled()) ? 1 : 0;
+                    fence = mapper.latest(userId);
+                }
                 case "save" -> {
                     key(change.key());
                     String value = change.value() == null ? "" : change.value().strip();
@@ -71,8 +117,10 @@ public class AppAiMemoryService
                 default -> throw new ServiceException("记忆操作无效", 400);
             }
             mapper.clearSummaries(userId);
-            mapper.change(userId, 1, fence);
-            return fields("enabled", true, "revision", change.revision() + 1, "items", mapper.items(userId));
+            mapper.change(userId, enabled, fence);
+            return "settings".equals(change.action())
+                    ? fields("enabled", enabled == 1, "revision", change.revision() + 1)
+                    : fields("enabled", enabled == 1, "revision", change.revision() + 1, "items", mapper.items(userId));
         });
     }
 
@@ -100,6 +148,8 @@ public class AppAiMemoryService
         initialize(userId);
         var state = mapper.state(userId);
         long fence = number(state, "fence"), revision = number(state, "revision");
+        if (number(state, "enabled") != 1)
+            return new Context("{}", fence, fence, 0, 0);
         var summary = mapper.summary(userId, sessionId);
         long through = valid(summary, state) ? number(summary, "throughId") : fence;
         String text = valid(summary, state) ? summary.get("content").toString() : "";
@@ -147,11 +197,27 @@ public class AppAiMemoryService
                 }
             }
         }
+        List<Map<String, Object>> personal = List.of();
+        try
+        {
+            if (longTerm != null)
+            {
+                var messages = chats.messages(sessionId, userId, null, 1);
+                if (!messages.isEmpty() && "user".equals(messages.get(0).get("role")))
+                    personal = longTerm.recall(userId, messages.get(0).get("content").toString());
+            }
+        }
+        catch (Exception error)
+        { LoggerFactory.getLogger(getClass()).info("AI memory recall failureType={}", error.getClass().getSimpleName()); }
         String data;
-        try { data = json.writeValueAsString(fields("confirmedPreferences", mapper.items(userId), "conversationSummary", text)); }
+        try { data = json.writeValueAsString(fields("confirmedPreferences", mapper.items(userId),
+                "conversationSummary", text, "personalMemories", personal)); }
         catch (Exception error) { throw new IllegalStateException("MEMORY_ENCODING"); }
         return new Context(data, fence, through, calls, tokens);
     }
+
+    public void enqueueExtraction(Long userId, String sessionId, String runId)
+    { if (longTerm != null) longTerm.enqueueExtraction(userId, sessionId, runId); }
 
     private void initialize(Long userId)
     {

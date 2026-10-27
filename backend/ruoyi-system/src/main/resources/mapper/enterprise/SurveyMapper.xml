@@ -191,4 +191,31 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             (#{templateId}, #{candidateId}, #{companyId}, #{sentBy}, #{token}, 0)
     </insert>
 
+    <select id="selectDispatchByToken" resultType="java.util.LinkedHashMap">
+        select d.svd_id as dispatchId, d.svd_template_id as templateId,
+               d.svd_candidate_id as candidateId, d.svd_status as status,
+               cast(svt.svt_questions as char) as questions, svt.svt_name as templateName,
+               u.nick_name as candidateName, c.cmp_name as companyName,
+               date_format(d.svd_sent_at, '%Y-%m-%d %H:%i') as sentAt
+        from t_survey_dispatch d
+        left join t_survey_template svt on svt.svt_id = d.svd_template_id
+        left join t_tal t on t.tal_id = d.svd_candidate_id
+        left join sys_user u on u.user_id = t.tal_user_id
+        left join t_cmp c on c.cmp_id = d.svd_company_id
+        where d.svd_link_token = #{token}
+    </select>
+
+    <insert id="insertResponse" parameterType="map">
+        insert into t_survey_response
+            (svr_template_id, svr_candidate_id, svr_answers, svr_satisfaction_score)
+        values
+            (#{templateId}, #{candidateId}, #{answers}, #{satisfactionScore})
+    </insert>
+
+    <update id="markDispatchSubmitted">
+        update t_survey_dispatch
+        set svd_status = 1, svd_submitted_at = now()
+        where svd_id = #{dispatchId}
+    </update>
+
 </mapper>
