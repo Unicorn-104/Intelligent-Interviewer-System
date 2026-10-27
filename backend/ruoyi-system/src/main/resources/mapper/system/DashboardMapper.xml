@@ -37,9 +37,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <select id="selectFunnel" parameterType="Long" resultType="java.util.HashMap">
         select
-            count(*) as applied,
-            sum(case when tal_status in (1,2,4,5,6,7) then 1 else 0 end) as screened,
-            sum(case when tal_status in (2,4,7) then 1 else 0 end) as interviewing,
+            sum(case when tal_status = 0 then 1 else 0 end) as applied,
+            sum(case when tal_status = 2 then 1 else 0 end) as pendingInterview,
+            sum(case when tal_status = 3 then 1 else 0 end) as rejected,
             sum(case when tal_status = 4 then 1 else 0 end) as hired
         from t_tal
         where tal_company_id = #{companyId}

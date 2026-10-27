@@ -204,8 +204,9 @@ public class DataManageServiceImpl implements IDataManageService
             return "未知";
         }
         int s = ((Number) v).intValue();
-        String[] names = { "新入库", "初筛通过", "面试中", "已淘汰", "已录用", "待笔试", "笔试中", "笔试通过", "笔试未通过", "其他" };
-        return s >= 0 && s < names.length ? names[s] : String.valueOf(s);
+        // 求职者状态四态收敛：0-已投递、2-待面试、3-已淘汰、4-已录用
+        String[] names = { "已投递", "", "待面试", "已淘汰", "已录用" };
+        return s >= 0 && s < names.length && !names[s].isEmpty() ? names[s] : String.valueOf(s);
     }
 
     private String sqlValue(Object v)

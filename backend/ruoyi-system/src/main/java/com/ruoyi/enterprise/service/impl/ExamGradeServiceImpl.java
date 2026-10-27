@@ -30,9 +30,9 @@ import com.ruoyi.system.mapper.DashboardMapper;
  * t_exam_record（erc_total_score/erc_pass_status）。</p>
  * <p>流转：全部为客观题时交卷即终判（erc_status=4）；含主观题时先置
  * "待主观题评分"（erc_pass_status=2），人工录入主观分后终判。通过→
- * t_tal.tal_status=7 并按 esd_auto_flow_json 配置调用面试邀约 Service
- * 自动创建预约（未配置或时段冲突则提示人工安排）；未通过→tal_status=8
- * 归档人才库（状态日志由数据库触发器写入）。</p>
+ * t_tal.tal_status=2（待面试）并按 esd_auto_flow_json 配置调用面试邀约 Service
+ * 自动创建预约（未配置或时段冲突则提示人工安排）；未通过→tal_status=3
+ * （已淘汰）归档人才库（状态日志由数据库触发器写入）。</p>
  *
  * @author enterprise
  */
@@ -42,8 +42,9 @@ public class ExamGradeServiceImpl implements IExamGradeService
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /** 人才库状态：7-笔试通过，8-笔试未通过 */
-    private static final int TAL_EXAM_PASSED = 7;
-    private static final int TAL_EXAM_FAILED = 8;
+    /** 求职者状态四态收敛后：笔试通过推进为待面试(2)、未通过淘汰(3) */
+    private static final int TAL_EXAM_PASSED = 2;
+    private static final int TAL_EXAM_FAILED = 3;
 
     @Autowired
     private ExamGradeMapper gradeMapper;

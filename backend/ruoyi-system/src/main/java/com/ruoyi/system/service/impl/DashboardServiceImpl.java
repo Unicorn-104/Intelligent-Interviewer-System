@@ -20,20 +20,14 @@ import com.ruoyi.system.service.IDashboardService;
 @Service
 public class DashboardServiceImpl implements IDashboardService
 {
-    /** 候选人状态中文映射 */
+    /** 候选人状态中文映射（四态收敛：0-已投递、2-待面试、3-已淘汰、4-已录用） */
     private static final Map<Integer, String> STATUS_TEXT = new LinkedHashMap<>();
     static
     {
-        STATUS_TEXT.put(0, "简历已入库");
-        STATUS_TEXT.put(1, "已通过初筛");
-        STATUS_TEXT.put(2, "已进入面试环节");
-        STATUS_TEXT.put(3, "已被淘汰");
+        STATUS_TEXT.put(0, "已投递");
+        STATUS_TEXT.put(2, "待面试");
+        STATUS_TEXT.put(3, "已淘汰");
         STATUS_TEXT.put(4, "已录用");
-        STATUS_TEXT.put(5, "待笔试");
-        STATUS_TEXT.put(6, "笔试中");
-        STATUS_TEXT.put(7, "已通过笔试");
-        STATUS_TEXT.put(8, "笔试未通过");
-        STATUS_TEXT.put(9, "笔试缺考");
     }
 
     @Autowired
@@ -72,15 +66,15 @@ public class DashboardServiceImpl implements IDashboardService
     private Map<String, Object> buildFunnel(Map<String, Object> row)
     {
         long applied = toLong(row, "applied");
-        long screened = toLong(row, "screened");
-        long interviewing = toLong(row, "interviewing");
+        long pendingInterview = toLong(row, "pendingInterview");
+        long rejected = toLong(row, "rejected");
         long hired = toLong(row, "hired");
         double conversion = applied == 0 ? 0.0 : Math.round(hired * 1000.0 / applied) / 10.0;
 
         Map<String, Object> funnel = new LinkedHashMap<>();
         funnel.put("applied", applied);
-        funnel.put("screened", screened);
-        funnel.put("interviewing", interviewing);
+        funnel.put("pendingInterview", pendingInterview);
+        funnel.put("rejected", rejected);
         funnel.put("hired", hired);
         funnel.put("conversion", conversion);
         return funnel;

@@ -65,7 +65,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         PageUtils.clearPage();
         if (criteria == null) criteria = new TalentSearchCriteria();
         criteria.validate();
-        if (status != null && (status < 0 || status > 9)) throw new ServiceException("招聘状态不合法");
+        if (status != null && !isTalentStatus(status)) throw new ServiceException("招聘状态不合法");
         if (archiveSource != null && (archiveSource < 0 || archiveSource > 4)) throw new ServiceException("归档来源不合法");
         if (pageNum == null || pageNum < 1 || pageSize == null || pageSize < 1 || pageSize > 100)
             throw new ServiceException("分页参数不合法");
@@ -126,9 +126,9 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         {
             throw new ServiceException("请选择候选人");
         }
-        if (status == null || status < 0 || status > 9)
+        if (status == null || !isTalentStatus(status))
         {
-            throw new ServiceException("状态值不合法");
+            throw new ServiceException("状态值不合法，仅支持已投递/待面试/已淘汰/已录用");
         }
         int updated = talentPoolMapper.updateTalentStatus(companyId, talIds, status);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -401,5 +401,11 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     {
         Long companyId = dashboardMapper.selectCompanyIdByUser(userId);
         return companyId == null ? 1L : companyId;
+    }
+
+    /** 求职者状态收敛为四种：0-已投递、2-待面试、3-已淘汰、4-已录用 */
+    private boolean isTalentStatus(int status)
+    {
+        return status == 0 || status == 2 || status == 3 || status == 4;
     }
 }
