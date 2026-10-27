@@ -36,6 +36,17 @@ public class EnterpriseSettingsServiceImpl implements IEnterpriseSettingsService
     }
 
     @Override
+    public Long requireCompanyId(Long userId)
+    {
+        Long companyId = dashboardMapper.selectCompanyIdByUser(userId);
+        if (companyId == null)
+        {
+            throw new ServiceException("请先完成企业绑定", 403);
+        }
+        return companyId;
+    }
+
+    @Override
     public List<Map<String, Object>> listTemplates(Long companyId)
     {
         return settingsMapper.selectTemplates(companyId);
@@ -158,5 +169,72 @@ public class EnterpriseSettingsServiceImpl implements IEnterpriseSettingsService
         result.put("userId", userId);
         result.put("initPassword", initPassword);
         return result;
+    }
+
+    @Override
+    public Map<String, Object> companyInfo(Long companyId)
+    {
+        Map<String, Object> company = settingsMapper.selectOwnCompany(companyId);
+        if (company == null)
+        {
+            throw new ServiceException("企业信息不存在，请先完成企业绑定");
+        }
+        return company;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> updateCompanyInfo(Long companyId, Map<String, Object> form)
+    {
+        if (form == null)
+        {
+            throw new ServiceException("请填写企业信息");
+        }
+        String name = cleanField(form.get("name"), 100);
+        if (StringUtils.isEmpty(name))
+        {
+            throw new ServiceException("企业名称不能为空");
+        }
+        String industry = cleanField(form.get("industry"), 50);
+        String size = cleanField(form.get("size"), 20);
+        String city = cleanField(form.get("city"), 50);
+        String address = cleanField(form.get("address"), 200);
+        String website = cleanField(form.get("website"), 255);
+        String intro = cleanField(form.get("intro"), 4000);
+        String logoUrl = cleanField(form.get("logoUrl"), 255);
+        if (settingsMapper.selectOwnCompany(companyId) == null)
+        {
+            throw new ServiceException("企业信息不存在，请先完成企业绑定");
+        }
+        try
+        {
+            if (settingsMapper.updateOwnCompany(companyId, name, industry, size, city, address, website, intro, logoUrl) != 1)
+            {
+                throw new ServiceException("企业信息保存失败，请稍后重试");
+            }
+        }
+        catch (org.springframework.dao.DataIntegrityViolationException e)
+        {
+            throw new ServiceException("企业名称已被使用或内容不合法，请核对后重试");
+        }
+        return companyInfo(companyId);
+    }
+
+    private String cleanField(Object value, int maxLength)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+        String text = value.toString().trim();
+        if (text.isEmpty())
+        {
+            return null;
+        }
+        if (text.length() > maxLength)
+        {
+            throw new ServiceException("字段长度超过限制（" + maxLength + " 字）");
+        }
+        return text;
     }
 }
