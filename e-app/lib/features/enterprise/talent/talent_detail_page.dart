@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
 import 'data/talent_detail_data_source.dart';
 import 'models/talent_detail_view_data.dart';
+import 'talent_resume_pdf_page.dart';
 import 'widgets/talent_candidate_actions.dart';
 import 'widgets/talent_interview_section.dart';
 import 'widgets/talent_match_analysis_section.dart';
@@ -136,6 +137,7 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
                   ],
                 ),
               ),
+              _originalResumeAction(context),
             ],
           ),
           const SizedBox(height: 12),
@@ -201,6 +203,38 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
             onInvited: () => setState(() => _interviewRevision++),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 「原始简历」入口：仅当候选人已保存原始 PDF（解析接口返回 fileName）时展示。
+  Widget _originalResumeAction(BuildContext context) {
+    final fileName = _resume.data?['fileName'];
+    final id = _id;
+    if (fileName is! String || fileName.isEmpty || id == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.interactive,
+          side: const BorderSide(color: AppColors.interactive),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: const TextStyle(fontSize: 12),
+        ),
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  TalentResumePdfPage(talentId: id, fileName: fileName),
+            ),
+          );
+        },
+        icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+        label: const Text('原始简历'),
       ),
     );
   }

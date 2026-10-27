@@ -39,6 +39,8 @@ dependencies:
   dio: ^5.7.0
   flutter_markdown_plus: ^1.0.12
   file_picker: ^13.1.0
+  # 原始简历 PDF 预览（与 C-App 一致的渲染能力）
+  pdfx: ^2.11.0
 
 dev_dependencies:
   integration_test:
