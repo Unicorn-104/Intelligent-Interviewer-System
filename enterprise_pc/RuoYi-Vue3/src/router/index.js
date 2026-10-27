@@ -40,6 +40,9 @@ export const constantRoutes = [
   },
   {
     path: '/login',
+    // 登录页同时暴露在 /enterprise/login，保证登录相关 URL 始终落在 vite base(/enterprise/) 内，
+    // 否则刷新 /login 时开发服务器会因不在 base 下而返回 base 提示页
+    alias: '/enterprise/login',
     component: () => import('@/views/login'),
     hidden: true
   },
