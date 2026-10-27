@@ -8,10 +8,11 @@ class MessageAvatar extends StatelessWidget {
     required this.name,
     this.url,
     this.system = false,
+    this.square = false,
   });
   final String name;
   final String? url;
-  final bool system;
+  final bool system, square;
   @override
   Widget build(BuildContext context) {
     final fallback = Center(
@@ -33,7 +34,8 @@ class MessageAvatar extends StatelessWidget {
     return SizedBox(
       width: 48,
       height: 48,
-      child: ClipOval(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(square ? 6 : 24),
         child: ColoredBox(
           color: AppColors.interactiveSoft,
           child: url == null

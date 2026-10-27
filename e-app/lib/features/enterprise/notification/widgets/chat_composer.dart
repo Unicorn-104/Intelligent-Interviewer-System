@@ -24,6 +24,7 @@ class ChatComposer extends StatefulWidget {
     required this.onReloadQuick,
     required this.onSaveQuick,
     required this.onAttachment,
+    this.onSendJob,
     required this.onPanelChanged,
   });
 
@@ -34,6 +35,7 @@ class ChatComposer extends StatefulWidget {
   final double maxPanelHeight;
   final int maxInputLines;
   final VoidCallback onSend, onReloadQuick;
+  final VoidCallback? onSendJob;
   final ValueChanged<String> onSendQuick;
   final Future<void> Function(ChatQuickReply? reply, String text) onSaveQuick;
   final ValueChanged<bool> onAttachment, onPanelChanged;
@@ -516,7 +518,7 @@ class _ChatComposerState extends State<ChatComposer> {
     key: const Key('chat-attachment-panel'),
     padding: const EdgeInsets.all(16),
     children: [
-      const Text('发送附件', style: TextStyle(fontWeight: FontWeight.w600)),
+      const Text('发送内容', style: TextStyle(fontWeight: FontWeight.w600)),
       const SizedBox(height: 12),
       Wrap(
         spacing: 20,
@@ -524,6 +526,25 @@ class _ChatComposerState extends State<ChatComposer> {
         children: [
           _attachmentAction('图片', Icons.image_outlined, true),
           _attachmentAction('文件', Icons.insert_drive_file_outlined, false),
+          if (widget.onSendJob != null)
+            SizedBox(
+              width: 86,
+              child: OutlinedButton(
+                key: const Key('chat-send-job'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.all(12),
+                ),
+                onPressed: widget.canSend ? widget.onSendJob : null,
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.work_outline, size: 30),
+                    SizedBox(height: 8),
+                    Text('发送岗位'),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
       const SizedBox(height: 12),

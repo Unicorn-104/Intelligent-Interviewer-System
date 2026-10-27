@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.ChatJobCardMapper">
+ <sql id="fields">p.pos_id as positionId,p.pos_title as title,c.cmp_id as companyId,c.cmp_name as company,
+ p.pos_work_city as city,p.pos_salary_min as salaryMin,p.pos_salary_max as salaryMax,
+ p.pos_experience_required as experience,p.pos_education_required as education</sql>
+ <select id="lockSender" resultType="long">select user_id from sys_user where user_id=#{userId} and status='0' and del_flag='0' for update</select>
+ <select id="jobs" resultType="java.util.LinkedHashMap">
+ select <include refid="fields"/> from t_pos p join t_cmp c on c.cmp_id=p.pos_company_id
+ where p.pos_company_id=#{companyId} and p.pos_status=1 and c.cmp_status=1
+ <if test="keyword != null and keyword != ''">and p.pos_title like concat('%',#{keyword},'%')</if>
+ order by p.pos_id desc limit 20 offset #{offset}
+ </select>
+ <select id="job" resultType="java.util.LinkedHashMap">
+ select <include refid="fields"/> from t_pos p join t_cmp c on c.cmp_id=p.pos_company_id
+ where p.pos_id=#{positionId} and p.pos_company_id=#{companyId} and p.pos_status=1 and c.cmp_status=1 for update
+ </select>
+ <select id="candidateUser" resultType="long">
+ select u.user_id from sys_user u where u.user_id=#{peerId} and u.status='0' and u.del_flag='0'
+ and exists(select 1 from t_tal t where t.tal_user_id=u.user_id)
+ </select>
+ <select id="existing" resultType="java.util.LinkedHashMap">
+ select m.imsg_id as messageId,m.imsg_session_id as sessionId,m.imsg_content as content,
+ case when s.ims_user_a_id=#{userId} then s.ims_user_b_id else s.ims_user_a_id end as peerId
+ from t_im_message m join t_im_session s on s.ims_id=m.imsg_session_id
+ where m.imsg_sender_id=#{userId} and m.imsg_type=6 and json_valid(m.imsg_content)
+ and json_unquote(json_extract(m.imsg_content,'$.kind'))='job_card'
+ and json_unquote(json_extract(m.imsg_content,'$.requestId'))=#{requestId}
+ order by m.imsg_id limit 1
+ </select>
+</mapper>

@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -160,6 +162,74 @@ class EnterpriseApiClient {
       // 存储读取失败时走兜底令牌
     }
     return _devToken.isEmpty ? null : _devToken;
+  }
+
+  /// Authenticated SSE only. Does not change JSON requests or retry a submitted action.
+  Stream<List<int>> eventBytes(
+    String path, {
+    required CancelToken cancelToken,
+  }) async* {
+    try {
+      final token = await _readToken();
+      final response = await _dio.get<ResponseBody>(
+        path,
+        cancelToken: cancelToken,
+        options: Options(
+          responseType: ResponseType.stream,
+          followRedirects: false,
+          receiveTimeout: const Duration(seconds: 30),
+          validateStatus: (status) =>
+              status != null && status >= 200 && status < 500,
+          headers: {
+            HttpHeaders.acceptHeader: 'text/event-stream',
+            HttpHeaders.cacheControlHeader: 'no-cache',
+            if (token != null && token.isNotEmpty)
+              HttpHeaders.authorizationHeader: 'Bearer $token',
+          },
+        ),
+      );
+      final body = response.data;
+      if (body == null) throw const ApiException('流式响应为空');
+      // Drain Dio's eventual cancellation event even after the caller unsubscribes.
+      final bytesStream = body.stream.asBroadcastStream();
+      final contentType = response.headers
+          .value(Headers.contentTypeHeader)
+          ?.split(';')
+          .first
+          .trim()
+          .toLowerCase();
+      if (response.statusCode != 200 || contentType != 'text/event-stream') {
+        int? code;
+        if (contentType == 'application/json') {
+          final bytes = BytesBuilder(copy: false);
+          await for (final chunk in bytesStream.timeout(
+            const Duration(seconds: 10),
+          )) {
+            if (bytes.length + chunk.length > 32768) {
+              throw const ApiException('流式接口响应异常');
+            }
+            bytes.add(chunk);
+          }
+          final decoded = jsonDecode(utf8.decode(bytes.takeBytes()));
+          if (decoded is Map) code = int.tryParse('${decoded['code']}');
+        }
+        final status = response.statusCode;
+        throw ApiException(
+          code == 401 || status == 401 ? '登录已失效，请重新登录' : '流式服务暂不可用，请刷新回答状态',
+          code: code,
+          statusCode: status,
+        );
+      }
+      yield* bytesStream.timeout(const Duration(seconds: 30));
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error)) return;
+      throw ApiException(
+        '流式连接中断，请刷新恢复，不会重复发送问题',
+        statusCode: error.response?.statusCode,
+      );
+    } finally {
+      if (!cancelToken.isCancelled) cancelToken.cancel('流式连接已关闭');
+    }
   }
 
   Future<Map<String, dynamic>> _request(

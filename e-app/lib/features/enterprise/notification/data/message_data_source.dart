@@ -94,6 +94,54 @@ class MessageDataSource {
     return messages;
   }
 
+  Future<bool> acknowledgeRead(int sessionId, int lastMessageId) async {
+    await _requireSession();
+    final response = await (client ?? EnterpriseApiClient()).put(
+      '/system/im/sessions/$sessionId/receipts',
+      body: {'lastMessageId': lastMessageId},
+    );
+    return response['data'] is Map && response['data']['supported'] == true;
+  }
+
+  Future<List<Map<String, dynamic>>> loadShareableJobs({
+    String? keyword,
+    int page = 1,
+  }) async {
+    await _requireSession();
+    final response = await (client ?? EnterpriseApiClient()).get(
+      '/enterprise/chat/jobs',
+      query: {'keyword': keyword, 'page': page},
+    );
+    return messageRows(response['data']);
+  }
+
+  Future<int> sendJobCard({
+    int? sessionId,
+    required int peerId,
+    required int positionId,
+    required String requestId,
+  }) async {
+    await _requireSession();
+    final response = await (client ?? EnterpriseApiClient()).post(
+      '/enterprise/chat/job-cards',
+      body: {
+        'sessionId': ?sessionId,
+        'peerId': peerId,
+        'positionId': positionId,
+        'requestId': requestId,
+      },
+    );
+    final data = response['data'];
+    if (data is! Map ||
+        data['requestId'] != requestId ||
+        messageId(data['sessionId']) == null ||
+        messageId(data['messageId']) == null ||
+        sessionId != null && messageId(data['sessionId']) != sessionId) {
+      throw const FormatException('岗位发送结果待核对，请刷新记录，勿重复发送');
+    }
+    return messageId(data['sessionId'])!;
+  }
+
   Future<void> send(int sessionId, String content) async {
     await _requireSession();
     final body = {'sessionId': sessionId, 'type': 1, 'content': content};
@@ -245,6 +293,18 @@ class MessageDataSource {
       messageCount(response['unreadCount']),
       rows.length == 50,
     );
+  }
+
+  Future<Map<String, dynamic>> loadNotificationDestination(int id) async {
+    await _requireSession();
+    final response = await (client ?? EnterpriseApiClient()).get(
+      '/enterprise/system-notices/$id/destination',
+    );
+    final data = response['data'];
+    if (data is! Map || messageId(data['messageId']) != id) {
+      throw const FormatException('通知关联详情不匹配，请刷新后重试');
+    }
+    return Map<String, dynamic>.from(data);
   }
 
   Future<void> readNotification(int id) async {

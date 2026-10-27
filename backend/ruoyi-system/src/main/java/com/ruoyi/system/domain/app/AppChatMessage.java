@@ -14,6 +14,9 @@ public class AppChatMessage implements Serializable
     private Integer type;
     private String content;
     private Boolean mine;
+    private String deliveryStatus;
+    public String getDeliveryStatus() { return deliveryStatus; }
+    public void setDeliveryStatus(String value) { deliveryStatus = value; }
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date createdAt;

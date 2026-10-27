@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'support/fake_enterprise_ai_source.dart';
 
 import 'package:enterprise_recruiter/features/enterprise/notification/models/chat_context.dart';
 import 'package:enterprise_recruiter/features/enterprise/notification/widgets/message_avatar.dart';
@@ -170,7 +173,10 @@ Future<void> mountMessages(
       theme: AppTheme.light,
       home: chat
           ? ChatPage(session: sessionJson(), source: source, pollInterval: poll)
-          : MessageCenterPage(source: source),
+          : MessageCenterPage(
+              source: source,
+              assistantSource: FakeEnterpriseAiSource(),
+            ),
     ),
   );
   await tester.pumpAndSettle();
@@ -250,7 +256,7 @@ void main() {
       expect(tail.left, closeTo(ownBubble.right, .01));
       expect(tail.right, closeTo(recruiterAvatar.left - 8, .01));
       expect(tail.center.dy, closeTo(recruiterAvatar.center.dy, .01));
-      expect(find.byKey(const ValueKey('chat-bubble-tail-1')), findsNothing);
+      expect(find.byKey(const ValueKey('chat-bubble-tail-1')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -384,13 +390,18 @@ void main() {
     await mountMessages(tester, source);
     expect(find.text('合成候选人'), findsOneWidget);
     expect(find.text('已收到面试安排'), findsOneWidget);
-    expect(find.text('系统通知'), findsOneWidget);
+    expect(find.text('系统消息'), findsOneWidget);
     expect(find.text('演示数据'), findsNothing);
     expect(source.readCalls, 0);
     expect(source.readAllCalls, 0);
-    await tester.tap(find.byKey(const Key('messages-tab-1')));
+    expect(find.byKey(const Key('messages-tab-1')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('ai-assistant-orb')));
     await tester.pumpAndSettle();
-    expect(find.text('企业端 AI Agent 会话功能开发中'), findsOneWidget);
+    expect(find.text('AI 招聘助手'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('enterprise-ai-close')));
+    await tester.pumpAndSettle();
+    expect(find.text('合成候选人'), findsOneWidget);
+    expect(source.readCalls, 0);
     expect(source.sends, isEmpty);
   });
   testWidgets('全部已读调用现有IM和系统接口，防重复且成功后回读', (tester) async {
@@ -428,7 +439,8 @@ void main() {
     source.notices = [];
     await tester.tap(find.text('重试加载消息'));
     await tester.pumpAndSettle();
-    expect(find.text('暂无消息'), findsOneWidget);
+    expect(find.text('暂无聊天会话'), findsOneWidget);
+    expect(find.byKey(const Key('messages-system')), findsOneWidget);
   });
   testWidgets('打开会话读取真实历史后标为已读，常用语展开后点击直接发送', (tester) async {
     final source = FakeMessageSource();
@@ -542,6 +554,39 @@ void main() {
     expect(find.text('合成通知正文4'), findsWidgets);
     expect(source.notices.single.isRead, isTrue);
   });
+  testWidgets('候选人改期申请以卡片显示且提供同意拒绝操作', (tester) async {
+    final source = FakeMessageSource();
+    source.messages = [
+      ConversationMessage.fromJson({
+        'messageId': 41,
+        'type': 5,
+        'content': jsonEncode({
+          'kind': 'interview_reschedule',
+          'version': 1,
+          'requestId': 31,
+          'appointmentId': 44,
+          'candidateName': '合成候选人',
+          'positionName': '合成岗位',
+          'originalStartTime': '2099-01-02 09:00:00',
+          'originalEndTime': '2099-01-02 09:45:00',
+          'newStartTime': '2099-01-03 10:00:00',
+          'newEndTime': '2099-01-03 10:45:00',
+          'reason': '合成原因',
+          'status': 'pending',
+        }),
+        'isMine': false,
+        'sendTime': '2026-10-26 09:00',
+      }),
+    ];
+    await mountMessages(tester, source, chat: true);
+    expect(find.text('求职者申请改期'), findsOneWidget);
+    expect(find.text('合成岗位'), findsOneWidget);
+    expect(find.text('同意'), findsOneWidget);
+    expect(find.text('拒绝'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('聊天定时回读离开页面停止轮询', (tester) async {
     final source = FakeMessageSource();
     await mountMessages(

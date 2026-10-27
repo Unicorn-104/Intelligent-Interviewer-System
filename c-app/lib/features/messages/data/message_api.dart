@@ -33,10 +33,7 @@ class MessageApi {
     await _client.put('/app/messages/read-all', token: token);
   }
 
-  Future<List<ChatMessage>> fetchHrChat(
-    String token,
-    int sessionId,
-  ) async {
+  Future<List<ChatMessage>> fetchHrChat(String token, int sessionId) async {
     final json = await _client.get(
       '/app/messages/hr/$sessionId/chat?limit=100',
       token: token,
@@ -49,11 +46,20 @@ class MessageApi {
         .toList();
   }
 
-  Future<void> sendHrChat(
+  Future<bool> acknowledgeRead(
     String token,
     int sessionId,
-    String content,
+    int lastMessageId,
   ) async {
+    final json = await _client.put(
+      '/system/im/sessions/$sessionId/receipts',
+      token: token,
+      body: {'lastMessageId': lastMessageId},
+    );
+    return json['data'] is Map && json['data']['supported'] == true;
+  }
+
+  Future<void> sendHrChat(String token, int sessionId, String content) async {
     await _client.post(
       '/app/messages/hr/$sessionId/chat',
       token: token,

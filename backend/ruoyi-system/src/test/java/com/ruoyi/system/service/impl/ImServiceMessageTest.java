@@ -118,6 +118,19 @@ public class ImServiceMessageTest
         assertEquals(0,jdbc.queryForObject("select count(*) from t_im_message",Integer.class));
     }
     @Test
+    void clientsCannotForgeServerGeneratedRescheduleCards()
+    {
+        var message = new ImMessage();
+        message.setSessionId(8L);
+        message.setType(5);
+        message.setContent("{\"kind\":\"interview_reschedule\",\"status\":\"approved\"}");
+        assertThrows(ServiceException.class, () -> service.sendMessage(message,11L,null));
+        assertEquals(0,jdbc.queryForObject("select count(*) from t_im_message",Integer.class));
+        message.setType(6);
+        assertThrows(ServiceException.class, () -> service.sendMessage(message,11L,null));
+        verifyNoInteractions(sessions);
+    }
+    @Test
     void messageHistoryFlagsMineFromLoginAndExcludesRecalledMessages()
     {
         when(sessions.selectSessionByIdAndUser(8L,11L)).thenReturn(session());
@@ -125,5 +138,42 @@ public class ImServiceMessageTest
         var list=service.selectMessageList(8L,11L);
         assertEquals(2,list.size());
         assertTrue(list.get(0).getIsMine());assertFalse(list.get(1).getIsMine());
+    }
+
+    @Test
+    void enterpriseHistoryIncludesPersistedReceiptsForTextEmojiAndIncomingMessages()
+    {
+        when(sessions.selectSessionByIdAndUser(8L,11L)).thenReturn(session());
+        jdbc.execute("create table t_im_session(ims_id bigint primary key,ims_user_a_id bigint,ims_user_b_id bigint,ims_unread_a int,ims_unread_b int)");
+        jdbc.execute("insert into t_im_session values(8,11,12,1,2)");
+        jdbc.execute("create table t_im_read_cursor(irc_session_id bigint,irc_user_id bigint,irc_last_message_id bigint,irc_read_at timestamp,primary key(irc_session_id,irc_user_id))");
+        jdbc.execute("insert into t_im_message(imsg_session_id,imsg_sender_id,imsg_type,imsg_content) values(8,11,1,'合成文本'),(8,11,4,'合成表情'),(8,12,1,'合成回复')");
+        var receipts = new ImReadReceiptService();
+        ReflectionTestUtils.setField(receipts,"jdbc",jdbc);
+        ReflectionTestUtils.setField(receipts,"sessions",sessions);
+        ReflectionTestUtils.setField(service,"receipts",receipts);
+
+        var before = service.selectMessageList(8L,11L);
+        assertEquals("delivered",before.get(0).getDeliveryStatus());
+        assertEquals("delivered",before.get(1).getDeliveryStatus());
+        assertEquals("received",before.get(2).getDeliveryStatus());
+
+        receipts.acknowledge(12L,8L,before.get(1).getMessageId());
+        var after = service.selectMessageList(8L,11L);
+        assertEquals("read",after.get(0).getDeliveryStatus());
+        assertEquals("read",after.get(1).getDeliveryStatus());
+        assertEquals("received",after.get(2).getDeliveryStatus());
+        assertTrue(after.get(0).getIsMine());
+        assertFalse(after.get(2).getIsMine());
+    }
+
+    @Test void firstNotificationPageRefreshesRealEventsBeforeReadingButPaginationDoesNotRescan()
+    {
+        var notices=mock(com.ruoyi.enterprise.service.EnterpriseSystemNoticeService.class);
+        ReflectionTestUtils.setField(service,"systemNotices",notices);
+        service.selectNotifications(11L,null,50);
+        verify(notices).refresh(11L);
+        service.selectNotifications(11L,100L,50);
+        verifyNoMoreInteractions(notices);
     }
 }

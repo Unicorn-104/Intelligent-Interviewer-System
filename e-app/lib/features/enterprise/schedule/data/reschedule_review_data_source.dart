@@ -120,6 +120,23 @@ class RescheduleReviewDataSource {
     return RescheduleReviewResult(rows: parsed, total: total);
   }
 
+  Future<Map<String, dynamic>> detail(int id, {int? candidateUserId}) async {
+    if (id <= 0) throw const FormatException('改期申请标识无效');
+    final response = await _client.get(
+      '/enterprise/interview/reschedule-requests/$id',
+    );
+    final raw = response['data'];
+    if (raw is! Map) throw const FormatException('改期申请详情不完整');
+    final data = Map<String, dynamic>.from(raw);
+    final parsed = RescheduleRequest.fromJson(data);
+    if (parsed.id != id ||
+        (candidateUserId != null &&
+            int.tryParse(data['requesterId'].toString()) != candidateUserId)) {
+      throw const FormatException('申请与当前会话不匹配');
+    }
+    return data;
+  }
+
   Future<RescheduleRequest> review(
     int id,
     String decision, {

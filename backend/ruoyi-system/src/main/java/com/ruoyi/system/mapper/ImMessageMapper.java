@@ -22,6 +22,9 @@ public interface ImMessageMapper
      */
     public int insertMessage(ImMessage message);
 
+    int updateRescheduleCards(@Param("requestId") Long requestId, @Param("status") String status,
+            @Param("reviewNote") String reviewNote);
+
     /** 只查询当前接收人的系统通知，使用消息ID游标分页。 */
     List<Map<String, Object>> selectNotifications(@Param("userId") Long userId,
             @Param("beforeId") Long beforeId, @Param("limit") int limit);
