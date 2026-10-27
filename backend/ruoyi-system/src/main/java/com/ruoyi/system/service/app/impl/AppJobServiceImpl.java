@@ -8,6 +8,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.domain.app.AppHomeData;
 import com.ruoyi.system.domain.app.AppJob;
 import com.ruoyi.system.mapper.app.AppJobMapper;
+import com.ruoyi.system.service.IEnterpriseJobService;
 import com.ruoyi.system.service.app.IAppJobService;
 
 @Service
@@ -15,6 +16,9 @@ public class AppJobServiceImpl implements IAppJobService
 {
     @Autowired
     private AppJobMapper jobMapper;
+
+    @Autowired
+    private IEnterpriseJobService enterpriseJobService;
 
     @Override
     public AppHomeData selectHomeData(Long userId, String filter)
@@ -69,5 +73,7 @@ public class AppJobServiceImpl implements IAppJobService
         {
             throw new ServiceException("投递失败，请稍后重试");
         }
+        // 同步创建投递流程实例，企业端岗位详情/漏斗/筛选均以实例为候选人来源
+        enterpriseJobService.ensureProcessInstance(companyId, candidateId, positionId);
     }
 }

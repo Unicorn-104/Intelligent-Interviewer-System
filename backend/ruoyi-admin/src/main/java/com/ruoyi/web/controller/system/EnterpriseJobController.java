@@ -89,7 +89,7 @@ public class EnterpriseJobController extends BaseController
     }
 
     /**
-     * 删除草稿岗位（仅允许删除状态为草稿的岗位）
+     * 删除岗位（仅允许删除无投递/面试等业务数据的岗位）
      */
     @DeleteMapping("/{posId}")
     public AjaxResult remove(@PathVariable("posId") Long posId)
