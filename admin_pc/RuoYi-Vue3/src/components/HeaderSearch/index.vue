@@ -8,7 +8,7 @@
         size="large"
         @input="querySearch"
         prefix-icon="Search"
-        placeholder="菜单搜索，支持标题、URL模糊查询"
+        placeholder="菜单搜索，Ctrl+K快速打开"
         clearable
         @keyup.enter="selectActiveResult"
         @keydown.up.prevent="navigateResult('up')"
@@ -227,8 +227,18 @@ function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function onKeydown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault()
+    click()
+  }
+}
 onMounted(() => {
   searchPool.value = generateRoutes(routes.value)
+  window.addEventListener('keydown', onKeydown)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
 })
 
 watch(searchPool, (list) => {

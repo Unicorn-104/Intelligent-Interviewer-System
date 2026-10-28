@@ -75,7 +75,9 @@
           <el-tag :type="statusTag(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="更新时间" align="center" prop="updateTime" width="170" />
+      <el-table-column label="更新时间" align="center" width="170">
+        <template #default="{ row }">{{ row.updateTime ? String(row.updateTime).replace('T',' ').substring(0,19) : '-' }}</template>
+      </el-table-column>
       <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
         <template #default="scope">
           <el-button link type="primary" icon="View" @click="handlePreview(scope.row)">预览</el-button>
@@ -360,21 +362,21 @@ function channelTag(val) {
 
 /** 消息类型标签 */
 function msgTypeLabel(val) {
-  const item = msgTypeOptions.find((o) => o.value === val)
+  const item = msgTypeOptions.find((o) => o.value === String(val))
   return item ? item.label : val
 }
 function msgTypeTag(val) {
-  const item = msgTypeOptions.find((o) => o.value === val)
+  const item = msgTypeOptions.find((o) => o.value === String(val))
   return item && item.tag ? item.tag : 'info'
 }
 
 /** 状态显示 */
 function statusLabel(val) {
-  const item = statusOptions.find((o) => o.value === val)
+  const item = statusOptions.find((o) => o.value === String(val))
   return item ? item.label : val
 }
 function statusTag(val) {
-  const item = statusOptions.find((o) => o.value === val)
+  const item = statusOptions.find((o) => o.value === String(val))
   return item && item.tag ? item.tag : 'danger'
 }
 

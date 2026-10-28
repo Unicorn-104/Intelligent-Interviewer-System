@@ -118,7 +118,7 @@
       </div>
     </div>
 
-    <!-- 底部：API 调用量 TOP10 + 最近操作动态 -->
+    <!-- 底部：API 调用量 TOP10 + 岗位城市 TOP10 + 最近操作动态 -->
     <div class="bottom-sections">
       <div class="section-card">
         <div class="section-header">
@@ -126,6 +126,13 @@
           <span class="header-hint">超配额 80% 标橙色预警</span>
         </div>
         <div ref="topChartRef" class="chart chart-sm"></div>
+      </div>
+      <div class="section-card">
+        <div class="section-header">
+          <span>岗位城市 TOP10</span>
+          <span class="header-hint">按岗位数量</span>
+        </div>
+        <div ref="cityChartRef" class="chart chart-sm"></div>
       </div>
       <div class="section-card recent-card">
         <div class="section-header">
@@ -167,6 +174,7 @@ import {
 const trendChartRef = ref(null)
 const topChartRef = ref(null)
 const distChartRef = ref(null)
+const cityChartRef = ref(null)
 const trendRange = ref('30')
 const recentLogs = ref([])
 const overview = ref({ pipeline: [], todos: [], funnel: [] })
@@ -275,15 +283,17 @@ async function loadDashboard() {
     listStatusDist(),
     listRecentLogs(),
     listRecruitmentOverview(),
-    request({ url: '/admin/aiagent/overview' })
+    request({ url: '/admin/aiagent/overview' }),
+    request({ url: '/admin/dashboard/overview' })
   ])
-  const [statsRes, trendRes, apiRes, distRes, logsRes, overviewRes, aiRes] = results
+  const [statsRes, trendRes, apiRes, distRes, logsRes, overviewRes, aiRes, dashRes] = results
   if (statsRes.status === 'fulfilled') stats.value = statsRes.value?.data || {}
   if (trendRes.status === 'fulfilled') initTrend(trendRes.value?.data || {})
   if (apiRes.status === 'fulfilled') initTop(apiRes.value?.data || [])
   if (distRes.status === 'fulfilled') initDist(distRes.value?.data || [])
   if (logsRes.status === 'fulfilled') recentLogs.value = logsRes.value?.data || []
   if (aiRes.status === 'fulfilled') aiStats.value = aiRes.value?.data || {}
+  if (dashRes.status === 'fulfilled') initCity(dashRes.value?.data?.posCity || [])
   if (overviewRes.status === 'fulfilled') {
     overview.value = overviewRes.value?.data || { pipeline: [], todos: [], funnel: [] }
     lastUpdated.value = overview.value.asOf || ''
@@ -504,10 +514,26 @@ function initDist(data) {
   })
 }
 
+let cityChart = null
+function initCity(data) {
+  if (!cityChartRef.value) return
+  if (!cityChart) cityChart = echarts.init(cityChartRef.value)
+  else cityChart.clear()
+  const list = data || []
+  cityChart.setOption({
+    tooltip: {},
+    grid: { left: 40, right: 20, bottom: 40, top: 20 },
+    xAxis: { type: 'category', data: list.map(x => x.city), axisLabel: { rotate: 30, fontSize: 11 } },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [{ type: 'bar', itemStyle: { color: '#4f6ef7' }, data: list.map(x => x.c) }]
+  })
+}
+
 function resizeCharts() {
   trendChart && trendChart.resize()
   topChart && topChart.resize()
   distChart && distChart.resize()
+  cityChart && cityChart.resize()
 }
 
 onMounted(() => {
@@ -520,6 +546,7 @@ onBeforeUnmount(() => {
   trendChart && trendChart.dispose()
   topChart && topChart.dispose()
   distChart && distChart.dispose()
+  cityChart && cityChart.dispose()
 })
 
 watch(trendRange, () => {

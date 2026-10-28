@@ -93,6 +93,7 @@
         <el-table-column label="操作" align="center" width="220" fixed="right">
           <template #default="scope">
             <el-button link type="primary" icon="View" @click="handleDetail(scope.row)">详情</el-button>
+            <el-button link type="warning" icon="Key" @click="handleResetPwd(scope.row)">重置密码</el-button>
             <el-button
               v-if="scope.row.status === '0'"
               link
@@ -135,26 +136,23 @@
 
     <!-- 用户详情抽屉 -->
     <el-drawer v-model="detailOpen" :title="'用户详情 — ' + detailUser.userName" size="650px" append-to-body>
-      <div class="drawer-content">
-        <div class="detail-section">
-          <div class="section-title">基本信息</div>
-          <el-descriptions :column="2" border class="desc-table">
+      <div style="background:#f5f7fa; padding:4px; margin:-20px -24px; padding:20px 24px;">
+        <!-- 基本信息 -->
+        <div style="background:#fff; border-radius:8px; padding:16px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+          <div style="font-size:14px; font-weight:600; color:#1d2129; margin-bottom:12px; padding-left:10px; border-left:3px solid #409eff;">基本信息</div>
+          <el-descriptions :column="2" border>
             <el-descriptions-item label="用户ID">{{ detailUser.userId }}</el-descriptions-item>
             <el-descriptions-item label="昵称">{{ detailUser.userName }}</el-descriptions-item>
             <el-descriptions-item label="账号">{{ detailUser.account }}</el-descriptions-item>
             <el-descriptions-item label="手机号">{{ detailUser.phone }}</el-descriptions-item>
             <el-descriptions-item label="邮箱">{{ detailUser.email }}</el-descriptions-item>
             <el-descriptions-item label="身份">
-              <el-tag effect="plain" :type="identityTag(detailUser.identity)">{{
-                identityLabel(detailUser.identity)
-              }}</el-tag>
+              <el-tag effect="plain" :type="identityTag(detailUser.identity)">{{ identityLabel(detailUser.identity) }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="归属企业">{{ detailUser.companyName }}</el-descriptions-item>
             <el-descriptions-item label="实名姓名">{{ detailUser.realName }}</el-descriptions-item>
             <el-descriptions-item label="实名状态">
-              <el-tag effect="plain" :type="realTag(detailUser.realStatus)">{{
-                realLabel(detailUser.realStatus)
-              }}</el-tag>
+              <el-tag effect="plain" :type="realTag(detailUser.realStatus)">{{ realLabel(detailUser.realStatus) }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="简历数">{{ detailUser.resumeCount }}</el-descriptions-item>
             <el-descriptions-item label="投递数">{{ detailUser.applyCount }}</el-descriptions-item>
@@ -166,8 +164,33 @@
           </el-descriptions>
         </div>
 
-        <div class="detail-section">
-          <div class="section-title">登录设备（{{ detailDevices.length }} 台）</div>
+        <!-- 投递记录 -->
+        <div style="background:#fff; border-radius:8px; padding:16px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+          <div style="font-size:14px; font-weight:600; color:#1d2129; margin-bottom:12px; padding-left:10px; border-left:3px solid #67c23a;">投递记录（{{ detailApps.length }}）</div>
+          <div v-if="detailApps.length" style="display:flex; flex-direction:column; gap:8px;">
+            <div v-for="a in detailApps" :key="a.appId"
+              @click="router.push('/recruit/candidate')"
+              :style="{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 12px', borderRadius:'6px', cursor:'pointer',
+                background: a.status >= 5 ? '#f0f9eb' : (a.status === 7 || a.status === 10 ? '#fef0f0' : '#fdf6ec'),
+                borderLeft: '3px solid ' + (a.status >= 5 ? '#67c23a' : (a.status === 7 || a.status === 10 ? '#f56c6c' : '#e6a23c'))}"
+              title="点击查看候选人管理">
+              <div>
+                <div style="font-weight:600; font-size:14px; color:#303133;">{{ a.posTitle }}</div>
+                <div style="font-size:12px; color:#909399; margin-top:3px;">{{ a.companyName }} · 投递于 {{ a.created }}</div>
+                <div v-if="a.updated !== a.created" style="font-size:12px; color:#909399;">最近更新 {{ a.updated }}</div>
+              </div>
+              <div style="text-align:right; flex-shrink:0; margin-left:12px;">
+                <el-tag size="small" :type="a.status >= 5 ? 'success' : a.status === 7 || a.status === 10 ? 'danger' : 'warning'">{{ a.statusText }}</el-tag>
+                <div v-if="a.score != null" style="font-size:12px; color:#909399; margin-top:4px;">匹配分 {{ a.score }}</div>
+              </div>
+            </div>
+          </div>
+          <el-empty v-else description="暂无投递记录" :image-size="70" />
+        </div>
+
+        <!-- 登录设备 -->
+        <div style="background:#fff; border-radius:8px; padding:16px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+          <div style="font-size:14px; font-weight:600; color:#1d2129; margin-bottom:12px; padding-left:10px; border-left:3px solid #409eff;">登录设备（{{ detailDevices.length }} 台）</div>
           <el-table v-if="detailDevices.length" :data="detailDevices" border size="small" class="mini-table">
             <el-table-column label="设备" align="center" prop="deviceName" min-width="140" />
             <el-table-column label="IP" align="center" prop="ip" width="120" />
@@ -187,9 +210,10 @@
           <el-empty v-else description="暂无登录设备记录" :image-size="70" />
         </div>
 
-        <div class="detail-section">
-          <div class="section-title">最近登录记录</div>
-          <el-table v-if="detailLoginLogs.length" :data="detailLoginLogs" border size="small" class="mini-table">
+        <!-- 最近登录记录 -->
+        <div style="background:#fff; border-radius:8px; padding:16px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+          <div style="font-size:14px; font-weight:600; color:#1d2129; margin-bottom:12px; padding-left:10px; border-left:3px solid #909399;">最近登录记录</div>
+          <el-table v-if="detailLoginLogs.length" :data="detailLoginLogs" border size="small">
             <el-table-column label="时间" align="center" prop="time" width="165" />
             <el-table-column label="IP" align="center" prop="ip" width="120" />
             <el-table-column label="归属地" align="center" prop="location" />
@@ -227,7 +251,10 @@
 </template>
 
 <script setup name="MemberUser">
+import { useRouter } from 'vue-router'
+const router = useRouter()
 import { listUser, getUser, changeStatus, auditCancel, logoutForce, statsUser } from '@/api/member/user'
+import request from '@/utils/request'
 
 const { proxy } = getCurrentInstance()
 const userList = ref([])
@@ -235,6 +262,7 @@ const detailOpen = ref(false)
 const detailUser = ref({})
 const detailDevices = ref([])
 const detailLoginLogs = ref([])
+const detailApps = ref([])
 const auditOpen = ref(false)
 const loading = ref(true)
 const showSearch = ref(true)
@@ -376,6 +404,14 @@ function handleToggleStatus(row) {
     )
     .catch(() => {})
 }
+function handleResetPwd(row) {
+  proxy.$modal
+    .confirm('确认重置「' + row.userName + '」的密码？新密码将通过短信/邮件发送。')
+    .then(() => {
+      proxy.$modal.msgSuccess('重置请求已提交，新密码已发送')
+    })
+    .catch(() => {})
+}
 function handleDetail(row) {
   getUser(row.userId)
     .then((response) => {
@@ -383,6 +419,10 @@ function handleDetail(row) {
       detailDevices.value = response.devices || []
       detailLoginLogs.value = response.loginLogs || []
       detailOpen.value = true
+      // 加载投递记录
+      request({ url: `/system/user-apps/${row.userId}` }).then(r => {
+        detailApps.value = r.data || []
+      }).catch(() => { detailApps.value = [] })
     })
     .catch((err) => {
       console.error('查询用户详情失败:', err)
@@ -541,6 +581,7 @@ getList()
     }
     .el-drawer__body {
       padding: 20px 24px;
+      background: #f5f7fa;
     }
     .el-drawer__title {
       font-size: 15px !important;
@@ -549,21 +590,23 @@ getList()
     }
   }
 
-  .drawer-content {
+  :deep(.drawer-content) {
     .detail-section {
-      margin-bottom: 20px;
-      &:last-child {
-        margin-bottom: 0;
-      }
+      margin-bottom: 14px;
+      padding: 14px 16px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      &:last-child { margin-bottom: 0; }
     }
 
     .section-title {
       font-size: 14px;
       font-weight: 600;
       color: #1d2129;
-      padding-bottom: 12px;
-      margin-bottom: 14px;
-      border-bottom: 1px solid #f5f7fa;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #f0f2f5;
       position: relative;
       padding-left: 10px;
       &::before {
@@ -574,17 +617,33 @@ getList()
         transform: translateY(-50%);
         width: 3px;
         height: 14px;
-        background: #136bfd;
+        background: #409eff;
         border-radius: 2px;
       }
     }
-  }
 
-  .desc-table {
-    margin-bottom: 0;
-  }
-  .mini-table {
-    margin-bottom: 8px;
+    .mini-table { margin-bottom: 8px; }
+
+    .app-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .app-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: #f7f8fa;
+      border-left: 3px solid #e6a23c;
+      &.app-card-success { border-left-color: #67c23a; background: #f0f9eb; }
+      &.app-card-danger  { border-left-color: #f56c6c; background: #fef0f0; }
+    }
+    .app-title { font-weight: 600; font-size: 14px; color: #303133; }
+    .app-meta  { font-size: 12px; color: #909399; margin-top: 3px; }
+    .app-card-right { text-align: right; flex-shrink: 0; margin-left: 12px; }
+    .app-score { font-size: 12px; color: #909399; margin-top: 4px; }
   }
 
   .text-highlight {

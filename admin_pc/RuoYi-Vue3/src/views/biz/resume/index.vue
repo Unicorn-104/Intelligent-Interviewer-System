@@ -33,7 +33,7 @@
         <template #default="scope">{{ maskPhone(scope.row.phone) }}</template>
       </el-table-column>
       <el-table-column label="邮箱" align="center" prop="email" :show-overflow-tooltip="true" min-width="180">
-        <template #default="scope">{{ scope.row.email || '-' }}</template>
+        <template #default="scope">{{ scope.row.email ? scope.row.email.replace(/(\w{2})\w*(@.*)/, '$1****$2') : '-' }}</template>
       </el-table-column>
       <el-table-column label="目标岗位" align="center" prop="jobName" :show-overflow-tooltip="true" min-width="150" />
       <el-table-column label="匹配分" align="center" width="90">
@@ -54,6 +54,7 @@
       <el-table-column label="操作" align="center" width="150" fixed="right">
         <template #default="scope">
           <el-button link type="primary" icon="View" @click="handleView(scope.row)">预览</el-button>
+          <el-button link type="success" icon="Download" @click="handleDownload(scope.row)">下载</el-button>
           <el-button link type="danger" icon="Delete" @click="handleDelete(scope.row)">删除</el-button>
         </template>
       </el-table-column>
@@ -74,7 +75,7 @@
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="姓名">{{ resumeDetail.name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="手机号">{{ maskPhone(resumeDetail.phone) }}</el-descriptions-item>
-          <el-descriptions-item label="邮箱">{{ resumeDetail.email || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">{{ resumeDetail.email ? resumeDetail.email.replace(/(\w{2})\w*(@.*)/, '$1****$2') : '-' }}</el-descriptions-item>
           <el-descriptions-item label="目标岗位">{{ resumeDetail.jobName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="上传时间">{{ fmtTime(resumeDetail.uploadTime) }}</el-descriptions-item>
         </el-descriptions>
@@ -238,6 +239,15 @@ function handleView(row) {
       console.error(err)
       proxy.$modal.msgError('加载详情失败')
     })
+}
+
+function handleDownload(row) {
+  const url = row.resumeFile || row.fileUrl
+  if (!url) {
+    proxy.$modal.msgWarning('该简历无附件')
+    return
+  }
+  window.open(url, '_blank')
 }
 
 function handleDelete(row) {

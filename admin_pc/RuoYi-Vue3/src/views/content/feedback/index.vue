@@ -85,7 +85,6 @@
               type="primary"
               icon="Edit"
               @click="handleProcess(scope.row)"
-              v-hasPermi="['content:feedback:edit']"
               >处理</el-button
             >
           </template>

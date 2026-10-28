@@ -27,6 +27,7 @@
       <el-form-item>
         <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
         <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+        <el-button type="warning" icon="Download" @click="handleExport">导出Excel</el-button>
       </el-form-item>
     </el-form>
 
@@ -85,7 +86,7 @@
 
         <el-descriptions :column="2" border size="small" class="detail-desc">
           <el-descriptions-item label="手机号">{{ maskPhone(detail.phonenumber) }}</el-descriptions-item>
-          <el-descriptions-item label="邮箱">{{ detail.email || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">{{ detail.email && detail.email.includes('@') ? detail.email : '-' }}</el-descriptions-item>
           <el-descriptions-item label="当前轮次">第 {{ detail.currentRound ?? 0 }} 轮</el-descriptions-item>
           <el-descriptions-item label="笔试成绩">
             <span v-if="detail.examScore != null">{{ detail.examScore }} 分（{{ detail.examPass === 1 ? '通过' : '未通过' }}）</span>
@@ -270,6 +271,10 @@ function getList() {
 
 function handleQuery() { queryParams.value.pageNum = 1; getList() }
 function resetQuery() { queryParams.value = { pageNum: 1, pageSize: 10, userName: undefined, status: undefined, tags: undefined }; getList() }
+function handleExport() {
+  proxy.$download.name('候选人数据.xlsx')
+  proxy.$download.response('biz/candidate/export', { params: queryParams.value })
+}
 
 function handleSortChange({ prop, order }) {
   if (!order) { getList(); return }

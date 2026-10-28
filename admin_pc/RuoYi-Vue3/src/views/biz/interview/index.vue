@@ -1,6 +1,20 @@
 <template>
   <div class="app-container">
-    <el-table v-loading="loading" :data="interviewList" @selection-change="handleSelectionChange">
+    <div style="margin-bottom:12px;">
+      <el-radio-group v-model="viewMode" size="small">
+        <el-radio-button value="list">列表</el-radio-button>
+        <el-radio-button value="calendar">日历</el-radio-button>
+      </el-radio-group>
+    </div>
+    <el-calendar v-if="viewMode === 'calendar'" v-model="calDate">
+      <template #date-cell="{ data }">
+        <div class="cal-day">{{ data.day.split('-').slice(2) }}</div>
+        <div v-for="item in calEvents[data.day] || []" :key="item.interviewId" class="cal-item">
+          {{ item.candidate }} · {{ item.jobName }}
+        </div>
+      </template>
+    </el-calendar>
+    <el-table v-else v-loading="loading" :data="interviewList" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="50" align="center" />
       <el-table-column label="ID" align="center" prop="interviewId" width="70" />
       <el-table-column label="候选人" align="center" prop="candidate" min-width="120" />
@@ -20,9 +34,11 @@
         </template>
       </el-table-column>
       <el-table-column label="开始时间" align="center" width="160">
-        <template #default="scope">{{ parseTime(scope.row.startTime) || '-' }}</template>
+        <template #default="scope">{{ scope.row.startTime ? parseTime(scope.row.startTime) : '未开始' }}</template>
       </el-table-column>
-      <el-table-column label="已进行时长" align="center" prop="duration" width="100" />
+      <el-table-column label="已进行时长" align="center" width="100">
+        <template #default="{ row }">{{ row.duration || '-' }}</template>
+      </el-table-column>
       <el-table-column label="综合评分" align="center" width="90">
         <template #default="scope">
           <span>{{ formatScore(scope.row.score) }}</span>
@@ -160,6 +176,9 @@ const STATUS_TAG_MAP = { 0: 'info', 1: 'primary', 2: 'success', 3: 'danger' }
 
 const interviewList = ref([])
 const loading = ref(true)
+const viewMode = ref('list')
+const calDate = ref(new Date())
+const calEvents = ref({})
 const showSearch = ref(true)
 const total = ref(0)
 const selectedIds = ref([])
@@ -190,6 +209,15 @@ function getList() {
     .then((response) => {
       interviewList.value = response.rows
       total.value = response.total
+      const map = {}
+      response.rows.forEach((r) => {
+        if (r.startTime) {
+          const day = String(r.startTime).substring(0, 10)
+          if (!map[day]) map[day] = []
+          map[day].push(r)
+        }
+      })
+      calEvents.value = map
     })
     .catch((err) => {
       console.error('面试列表查询失败:', err)
@@ -295,3 +323,8 @@ function formatScore(val) {
 
 getList()
 </script>
+
+<style scoped>
+.cal-day { font-size: 12px; color: #909399; }
+.cal-item { font-size: 11px; background: #ecf5ff; color: #409eff; padding: 1px 4px; margin: 1px 0; border-radius: 2px; }
+</style>

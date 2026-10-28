@@ -15,7 +15,11 @@
       <el-table-column label="ID" prop="msg_id" width="70" />
       <el-table-column label="标题" prop="msg_title" show-overflow-tooltip />
       <el-table-column label="接收人" prop="receiver_name" width="120" />
-      <el-table-column label="手机号" prop="receiver_phone" width="130" />
+      <el-table-column label="手机号" width="130">
+        <template #default="{ row }">
+          {{ row.receiver_phone ? row.receiver_phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : '-' }}
+        </template>
+      </el-table-column>
       <el-table-column label="类型" prop="msg_type" width="90">
         <template #default="s">
           <el-tag size="small" :type="MSG_TYPE[s.row.msg_type]?.type || 'info'">{{ MSG_TYPE[s.row.msg_type]?.label || '未知' }}</el-tag>
@@ -26,7 +30,9 @@
           <el-tag size="small" :type="s.row.msg_is_read===1?'success':'info'">{{ s.row.msg_is_read===1?'已读':'未读' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="发送时间" prop="msg_created_at" width="160" />
+      <el-table-column label="发送时间" width="160">
+        <template #default="{ row }">{{ row.msg_created_at ? String(row.msg_created_at).replace('T',' ').substring(0,19) : '-' }}</template>
+      </el-table-column>
     </el-table>
     <pagination v-show="total>0" :total="total" v-model:page="query.pageNum" v-model:limit="query.pageSize" @pagination="load" />
   </div>
