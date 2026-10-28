@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
+import '../interview/start_interview_invitation.dart';
 import '../jobs/job_detail_page.dart';
 import '../talent/talent_detail_page.dart';
 import '../talent/models/talent_detail_view_data.dart';
@@ -126,11 +127,11 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openInterview(HomeInterview interview) async {
     if (!interview.canStartAt(_source.now)) return;
     if (widget.onStartInterview == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('面试会议功能开发中，会议入口已预留')));
-      return;
+      await startInterviewInvitation(context, interview);
+      if (!mounted) return;
+    } else {
+      await widget.onStartInterview!(interview);
     }
-    await widget.onStartInterview!(interview);
     if (mounted) {
       await Future.wait([
         _load(_interviews, _source.loadInterviews),

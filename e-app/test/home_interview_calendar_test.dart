@@ -138,7 +138,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('未接会议时只提示开发中，不打开详情或演示工作台', (tester) async {
+  testWidgets('未接会议时信息不完整只提示原因，不打开详情或演示工作台', (tester) async {
     final source = CalendarFixture()..clock = DateTime.utc(2030, 1, 2, 2);
     await mount(tester, source);
     final row = tester.widget<HomeInterviewPreview>(
@@ -151,7 +151,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(start);
     await tester.pumpAndSettle();
-    expect(find.text('面试会议功能开发中，会议入口已预留'), findsOneWidget);
+    expect(find.text('面试信息不完整，无法发起面试邀请'), findsOneWidget);
     expect(find.byType(InterviewAppointmentDetailPage), findsNothing);
     expect(
       Navigator.of(tester.element(find.byType(HomeInterviewPreview).first))

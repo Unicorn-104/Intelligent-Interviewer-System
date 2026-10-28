@@ -7,6 +7,7 @@ import '../../../widgets/skeleton_list.dart';
 import '../../../theme/app_theme.dart';
 import '../dashboard/home_models.dart';
 import '../dashboard/widgets/home_interview_preview.dart';
+import '../interview/start_interview_invitation.dart';
 import 'data/job_detail_data_source.dart';
 import 'models/job_detail_view_data.dart';
 import '../talent/widgets/talent_interview_reschedule_sheet.dart';
@@ -237,11 +238,11 @@ class _JobInterviewsPageState extends State<JobInterviewsPage>
   Future<void> _start(HomeInterview interview) async {
     if (!interview.canStartAt(_now)) return;
     if (widget.onStartInterview == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('面试会议功能开发中，会议入口已预留')));
-      return;
+      await startInterviewInvitation(context, interview);
+      if (!mounted) return;
+    } else {
+      await widget.onStartInterview!(interview);
     }
-    await widget.onStartInterview!(interview);
     if (mounted) await _load();
   }
 
