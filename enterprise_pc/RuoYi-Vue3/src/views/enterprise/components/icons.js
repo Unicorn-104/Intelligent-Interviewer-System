@@ -3,6 +3,14 @@ import { defineComponent, h } from 'vue'
 // 图标形状注册表：lucide 风格（viewBox 24、stroke 描边），按业务语义命名
 // 未注册的名称回退为圆圈加号占位
 const shapes = {
+  Bot: [
+    ['path', { d: 'M12 8V4H8' }],
+    ['rect', { width: 16, height: 12, x: 4, y: 8, rx: 2 }],
+    ['path', { d: 'M2 14h2' }],
+    ['path', { d: 'M20 14h2' }],
+    ['path', { d: 'M15 13v2' }],
+    ['path', { d: 'M9 13v2' }]
+  ],
   BriefcaseBusiness: [
     ['path', { d: 'M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16' }],
     ['rect', { width: 20, height: 14, x: 2, y: 6, rx: 2 }]
@@ -480,5 +488,5 @@ export const {
   Save, Search, Send, Settings, Settings2, ShieldCheck, SlidersHorizontal, Smile,
   Smartphone, Sparkles, Tags, Target, Timer, Trash2, Upload, UserRound, UserRoundCheck,
   UserX, Users, UsersRound, Video, Volume2, WandSparkles, X, Zap, GraduationCap,
-  Play, Pause, Eye, Maximize
+  Play, Pause, Eye, Maximize, Bot
 } = icons
