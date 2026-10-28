@@ -9,12 +9,13 @@ import com.ruoyi.common.constant.CacheConstants;
 import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.system.service.SmsGateway;
 
 /**
  * 手机短信验证码服务。
  *
- * <p>当前项目没有接入第三方短信供应商，因此本地开发使用 Redis 保存验证码并输出到后端日志。
- * 生产环境将 mock 开关关闭后，应在此处接入实际短信发送实现。</p>
+ * <p>本地开发使用 Redis 保存验证码并输出到后端日志（mock 模式）。
+ * 关闭 mock 开关后通过 {@link SmsGateway} 发送，未接入供应商时默认实现会抛出配置缺失提示。</p>
  */
 @Component
 public class SmsCodeService
@@ -25,13 +26,15 @@ public class SmsCodeService
     private static final int SEND_COOLDOWN_SECONDS = 60;
 
     private final RedisCache redisCache;
+    private final SmsGateway smsGateway;
 
     @Value("${recruit.sms.mock-enabled:false}")
     private boolean mockEnabled;
 
-    public SmsCodeService(RedisCache redisCache)
+    public SmsCodeService(RedisCache redisCache, SmsGateway smsGateway)
     {
         this.redisCache = redisCache;
+        this.smsGateway = smsGateway;
     }
 
     /**
@@ -43,11 +46,6 @@ public class SmsCodeService
         validateScene(scene);
 
         String normalizedPhone = phone.trim();
-        if (!mockEnabled)
-        {
-            throw new ServiceException("短信服务尚未配置，请联系管理员");
-        }
-
         String codeKey = getCodeKey(normalizedPhone, scene);
         String cooldownKey = getCooldownKey(normalizedPhone, scene);
         if (Boolean.TRUE.equals(redisCache.hasKey(cooldownKey)))
@@ -56,11 +54,19 @@ public class SmsCodeService
         }
 
         String code = String.format("%06d", RANDOM.nextInt(1_000_000));
+        if (!mockEnabled)
+        {
+            smsGateway.send(normalizedPhone, "【智能招聘】您的验证码是 " + code + "，5 分钟内有效，请勿泄露。");
+        }
         redisCache.setCacheObject(codeKey, code, CODE_EXPIRATION_SECONDS, TimeUnit.SECONDS);
         redisCache.setCacheObject(cooldownKey, "1", SEND_COOLDOWN_SECONDS, TimeUnit.SECONDS);
 
-        System.out.println("[SMS MOCK] scene=" + scene + ", phone=" + normalizedPhone + ", code=" + code);
-        return code;
+        if (mockEnabled)
+        {
+            System.out.println("[SMS MOCK] scene=" + scene + ", phone=" + normalizedPhone + ", code=" + code);
+            return code;
+        }
+        return null;
     }
 
     /**
