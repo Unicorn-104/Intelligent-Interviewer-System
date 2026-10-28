@@ -1,6 +1,6 @@
 import 'dart:io';
 
-/// 将私有 CA 限定到后端的 HTTPS 主机和端口，不改变系统信任库。
+/// 将私有 CA 限定到后端的 HTTPS 主机（任意端口），不改变系统信任库。
 class BackendHttpOverrides extends HttpOverrides {
   BackendHttpOverrides({required Uri origin, required List<int> certificate})
     : _origin = origin,
@@ -37,10 +37,11 @@ class BackendHttpClient implements HttpClient {
   final HttpClient _system;
   final HttpClient _backend;
 
+  // 信任边界保持「同一主机 + TLS」：LiveKit 入会地址（如 wss://同主机:8444/livekit）
+  // 与 API 端口不同，但同一服务器上的站点均由同一宝塔私有 CA 签发；
+  // 不覆盖其他主机、明文 HTTP/WS 或用户信息伪装。
   bool _isBackend(Uri uri) =>
-      uri.scheme == 'https' &&
-      uri.host == origin.host &&
-      uri.port == origin.port;
+      (uri.scheme == 'https' || uri.scheme == 'wss') && uri.host == origin.host;
 
   @override
   Future<HttpClientRequest> openUrl(String method, Uri url) async {
