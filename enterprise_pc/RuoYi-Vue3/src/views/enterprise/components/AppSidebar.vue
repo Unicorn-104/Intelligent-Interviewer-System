@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { markRaw, reactive, ref, watch } from 'vue'
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound, Video, ChevronDown, FileText } from '@/views/enterprise/components/icons'
@@ -10,14 +10,14 @@ const route = useRoute()
 onMounted(refreshUnread)
 // 分组导航：父项点击跳转主页面并展开子项（单开手风琴），子项点击直达对应页面
 const menus = reactive([
-  { label: '招聘总览', to: '/enterprise/dashboard', icon: LayoutDashboard, match: ['EnterpriseDashboard', 'EnterpriseRootDashboard'] },
-  { label: '岗位管理', to: '/enterprise/jobs', icon: BriefcaseBusiness,
+  { label: '招聘总览', to: '/enterprise/dashboard', icon: markRaw(LayoutDashboard), match: ['EnterpriseDashboard', 'EnterpriseRootDashboard'] },
+  { label: '岗位管理', to: '/enterprise/jobs', icon: markRaw(BriefcaseBusiness),
     match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig', 'EnterpriseJobImport'],
     children: [
       { label: '岗位列表', to: '/enterprise/jobs', match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] },
       { label: '岗位导入与草稿', to: '/enterprise/jobs/import', match: ['EnterpriseJobImport'] }
     ] },
-  { label: '候选人与初筛', to: '/enterprise/candidates', icon: UsersRound,
+  { label: '候选人与初筛', to: '/enterprise/candidates', icon: markRaw(UsersRound),
     match: ['EnterpriseCandidates', 'EnterpriseCandidateUnscreened', 'EnterpriseCandidateProcess', 'EnterpriseScreening', 'EnterpriseTalent', 'EnterpriseSurvey'],
     children: [
       { label: '候选人列表', to: '/enterprise/candidates', match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
@@ -26,22 +26,22 @@ const menus = reactive([
       { label: '人才库', to: '/enterprise/talent', match: ['EnterpriseTalent'] },
       { label: '满意度调研', to: '/enterprise/survey', match: ['EnterpriseSurvey'] }
     ] },
-  { label: '面试与笔试', to: '/enterprise/interviews', icon: CalendarDays,
+  { label: '面试与笔试', to: '/enterprise/interviews', icon: markRaw(CalendarDays),
     match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation', 'EnterpriseExam', 'EnterpriseExamProctor', 'EnterpriseExamProctorRoom'],
     children: [
       { label: '面试安排', to: '/enterprise/interviews', match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation'] },
       { label: '笔试管理', to: '/enterprise/exam', match: ['EnterpriseExam'] },
       { label: '监考监控', to: '/enterprise/exam/proctor', match: ['EnterpriseExamProctor', 'EnterpriseExamProctorRoom'] }
     ] },
-  { label: 'Offer 管理', to: '/enterprise/offer', icon: FileText, match: ['EnterpriseOffer'] },
-  { label: '视频会议', to: '/enterprise/conference/active', icon: Video,
+  { label: 'Offer 管理', to: '/enterprise/offer', icon: markRaw(FileText), match: ['EnterpriseOffer'] },
+  { label: '视频会议', to: '/enterprise/conference/active', icon: markRaw(Video),
     match: ['EnterpriseConferenceActive', 'EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'],
     children: [
       { label: '正在进行的面试', to: '/enterprise/conference/active', match: ['EnterpriseConferenceActive'] },
       { label: '录制回放', to: '/enterprise/conference/records', match: ['EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'] }
     ] },
-  { label: '消息中心', to: '/enterprise/messages', icon: MessageCircle, match: ['EnterpriseMessages'], badge: totalUnread },
-  { label: '系统设置', to: '/enterprise/settings', icon: Settings,
+  { label: '消息中心', to: '/enterprise/messages', icon: markRaw(MessageCircle), match: ['EnterpriseMessages'], badge: totalUnread },
+  { label: '系统设置', to: '/enterprise/settings', icon: markRaw(Settings),
     match: ['EnterpriseSettings', 'EnterpriseProfile'],
     children: [
       { label: '系统设置', to: '/enterprise/settings', match: ['EnterpriseSettings'] },

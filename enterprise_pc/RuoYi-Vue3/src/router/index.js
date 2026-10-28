@@ -211,6 +211,12 @@ export const constantRoutes = [
         meta: { title: '消息中心' }
       },
       {
+        path: 'assistant',
+        component: () => import('@/views/enterprise/assistant/index.vue'),
+        name: 'EnterpriseAssistant',
+        meta: { title: 'AI助手' }
+      },
+      {
         path: 'profile',
         component: () => import('@/views/enterprise/profile/index.vue'),
         name: 'EnterpriseProfile',

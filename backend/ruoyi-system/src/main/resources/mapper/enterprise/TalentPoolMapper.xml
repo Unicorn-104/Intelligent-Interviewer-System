@@ -15,7 +15,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                     when t.tal_status = 3 then 4
                     when t.tal_archive_source = 3 then 3
                     else 0 end as archiveSource,
-               u.nick_name as name, u.phonenumber as phone, u.email as email,
+               u.user_id as userId, u.nick_name as name, u.phonenumber as phone, u.email as email,
                r.rbs_job_direction as jobDirection,
                (select group_concat(tg_name separator ',') from t_tal_tag where tg_candidate_id = t.tal_id) as tags
         from t_tal t
@@ -70,7 +70,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                     when t.tal_status = 3 then 4
                     when t.tal_archive_source = 3 then 3
                     else 0 end as archiveSource,
-               u.nick_name as name, u.phonenumber as phone, u.email as email,
+               u.user_id as userId, u.nick_name as name, u.phonenumber as phone, u.email as email,
                r.rbs_job_direction as jobDirection, 2 as searchFilterVersion,
                education.highestEducation as highestEducation, experience.workMonths as workMonths,
                nullif(trim(u.current_city), '') as currentCity, nullif(trim(u.target_city), '') as targetCity,
@@ -187,7 +187,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         join t_tal t on t.tal_id = a.app_candidate_id
         where p.pos_company_id = #{companyId}
           and a.app_status = 0
-          and t.tal_matched_score is null
         group by p.pos_id, p.pos_title, p.pos_work_city
         order by pendingCount desc, p.pos_id desc
     </select>
@@ -200,7 +199,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         join t_tal t on t.tal_id = a.app_candidate_id
         where p.pos_company_id = #{companyId}
           and a.app_status = 0
-          and t.tal_matched_score is null
     </select>
 
     <!-- 待初筛投递人选：按岗位与关键词检索，分页由服务层 startPage 控制 -->
@@ -217,7 +215,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join t_res_base r on r.rbs_id = a.app_resume_id
         where p.pos_company_id = #{companyId}
           and a.app_status = 0
-          and t.tal_matched_score is null
         <if test="positionId != null">
             and a.app_position_id = #{positionId}
         </if>
