@@ -38,6 +38,15 @@ app:
       expire-seconds: 300
       vad-silence-time: 1000
 
+# 视频会议：需要单独部署 LiveKit Server（企业端/候选人端入会令牌与录制推流）。
+# url 为客户端直连的 WebSocket 地址；egress-url 为 LiveKit Egress 服务地址，用于录制落库。
+livekit:
+  api-key: ""
+  api-secret: ""
+  url: ws://localhost:7880
+  token-ttl-seconds: 7200
+  egress-url: http://localhost:8089
+
 # 避免 MyBatis DEBUG 日志输出个人记忆、证据和对话原文。
 logging:
   level:
