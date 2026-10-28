@@ -52,7 +52,7 @@ class DiscoveryPool {
     (i) => <String, dynamic>{
       'talentId': i + 11,
       'name': '合成候选人${i + 11}',
-      'status': 1,
+      'status': 2,
       'tags': 'Java',
       'jobDirection': '合成Java方向',
       'archiveSource': 3,
@@ -152,7 +152,7 @@ void main() {
     await tap(tester, 'talent-filter-open');
     await tap(tester, 'talent-filter-direction-合成Java方向');
     await tap(tester, 'talent-filter-category-1');
-    await tap(tester, 'talent-filter-status-1');
+    await tap(tester, 'talent-filter-status-2');
     expect(find.text('候选人标签'), findsNothing);
     expect(find.text('归档来源'), findsNothing);
     expect(pool.calls, hasLength(1));
@@ -162,7 +162,7 @@ void main() {
       'tag': null,
       'direction': '合成Java方向',
       'archiveSource': null,
-      'status': 1,
+      'status': 2,
       'pageNum': 1,
       'pageSize': 20,
     });

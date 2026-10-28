@@ -54,6 +54,10 @@
         where r.rbs_id = #{resumeId} and r.rbs_user_id = #{userId} and r.rbs_status = 1
         for update
     </select>
+    <select id="selectResumeById" resultMap="ResumeResult">
+        <include refid="resumeColumns" />
+        where r.rbs_id = #{resumeId} and r.rbs_status = 1
+    </select>
 
     <select id="selectEducations" resultType="com.ruoyi.system.domain.app.AppResume$Education">
         select edu_id as educationId, edu_school as school, edu_major as major, edu_degree as degree,

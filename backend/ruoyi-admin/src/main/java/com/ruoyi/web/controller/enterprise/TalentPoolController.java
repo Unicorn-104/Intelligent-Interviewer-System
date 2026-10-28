@@ -1,9 +1,16 @@
 package com.ruoyi.web.controller.enterprise;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import com.ruoyi.enterprise.domain.TalentSearchCriteria;
@@ -19,6 +26,7 @@ import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.enterprise.service.ITalentPoolService;
+import com.ruoyi.system.domain.app.AppResumePdfDocument;
 
 /**
  * 企业端 - 人才库
@@ -203,5 +211,21 @@ public class TalentPoolController extends BaseController
     public AjaxResult resume(@PathVariable("talId") Long talId)
     {
         return success(talentPoolService.getTalentResume(getUserId(), talId));
+    }
+
+    /**
+     * 查看候选人原始简历 PDF（校验候选人归属本企业后内联预览，仅 Bearer 鉴权可访问）
+     */
+    @GetMapping("/{talId}/resume/pdf")
+    public ResponseEntity<Resource> resumePdf(@PathVariable("talId") Long talId)
+    {
+        AppResumePdfDocument document = talentPoolService.getTalentResumePdf(getUserId(), talId);
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(document.name() == null ? "resume.pdf" : document.name(),
+                                StandardCharsets.UTF_8).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(new FileSystemResource(document.path()));
     }
 }

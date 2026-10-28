@@ -153,6 +153,85 @@ class EnterpriseApiClient {
     return ApiException(message, code: code, statusCode: status);
   }
 
+  /// 下载鉴权二进制资源（如候选人原始简历 PDF）。
+  ///
+  /// 与 JSON 请求一样注入 Bearer Token；校验 PDF 文件头与 10MB 上限，
+  /// 后端错误信封（RuoYi AjaxResult）按 msg 解析为友好提示。
+  Future<Uint8List> getBytes(
+    String path, {
+    Duration receiveTimeout = const Duration(seconds: 60),
+    int maxBytes = 10 * 1024 * 1024,
+  }) async {
+    final token = await _readToken();
+    try {
+      final response = await _dio.get<List<int>>(
+        path,
+        options: Options(
+          responseType: ResponseType.bytes,
+          followRedirects: false,
+          receiveTimeout: receiveTimeout,
+          headers: {
+            HttpHeaders.acceptHeader: 'application/pdf',
+            if (token != null && token.isNotEmpty)
+              HttpHeaders.authorizationHeader: 'Bearer $token',
+          },
+        ),
+      );
+      final status = response.statusCode ?? 0;
+      final data = response.data;
+      if (status < 200 || status >= 300 || data == null) {
+        throw ApiException(
+          _bytesErrorMessage(data) ?? '原始简历下载失败，请稍后重试',
+          statusCode: status,
+        );
+      }
+      if (data.length > maxBytes) {
+        throw const ApiException('原始简历超过 10MB，暂不支持预览');
+      }
+      final bytes = Uint8List.fromList(data);
+      if (!_looksLikePdf(bytes)) {
+        throw ApiException(
+          _bytesErrorMessage(data) ?? '响应不是有效的 PDF 文件',
+          statusCode: status,
+        );
+      }
+      return bytes;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw ApiException('登录已过期或令牌无效，请重新登录（401）', code: 401, statusCode: 401);
+      }
+      throw ApiException(
+        '网络异常：${e.message ?? '请检查后端服务与网络连接'}',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  String? _bytesErrorMessage(List<int>? data) {
+    if (data == null || data.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(utf8.decode(data, allowMalformed: true));
+      if (decoded is Map) {
+        final msg = decoded['msg'];
+        if (msg is String && msg.trim().isNotEmpty) return msg;
+        if (int.tryParse('${decoded['code']}') == 401) {
+          return '登录已过期或令牌无效，请重新登录（401）';
+        }
+      }
+    } catch (_) {
+      // 非 JSON 错误体走默认文案
+    }
+    return null;
+  }
+
+  bool _looksLikePdf(Uint8List bytes) =>
+      bytes.length >= 5 &&
+      bytes[0] == 0x25 && // %
+      bytes[1] == 0x50 && // P
+      bytes[2] == 0x44 && // D
+      bytes[3] == 0x46 && // F
+      bytes[4] == 0x2D; // -
+
   /// 读取登录令牌：SecureStorage 优先，联调兜底令牌次之
   Future<String?> _readToken() async {
     try {

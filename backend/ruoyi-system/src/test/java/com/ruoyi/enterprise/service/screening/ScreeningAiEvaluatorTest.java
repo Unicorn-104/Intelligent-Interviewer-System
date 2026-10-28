@@ -102,6 +102,29 @@ class ScreeningAiEvaluatorTest
         assertEquals("2023-06-01", request.getValue().headers().firstValue("anthropic-version").orElseThrow());
     }
 
+    @Test void proseWrappedJsonIsAccepted() throws Exception
+    {
+        String wrapped = "以下是分析结果：\n```json\n" + json.writeValueAsString(valid()) + "\n```\n以上结果仅供参考。";
+        assertEquals(35.0, evaluator.decode(wrapped, candidates).get(0).get("totalScore"));
+        String prose = "分析完成。" + json.writeValueAsString(valid()) + " 完毕。";
+        assertEquals(35.0, evaluator.decode(prose, candidates).get(0).get("totalScore"));
+    }
+
+    @Test void excessEvidenceIsTruncatedInsteadOfRejected() throws Exception
+    {
+        var raw = valid();
+        var skill = (ObjectNode) raw.path("results").get(0).path("dimensions").path("skillMatch");
+        var quotes = skill.putArray("evidence");
+        for (int i = 0; i < 13; i++) quotes.add("Java工程开发");
+        var result = evaluator.decode(raw.toString(), candidates).get(0);
+        assertEquals(35.0, result.get("totalScore"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> dimensions = (Map<String, Object>) result.get("dimensions");
+        @SuppressWarnings("unchecked")
+        List<String> kept = (List<String>) ((Map<String, Object>) dimensions.get("skillMatch")).get("evidence");
+        assertEquals(8, kept.size());
+    }
+
     @Test void unknownCandidateCannotReceiveAnotherCandidatesScore() throws Exception
     {
         var raw = valid(); ((ObjectNode)raw.path("results").get(0)).put("candidateId", 99);

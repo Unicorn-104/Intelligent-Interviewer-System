@@ -218,7 +218,7 @@ void main() {
     expect(statusBadge, findsOneWidget);
     final statusLabel = find.descendant(
       of: statusBadge,
-      matching: find.text('面试中'),
+      matching: find.text('待面试'),
     );
     final statusIcon = find.descendant(
       of: statusBadge,

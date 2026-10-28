@@ -66,6 +66,12 @@ public interface ITalentPoolService
     public Map<String, Object> getTalentResume(Long userId, Long talId);
 
     /**
+     * 查看候选人原始简历 PDF：校验候选人归属本企业、简历归属候选人且已保存附件后，
+     * 返回授权文件路径与原始文件名；无附件或未关联时抛出业务提示。
+     */
+    public com.ruoyi.system.domain.app.AppResumePdfDocument getTalentResumePdf(Long userId, Long talId);
+
+    /**
      * 待初筛岗位：各岗位下尚未经过 AI 初筛的投递数量
      */
     public Map<String, Object> getUnscreenedPositions(Long userId);

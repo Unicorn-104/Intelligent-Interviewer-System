@@ -27,14 +27,23 @@ Future<Map<String, dynamic>> getSessionContext(int sessionId) async {
 
 /// UC-10 步骤5-6：设备与环境检测（摄像头/麦克风/网络，绿黄红灯报告）。
 /// 已对接：POST /system/conference/session/{sessionId}/environment-check
-Future<void> checkEnvironment(int sessionId, Map<String, Object?> report) async {
-  await _client.post('/system/conference/session/$sessionId/environment-check', body: report);
+Future<void> checkEnvironment(
+  int sessionId,
+  Map<String, Object?> report,
+) async {
+  await _client.post(
+    '/system/conference/session/$sessionId/environment-check',
+    body: report,
+  );
 }
 
 /// UC-10 步骤8：面试须知确认。
 /// 已对接：POST /system/conference/session/{sessionId}/consent
 Future<void> confirmConsent(int sessionId, Map<String, Object?> payload) async {
-  await _client.post('/system/conference/session/$sessionId/consent', body: payload);
+  await _client.post(
+    '/system/conference/session/$sessionId/consent',
+    body: payload,
+  );
 }
 
 /// UC-10 步骤9：开始面试（会话状态转"已就绪"）。
@@ -43,17 +52,51 @@ Future<void> startSession(int sessionId) async {
   await _client.post('/system/conference/session/$sessionId/start');
 }
 
+/// HR 发起视频面试：生成会议场次与候选人会议链接（与 PC 端一致）。
+/// 已对接：POST /system/conference/link
+///
+/// 后端每次发起都会新建场次并签发新的随机链接，同时取消该候选人旧的
+/// 待面试预约与未结束场次；发起后候选人流程状态自动推进为「面试中」。
+/// 面试方式 mode 与面试官人数严格联动：1-纯AI（0人）、2-AI+单面试官（1人）、
+/// 3-AI+多面试官（≥2人）、4-无AI纯人工（≥1人）。
+Future<Map<String, dynamic>> createRoomLink({
+  required int peerUserId,
+  required int positionId,
+  int? stageId,
+  int? durationMinutes,
+  int? mode,
+  List<int>? interviewerIds,
+}) async {
+  final response = await _client.post(
+    '/system/conference/link',
+    body: {
+      'peerUserId': peerUserId,
+      'positionId': positionId,
+      'stageId': stageId,
+      'durationMinutes': durationMinutes,
+      'mode': mode,
+      'interviewerIds': interviewerIds,
+    },
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
 /// UC-12：面试进度（AI 面试进行状态）。
 /// 已对接：GET /system/conference/session/{sessionId}/progress
 Future<Map<String, dynamic>> getSessionProgress(int sessionId) async {
-  final response = await _client.get('/system/conference/session/$sessionId/progress');
+  final response = await _client.get(
+    '/system/conference/session/$sessionId/progress',
+  );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
 /// UC-12 A3：候选人作答上报。
 /// 已对接：POST /system/conference/session/{sessionId}/answers
 Future<void> submitAnswer(int sessionId, Map<String, Object?> payload) async {
-  await _client.post('/system/conference/session/$sessionId/answers', body: payload);
+  await _client.post(
+    '/system/conference/session/$sessionId/answers',
+    body: payload,
+  );
 }
 
 /// UC-12：会话心跳保活。
@@ -111,14 +154,26 @@ Future<void> handleCopilotSuggestion(
 
 /// UC-14：人工接管会话。
 /// 已对接：POST /system/conference/session/{sessionId}/takeover
-Future<void> takeOverSession(int sessionId, Map<String, Object?> payload) async {
-  await _client.post('/system/conference/session/$sessionId/takeover', body: payload);
+Future<void> takeOverSession(
+  int sessionId,
+  Map<String, Object?> payload,
+) async {
+  await _client.post(
+    '/system/conference/session/$sessionId/takeover',
+    body: payload,
+  );
 }
 
 /// UC-12：正常结束面试。
 /// 已对接：POST /system/conference/session/{sessionId}/finish
-Future<void> finishSession(int sessionId, {Map<String, Object?>? payload}) async {
-  await _client.post('/system/conference/session/$sessionId/finish', body: payload);
+Future<void> finishSession(
+  int sessionId, {
+  Map<String, Object?>? payload,
+}) async {
+  await _client.post(
+    '/system/conference/session/$sessionId/finish',
+    body: payload,
+  );
 }
 
 /// UC-12 E1：异常终止面试（强制中断兜底）。
@@ -130,7 +185,9 @@ Future<void> abortSession(int sessionId) async {
 /// UC-12 步骤5-7：面试结果（五维评分卡 + 结构化评语）。
 /// 已对接：GET /system/conference/session/{sessionId}/result
 Future<Map<String, dynamic>> getSessionResult(int sessionId) async {
-  final response = await _client.get('/system/conference/session/$sessionId/result');
+  final response = await _client.get(
+    '/system/conference/session/$sessionId/result',
+  );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
@@ -144,7 +201,12 @@ Future<List<Map<String, dynamic>>> listRecordings({
 }) async {
   final response = await _client.get(
     '/system/conference/recordings',
-    query: {'sessionId': sessionId, 'candidate': candidate, 'from': from, 'to': to},
+    query: {
+      'sessionId': sessionId,
+      'candidate': candidate,
+      'from': from,
+      'to': to,
+    },
   );
   return (response['data'] as List?)
           ?.map((item) => Map<String, dynamic>.from(item as Map))
@@ -155,14 +217,22 @@ Future<List<Map<String, dynamic>>> listRecordings({
 /// UC-12：面试回放。
 /// 已对接：GET /system/conference/recordings/{sessionId}
 Future<Map<String, dynamic>> getRecordingPlayback(int sessionId) async {
-  final response = await _client.get('/system/conference/recordings/$sessionId');
+  final response = await _client.get(
+    '/system/conference/recordings/$sessionId',
+  );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
 /// UC-12：录制回放访问授权。
 /// 已对接：POST /system/conference/recordings/{sessionId}/access
-Future<void> requestRecordingAccess(int sessionId, Map<String, Object?> payload) async {
-  await _client.post('/system/conference/recordings/$sessionId/access', body: payload);
+Future<void> requestRecordingAccess(
+  int sessionId,
+  Map<String, Object?> payload,
+) async {
+  await _client.post(
+    '/system/conference/recordings/$sessionId/access',
+    body: payload,
+  );
 }
 
 /// UC-12：录制下载码申请。
@@ -173,8 +243,14 @@ Future<void> requestRecordingDownloadCode(int sessionId) async {
 
 /// UC-12：录制下载。
 /// 已对接：POST /system/conference/recordings/{sessionId}/download
-Future<void> downloadRecording(int sessionId, Map<String, Object?> payload) async {
-  await _client.post('/system/conference/recordings/$sessionId/download', body: payload);
+Future<void> downloadRecording(
+  int sessionId,
+  Map<String, Object?> payload,
+) async {
+  await _client.post(
+    '/system/conference/recordings/$sessionId/download',
+    body: payload,
+  );
 }
 
 /// UC-12：录制存储策略查看。

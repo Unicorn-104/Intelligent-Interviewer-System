@@ -132,8 +132,22 @@ public class ScreeningAiEvaluator
 
     List<Map<String, Object>> decode(String content, List<Map<String, Object>> candidates) throws IOException
     {
+        // Providers occasionally wrap the JSON payload in prose or markdown fences;
+        // extract the object body instead of requiring the whole content to be JSON.
         String text = content.trim();
-        if (text.startsWith("```")) text = text.replaceFirst("^```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
+        int fence = text.indexOf("```");
+        if (fence >= 0)
+        {
+            int start = text.indexOf('\n', fence + 3);
+            int end = text.lastIndexOf("```");
+            if (start > 0 && end > start) text = text.substring(start + 1, end).trim();
+        }
+        else
+        {
+            int start = text.indexOf('{');
+            int end = text.lastIndexOf('}');
+            if (start >= 0 && end > start) text = text.substring(start, end + 1);
+        }
         JsonNode root = json.readTree(text);
         if (root == null || !root.path("results").isArray() || root.path("results").size() != candidates.size()) throw invalid();
         Map<Long, Map<String, Object>> expected = new LinkedHashMap<>();
@@ -142,10 +156,10 @@ public class ScreeningAiEvaluator
         for (JsonNode item : root.path("results"))
         {
             JsonNode idNode = item.path("candidateId");
-            if (!idNode.isIntegralNumber() || !idNode.canConvertToLong()) throw invalid();
+            if (!idNode.isIntegralNumber() || !idNode.canConvertToLong()) throw invalid("candidateId缺失或非法");
             long id = idNode.longValue();
             Map<String, Object> evidence = expected.remove(id);
-            if (evidence == null) throw invalid();
+            if (evidence == null) throw invalid("candidateId与请求不一致: " + id);
             StringBuilder searchable = new StringBuilder();
             collectText(evidence, searchable);
             Map<String, Object> result = new LinkedHashMap<>();
@@ -161,7 +175,7 @@ public class ScreeningAiEvaluator
             for (Map.Entry<String, Integer> entry : WEIGHTS.entrySet())
             {
                 JsonNode dimension = rawDimensions.path(entry.getKey());
-                if (!dimension.isObject() || !dimension.has("score")) throw invalid();
+                if (!dimension.isObject() || !dimension.has("score")) throw invalid("缺少维度" + entry.getKey());
                 JsonNode score = dimension.get("score");
                 // Missing resume evidence is explicitly represented as zero, never omitted or
                 // renormalized away from the fixed six-dimension rubric.
@@ -173,16 +187,22 @@ public class ScreeningAiEvaluator
                 {
                     for (JsonNode quote : rawEvidence)
                     {
-                        if (!quote.isTextual()) throw invalid();
+                        if (!quote.isTextual()) throw invalid("维度" + entry.getKey() + "证据非字符串");
                         quotes.add(quote.asText().trim());
                     }
                 }
+                // Providers may exceed the requested 1-8 quotes; keep the leading ones instead of
+                // discarding an otherwise valid evaluation.
+                if (quotes.size() > 8) quotes = new ArrayList<>(quotes.subList(0, 8));
                 if (!score.isNull())
                 {
-                    if (!score.isNumber() || !Double.isFinite(score.doubleValue()) || score.doubleValue() < 0 || score.doubleValue() > 100
-                            || quotes.size() > 8 || (quotes.isEmpty() && score.doubleValue() != 0.0)) throw invalid();
+                    if (!score.isNumber() || !Double.isFinite(score.doubleValue()) || score.doubleValue() < 0 || score.doubleValue() > 100)
+                        throw invalid("维度" + entry.getKey() + "分数非法: " + score.asText("<null>"));
+                    if (quotes.isEmpty() && score.doubleValue() != 0.0) throw invalid("维度" + entry.getKey() + "有分数但无证据");
                     for (String quote : quotes)
-                        if (quote.length() < 2 || quote.length() > 120 || searchable.indexOf(quote) < 0) throw invalid();
+                        if (quote.length() < 2 || quote.length() > 120 || searchable.indexOf(quote) < 0)
+                            throw invalid("维度" + entry.getKey() + "证据长度" + quote.length()
+                                    + (searchable.indexOf(quote) < 0 ? "且非简历原文" : "") + "不合法");
                     value = Math.round(score.doubleValue() * 10.0) / 10.0;
                 }
                 weighted += value * entry.getValue();
@@ -195,7 +215,7 @@ public class ScreeningAiEvaluator
                 result.put(entry.getKey(), value);
             }
             String reason = item.path("recommendation").isTextual() ? item.path("recommendation").asText().trim() : "";
-            if (reason.length() < 10 || reason.length() > 320) throw invalid();
+            if (reason.length() < 10 || reason.length() > 320) throw invalid("推荐理由长度不合法: " + reason.length());
             result.put("dimensions", dimensions);
             result.put("totalScore", Math.round(weighted / 100.0 * 10.0) / 10.0);
             result.put("evidenceCoverage", covered);
@@ -203,7 +223,7 @@ public class ScreeningAiEvaluator
             result.put("sourceWarnings", evidence.getOrDefault("sourceWarnings", List.of()));
             results.add(result);
         }
-        if (!expected.isEmpty()) throw invalid();
+        if (!expected.isEmpty()) throw invalid("结果数量与求职者不一致");
         return results;
     }
 
@@ -233,5 +253,7 @@ public class ScreeningAiEvaluator
         catch (IllegalArgumentException error) { throw new ServiceException("AI筛选模型地址配置错误，请检查后端HTTPS Messages地址"); }
     }
 
-    private ServiceException invalid() { return new ServiceException("AI筛选响应缺少有效评分、证据或推荐理由，原有结果未变更"); }
+    private ServiceException invalid() { return invalid("结构不完整"); }
+
+    private ServiceException invalid(String detail) { return new ServiceException("AI筛选响应缺少有效评分、证据或推荐理由（" + detail + "），原有结果未变更"); }
 }

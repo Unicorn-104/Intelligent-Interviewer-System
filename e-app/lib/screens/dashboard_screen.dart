@@ -78,9 +78,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _FunnelRow('简历投递', funnel['applied'], AppColors.interactive),
-                  _FunnelRow('初筛通过', funnel['screened'], AppColors.purple),
-                  _FunnelRow('面试中', funnel['interviewing'], AppColors.orange),
+                  _FunnelRow('已投递', funnel['applied'], AppColors.interactive),
+                  _FunnelRow('待面试', funnel['pendingInterview'], AppColors.purple),
+                  _FunnelRow('已淘汰', funnel['rejected'], AppColors.orange),
                   _FunnelRow('已录用', funnel['hired'], AppColors.green),
                   const Divider(),
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('录用转化率'), Text('${funnel['conversion'] ?? 0}%', style: const TextStyle(color: AppColors.interactive, fontWeight: FontWeight.w600))]),

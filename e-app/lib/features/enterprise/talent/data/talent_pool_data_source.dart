@@ -183,7 +183,7 @@ class TalentPoolDataSource {
         _loader != null &&
         (status != null || direction != null || archiveSource != null);
     if (pageNum < 1 ||
-        (status != null && (status < 0 || status > 9)) ||
+        (status != null && !const [0, 2, 3, 4].contains(status)) ||
         (archiveSource != null && (archiveSource < 0 || archiveSource > 4)) ||
         (localFilter && pageNum != 1)) {
       throw const FormatException('候选人筛选参数不正确');

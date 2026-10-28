@@ -283,7 +283,7 @@ class _TalentFilterSheetState extends State<TalentFilterSheet> {
                             for (final status
                                 in widget.discovery
                                     ? TalentPoolFilters.seekingStatusLabels.keys
-                                    : List.generate(10, (i) => i))
+                                    : const [0, 2, 3, 4])
                               _option(
                                 widget.discovery
                                     ? TalentPoolFilters

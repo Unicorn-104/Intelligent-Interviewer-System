@@ -302,8 +302,8 @@ public class ScreeningServiceImpl implements IScreeningService
             double skillScore = computeOverlapScore(requiredSkills, candidateSkills);
             if (skillScore <= 0)
             {
-                // UC-04：无任何必备技能重合，判定初筛淘汰
-                screeningMapper.updateApplicationScreened(applicationId, 0D, 2);
+                // UC-04：无任何必备技能重合，判定初筛淘汰（四态：3-已淘汰）
+                screeningMapper.updateApplicationScreened(applicationId, 0D, 3);
                 rejectedCount++;
                 continue;
             }
@@ -313,7 +313,7 @@ public class ScreeningServiceImpl implements IScreeningService
                     + BASE_SEMANTIC_SCORE * INDUSTRY_WEIGHT;
             double score = round(total);
             screeningMapper.updateMatchedScore(talId, score);
-            screeningMapper.updateApplicationScreened(applicationId, score, 1);
+            screeningMapper.updateApplicationScreened(applicationId, score, 2);
             passedCount++;
         }
         Map<String, Object> summary = new LinkedHashMap<>();
@@ -482,8 +482,8 @@ public class ScreeningServiceImpl implements IScreeningService
                 screeningMapper.updateMatchedScore(resultId, rounded);
                 result.put("adjustScore", rounded);
             }
-            if (screeningMapper.updateTalStatus(resultId, 1) == 0) throw new ServiceException("候选人不存在");
-            result.put("message", "已确认通过，候选人状态推进为初筛通过，等待流入面试邀约");
+            if (screeningMapper.updateTalStatus(resultId, 2) == 0) throw new ServiceException("候选人不存在");
+            result.put("message", "已确认通过，候选人状态推进为待面试，等待流入面试邀约");
         }
         else result.put("message", "已驳回，候选人保持在人才库待观察");
         return result;

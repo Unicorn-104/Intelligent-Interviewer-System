@@ -33,11 +33,11 @@ class TalentSearchServiceTest
     {
         var criteria = new TalentSearchCriteria(); criteria.setMinimumEducation(3); criteria.setExperienceRange("3to5");
         criteria.setCity(" 合成城市 "); criteria.setCityType("target"); criteria.setLoginWithinDays(7);
-        when(mapper.selectFilteredTalentList(eq(2L), eq("姓名"), eq("Java"), eq("后端"), eq(3), eq(1), same(criteria)))
+        when(mapper.selectFilteredTalentList(eq(2L), eq("姓名"), eq("Java"), eq("后端"), eq(3), eq(2), same(criteria)))
             .thenAnswer(call -> { assertEquals(4, PageHelper.getLocalPage().getPageNum());
                 assertEquals(20, PageHelper.getLocalPage().getPageSize()); return List.of(Map.of("talentId", 11)); });
         PageHelper.startPage(99, 1);
-        var rows = service.listTalents(9L, "姓名", "Java", "后端", 3, 1, 4, 20, criteria);
+        var rows = service.listTalents(9L, "姓名", "Java", "后端", 3, 2, 4, 20, criteria);
         assertEquals(1, rows.size()); assertEquals("合成城市", criteria.getCity());
         assertEquals(36, criteria.getMinimumWorkMonths()); assertEquals(60, criteria.getMaximumWorkMonths());
         assertEquals(criteria.getReferenceTime().minusDays(7), criteria.getLoginSince());
@@ -63,7 +63,7 @@ class TalentSearchServiceTest
         bad.setCity(null); bad.setLoginWithinDays(999);
         assertThrows(ServiceException.class, () -> service.listTalents(9L,null,null,null,null,null,1,20,bad));
         assertThrows(ServiceException.class, () -> service.listTalents(9L,null,null,null,null,null,0,20,new TalentSearchCriteria()));
-        assertThrows(ServiceException.class, () -> service.listTalents(9L,null,null,null,null,null,1,101,new TalentSearchCriteria()));
+        assertThrows(ServiceException.class, () -> service.listTalents(9L,null,null,null,null,null,2,101,new TalentSearchCriteria()));
         verifyNoInteractions(mapper);
     }
     @Test void missingCompanyCannotFallBackToAnotherCompany()

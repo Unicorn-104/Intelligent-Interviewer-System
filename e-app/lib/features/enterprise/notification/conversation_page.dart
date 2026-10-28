@@ -4,10 +4,12 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../api/interview_room_api.dart' as room;
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/skeleton_list.dart';
 import '../jobs/job_detail_page.dart';
+import '../schedule/interview_appointment_detail_page.dart';
 import '../talent/talent_detail_page.dart';
 import '../talent/talent_discovery_profile.dart';
 import '../talent/data/talent_discovery_data_source.dart';
@@ -32,11 +34,15 @@ class ChatPage extends StatefulWidget {
     this.source = const MessageDataSource(),
     this.pollInterval = const Duration(seconds: 8),
     this.rescheduleSource,
+    this.loadCurrentSession = room.getCurrentSession,
   });
   final Map<String, dynamic> session;
   final MessageDataSource source;
   final Duration pollInterval;
   final RescheduleReviewDataSource? rescheduleSource;
+
+  /// 查询当前待开始/进行中面试会话（可注入以隔离网络，测试用）。
+  final Future<Map<String, dynamic>> Function() loadCurrentSession;
   @override
   State<ChatPage> createState() => _ChatPageState();
 }
@@ -74,6 +80,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Timer? _timer;
   int _lastAcknowledged = 0;
   bool _acknowledging = false;
+  bool _entering = false;
   static const _ownBubble = Color(0xFF95EC69);
   static const _bubbleText = Color(0xFF161616);
   @override
@@ -834,10 +841,90 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ],
       );
     }
+    final invite = _interviewInviteLink(item.content);
+    if (invite != null) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            invite.text,
+            style: const TextStyle(color: color, fontSize: 16, height: 1.55),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            key: ValueKey('chat-enter-interview-${item.id}'),
+            onPressed: _entering ? null : _enterInterview,
+            icon: const Icon(Icons.videocam_outlined, size: 20),
+            label: const Text('进入面试'),
+          ),
+        ],
+      );
+    }
     return Text(
       item.display,
       style: const TextStyle(color: color, fontSize: 16, height: 1.55),
     );
+  }
+
+  /// 面试邀请消息的会议链接（与 PC 端消息解析一致）；同时返回去除链接后的正文。
+  static ({String text, String url})? _interviewInviteLink(String content) {
+    final match = RegExp(
+      r'https?://[^\s]*conference-join[^\s]*|/conference-join\?[^\s]+',
+    ).firstMatch(content);
+    if (match == null) return null;
+    final url = match.group(0)!;
+    final text = content
+        .replaceFirst(url, '')
+        .trim()
+        .replaceFirst(RegExp(r'[：:\s]+$'), '');
+    return (text: text, url: url);
+  }
+
+  /// 「进入面试」：查询当前待开始/进行中的面试场次并打开面试详情。
+  Future<void> _enterInterview() async {
+    if (_entering) return;
+    _entering = true;
+    try {
+      final Map<String, dynamic> session;
+      try {
+        session = await widget.loadCurrentSession();
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('查询面试状态失败：$error')));
+        return;
+      }
+      final sessionId = messageId(session['sessionId']);
+      final appointmentId = messageId(session['appointmentId']);
+      if (sessionId == null || appointmentId == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前没有待开始或进行中的面试，可在面试安排中查看')),
+        );
+        return;
+      }
+      final status = messageId(session['status']) == 1 ? '进行中' : '待开始';
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => InterviewAppointmentDetailPage(
+            appointment: {
+              'sessionId': sessionId,
+              'appointmentId': appointmentId,
+              'positionTitle': messageText(session['positionTitle'], ''),
+              'candidateName': messageText(session['candidateName'], ''),
+              'interviewerName': messageText(session['interviewerName'], ''),
+              'startTime': messageText(session['appointmentStartAt'], ''),
+              'endTime': messageText(session['appointmentEndAt'], ''),
+              'status': status,
+            },
+          ),
+        ),
+      );
+    } finally {
+      _entering = false;
+    }
   }
 
   Future<void> _acknowledgeVisible() async {

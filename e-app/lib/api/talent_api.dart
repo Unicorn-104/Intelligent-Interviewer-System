@@ -8,6 +8,8 @@
 
 library;
 
+import 'dart:typed_data';
+
 import '../../core/network/enterprise_api_client.dart';
 
 /// UC-03：人才库检索（关键词/标签/筛选条件 + 分页）。
@@ -96,6 +98,7 @@ Future<Map<String, dynamic>> getTalentDetail(int talentId) async {
 /// UC-02/UC-03：候选人简历智能解析结果（结构化字段 + 完整度标记）。
 /// 已对接：GET /enterprise/talent/{talId}/resume
 /// 容错：integrity 无数据时为 0；missingFields 无数据时为空列表。
+/// 响应新增 fileName：候选人已保存原始 PDF 时为原始文件名，否则为 null。
 Future<Map<String, dynamic>> getTalentParsedResume(int talentId) async {
   final response = await EnterpriseApiClient().get(
     '/enterprise/talent/$talentId/resume',
@@ -105,3 +108,13 @@ Future<Map<String, dynamic>> getTalentParsedResume(int talentId) async {
   data['missingFields'] = (data['missingFields'] as List?) ?? const <String>[];
   return data;
 }
+
+/// 候选人原始简历 PDF 字节（Bearer 鉴权，服务端校验候选人归属本企业）。
+/// 已对接：GET /enterprise/talent/{talId}/resume/pdf
+Future<Uint8List> getTalentResumePdf(
+  int talentId, {
+  EnterpriseApiClient? client,
+}) =>
+    (client ?? EnterpriseApiClient()).getBytes(
+      '/enterprise/talent/$talentId/resume/pdf',
+    );

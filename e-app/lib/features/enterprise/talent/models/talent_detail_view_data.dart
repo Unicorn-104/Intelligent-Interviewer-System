@@ -48,16 +48,10 @@ List<Map<String, dynamic>> talentRows(Object? value, String field) {
 }
 
 String talentStatus(Object? value) => switch (int.tryParse('$value')) {
-  0 => '新入库',
-  1 => '初筛通过',
-  2 => '面试中',
+  0 => '已投递',
+  2 => '待面试',
   3 => '已淘汰',
   4 => '已录用',
-  5 => '已入职',
-  6 => '已放弃',
-  7 => '人才库',
-  8 => '黑名单',
-  9 => '流程挂起',
   _ => '状态未提供',
 };
 
