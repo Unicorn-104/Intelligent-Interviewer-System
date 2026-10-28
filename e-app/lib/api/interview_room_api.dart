@@ -25,6 +25,27 @@ Future<Map<String, dynamic>> getSessionContext(int sessionId) async {
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
+/// UC-10：换取 LiveKit 入会令牌（与 PC 端 /system/conference 视频会议一致）。
+/// 已对接：GET /system/conference/livekit-token/{sessionId}
+///
+/// 返回 { url, token, room, identity }，客户端凭 url/token 直连 LiveKit
+/// 信令与媒体服务器；identity 形如 u{userId}，用于把远端参会者映射回业务用户。
+Future<Map<String, dynamic>> getLiveKitToken(int sessionId) async {
+  final response = await _client.get(
+    '/system/conference/livekit-token/$sessionId',
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
+/// 面试官加入本次面试（登记 join_status，主面试官进入时自动登记）。
+/// 已对接：POST /system/conference/session/{sessionId}/interviewer/join
+Future<Map<String, dynamic>> joinInterviewerSession(int sessionId) async {
+  final response = await _client.post(
+    '/system/conference/session/$sessionId/interviewer/join',
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
 /// UC-10 步骤5-6：设备与环境检测（摄像头/麦克风/网络，绿黄红灯报告）。
 /// 已对接：POST /system/conference/session/{sessionId}/environment-check
 Future<void> checkEnvironment(

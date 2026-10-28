@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../api/interview_room_api.dart';
-import '../../../theme/app_theme.dart';
-import '../interview/interview_workbench_page.dart';
+import '../conference/conference_room_page.dart';
 
 /// 展示面试列表返回的真实场次字段；会议房间 ID 不等于会话 ID。
 class InterviewAppointmentDetailPage extends StatefulWidget {
@@ -17,7 +16,8 @@ class InterviewAppointmentDetailPage extends StatefulWidget {
 
 class _InterviewAppointmentDetailPageState
     extends State<InterviewAppointmentDetailPage> {
-  bool _sessionConfirmed = false;
+  /// 校验通过的真实场次上下文（含 role/interviewers），用于进入视频会议。
+  Map<String, dynamic>? _session;
 
   @override
   void initState() {
@@ -30,7 +30,7 @@ class _InterviewAppointmentDetailPageState
     final appointmentId = int.tryParse(
       '${widget.appointment['appointmentId']}',
     );
-    // 只有真实预约 ID 和会话 ID 都匹配，才允许打开仍为演示数据的工作台。
+    // 只有真实预约 ID 和会话 ID 都匹配，才允许进入视频面试。
     if (sessionId == null || appointmentId == null) return;
     try {
       final session = await getSessionContext(sessionId);
@@ -39,10 +39,10 @@ class _InterviewAppointmentDetailPageState
       final actualAppointmentId = int.tryParse('${session['appointmentId']}');
       if (actualSessionId == sessionId &&
           actualAppointmentId == appointmentId) {
-        setState(() => _sessionConfirmed = true);
+        setState(() => _session = session);
       }
     } catch (_) {
-      // 无法验证会话时只展示面试详情，不开启模拟工作台入口。
+      // 无法验证会话时只展示面试详情，不提供入会入口。
     }
   }
 
@@ -77,25 +77,20 @@ class _InterviewAppointmentDetailPageState
             ),
           ),
           const SizedBox(height: 16),
-          if (_sessionConfirmed)
+          if (_session != null)
             FilledButton.icon(
               onPressed: () => Navigator.push<void>(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const Banner(
-                    message: '演示数据',
-                    location: BannerLocation.topStart,
-                    color: AppColors.orange,
-                    child: InterviewWorkbenchPage(),
-                  ),
+                  builder: (_) => ConferenceRoomPage(session: _session!),
                 ),
               ),
-              icon: const Icon(Icons.mic),
-              label: const Text('进入面试工作台（演示数据）'),
+              icon: const Icon(Icons.videocam),
+              label: const Text('进入视频面试'),
             )
           else
             Text(
-              '暂无可核实的面试会话，暂不提供工作台入口',
+              '暂无可核实的面试会话，暂不提供入会入口',
               style: Theme.of(context).textTheme.bodySmall,
             ),
         ],

@@ -2,22 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../api/interview_room_api.dart' as room;
 import '../../../config/app_config.dart';
+import '../conference/interview_modes.dart';
 import '../dashboard/home_models.dart';
 import '../notification/conversation_page.dart';
 import '../notification/data/message_data_source.dart';
 import '../notification/models/message_view_data.dart';
-
-/// 面试模式中文文案（与 enterprise_pc messages/index.vue 的 MODE_LABEL 一致）。
-const Map<int, String> interviewModeLabels = {
-  1: '纯AI面试',
-  2: 'AI+单面试官',
-  3: 'AI+多面试官',
-  4: '无AI纯人工',
-};
-
-/// 阶段类型 → 默认面试方式（与 PC 端 STAGE_TYPE_MODE 一致）：
-/// AI技术面试→AI+单面试官、HR综合面试→无AI纯人工、编程实操→纯AI。
-const Map<int, int> stageTypeMode = {2: 2, 3: 4, 4: 1};
 
 typedef CreateRoomLink = Future<Map<String, dynamic>> Function({
   required int peerUserId,
@@ -91,8 +80,7 @@ Future<void> _invite(
     messenger.showSnackBar(const SnackBar(content: Text('会议链接生成异常，请稍后重试')));
     return;
   }
-  final modeLabel =
-      interviewModeLabels[int.tryParse('${link['mode']}')] ?? '视频面试';
+  final modeLabel = interviewModeLabel(link['mode']);
   final inviteTag = stageName.isEmpty
       ? '·$modeLabel'
       : '·$stageName·$modeLabel';
