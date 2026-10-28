@@ -6,6 +6,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,8 @@ import com.ruoyi.system.mapper.app.AppCompanyMapper;
 @Service
 public class EnterpriseJobServiceImpl implements IEnterpriseJobService
 {
+    private static final Logger log = LoggerFactory.getLogger(EnterpriseJobServiceImpl.class);
+
     @Autowired
     private EnterpriseJobMapper jobMapper;
 
@@ -444,13 +448,16 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
     }
 
     @Override
+    @Transactional
     public Map<String, Object> jobDetail(Long userId, Long posId)
     {
-        Map<String, Object> job = jobMapper.selectJobById(posId, resolveCompanyId(userId));
+        Long companyId = resolveCompanyId(userId);
+        Map<String, Object> job = jobMapper.selectJobById(posId, companyId);
         if (job == null)
         {
             throw new ServiceException("岗位不存在或无权访问");
         }
+        repairMissingProcessInstances(companyId, posId);
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("job", job);
         result.put("skills", jdMapper.selectPositionSkills(posId));
@@ -458,6 +465,31 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         result.put("candidates", jobMapper.selectJobCandidates(posId));
         result.put("stages", jobMapper.selectJobStages(posId));
         return result;
+    }
+
+    /**
+     * 历史投递兜底：漏斗与候选人列表以流程实例为来源，为缺实例的投递记录补建实例。
+     * 单条失败只记录告警不阻断详情页，避免个别脏数据影响整个岗位查看。
+     */
+    private void repairMissingProcessInstances(Long companyId, Long posId)
+    {
+        for (Map<String, Object> application : jobMapper.selectApplicationsMissingInstance(posId))
+        {
+            Object candidateValue = application.get("candidateId");
+            if (candidateValue == null)
+            {
+                continue;
+            }
+            Long candidateId = Long.valueOf(String.valueOf(candidateValue));
+            try
+            {
+                ensureProcessInstance(companyId, candidateId, posId);
+            }
+            catch (ServiceException error)
+            {
+                log.warn("补建投递流程实例失败 positionId={} candidateId={} reason={}", posId, candidateId, error.getMessage());
+            }
+        }
     }
 
     @Override

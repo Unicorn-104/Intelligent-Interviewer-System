@@ -53,6 +53,11 @@ public interface EnterpriseJobMapper
     public Map<String, Object> selectJobFunnel(@Param("posId") Long posId);
 
     /**
+     * 缺少流程实例的投递记录（历史数据兜底：漏斗与候选人列表以流程实例为来源）
+     */
+    public List<Map<String, Object>> selectApplicationsMissingInstance(@Param("posId") Long posId);
+
+    /**
      * 岗位候选人列表（含当前阶段名与状态标签）
      */
     public List<Map<String, Object>> selectJobCandidates(@Param("posId") Long posId);

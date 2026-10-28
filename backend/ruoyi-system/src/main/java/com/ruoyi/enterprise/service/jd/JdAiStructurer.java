@@ -2,13 +2,6 @@ package com.ruoyi.enterprise.service.jd;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -17,11 +10,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,14 +24,20 @@ import com.ruoyi.common.constant.ErrorCode;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.domain.JdDocumentDraft;
 import com.ruoyi.system.config.JdAiProperties;
+import com.ruoyi.system.domain.ModelProvider;
+import com.ruoyi.system.service.app.ai.AgentModelClient;
 
-/** Anthropic Messages adapter dedicated to JD drafts. Never writes business data. */
+/**
+ * JD 草稿结构化：通过 {@link AgentModelClient} 调用数据库（t_model_provider）中
+ * 配置的模型服务，密钥只存在于数据库与模型客户端边界内，不再读取本地配置。
+ * 模型返回的字段仍按岗位约束逐字段校验；本服务从不写业务数据。
+ */
 @Service
 public class JdAiStructurer
 {
     private static final Logger log = LoggerFactory.getLogger(JdAiStructurer.class);
     private static final int MAX_TOKENS = 4096;
-    private static final int MAX_RESPONSE_CHARS = 1_000_000;
+    private static final long CALL_TIMEOUT_SECONDS = 85;
     private static final Set<String> FIELDS = Set.of("title", "dept", "city", "salaryMin", "salaryMax",
             "experience", "education", "jobType", "responsibilities", "requirements", "summary",
             "softRequirements", "skills", "warnings");
@@ -66,41 +66,29 @@ public class JdAiStructurer
         """;
 
     private final JdAiProperties properties;
-    private final HttpClient client;
+    private final AgentModelClient model;
     private final Semaphore permits;
     private final ObjectMapper mapper = new ObjectMapper()
             .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     @Autowired
-    public JdAiStructurer(JdAiProperties properties)
-    {
-        this(properties, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NEVER).build());
-    }
-
-    JdAiStructurer(JdAiProperties properties, HttpClient client)
+    public JdAiStructurer(JdAiProperties properties, AgentModelClient model)
     {
         this.properties = properties;
-        this.client = client;
+        this.model = model;
         permits = new Semaphore(properties.getMaxConcurrentRequests());
     }
 
+    /** AI 服务与密钥均来自数据库 t_model_provider；无启用记录时提前失败，避免白做解析。 */
     public void requireConfigured()
     {
-        if (!properties.isEnabled())
-        {
-            throw new ServiceException("JD 文档解析尚未启用");
-        }
-        if (properties.getApiKey() == null || properties.getApiKey().isBlank())
-        {
-            throw new ServiceException("后端尚未配置模型密钥");
-        }
+        model.resolve();
     }
 
     public JdDocumentDraft structure(String text)
     {
-        requireConfigured();
+        ModelProvider provider = model.resolve();
         if (text == null || text.isBlank() || text.length() > properties.getMaxInputChars())
         {
             throw new ServiceException("JD 原文为空或超过允许长度，请精简文档后重试", ErrorCode.BAD_REQUEST);
@@ -111,67 +99,26 @@ public class JdAiStructurer
         }
         try
         {
-            ObjectNode body = mapper.createObjectNode();
-            body.put("model", properties.getModel());
-            body.put("max_tokens", MAX_TOKENS);
-            body.put("stream", false);
-            body.put("system", SYSTEM_PROMPT);
-            ObjectNode user = body.putArray("messages").addObject();
-            user.put("role", "user");
-            user.putArray("content").addObject().put("type", "text").put("text", "以下是待提取的JD原文：\n" + text);
-            HttpRequest request = HttpRequest.newBuilder(endpoint())
-                    .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
-                    .header("Content-Type", "application/json")
-                    .header("anthropic-version", "2023-06-01")
-                    .header("x-api-key", properties.getApiKey().trim())
-                    .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body), StandardCharsets.UTF_8))
-                    .build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() < 200 || response.statusCode() >= 300)
+            ArrayNode messages = mapper.createArrayNode();
+            messages.addObject().put("role", "system").put("content", SYSTEM_PROMPT);
+            messages.addObject().put("role", "user").put("content", "以下是待提取的JD原文：\n" + text);
+            StringBuilder content = new StringBuilder();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CALL_TIMEOUT_SECONDS);
+            try
             {
-                throw upstreamFailure(response.statusCode());
+                model.complete(provider, messages, null, content::append, deadline, MAX_TOKENS);
             }
-            if (response.body() == null || response.body().length() > MAX_RESPONSE_CHARS)
+            catch (Throwable error)
             {
-                throw invalidResult("response.body", "响应为空或长度超过" + MAX_RESPONSE_CHARS);
+                throw friendly(error);
             }
-            JsonNode envelope = mapper.readTree(response.body());
-            if (envelope == null || !envelope.isObject() || envelope.has("error"))
+            if (content.length() == 0)
             {
-                throw invalidResult("response", "响应根节点不是对象或包含error字段");
+                throw new ServiceException("模型响应缺少文本内容块");
             }
-            String stopReason = envelope.path("stop_reason").asText();
-            if (!("end_turn".equals(stopReason) || "stop_sequence".equals(stopReason)))
-            {
-                throw new ServiceException("模型未完整输出 JD，请精简文档后重试");
-            }
-            JsonNode content = envelope.path("content");
-            if (content.isArray())
-            {
-                for (JsonNode block : content)
-                {
-                    if ("text".equals(block.path("type").asText()) && block.path("text").isTextual())
-                    {
-                        return decode(block.path("text").asText());
-                    }
-                }
-            }
-            throw new ServiceException("模型响应缺少文本内容块");
+            return decode(content.toString());
         }
-        catch (ServiceException error)
-        {
-            throw error;
-        }
-        catch (HttpTimeoutException error)
-        {
-            throw new ServiceException("JD 模型解析超时，请稍后重试");
-        }
-        catch (InterruptedException error)
-        {
-            Thread.currentThread().interrupt();
-            throw new ServiceException("JD 解析已中断");
-        }
-        catch (IOException | IllegalArgumentException error)
+        catch (IOException error)
         {
             // Do not return the upstream response, credentials, prompt or document text.
             throw new ServiceException("JD 模型响应格式错误或连接失败，请稍后重试");
@@ -182,40 +129,45 @@ public class JdAiStructurer
         }
     }
 
-    private URI endpoint()
+    /** 把模型客户端异常映射为不泄露上游细节、提示、密钥或文档内容的业务错误。 */
+    private ServiceException friendly(Throwable error)
     {
-        try
+        if (error instanceof ServiceException service)
         {
-            URI base = URI.create(properties.getBaseUrl().trim());
-            if (!"https".equalsIgnoreCase(base.getScheme()) || base.getHost() == null
-                    || base.getRawUserInfo() != null || base.getRawQuery() != null || base.getRawFragment() != null)
-            {
-                throw new IllegalArgumentException();
-            }
-            String path = base.getPath().replaceFirst("/+$", "");
-            if (!path.endsWith("/anthropic"))
-            {
-                throw new IllegalArgumentException();
-            }
-            return URI.create(base.toString().replaceFirst("/+$", "") + "/v1/messages");
+            return service;
         }
-        catch (IllegalArgumentException error)
+        String marker = error instanceof IllegalStateException ? error.getMessage() : "";
+        if (marker != null && marker.contains("MODEL_OUTPUT_LIMIT"))
         {
-            throw new ServiceException("JD 模型地址必须是 HTTPS 的 Anthropic 基础地址");
+            return new ServiceException("模型未完整输出 JD，请精简文档后重试");
         }
-    }
-
-    private ServiceException upstreamFailure(int status)
-    {
-        if (status == 401 || status == 403)
+        if (marker != null && marker.contains("MODEL_STREAM_INCOMPLETE"))
         {
-            return new ServiceException("模型密钥无效或无权使用指定模型，请检查后端配置");
+            return new ServiceException("模型未完整输出 JD，请精简文档后重试");
         }
-        if (status == 429)
+        if (marker != null && marker.contains("MODEL_HTTP_401") || marker != null && marker.contains("MODEL_HTTP_403"))
+        {
+            return new ServiceException("模型密钥无效或无权使用指定模型，请检查管理员配置");
+        }
+        if (marker != null && marker.contains("MODEL_HTTP_429"))
         {
             return new ServiceException("模型请求限流或额度不足，请稍后重试");
         }
-        return new ServiceException("JD 模型服务暂不可用，请稍后重试（上游状态" + status + "）");
+        if (marker != null && marker.startsWith("MODEL_HTTP_"))
+        {
+            return new ServiceException("JD 模型服务暂不可用，请稍后重试（上游状态" + marker.substring("MODEL_HTTP_".length()) + "）");
+        }
+        if (error instanceof java.util.concurrent.TimeoutException)
+        {
+            return new ServiceException("JD 模型解析超时，请稍后重试");
+        }
+        if (error instanceof InterruptedException)
+        {
+            Thread.currentThread().interrupt();
+            return new ServiceException("JD 解析已中断");
+        }
+        // Do not return the upstream response, credentials, prompt or document text.
+        return new ServiceException("JD 模型响应格式错误或连接失败，请稍后重试");
     }
 
     private JdDocumentDraft decode(String content) throws IOException
@@ -348,15 +300,15 @@ public class JdAiStructurer
         return new ArrayList<>(values.values());
     }
 
+    private ServiceException invalidResult(String field, String reason)
+    {
+        log.warn("JD validation failed field={} reason={}", safeValidationDetail(field), safeValidationDetail(reason));
+        return new ServiceException("模型返回的 JD 字段不符合岗位约束，请重新解析或手动填写");
+    }
+
     private String safeValidationDetail(String response)
     {
         String safe = response;
-        String key = properties.getApiKey();
-        if (key != null && !key.isBlank())
-        {
-            safe = safe.replace(key, "[REDACTED_KEY]");
-            safe = safe.replace(key.trim(), "[REDACTED_KEY]");
-        }
         safe = safe.replaceAll("(?i)sk-[A-Za-z0-9_-]{8,}", "[REDACTED_KEY]");
         safe = safe.replaceAll("(?i)Bearer [A-Za-z0-9_.-]+", "Bearer [REDACTED]");
         safe = safe.replaceAll("[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}", "[REDACTED_TOKEN]");
@@ -365,11 +317,5 @@ public class JdAiStructurer
         safe = safe.replaceAll("(?<![0-9])[0-9]{17}[0-9Xx](?![0-9])", "[REDACTED_ID]");
         safe = safe.replace('\n', ' ').replace('\r', ' ');
         return safe.substring(0, Math.min(1000, safe.length()));
-    }
-
-    private ServiceException invalidResult(String field, String reason)
-    {
-        log.warn("JD validation failed field={} reason={}", safeValidationDetail(field), safeValidationDetail(reason));
-        return new ServiceException("模型返回的 JD 字段不符合岗位约束，请重新解析或手动填写");
     }
 }

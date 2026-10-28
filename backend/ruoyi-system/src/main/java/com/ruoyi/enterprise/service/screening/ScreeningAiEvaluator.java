@@ -1,27 +1,26 @@
 package com.ruoyi.enterprise.service.screening;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.config.JdAiProperties;
+import com.ruoyi.system.domain.ModelProvider;
+import com.ruoyi.system.service.app.ai.AgentModelClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-/** Uses the privately configured native Messages API; never substitutes rule scores. */
+/**
+ * 人岗匹配独立评分：通过 {@link AgentModelClient} 调用数据库（t_model_provider）中
+ * 配置的模型服务，密钥只存在于数据库与模型客户端边界内；规则评分兜底，从不被替换。
+ */
 @Component
 public class ScreeningAiEvaluator
 {
@@ -57,77 +56,91 @@ public class ScreeningAiEvaluator
         "industryMatch":{"score":null,"evidence":[]},"researchMatch":{"score":null,"evidence":[]},
         "awardMatch":{"score":null,"evidence":[]}},"recommendation":"简短推荐理由"}]}
         """;
+    private static final int MAX_TOKENS = 6500;
+    private static final long CALL_TIMEOUT_SECONDS = 85;
+
     private final JdAiProperties properties;
-    private final HttpClient client;
+    private final AgentModelClient model;
     private final ObjectMapper json = new ObjectMapper();
     private final Semaphore permits;
 
     @Autowired
-    public ScreeningAiEvaluator(JdAiProperties properties)
-    {
-        this(properties, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NEVER).build());
-    }
-
-    ScreeningAiEvaluator(JdAiProperties properties, HttpClient client)
+    public ScreeningAiEvaluator(JdAiProperties properties, AgentModelClient model)
     {
         this.properties = properties;
-        this.client = client;
+        this.model = model;
         this.permits = new Semaphore(properties.getMaxConcurrentRequests());
     }
-
-    public String model() { return properties.getModel(); }
 
     public List<Map<String, Object>> evaluate(Map<String, Object> job, List<Map<String, Object>> candidates)
     {
         if (candidates == null || candidates.size() != 1)
             throw new ServiceException("独立评分每次必须且只能分析一位求职者");
-        if (!properties.isEnabled() || properties.getApiKey() == null || properties.getApiKey().isBlank())
-            throw new ServiceException("AI筛选服务未启用或未配置模型密钥，请联系管理员");
+        ModelProvider provider = model.resolve();
         if (!permits.tryAcquire()) throw new ServiceException("AI筛选服务繁忙，请稍后重试");
         try
         {
             String input = json.writeValueAsString(Map.of("job", job, "candidates", candidates));
             if (input.length() > properties.getMaxInputChars())
                 throw new ServiceException("简历及岗位内容过长，请精简后重新筛选");
-            ObjectNode body = json.createObjectNode();
-            body.put("model", properties.getModel());
-            body.put("max_tokens", 6500);
-            body.put("stream", false);
-            body.putObject("thinking").put("type", "disabled");
-            body.put("system", SYSTEM);
-            body.putArray("messages").addObject().put("role", "user").put("content", input);
-            HttpRequest request = HttpRequest.newBuilder(endpoint()).timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
-                    .header("Content-Type", "application/json").header("anthropic-version", "2023-06-01")
-                    .header("x-api-key", properties.getApiKey().trim())
-                    .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body), StandardCharsets.UTF_8)).build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() == 401 || response.statusCode() == 403)
-                throw new ServiceException("AI筛选模型鉴权失败，请检查后端配置");
-            if (response.statusCode() == 429) throw new ServiceException("AI筛选模型限流或额度不足，请稍后重试");
-            if (response.statusCode() < 200 || response.statusCode() >= 300)
-                throw new ServiceException("AI筛选模型暂不可用，请稍后重试");
-            if (response.body() == null || response.body().length() > 120000) throw invalid();
-            JsonNode envelope = json.readTree(response.body());
-            if (envelope == null || envelope.has("error") || !"end_turn".equals(envelope.path("stop_reason").asText()))
-                throw invalid();
-            StringBuilder text = new StringBuilder();
-            for (JsonNode block : envelope.path("content"))
-                if ("text".equals(block.path("type").asText())) text.append(block.path("text").asText());
-            return decode(text.toString(), candidates);
+            ArrayNode messages = json.createArrayNode();
+            messages.addObject().put("role", "system").put("content", SYSTEM);
+            messages.addObject().put("role", "user").put("content", input);
+            StringBuilder content = new StringBuilder();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CALL_TIMEOUT_SECONDS);
+            try
+            {
+                model.complete(provider, messages, null, content::append, deadline, MAX_TOKENS);
+            }
+            catch (Throwable error)
+            {
+                throw friendly(error);
+            }
+            return decode(content.toString(), candidates, provider);
         }
-        catch (HttpTimeoutException error) { throw new ServiceException("AI筛选模型响应超时，原有结果未变更，请稍后重试"); }
-        catch (InterruptedException error)
-        {
-            Thread.currentThread().interrupt();
-            throw new ServiceException("AI筛选已中断，原有结果未变更");
-        }
-        catch (IOException | IllegalArgumentException error)
+        catch (IOException error)
         {
             // Never include prompts, credentials, response bodies or transport messages in logs/errors.
             throw new ServiceException("AI筛选连接失败或响应格式错误，原有结果未变更");
         }
         finally { permits.release(); }
+    }
+
+    /** 把模型客户端异常映射为不泄露上游细节、提示、密钥或简历内容的业务错误。 */
+    private ServiceException friendly(Throwable error)
+    {
+        if (error instanceof ServiceException service)
+        {
+            return service;
+        }
+        String marker = error instanceof IllegalStateException ? error.getMessage() : "";
+        if (marker != null && (marker.contains("MODEL_OUTPUT_LIMIT") || marker.contains("MODEL_STREAM_INCOMPLETE")))
+        {
+            return new ServiceException("AI筛选模型未完整输出，原有结果未变更，请稍后重试");
+        }
+        if (marker != null && (marker.contains("MODEL_HTTP_401") || marker.contains("MODEL_HTTP_403")))
+        {
+            return new ServiceException("AI筛选模型鉴权失败，请检查管理员配置");
+        }
+        if (marker != null && marker.contains("MODEL_HTTP_429"))
+        {
+            return new ServiceException("AI筛选模型限流或额度不足，请稍后重试");
+        }
+        if (marker != null && marker.startsWith("MODEL_HTTP_"))
+        {
+            return new ServiceException("AI筛选模型暂不可用，请稍后重试");
+        }
+        if (error instanceof java.util.concurrent.TimeoutException)
+        {
+            return new ServiceException("AI筛选模型响应超时，原有结果未变更，请稍后重试");
+        }
+        if (error instanceof InterruptedException)
+        {
+            Thread.currentThread().interrupt();
+            return new ServiceException("AI筛选已中断，原有结果未变更");
+        }
+        // Never include prompts, credentials, response bodies or transport messages in logs/errors.
+        return new ServiceException("AI筛选连接失败或响应格式错误，原有结果未变更");
     }
 
     List<Map<String, Object>> decode(String content, List<Map<String, Object>> candidates) throws IOException
@@ -167,7 +180,6 @@ public class ScreeningAiEvaluator
             result.put("source", "llm");
             result.put("evaluationStrategy", "independent-v1");
             result.put("scoringPolicy", "missing-zero-v1");
-            result.put("model", model());
             Map<String, Object> dimensions = new LinkedHashMap<>();
             double weighted = 0;
             int covered = 0;
@@ -227,6 +239,18 @@ public class ScreeningAiEvaluator
         return results;
     }
 
+    private List<Map<String, Object>> decode(String content, List<Map<String, Object>> candidates,
+            ModelProvider provider) throws IOException
+    {
+        List<Map<String, Object>> results = decode(content, candidates);
+        for (Map<String, Object> result : results)
+        {
+            result.put("model", provider.getMppModelName() == null || provider.getMppModelName().isBlank()
+                    ? "deepseek-chat" : provider.getMppModelName());
+        }
+        return results;
+    }
+
     private static void collectText(Object data, StringBuilder target)
     {
         if (data instanceof Map<?, ?> map) map.values().forEach(value -> collectText(value, target));
@@ -238,19 +262,6 @@ public class ScreeningAiEvaluator
         }
         else if (data instanceof String value) target.append(value).append('\n');
         else if (data instanceof Number value) target.append(value).append('\n');
-    }
-
-    private URI endpoint()
-    {
-        try
-        {
-            URI base = URI.create(properties.getBaseUrl().trim());
-            if (!"https".equalsIgnoreCase(base.getScheme()) || base.getHost() == null || base.getUserInfo() != null
-                    || base.getQuery() != null || base.getFragment() != null || !base.getPath().replaceFirst("/+$", "").endsWith("/anthropic"))
-                throw new IllegalArgumentException();
-            return URI.create(base.toString().replaceFirst("/+$", "") + "/v1/messages");
-        }
-        catch (IllegalArgumentException error) { throw new ServiceException("AI筛选模型地址配置错误，请检查后端HTTPS Messages地址"); }
     }
 
     private ServiceException invalid() { return invalid("结构不完整"); }

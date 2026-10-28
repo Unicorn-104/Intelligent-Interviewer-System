@@ -88,6 +88,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where p.pos_id = #{posId} and p.pos_company_id = #{companyId}
     </select>
 
+    <select id="selectApplicationsMissingInstance" resultType="java.util.LinkedHashMap">
+        select a.app_id as applicationId, a.app_candidate_id as candidateId
+        from t_app_record a
+        where a.app_position_id = #{posId}
+          and (a.app_process_instance_id is null
+               or not exists (select 1 from t_process_instance pi
+                              where pi.pin_id = a.app_process_instance_id))
+    </select>
+
     <select id="selectJobFunnel" resultType="java.util.LinkedHashMap">
         select count(*) as total,
                sum(case when t.tal_status in (1,2,4,5,7) then 1 else 0 end) as passed,

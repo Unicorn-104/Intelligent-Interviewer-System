@@ -3,36 +3,52 @@ package com.ruoyi.enterprise.service.screening;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.config.JdAiProperties;
+import com.ruoyi.system.domain.ModelProvider;
+import com.ruoyi.system.service.app.ai.AgentModelClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 class ScreeningAiEvaluatorTest
 {
     final ObjectMapper json = new ObjectMapper();
-    HttpClient client;
-    JdAiProperties properties;
+    AgentModelClient model;
+    ModelProvider provider;
     ScreeningAiEvaluator evaluator;
     final List<Map<String, Object>> candidates = List.of(Map.of("candidateId", 11L,
             "skills", List.of("Java工程开发"), "projects", List.of("订单平台开发")));
 
     @BeforeEach void setup()
     {
-        client = mock(HttpClient.class);
-        properties = new JdAiProperties();
-        properties.setApiKey("synthetic-test-key");
-        evaluator = new ScreeningAiEvaluator(properties, client);
+        model = mock(AgentModelClient.class);
+        provider = new ModelProvider();
+        provider.setMppApiUrl("https://api.deepseek.com/chat/completions");
+        provider.setMppApiKey("synthetic-test-key");
+        provider.setMppModelName("deepseek-chat");
+        when(model.resolve()).thenReturn(provider);
+        evaluator = new ScreeningAiEvaluator(new JdAiProperties(), model);
+    }
+
+    void content(String text) throws Exception
+    {
+        doAnswer(invocation ->
+        {
+            Consumer<String> delta = invocation.getArgument(3);
+            delta.accept(text);
+            return null;
+        }).when(model).complete(any(), any(), any(), any(), anyLong(), anyInt());
+    }
+
+    void failure(Throwable error) throws Exception
+    {
+        doThrow(error).when(model).complete(any(), any(), any(), any(), anyLong(), anyInt());
     }
 
     ObjectNode valid() throws Exception
@@ -52,54 +68,31 @@ class ScreeningAiEvaluatorTest
         return result;
     }
 
-    String envelope(String content, String stop) throws Exception
-    {
-        var result = json.createObjectNode(); result.put("stop_reason", stop);
-        result.putArray("content").addObject().put("type", "text").put("text", content);
-        return json.writeValueAsString(result);
-    }
-
-    @SuppressWarnings("unchecked")
-    void response(int code, String content) throws Exception
-    {
-        HttpResponse<String> result = mock(HttpResponse.class);
-        when(result.statusCode()).thenReturn(code); when(result.body()).thenReturn(content);
-        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(result);
-    }
-
-    @Test void refusesCrossCandidateScoringBeforeCallingProvider()
+    @Test void refusesCrossCandidateScoringBeforeCallingProvider() throws Exception
     {
         assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of("title", "Java岗位"),
                 List.of(candidates.get(0), Map.of("candidateId", 12L))));
-        verifyNoInteractions(client);
+        verify(model, never()).complete(any(), any(), any(), any(), anyLong(), anyInt());
     }
 
-    @Test void missingKeyDoesNotContactProvider()
+    @Test void missingProviderDoesNotContactModel() throws Exception
     {
-        properties.setApiKey("");
-        assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of("title", "Java岗位"), candidates));
-        verifyNoInteractions(client);
+        when(model.resolve()).thenThrow(new ServiceException("AI 服务未配置，请联系管理员", 503));
+        assertEquals("AI 服务未配置，请联系管理员",
+                assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of("title", "Java岗位"), candidates)).getMessage());
+        verify(model, never()).complete(any(), any(), any(), any(), anyLong(), anyInt());
     }
 
-    @Test void disabledServiceDoesNotContactProvider()
+    @Test void fixedWeightsWithMissingZeroAreUsedAndProviderModelIsRecorded() throws Exception
     {
-        properties.setEnabled(false);
-        assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of(), candidates));
-        verifyNoInteractions(client);
-    }
-
-    @Test void realProtocolAndFixedWeightsWithMissingZeroAreUsed() throws Exception
-    {
-        response(200, envelope(json.writeValueAsString(valid()), "end_turn"));
+        content(json.writeValueAsString(valid()));
         var result = evaluator.evaluate(Map.of("title", "Java岗位"), candidates).get(0);
         assertEquals(35.0, result.get("totalScore"));
         assertEquals(50, result.get("evidenceCoverage"));
         assertEquals(0.0, result.get("educationMatch"));
         assertEquals("llm", result.get("source"));
-        var request = ArgumentCaptor.forClass(HttpRequest.class);
-        verify(client).send(request.capture(), any(HttpResponse.BodyHandler.class));
-        assertEquals("https://api.deepseek.com/anthropic/v1/messages", request.getValue().uri().toString());
-        assertEquals("2023-06-01", request.getValue().headers().firstValue("anthropic-version").orElseThrow());
+        assertEquals("deepseek-chat", result.get("model"));
+        verify(model).complete(same(provider), any(), isNull(), any(), anyLong(), eq(6500));
     }
 
     @Test void proseWrappedJsonIsAccepted() throws Exception
@@ -185,22 +178,25 @@ class ScreeningAiEvaluatorTest
 
     @Test void truncatedOutputIsRejected() throws Exception
     {
-        response(200, envelope(json.writeValueAsString(valid()), "max_tokens"));
-        assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of(), candidates));
+        failure(new IllegalStateException("MODEL_OUTPUT_LIMIT"));
+        assertTrue(assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of(), candidates)).getMessage().contains("未完整输出"));
     }
 
     @Test void timeoutAndUpstreamErrorsDoNotLeakSecrets() throws Exception
     {
-        response(401, "synthetic-private-body");
+        failure(new IllegalStateException("MODEL_HTTP_401"));
+        String auth = assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of(), candidates)).getMessage();
+        assertFalse(auth.contains("synthetic-test-key"));
+        assertFalse(auth.contains("MODEL_HTTP_401"));
+        failure(new TimeoutException("synthetic-private-body"));
         assertFalse(assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of(), candidates)).getMessage().contains("private"));
-        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenThrow(new HttpTimeoutException("synthetic-private-body"));
+        failure(new java.io.IOException("synthetic-private-body"));
         assertFalse(assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of(), candidates)).getMessage().contains("private"));
     }
 
-    @Test void insecureEndpointIsRejectedBeforeSending() throws Exception
+    @Test void rateLimitMapsToReadableFailure() throws Exception
     {
-        properties.setBaseUrl("http://synthetic.invalid/anthropic");
-        assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of(), candidates));
-        verifyNoInteractions(client);
+        failure(new IllegalStateException("MODEL_HTTP_429"));
+        assertTrue(assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of(), candidates)).getMessage().contains("限流"));
     }
 }
