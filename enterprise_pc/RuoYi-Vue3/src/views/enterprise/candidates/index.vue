@@ -1,12 +1,11 @@
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Search, Upload, Tags, SlidersHorizontal, ArrowUpRight, UserRoundCheck, FileText, Send, ChevronRight, GraduationCap, BriefcaseBusiness, Bookmark } from '@/views/enterprise/components/icons'
+import { Search, Tags, SlidersHorizontal, ArrowUpRight, UserRoundCheck, FileText, Send, ChevronRight, GraduationCap, BriefcaseBusiness, Bookmark, MessageCircle } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listTalents, getTalentResume, updateTalentStatus, batchTalentTags } from '@/api/talent'
-import { batchImportResumes } from '@/api/resume'
 
 const router = useRouter()
 const route = useRoute()
@@ -59,6 +58,11 @@ async function load() {
 }
 
 function search() { pageNum.value = 1; load() }
+// 与候选人建立聊天通道：跳转消息中心并按 peerId 进入新会话（首次发送时后端自动建会话）
+function openChat(row) {
+  if (!row.userId) return notify('该候选人未绑定用户账号，无法发起聊天')
+  router.push({ path: '/enterprise/messages', query: { peerId: row.userId, peerName: row.name || ('用户' + row.userId) } })
+}
 // 已在该页面时再次使用顶栏搜索，跟随 query 变化重新查询
 watch(() => route.query.keyword, (kw) => {
   keyword.value = typeof kw === 'string' ? kw : ''
@@ -78,41 +82,6 @@ function toggleSelect(id) {
 }
 function toggleSelectAll() {
   selected.value = allSelected.value ? [] : talents.value.map(t => t.talentId)
-}
-
-// 简历批量导入：上传 PDF，按手机号/邮箱匹配已注册候选人账号
-const importOpen = ref(false)
-const importFiles = ref([])
-const importDeduplicate = ref(true)
-const importing = ref(false)
-const importResults = ref([])
-
-function importResume() {
-  importFiles.value = []
-  importResults.value = []
-  importDeduplicate.value = true
-  importOpen.value = true
-}
-
-function onImportFileChange(e) {
-  importFiles.value = Array.from(e.target.files || [])
-}
-
-async function submitImport() {
-  if (!importFiles.value.length) return notify('请选择需要导入的 PDF 简历')
-  importing.value = true
-  try {
-    const formData = new FormData()
-    importFiles.value.forEach(f => formData.append('files', f))
-    formData.append('deduplicate', importDeduplicate.value)
-    const res = await batchImportResumes(formData)
-    importResults.value = res.data || []
-    const success = importResults.value.filter(r => r.status === 'success').length
-    notify(`导入完成：成功 ${success} 份，其余见结果清单`)
-    if (success) await load()
-  } catch (e) { /* 拦截器已提示 */ } finally {
-    importing.value = false
-  }
 }
 
 // 批量加标签：真实写入 t_tal_tag
@@ -165,10 +134,6 @@ onMounted(load)
   <div class="page candidates-page">
     <div class="page-heading">
       <div><h1>候选人管理</h1><p>候选人流程状态与匹配度管理 · 共 {{ total }} 位候选人</p></div>
-      <div class="heading-actions">
-        <button class="btn ghost-primary" @click="importResume"><Upload :size="15" />导入简历</button>
-        <button class="btn primary" @click="router.push('/enterprise/jobs')"><UserRoundCheck :size="15" />查看岗位候选人</button>
-      </div>
     </div>
 
     <section class="card list-card">
@@ -181,7 +146,8 @@ onMounted(load)
         <button class="filter-btn" @click="search"><SlidersHorizontal :size="15" />筛选</button>
       </div>
 
-      <div class="batch-bar">
+      <!-- 批量操作栏：仅在勾选了候选人时显示 -->
+      <div v-if="selected.length" class="batch-bar">
         <span>已选 {{ selected.length }} 人</span>
         <button class="btn sm" @click="batchTag"><Tags :size="14" />批量加标签</button>
         <select v-model="batchStatus" class="select sm-select">
@@ -214,6 +180,7 @@ onMounted(load)
           <div class="ops">
             <button @click="router.push(`/enterprise/candidates/${row.talentId}/process`)"><ArrowUpRight :size="13" />流程</button>
             <button @click="openResume(row)"><FileText :size="13" />简历</button>
+            <button @click="openChat(row)"><MessageCircle :size="13" />聊天</button>
           </div>
         </article>
       </div>
@@ -260,31 +227,6 @@ onMounted(load)
       </template>
     </BaseModal>
 
-    <BaseModal v-if="importOpen" title="导入简历" width="560px" @close="importOpen = false">
-      <div class="import-body">
-        <p class="import-hint">支持 PDF 简历批量上传。系统会解析简历中的手机号/邮箱匹配已注册候选人账号，匹配成功后写入候选人档案；未匹配的文件会逐条给出原因。</p>
-        <label class="file-picker">
-          <input type="file" accept=".pdf" multiple @change="onImportFileChange" />
-          <span>选择 PDF 文件（可多选）</span>
-        </label>
-        <p v-if="importFiles.length" class="file-count">已选择 {{ importFiles.length }} 个文件</p>
-        <label class="dedup-line"><input v-model="importDeduplicate" type="checkbox" />跳过已在人才库或同名简历的候选人</label>
-        <div v-if="importResults.length" class="import-results">
-          <div v-for="(item, i) in importResults" :key="i" class="import-row">
-            <span class="file-name">{{ item.fileName }}</span>
-            <span class="pill" :class="item.status === 'success' ? 'green' : item.status === 'duplicate' ? 'gray' : 'red'">
-              {{ item.status === 'success' ? '成功' : item.status === 'duplicate' ? '重复' : '失败' }}
-            </span>
-            <small>{{ item.message }}<template v-if="item.candidateName"> · {{ item.candidateName }}</template></small>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <button class="btn" @click="importOpen = false">关闭</button>
-        <button class="btn primary" :disabled="importing || !importFiles.length" @click="submitImport">{{ importing ? '导入中…' : '开始导入' }}</button>
-      </template>
-    </BaseModal>
-
     <BaseModal v-if="tagOpen" title="批量加标签" width="400px" @close="tagOpen = false">
       <div class="tag-body">
         <p class="import-hint">将为已选择的 {{ selected.length }} 位候选人添加同一标签。</p>
@@ -324,6 +266,8 @@ onMounted(load)
 .person small{color:#7f8ea3;font-size:9px;margin-top:3px}
 .score{color:#2563eb;font-weight:600}
 .stage-text{color:#5e718c}
+/* pill 作为 grid 项默认被拉伸占满整列导致文字偏移，改为收缩并与表头左对齐 */
+.table-row .pill{justify-self:start;width:max-content;max-width:100%}
 .table-row time{color:#8d9aae;font-size:9px}
 .ops{display:flex;flex-wrap:wrap;gap:6px}
 .ops button{border:0;background:transparent;color:#2563eb;font-size:9px;display:flex;gap:3px;align-items:center;padding:3px 0;cursor:pointer}
@@ -337,7 +281,7 @@ onMounted(load)
 .d-item label{display:block;font-size:9px;color:#8da0ba;margin-bottom:4px}
 .d-item b{font-size:12px;color:#1e293b;font-weight:500}
 .resume-block{margin-top:16px;border-top:1px dashed #e2e8f0;padding-top:13px}
-.import-hint{font-size:10px;color:#7b8ba3;line-height:1.65}.file-picker{margin-top:12px;display:flex;align-items:center;justify-content:center;border:1px dashed #b9cbe4;border-radius:9px;padding:18px;cursor:pointer;color:#2563eb;font-size:11px;background:#f7faff}.file-picker input{display:none}.file-count{font-size:10px;color:#4b6078;margin-top:8px}.dedup-line{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:10px;color:#63758f}.import-results{margin-top:12px;max-height:240px;overflow:auto;border-top:1px solid #eef2f7}.import-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #eef2f7;font-size:10px}.import-row .file-name{flex:1;min-width:180px;color:#334155;word-break:break-all}.import-row small{width:100%;color:#8291a5;font-size:9px}.tag-body .input{margin-top:10px}
+.import-hint{font-size:10px;color:#7b8ba3;line-height:1.65}.tag-body .input{margin-top:10px}
 .resume-block h3{display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;margin-bottom:10px}
 .resume-list{list-style:none;display:flex;flex-direction:column;gap:9px}
 .resume-list li{background:#f7f9fc;border-radius:9px;padding:9px 12px}
