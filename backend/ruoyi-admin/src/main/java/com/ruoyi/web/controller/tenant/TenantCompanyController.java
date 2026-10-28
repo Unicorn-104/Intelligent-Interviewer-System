@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.*;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
+import com.ruoyi.common.annotation.Log;
+import com.ruoyi.common.enums.BusinessType;
 import com.ruoyi.system.service.ICompanyService;
 import com.ruoyi.system.domain.Company;
 import java.util.*;
@@ -89,6 +91,26 @@ public class TenantCompanyController extends BaseController {
         return success(item);
     }
 
+    /** 企业用量明细 */
+    @GetMapping("/{companyId}/usage")
+    public AjaxResult usage(@PathVariable("companyId") Long companyId) {
+        Map<String, Object> u = new HashMap<>();
+        try {
+            Integer jobs = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM t_pos WHERE pos_cmp_id = ?", Integer.class, companyId);
+            Integer apps = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM t_app_record a JOIN t_pos p ON a.app_position_id = p.pos_id WHERE p.pos_cmp_id = ?", Integer.class, companyId);
+            Integer interviews = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM t_int_session s JOIN t_pos p ON s.ses_pos_id = p.pos_id WHERE p.pos_cmp_id = ?", Integer.class, companyId);
+            u.put("jobs", jobs != null ? jobs : 0);
+            u.put("applications", apps != null ? apps : 0);
+            u.put("interviews", interviews != null ? interviews : 0);
+        } catch (Exception e) {
+            u.put("error", e.getMessage());
+        }
+        return success(u);
+    }
+
     @PreAuthorize("@ss.hasPermi('tenant:company:add')")
     @PostMapping
     public AjaxResult add(@RequestBody Map<String, Object> data) {
@@ -125,6 +147,7 @@ public class TenantCompanyController extends BaseController {
     }
 
     @PreAuthorize("@ss.hasPermi('tenant:company:edit')")
+    @Log(title = "企业状态变更", businessType = BusinessType.UPDATE)
     @PutMapping("/changeStatus")
     public AjaxResult changeStatus(@RequestBody Map<String, Object> data) {
         Object companyIdObj = data.get("companyId");
@@ -145,6 +168,7 @@ public class TenantCompanyController extends BaseController {
      * 企业审核
      */
     @PreAuthorize("@ss.hasPermi('tenant:company:audit')")
+    @Log(title = "企业审核", businessType = BusinessType.UPDATE)
     @PutMapping("/audit")
     public AjaxResult audit(@RequestBody Map<String, Object> data) {
         Object companyIdObj = data.get("companyId");
@@ -165,6 +189,7 @@ public class TenantCompanyController extends BaseController {
      * 撤销审核：重置为待审核并清空留痕
      */
     @PreAuthorize("@ss.hasPermi('tenant:company:edit')")
+    @Log(title = "撤销企业审核", businessType = BusinessType.UPDATE)
     @PutMapping("/revoke")
     public AjaxResult revoke(@RequestBody Map<String, Object> data) {
         Object companyIdObj = data.get("companyId");

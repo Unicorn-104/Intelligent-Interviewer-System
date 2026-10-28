@@ -127,6 +127,18 @@
           <span style="color: #f56c6c">{{ detail.verifyRemark }}</span>
         </el-descriptions-item>
       </el-descriptions>
+      <el-divider content-position="left">用量统计</el-divider>
+      <el-row :gutter="16">
+        <el-col :span="8">
+          <el-statistic title="岗位数" :value="usage.jobs || 0" />
+        </el-col>
+        <el-col :span="8">
+          <el-statistic title="投递数" :value="usage.applications || 0" />
+        </el-col>
+        <el-col :span="8">
+          <el-statistic title="面试数" :value="usage.interviews || 0" />
+        </el-col>
+      </el-row>
     </el-dialog>
 
     <!-- 驳回理由对话框 -->
@@ -156,6 +168,7 @@
 
 <script setup name="CompanyAudit">
 import { listCompany, auditCompany, statsCompany, getCompany, revokeCompany } from '@/api/tenant/company'
+import request from '@/utils/request'
 
 const { proxy } = getCurrentInstance()
 
@@ -165,6 +178,7 @@ const showSearch = ref(true)
 const total = ref(0)
 const detailOpen = ref(false)
 const detail = ref({})
+const usage = ref({})
 const stats = ref({ total: 0, pending: 0, approved: 0, rejected: 0 })
 
 const rejectOpen = ref(false)
@@ -250,6 +264,7 @@ function handleDetail(row) {
   getCompany(row.companyId).then((res) => {
     detail.value = res.data || res
     detailOpen.value = true
+    request({ url: `/tenant/company/${row.companyId}/usage` }).then((r) => { usage.value = r.data || {} })
   })
 }
 

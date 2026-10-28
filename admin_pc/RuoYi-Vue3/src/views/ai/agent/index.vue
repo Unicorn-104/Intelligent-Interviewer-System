@@ -8,9 +8,12 @@
         <el-card shadow="hover"><div class="ov-num">{{ overview.total || 0 }}</div><div class="ov-label">总事件</div></el-card>
       </el-col>
       <el-col :span="6">
+        <el-card shadow="hover"><div class="ov-num">¥{{ ((overview.todayTotal||0)*0.002).toFixed(2) }}</div><div class="ov-label">今日成本估算</div></el-card>
+      </el-col>
+      <el-col :span="6">
         <el-card shadow="hover">
           <div v-for="t in overview.byType || []" :key="t.event_type" class="type-row">
-            <el-tag size="small">{{ t.event_type }}</el-tag> {{ t.c }}
+            <el-tag size="small">{{ typeLabel(t.event_type) }}</el-tag> {{ t.c }}
           </div>
         </el-card>
       </el-col>
@@ -37,12 +40,16 @@
 
     <el-table :data="list" v-loading="loading" border size="small">
       <el-table-column label="ID" prop="id" width="80" />
-      <el-table-column label="run_id" prop="run_id" width="120" show-overflow-tooltip />
+      <el-table-column label="run_id" width="100" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.run_id ? row.run_id.substring(0, 8) : '-' }}</template>
+      </el-table-column>
       <el-table-column label="类型" prop="event_type" width="80">
-        <template #default="s"><el-tag size="small">{{ s.row.event_type }}</el-tag></template>
+        <template #default="s"><el-tag size="small">{{ typeLabel(s.row.event_type) }}</el-tag></template>
       </el-table-column>
       <el-table-column label="数据预览" prop="data_preview" show-overflow-tooltip />
-      <el-table-column label="时间" prop="created_at" width="160" />
+      <el-table-column label="时间" width="160">
+        <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="100">
         <template #default="s">
           <el-button link type="primary" @click="showTrace(s.row.run_id)">链路</el-button>
@@ -53,8 +60,8 @@
 
     <el-dialog v-model="traceOpen" title="事件链路" width="700px">
       <el-timeline>
-        <el-timeline-item v-for="e in traceList" :key="e.id" :timestamp="e.created_at">
-          <el-tag size="small">{{ e.event_type }}</el-tag>
+        <el-timeline-item v-for="e in traceList" :key="e.id" :timestamp="fmtTime(e.created_at)">
+          <el-tag size="small">{{ typeLabel(e.event_type) }}</el-tag>
           <pre class="trace-data">{{ e.data_json }}</pre>
         </el-timeline-item>
       </el-timeline>
@@ -81,9 +88,14 @@ function load() {
 function loadOverview() { request({ url: '/admin/aiagent/overview' }).then((r) => (overview.value = r.data || {})) }
 function fmtDay(s) {
   if (!s) return s
-  // 2026-10-23T16:00:00.000Z -> 10-23
   const m = String(s).match(/\d{4}-(\d{2}-\d{2})/)
   return m ? m[1] : s
+}
+const TYPE_MAP = { status: '状态推送', delta: '流式输出', done: '完成', cards: '卡片消息', error: '错误' }
+function typeLabel(t) { return TYPE_MAP[t] || t }
+function fmtTime(s) {
+  if (!s) return '-'
+  return String(s).replace('T', ' ').substring(0, 19)
 }
 function showTrace(runId) {
   request({ url: '/admin/aiagent/trace', params: { runId } }).then((r) => {

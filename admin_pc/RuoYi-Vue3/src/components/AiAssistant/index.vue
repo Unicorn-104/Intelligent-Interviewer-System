@@ -446,7 +446,7 @@ function focusInput() {
   })
 }
 
-const ROUTE_WHITELIST = ['/dashboard','/company/company/list','/company/user','/business/list','/business/verify','/recruit/job','/recruit/candidate','/recruit/resume','/recruit/interview','/recruit/exam','/msg/template','/msg/record','/msg/channel','/msg/sent','/ai/provider-list','/ai/agent','/ai/quota','/system/role','/system/menu','/system/log/monitor/logininfor','/system/log/monitor/operlog','/monitor/online','/monitor/job','/monitor/cache','/content/advert','/content/question','/content/feedback']
+const ROUTE_WHITELIST = ['/dashboard','/company/company/list','/company/user','/business/list','/business/verify','/recruit/job','/recruit/candidate','/recruit/resume','/recruit/interview','/recruit/exam','/msg/template','/msg/record','/msg/channel','/msg/sent','/ai/provider-list','/ai/agent','/ai/quota','/system/role','/system/menu','/monitor/online','/monitor/job','/monitor/cache','/monitor/operlog','/monitor/logininfor','/content/advert','/content/question','/content/feedback']
 
 function goRoute(path) {
   if (!ROUTE_WHITELIST.includes(path)) {

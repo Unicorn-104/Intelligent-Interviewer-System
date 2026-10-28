@@ -44,6 +44,32 @@ public class BizCandidateController extends BaseController
         return getDataTable(list);
     }
 
+    /** 导出CSV */
+    @PreAuthorize("@ss.hasPermi('biz:candidate:export')")
+    @Log(title = "候选人导出", businessType = BusinessType.EXPORT)
+    @GetMapping("/export")
+    public void export(jakarta.servlet.http.HttpServletResponse response,
+                       @RequestParam(required = false) String userName,
+                       @RequestParam(required = false) String status) throws Exception {
+        List<Map<String, Object>> list = candidateService.selectAdminCandidateList(userName, status, null);
+        response.setContentType("text/csv;charset=UTF-8");
+        response.setHeader("Content-Disposition", "attachment;filename=candidates.csv");
+        java.io.PrintWriter w = response.getWriter();
+        w.write("\uFEFF");
+        w.println("姓名,手机号,邮箱,状态,岗位,匹配分");
+        for (Map<String, Object> r : list) {
+            w.println(String.join(",",
+                String.valueOf(r.getOrDefault("candidateName","")),
+                String.valueOf(r.getOrDefault("phonenumber","")),
+                String.valueOf(r.getOrDefault("email","")),
+                String.valueOf(r.getOrDefault("processStageName","")),
+                String.valueOf(r.getOrDefault("latestPosition","")),
+                String.valueOf(r.getOrDefault("latestScore",""))
+            ));
+        }
+        w.flush();
+    }
+
     /** 统计概览 */
     @PreAuthorize("@ss.hasPermi('biz:candidate:query')")
     @GetMapping("/summary")

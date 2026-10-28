@@ -228,14 +228,18 @@ public class AdminDashboardController extends BaseController
         pipeline.add(step("interviewing", "面试中", interviewing, "正在安排/进行面试", "/recruit/interview", "orange", "VideoCamera"));
         pipeline.add(step("passed", "已通过", passed, "面试通过待录用", "/recruit/exam", "purple", "CircleCheck"));
 
-        // 待办：待审核岗位 / 待初筛候选人 / 待开始面试
+        // 待办：待审核企业 / 待审核岗位 / 待初筛候选人 / 待开始面试 / 待回复反馈
         List<Map<String, Object>> todos = new ArrayList<>();
+        int entPending = count("SELECT COUNT(*) FROM t_company WHERE cmp_status = 0");
         int jobPending = count("SELECT COUNT(*) FROM t_pos WHERE pos_status = 0");
         int talNew = count("SELECT COUNT(*) FROM t_tal WHERE tal_status IN (0,9)");
         int sessionPending = count("SELECT COUNT(*) FROM t_int_session WHERE ses_status = 0");
+        int fbPending = count("SELECT COUNT(*) FROM t_feedback WHERE fb_status = 0");
+        todos.add(todo("entPending", "待审核企业", entPending, "企业入驻待审核", "/member/verify", "danger"));
         todos.add(todo("jobPending", "待审核岗位", jobPending, "岗位待管理员审核", "/recruit/job", "warning"));
         todos.add(todo("talNew", "待初筛候选人", talNew, "新候选人等待初筛", "/recruit/candidate", "primary"));
         todos.add(todo("sessionPending", "待开始面试", sessionPending, "已排期待开始的面试", "/recruit/interview", "success"));
+        todos.add(todo("fbPending", "待回复反馈", fbPending, "用户反馈待处理", "/content/feedback", "info"));
 
         // 转化漏斗：已发布岗位 → 投递 → 初筛 → 面试中 → 通过
         List<Map<String, Object>> funnel = new ArrayList<>();
