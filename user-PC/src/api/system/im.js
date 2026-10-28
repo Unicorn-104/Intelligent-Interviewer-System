@@ -22,6 +22,18 @@ export function sendImMessage(data) {
   })
 }
 
+export function uploadImAttachment(file) {
+  const formData = new FormData()
+  formData.append('file', file, file.name)
+  return request({
+    // 与企业端共用现有上传接口，兼容已部署的后端版本；上传结果再写入 IM 消息。
+    url: '/common/upload',
+    method: 'post',
+    data: formData,
+    timeout: 120000
+  })
+}
+
 export function markImSessionRead(sessionId) {
   return request({
     url: `/system/im/sessions/${sessionId}/read`,

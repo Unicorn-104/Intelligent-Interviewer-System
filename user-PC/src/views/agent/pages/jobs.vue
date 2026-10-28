@@ -207,6 +207,7 @@
                 <button class="save-button" type="button" :class="{ saved: isSaved(job.id) }" @click.stop="toggleSaved(job.id)">
                   <svg viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg><span>{{ isSaved(job.id) ? '已收藏' : '收藏岗位' }}</span>
                 </button>
+                <button class="contact-button" type="button" @click.stop="startConversation(job)">联系 HR</button>
                 <button class="apply-button" type="button" @click.stop="applyJob(job)">{{ job.appliedFlag ? '查看投递' : '投递简历' }}</button>
               </div>
             </div>
@@ -267,12 +268,12 @@ let toastTimer
 
 const hotTags = ['AI 产品经理', 'React', '大模型应用', '用户增长', '杭州']
 const salaryOptions = [
-  { value: 'under-5', label: '5K以下', min: '', max: 5 },
-  { value: '5-10', label: '5-10K', min: 5, max: 10 },
-  { value: '10-15', label: '10-15K', min: 10, max: 15 },
-  { value: '15-25', label: '15-25K', min: 15, max: 25 },
-  { value: '25-50', label: '25-50K', min: 25, max: 50 },
-  { value: 'over-50', label: '50K以上', min: 50, max: '' }
+  { value: 'under-5', label: '5K以下', min: '', max: 5000 },
+  { value: '5-10', label: '5-10K', min: 5000, max: 10000 },
+  { value: '10-15', label: '10-15K', min: 10000, max: 15000 },
+  { value: '15-25', label: '15-25K', min: 15000, max: 25000 },
+  { value: '25-50', label: '25-50K', min: 25000, max: 50000 },
+  { value: 'over-50', label: '50K以上', min: 50000, max: '' }
 ]
 const positionGroups = [
   { key: 'all', label: '全部职位' },
@@ -674,6 +675,16 @@ function applyJob(job) {
   }
 }
 
+function startConversation(job) {
+  const publisherId = Number(job?.publisherId)
+  if (!Number.isInteger(publisherId) || publisherId <= 0) {
+    showToast('该岗位暂未配置 HR 联系人')
+    return
+  }
+  const peerName = `${job.companyName || '企业'} HR`
+  window.__agentNavigate(`/agent/messages?peerId=${encodeURIComponent(publisherId)}&peerName=${encodeURIComponent(peerName)}&jobId=${encodeURIComponent(job.id)}`)
+}
+
 function companyMark(name) {
   return (name || '企业').slice(0, 2)
 }
@@ -723,6 +734,7 @@ onBeforeUnmount(() => {
 .position-section h3,.industry-section h3{margin:0;padding:4px 9px 7px;color:#6c7b90;font-size:12px;font-weight:700}
 .position-section-list{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:6px 10px}
 .industry-grid{display:block;max-height:430px}
+.contact-button{min-height:32px;padding:0 12px;border:1px solid #bfd5f2;border-radius:6px;color:#2b7fff;background:#f5f9ff;font-size:11px;font-weight:800;cursor:pointer}
 .all-industry{display:block;width:100%;margin-bottom:8px;color:#0aa3a6;background:#f3fbfb;font-weight:800}
 .industry-section{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:5px 12px;padding:8px 0;border-top:1px solid #edf1f6}
 .industry-section h3{grid-column:1/-1}

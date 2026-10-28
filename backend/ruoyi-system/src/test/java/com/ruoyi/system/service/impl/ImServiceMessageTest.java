@@ -117,6 +117,27 @@ public class ImServiceMessageTest
         message.setContent("x".repeat(1001));assertThrows(ServiceException.class,()->service.sendMessage(message,11L,null));
         assertEquals(0,jdbc.queryForObject("select count(*) from t_im_message",Integer.class));
     }
+
+    @Test
+    void attachmentMessagesRequireAddressAndPersistMetadata()
+    {
+        when(sessions.selectSessionByIdAndUser(8L,11L)).thenReturn(session());
+        var invalid = new ImMessage();
+        invalid.setSessionId(8L);
+        invalid.setType(2);
+        invalid.setContent("photo.png");
+        assertThrows(ServiceException.class, () -> service.sendMessage(invalid, 11L, null));
+
+        var valid = new ImMessage();
+        valid.setSessionId(8L);
+        valid.setType(3);
+        valid.setContent(" resume.pdf ");
+        valid.setAttachmentUrl("/profile/upload/2026/10/28/resume.pdf");
+        assertEquals(8L, service.sendMessage(valid, 11L, null));
+        assertEquals("resume.pdf", jdbc.queryForObject("select imsg_content from t_im_message", String.class));
+        assertEquals("/profile/upload/2026/10/28/resume.pdf",
+                jdbc.queryForObject("select imsg_attachment_url from t_im_message", String.class));
+    }
     @Test
     void clientsCannotForgeServerGeneratedRescheduleCards()
     {

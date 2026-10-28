@@ -21,15 +21,15 @@ const isWhiteList = (path) => {
   return whiteList.some(pattern => isPathMatch(pattern, path))
 }
 
-// 候选人端准入角色：求职者(biz_4)
-// 企业角色(biz_1/2/3)等其他角色禁止进入本端任何页面
+// 候选人端准入标识：优先使用求职者角色，兼容历史注册账号保存的身份类型。
+// 企业角色(biz_1/2/3)等其他角色仍禁止进入本端任何页面。
 const CANDIDATE_ROLES = ['biz_4']
 
 function hasCandidateAccess() {
-  const roles = useUserStore().roles || []
-  return roles.some(r => CANDIDATE_ROLES.includes(r))
+  const userStore = useUserStore()
+  const roles = userStore.roles || []
+  return roles.some(r => CANDIDATE_ROLES.includes(r)) || Number(userStore.userIdentityType) === 1
 }
-
 // 非求职者：强制登出并清理本地会话，由守卫负责跳回登录页
 async function denyNonCandidate() {
   const userStore = useUserStore()

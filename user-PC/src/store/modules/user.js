@@ -18,7 +18,8 @@ const useUserStore = defineStore(
       nickName: '',
       avatar: '',
       roles: [],
-      permissions: []
+      permissions: [],
+      userIdentityType: null
     }),
     actions: {
       // 登录
@@ -60,6 +61,7 @@ const useUserStore = defineStore(
               this.roles = ['ROLE_DEFAULT']
             }
             this.id = user.userId
+            this.userIdentityType = user.userIdentityType
             this.name = user.userName
             this.nickName = user.nickName
             this.avatar = avatar
@@ -88,6 +90,7 @@ const useUserStore = defineStore(
             this.token = ''
             this.roles = []
             this.permissions = []
+            this.userIdentityType = null
             removeToken()
             resolve()
           }).catch(error => {
