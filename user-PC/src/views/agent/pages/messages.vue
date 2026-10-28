@@ -65,12 +65,12 @@
 
     <section class="content-area">
       <div v-if="activeView === 'chat'" class="chat-view">
-        <template v-if="selectedSession">
+        <template v-if="activeConversation">
           <header class="chat-head">
             <div class="chat-person">
-              <span class="mini-avatar">{{ avatarText(selectedSession.peerName) }}</span>
+              <span class="mini-avatar">{{ avatarText(activeConversation.peerName) }}</span>
               <div class="notice-copy">
-                <div class="chat-name">{{ selectedSession.peerName || '联系人' }} <span class="hr-tag">站内联系人</span></div>
+                <div class="chat-name">{{ activeConversation.peerName || '联系人' }} <span class="hr-tag">站内联系人</span></div>
                 <div class="online-text">消息会话</div>
               </div>
             </div>
@@ -80,36 +80,68 @@
             <div v-if="messagesLoading" class="notification-state">正在读取聊天记录...</div>
             <div v-else-if="messagesError" class="notification-state error">
               <span>聊天记录暂时无法读取</span>
-              <button class="notification-retry" type="button" @click="loadMessages(selectedSessionId)">重新加载</button>
+               <button class="notification-retry" type="button" @click="selectedSessionId && loadMessages(selectedSessionId)">重新加载</button>
             </div>
             <template v-else-if="messages.length">
               <div class="time-divider">聊天记录</div>
               <div v-for="message in messages" :key="message.messageId" class="message-row" :class="{ me: message.isMine }">
-                <span v-if="!message.isMine" class="bubble-avatar">{{ avatarText(selectedSession.peerName) }}</span>
-                <div class="bubble-wrap">
-                  <div class="bubble">{{ message.content || '[非文本消息]' }}</div>
-                  <div class="bubble-time">{{ formatMessageTime(message.sendTime) }}</div>
-                </div>
+                 <span v-if="!message.isMine" class="bubble-avatar">{{ avatarText(activeConversation.peerName) }}</span>
+                  <div class="bubble-wrap">
+                   <div class="bubble">
+                     <template v-if="message.type === 2 && message.attachmentUrl">
+                       <template v-if="!message.attachmentUnavailable">
+                         <button class="attachment-image-button" type="button" :aria-label="`查看图片 ${message.content || ''}`" @click="previewAttachment(message)">
+                           <img class="attachment-image" :src="message.attachmentUrl" :alt="message.content || '聊天图片'" @error="markAttachmentUnavailable(message)" />
+                         </button>
+                         <button class="attachment-name" type="button" @click="previewAttachment(message)">{{ message.content || '查看图片' }}</button>
+                       </template>
+                       <span v-else class="attachment-unavailable">图片已失效，请重新上传</span>
+                     </template>
+                     <button v-else-if="message.type === 3 && message.attachmentUrl" class="attachment-file" type="button" @click="openAttachment(message)">
+                       <span class="attachment-file-icon" aria-hidden="true">↧</span>
+                       <span class="attachment-file-copy"><strong>{{ message.content || '文件附件' }}</strong><small>点击打开或下载</small></span>
+                     </button>
+                     <span v-else>{{ message.content || '[非文本消息]' }}</span>
+                   </div>
+                   <div class="bubble-time">{{ formatMessageTime(message.sendTime) }}</div>
+                 </div>
               </div>
             </template>
-            <div v-else class="notification-state">暂无聊天记录</div>
+             <div v-else class="notification-state">{{ newConversation ? '输入消息，开始联系该企业 HR' : '暂无聊天记录' }}</div>
           </div>
 
           <form class="composer" @submit.prevent="sendMessage">
-            <div class="composer-box">
-              <input
-                v-model="draftMessage"
-                type="text"
-                maxlength="1000"
-                placeholder="输入消息，Enter 发送"
-                aria-label="消息内容"
-                autocomplete="off"
-              />
+            <input ref="imageInput" class="attachment-input" type="file" accept="image/jpeg,image/png,image/gif,image/bmp" @change="handleAttachmentChange($event, true)" />
+            <input ref="fileInput" class="attachment-input" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" @change="handleAttachmentChange($event, false)" />
+            <div class="composer-tools">
+              <div class="composer-tool-list">
+                <button class="composer-tool" type="button" :disabled="sending" title="发送图片" @click="imageInput?.click()">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 2-2 6 6"/></svg>
+                  <span>图片</span>
+                </button>
+                <button class="composer-tool" type="button" :disabled="sending" title="发送文件" @click="fileInput?.click()">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 3 5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5M8 13h8M8 17h6"/></svg>
+                  <span>附件</span>
+                </button>
+              </div>
+              <span class="composer-hint">支持图片、PDF、Office、TXT、ZIP，单个不超过 10MB</span>
             </div>
-            <button class="send-button" type="submit" :disabled="sending || !draftMessage.trim()">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-8.2 18-2.4-7.4L3 11.2Z" /><path d="M10.4 13.6 21 3" /></svg>
-              {{ sending ? '发送中' : '发送' }}
-            </button>
+            <div class="composer-main">
+              <div class="composer-box">
+                <input
+                  v-model="draftMessage"
+                  type="text"
+                  maxlength="1000"
+                  placeholder="输入消息，Enter 发送，Shift+Enter 换行…"
+                  aria-label="消息内容"
+                  autocomplete="off"
+                />
+              </div>
+              <button class="send-button" type="submit" :disabled="sending || !draftMessage.trim()">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-8.2 18-2.4-7.4L3 11.2Z" /><path d="M10.4 13.6 21 3" /></svg>
+                {{ sending ? '发送中' : '发送' }}
+              </button>
+            </div>
           </form>
         </template>
         <div v-else class="empty-chat">
@@ -156,20 +188,20 @@
       </div>
     </section>
 
-    <aside v-if="activeView === 'chat' && selectedSession" class="detail-sidebar">
+    <aside v-if="activeView === 'chat' && activeConversation" class="detail-sidebar">
       <div class="detail-head">会话详情</div>
       <div class="person-panel">
         <div class="person-card">
-          <span class="mini-avatar">{{ avatarText(selectedSession.peerName) }}</span>
+          <span class="mini-avatar">{{ avatarText(activeConversation.peerName) }}</span>
           <div>
-            <strong>{{ selectedSession.peerName || '联系人' }}</strong>
+            <strong>{{ activeConversation.peerName || '联系人' }}</strong>
             <span>消息会话联系人</span>
           </div>
         </div>
         <div class="person-info">
-          <div>会话编号：{{ selectedSession.sessionId }}</div>
-          <div>最近消息：{{ selectedSession.lastMessage || '暂无消息内容' }}</div>
-          <div>更新时间：{{ formatMessageTime(selectedSession.lastMessageAt) }}</div>
+          <div>会话编号：{{ activeConversation.sessionId || '发送首条消息后创建' }}</div>
+          <div>最近消息：{{ activeConversation.lastMessage || '暂无消息内容' }}</div>
+          <div>更新时间：{{ formatMessageTime(activeConversation.lastMessageAt) }}</div>
         </div>
       </div>
     </aside>
@@ -241,7 +273,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
-import { listImMessages, listImSessions, markImSessionRead, sendImMessage } from '@/api/system/im'
+import { listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
 import { cancelAiRun, createAiSession, listAiMessages, listAiSessions, startAiRun, streamAiRun } from '@/api/agent/ai'
 
 const sessions = ref([])
@@ -253,8 +285,11 @@ const sessionsError = ref(false)
 const messages = ref([])
 const messagesLoading = ref(false)
 const messagesError = ref(false)
+const newConversation = ref(null)
 const draftMessage = ref('')
 const sending = ref(false)
+const imageInput = ref(null)
+const fileInput = ref(null)
 const noticeItems = ref([])
 const noticesLoading = ref(true)
 const noticesError = ref(false)
@@ -280,6 +315,7 @@ let refreshTimer
 let refreshInFlight = false
 
 const selectedSession = computed(() => sessions.value.find(item => item.sessionId === selectedSessionId.value) || null)
+const activeConversation = computed(() => selectedSession.value || newConversation.value)
 const filteredSessions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) return sessions.value
@@ -340,9 +376,17 @@ async function loadSessions() {
     sessions.value = Array.isArray(response.data) ? response.data : []
     const params = new URLSearchParams(location.search)
     const requestedId = Number(params.get('conversation'))
+    const requestedPeerId = Number(params.get('peerId'))
     const requestedSession = sessions.value.find(item => item.sessionId === requestedId)
+    const requestedPeer = sessions.value.find(item => String(item.peerId) === String(requestedPeerId))
     if (requestedSession) {
       await selectSession(requestedSession, false)
+    } else if (requestedPeerId > 0) {
+      if (requestedPeer) {
+        await selectSession(requestedPeer, false)
+      } else {
+        startNewConversation(requestedPeerId, params.get('peerName') || '企业 HR', false)
+      }
     } else if (params.get('view') === 'system' || !sessions.value.length) {
       selectSystem(false)
     } else {
@@ -356,13 +400,26 @@ async function loadSessions() {
   }
 }
 
+function startNewConversation(peerId, peerName = '企业 HR', updateUrl = true) {
+  activeView.value = 'chat'
+  selectedSessionId.value = null
+  newConversation.value = { peerId, peerName }
+  messages.value = []
+  messagesError.value = false
+  if (updateUrl) {
+    history.replaceState(null, '', `/agent/messages?peerId=${encodeURIComponent(peerId)}&peerName=${encodeURIComponent(peerName)}`)
+  }
+}
+
 async function loadMessages(sessionId, { silent = false } = {}) {
   if (!sessionId) return
   if (!silent) messagesLoading.value = true
   messagesError.value = false
   try {
     const response = await listImMessages(sessionId)
-    messages.value = Array.isArray(response.data) ? response.data : []
+    messages.value = Array.isArray(response.data)
+      ? response.data.map(message => ({ ...message, attachmentUrl: attachmentUrl(message.attachmentUrl) }))
+      : []
   } catch (error) {
     if (!silent) {
       messagesError.value = true
@@ -380,6 +437,7 @@ async function loadMessages(sessionId, { silent = false } = {}) {
 async function selectSession(session, updateUrl = true) {
   activeView.value = 'chat'
   selectedSessionId.value = session.sessionId
+  newConversation.value = null
   messages.value = []
   if (updateUrl) history.replaceState(null, '', `/agent/messages?conversation=${encodeURIComponent(session.sessionId)}`)
   await Promise.all([
@@ -392,26 +450,150 @@ async function selectSession(session, updateUrl = true) {
 function selectSystem(updateUrl = true) {
   activeView.value = 'system'
   selectedSessionId.value = null
+  newConversation.value = null
   if (updateUrl) history.replaceState(null, '', '/agent/messages?view=system')
 }
 
 async function sendMessage() {
   const content = draftMessage.value.trim()
-  if (!content || !selectedSession.value || sending.value) return
+  if (!content || !activeConversation.value || sending.value) return
   sending.value = true
   try {
-    await sendImMessage({
-      sessionId: selectedSession.value.sessionId,
-      type: 1,
-      content
-    })
+    const body = { type: 1, content }
+    if (selectedSession.value) body.sessionId = selectedSession.value.sessionId
+    else body.peerId = newConversation.value.peerId
+    const response = await sendImMessage(body)
     draftMessage.value = ''
-    await loadMessages(selectedSession.value.sessionId)
-    const response = await listImSessions()
-    sessions.value = Array.isArray(response.data) ? response.data : []
+    const sessionsResponse = await listImSessions()
+    sessions.value = Array.isArray(sessionsResponse.data) ? sessionsResponse.data : []
+    if (!selectedSession.value) {
+      const createdSessionId = Number(response?.sessionId ?? response?.data?.sessionId)
+      const createdSession = sessions.value.find(item => item.sessionId === createdSessionId || String(item.peerId) === String(newConversation.value.peerId))
+      if (createdSession) await selectSession(createdSession, false)
+    } else {
+      await loadMessages(selectedSession.value.sessionId)
+    }
     showToast('消息已发送')
   } catch (error) {
     showToast(error?.message || '消息发送失败')
+  } finally {
+    sending.value = false
+  }
+}
+
+function attachmentUrl(value) {
+  const raw = String(value || '').trim()
+  if (!raw || /[\u0000-\u0020\u007f]/.test(raw)) return ''
+  try {
+    const apiBase = String(import.meta.env.VITE_APP_BASE_API || '').replace(/\/$/, '')
+    const isAbsolute = /^https?:\/\//i.test(raw)
+    const resource = !isAbsolute && raw.startsWith('/') && apiBase && !raw.startsWith(`${apiBase}/`)
+      ? `${apiBase}${raw}`
+      : raw
+    const url = new URL(resource, window.location.origin)
+    if (!['http:', 'https:'].includes(url.protocol)) return ''
+    return url.toString()
+  } catch {
+    return ''
+  }
+}
+
+function markAttachmentUnavailable(message) {
+  message.attachmentUnavailable = true
+}
+
+function previewAttachment(message) {
+  openAttachment(message)
+}
+
+async function openAttachment(message) {
+  const url = attachmentUrl(message.attachmentUrl)
+  if (!url || message.attachmentUnavailable) {
+    showToast('附件已失效，请重新上传')
+    return
+  }
+  try {
+    const parsedUrl = new URL(url, window.location.origin)
+    if (parsedUrl.origin !== window.location.origin) {
+      window.open(url, '_blank', 'noopener,noreferrer')
+      return
+    }
+    const response = await fetch(url, { credentials: 'include' })
+    const blob = await response.blob()
+    const contentType = response.headers.get('content-type') || ''
+    if (!response.ok || contentType.includes('application/json')) {
+      let messageText = '附件不存在或已失效，请重新上传'
+      try {
+        const payload = JSON.parse(await blob.text())
+        messageText = payload.msg || messageText
+      } catch (_) {}
+      throw new Error(messageText)
+    }
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.target = '_blank'
+    if (message.type === 3) link.download = message.content || '聊天附件'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000)
+  } catch (error) {
+    if (message.type === 2) message.attachmentUnavailable = true
+    showToast(error?.message || '附件打开失败，请稍后重试')
+  }
+}
+
+function resetAttachmentInput(event) {
+  if (event?.target) event.target.value = ''
+}
+
+function isAllowedAttachment(file, isImage) {
+  const extension = String(file.name || '').split('.').pop().toLowerCase()
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp']
+  const fileExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'zip']
+  return (isImage ? imageExtensions : fileExtensions).includes(extension)
+}
+
+async function handleAttachmentChange(event, isImage) {
+  const file = event?.target?.files?.[0]
+  resetAttachmentInput(event)
+  if (!file || sending.value || !activeConversation.value) return
+  const maxSize = 10 * 1024 * 1024
+  if (file.size <= 0 || file.size > maxSize) {
+    showToast('附件不能为空且不能超过 10MB')
+    return
+  }
+  if (!isAllowedAttachment(file, isImage) || (isImage && file.type && !file.type.startsWith('image/'))) {
+    showToast(isImage ? '请选择 JPG、PNG、GIF 或 BMP 图片' : '请选择 PDF、Office、TXT 或 ZIP 文件')
+    return
+  }
+  sending.value = true
+  try {
+    const uploadResponse = await uploadImAttachment(file)
+    const data = uploadResponse?.fileName || uploadResponse?.url ? uploadResponse : (uploadResponse?.data || {})
+    const url = attachmentUrl(data.fileName || data.url)
+    if (!url) throw new Error('附件上传成功但未返回有效地址')
+    const body = {
+      type: isImage ? 2 : 3,
+      content: data.originalFilename || file.name,
+      attachmentUrl: url
+    }
+    if (selectedSession.value) body.sessionId = selectedSession.value.sessionId
+    else body.peerId = newConversation.value.peerId
+    const response = await sendImMessage(body)
+    const sessionsResponse = await listImSessions()
+    sessions.value = Array.isArray(sessionsResponse.data) ? sessionsResponse.data : []
+    if (!selectedSession.value) {
+      const createdSessionId = Number(response?.sessionId ?? response?.data?.sessionId)
+      const createdSession = sessions.value.find(item => item.sessionId === createdSessionId || String(item.peerId) === String(newConversation.value.peerId))
+      if (createdSession) await selectSession(createdSession, false)
+    } else {
+      await loadMessages(selectedSession.value.sessionId)
+    }
+    showToast(isImage ? '图片已发送' : '文件已发送')
+  } catch (error) {
+    showToast(error?.message || '附件发送失败')
   } finally {
     sending.value = false
   }
@@ -477,7 +659,7 @@ async function refreshMessages() {
       if (current) current.unread = 0
       await loadMessages(selectedSessionId.value, { silent: true })
       if (shouldMarkRead) await markImSessionRead(selectedSessionId.value)
-    } else {
+    } else if (activeView.value !== 'chat') {
       await loadNotices({ silent: true })
     }
   } catch {
@@ -654,6 +836,7 @@ onBeforeUnmount(() => {
 
 <style>
 .message-shell{--primary:#1A3C6E;--blue:#2B7FFF;--blue-soft:#EAF2FF;--bg:#F5F7FA;--text:#172B4D;--muted:#6B7A90;--light:#96A3B5;--line:#E6EBF2;--red:#D94B55;--shadow:0 5px 18px rgba(26,60,110,.045)}
+.attachment-input{display:none}.attachment-actions{display:flex;align-items:center;gap:6px}.attachment-button{height:34px;padding:0 9px;border:1px solid #D8E3EF;border-radius:7px;color:var(--muted);background:#fff;font-size:10px}.attachment-button:hover:not(:disabled){border-color:#AFC9EC;color:var(--blue);background:var(--blue-soft)}.attachment-button:disabled{cursor:not-allowed;opacity:.5}.bubble .attachment-image-button{display:block;max-width:220px;padding:0;border:0;border-radius:7px;background:transparent;overflow:hidden}.attachment-image{display:block;max-width:220px;max-height:180px;border-radius:7px;object-fit:contain;background:#F2F5F9}.attachment-name{display:block;max-width:220px;margin-top:6px;padding:0;border:0;color:inherit;background:transparent;font-size:10px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-name:hover{color:var(--blue)}.attachment-unavailable{display:block;max-width:220px;padding:18px 12px;border:1px dashed #D5DEE9;border-radius:7px;color:var(--muted);font-size:10px}.attachment-file{display:flex;align-items:center;gap:9px;min-width:180px;max-width:260px;padding:0;border:0;color:inherit;background:transparent;text-align:left;text-decoration:none}.attachment-file:hover .attachment-file-copy strong{text-decoration:underline}.attachment-file-icon{display:grid;width:28px;height:28px;place-items:center;flex:0 0 auto;border-radius:7px;background:rgba(255,255,255,.2);font-size:18px;font-weight:800}.attachment-file-copy{min-width:0}.attachment-file-copy strong,.attachment-file-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-file-copy strong{font-size:11px}.attachment-file-copy small{margin-top:3px;opacity:.72;font-size:9px}.me .attachment-file-icon{color:#fff;background:rgba(255,255,255,.2)}
 .message-shell,.message-shell *{box-sizing:border-box}.message-shell button,.message-shell input{font:inherit}.message-shell button{cursor:pointer}.message-shell svg{display:block}
 .message-shell{width:min(1380px,calc(100% - 48px));height:calc(100vh - 108px);min-height:650px;margin:18px auto;display:grid;grid-template-columns:290px minmax(0,1fr) 300px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
 .conversation-sidebar{display:flex;min-width:0;flex-direction:column;border-right:1px solid var(--line);background:#fff}.sidebar-head{padding:17px 15px 12px}.sidebar-title{display:flex;align-items:center;gap:7px;color:var(--primary);font-size:17px;font-weight:800}.sidebar-title span{color:var(--light);font-size:10px;font-weight:500}.search-box{position:relative;margin-top:11px}.search-box svg{position:absolute;top:10px;left:11px;width:15px;height:15px;color:#8F9EAF;stroke:currentColor;fill:none;stroke-width:1.8}.search-box input{width:100%;height:36px;padding:0 12px 0 34px;border:1px solid transparent;border-radius:7px;outline:none;color:var(--text);background:#F2F5F9;font-size:11px}.search-box input:focus{border-color:#B9D1F2;background:#fff;box-shadow:0 0 0 3px rgba(43,127,255,.1)}.conversation-list{overflow-x:hidden;overflow-y:auto;padding:0 8px 12px;display:flex;min-height:0;flex-direction:column}.conversation-item{position:relative;width:100%;min-width:0;min-height:62px;display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px;border:0;border-radius:8px;color:inherit;background:transparent;text-align:left}.conversation-item:hover,.conversation-item.active{background:#EEF4FD}.conversation-item.is-pinned{order:-1}.conversation-avatar{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:11px;font-weight:800}.conversation-avatar.system{color:var(--blue);background:#EDF4FF}.conversation-item:not(.is-pinned) .conversation-avatar{color:#fff;background:#4B4F56}.conversation-avatar svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7}.conversation-copy{min-width:0;max-width:100%;overflow:hidden}.conversation-name{min-width:0;overflow:hidden;color:var(--primary);font-size:12px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.conversation-preview{min-width:0;max-width:100%;overflow:hidden;margin-top:3px;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.conversation-meta{align-self:start;display:flex;align-items:flex-end;flex-direction:column;gap:3px}.conversation-time{color:var(--light);font-size:9px}.unread{min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;padding:0 5px;overflow:visible;border-radius:999px;color:#fff;background:var(--red);font-size:10px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}.conversation-state{display:grid;min-height:120px;place-items:center;padding:20px;color:var(--muted);font-size:11px;text-align:center}.conversation-state.error{color:var(--red)}.conversation-state button,.notification-retry{margin-top:8px;padding:6px 12px;border:1px solid #CBD9EA;border-radius:6px;color:var(--primary);background:#fff;font-size:11px}
@@ -668,4 +851,6 @@ onBeforeUnmount(() => {
 <style>
 .ai-assistant-panel{--primary:#1A3C6E;--blue:#2B7FFF;--blue-soft:#EAF2FF;--muted:#6B7A90;--light:#96A3B5;--line:#E6EBF2;--red:#D94B55}
 .person-card .mini-avatar{display:grid;place-items:center;flex:0 0 auto;overflow:hidden;color:var(--primary);background:var(--blue-soft);font-size:14px;line-height:1}
+.composer{align-items:stretch;flex-direction:column;gap:9px;padding:10px 16px 13px}.composer-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px}.composer-tool-list{display:flex;align-items:center;gap:7px}.composer-tool{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 7px;border:0;border-radius:6px;color:#60738D;background:transparent;font-size:10px}.composer-tool:hover:not(:disabled){color:var(--blue);background:var(--blue-soft)}.composer-tool:disabled{cursor:not-allowed;opacity:.45}.composer-tool svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8}.composer-hint{overflow:hidden;color:var(--light);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.composer-main{display:flex;align-items:center;gap:10px}.composer-main .composer-box{min-width:0}.composer-main .send-button{flex:0 0 auto;min-width:92px;justify-content:center}.attachment-actions{display:none}
+@media(max-width:700px){.composer{padding:9px 10px 11px}.composer-hint{display:none}.composer-main{gap:7px}.composer-main .send-button{min-width:72px;padding:0 10px}.composer-tool{padding:0 5px}}
 </style>

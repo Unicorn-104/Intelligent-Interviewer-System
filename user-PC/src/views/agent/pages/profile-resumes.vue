@@ -72,11 +72,20 @@
       <a href="/agent/resume-select?job=1">体验投递选简历流程</a>
     </div>
   </main>
+  <div v-if="previewUrl" class="resume-preview-mask" role="dialog" aria-modal="true" :aria-label="`预览 ${previewName}`" @click.self="closePreview">
+    <section class="resume-preview-panel">
+      <header class="resume-preview-head">
+        <strong>{{ previewName }}</strong>
+        <button class="preview-close" type="button" aria-label="关闭简历预览" @click="closePreview">×</button>
+      </header>
+      <iframe class="resume-preview-frame" :src="previewUrl" :title="previewName"></iframe>
+    </section>
+  </div>
   <div v-if="toastMessage" class="toast" role="status">{{ toastMessage }}</div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { deleteResume, getResumes, getResumeFile, importResumePdf, parseResumePdf } from '@/api/agent/resume'
 import { validateResumeFile } from '@/utils/agentValidation'
@@ -88,6 +97,8 @@ const fileInput = ref(null)
 const errorMessage = ref('')
 const toastMessage = ref('')
 const previewingId = ref(null)
+const previewUrl = ref('')
+const previewName = ref('原始 PDF 简历')
 const deletingId = ref(null)
 let toastTimer
 
@@ -186,27 +197,24 @@ function formatBytes(value) {
 }
 
 async function previewResume(resume) {
-  const previewWindow = window.open('', '_blank')
-  if (!previewWindow) {
-    showToast('浏览器阻止了新窗口，请允许弹窗后重试')
-    return
-  }
-
   previewingId.value = resume.id
   try {
     const data = await getResumeFile(resume.id)
     const pdf = new Blob([data], { type: 'application/pdf' })
-    const objectUrl = URL.createObjectURL(pdf)
-    previewWindow.location.href = objectUrl
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000)
+    closePreview()
+    previewUrl.value = URL.createObjectURL(pdf)
+    previewName.value = resume.fileName || '原始 PDF 简历'
   } catch (error) {
-    previewWindow.close()
     showToast(error?.message || '简历打开失败，请稍后重试')
   } finally {
     previewingId.value = null
   }
 }
 
+function closePreview() {
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+}
 
 function showToast(message) {
   toastMessage.value = message
@@ -217,9 +225,11 @@ function showToast(message) {
 }
 
 onMounted(loadResumes)
+onBeforeUnmount(closePreview)
 </script>
 
 <style scoped>
 :global(*){box-sizing:border-box}:global(body){margin:0;color:#172B4D;background:#F5F7FA;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}.main{width:min(1120px,calc(100% - 48px));margin:0 auto;padding:28px 0 60px}.breadcrumb{margin-bottom:12px;color:#96A3B5;font-size:11px}.page-head{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:16px}.page-head h1{margin:0;color:#1A3C6E;font-size:25px}.page-head p{margin:6px 0 0;color:#6B7A90;font-size:12px}.head-actions,.empty-actions{display:flex;align-items:center;gap:8px}.primary,.secondary{display:inline-flex;align-items:center;justify-content:center;height:38px;min-height:38px;padding:0 15px;border-radius:6px;font-size:11px;font-weight:700;line-height:1;cursor:pointer}.primary{border:1px solid #2B7FFF;color:#fff;background:#2B7FFF}.primary:hover{background:#1D67D8}.secondary{border:1px solid #CBD9EA;color:#1A3C6E;background:#fff}.primary:disabled,.secondary:disabled,.icon-button:disabled,.file-link-button:disabled{cursor:not-allowed;opacity:.45}.resume-list{display:grid;gap:10px}.resume-card{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:15px;padding:18px;border:1px solid #E5EAF1;border-radius:8px;background:#fff;box-shadow:0 6px 22px rgba(26,60,110,.055)}.resume-file-icon{width:46px;height:54px;display:grid;place-items:center;border:1px solid #BFD6F5;border-radius:6px;color:#2B7FFF;background:#F0F6FF;font-size:11px;font-weight:800}.resume-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.resume-title-row h2{margin:0;color:#1A3C6E;font-size:15px}.badge{padding:3px 7px;border-radius:4px;color:#2B7FFF;background:#EAF2FF;font-size:10px}.resume-summary{margin:5px 0 0;color:#6B7A90;font-size:11px}.resume-meta{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:9px;color:#96A3B5;font-size:10px}.file-link{margin-top:8px;font-size:10px}.file-link a,.file-link-button,.list-foot a{color:#2B7FFF;text-decoration:none}.file-link-button{padding:0;border:0;background:transparent;font:inherit;cursor:pointer}.resume-actions{display:flex;align-items:center;gap:8px}.icon-button{width:32px;height:32px;border:1px solid #CBD9EA;border-radius:5px;color:#2B7FFF;background:#fff;font-size:16px;cursor:pointer}.text-button{border:0;color:#2B7FFF;background:transparent;font-size:11px;cursor:pointer}.text-button.danger{color:#CF3F4B}.list-foot{display:flex;justify-content:space-between;gap:12px;margin-top:12px;color:#96A3B5;font-size:10px}.state-panel{display:grid;place-items:center;gap:9px;min-height:250px;padding:30px;border:1px solid #E5EAF1;border-radius:8px;background:#fff;color:#6B7A90;text-align:center}.state-panel strong{color:#1A3C6E;font-size:16px}.error-state{color:#CF3F4B}.empty-icon{font-size:30px;color:#2B7FFF}.empty-actions{margin-top:6px}.toast{position:fixed;right:24px;bottom:24px;z-index:50;padding:11px 15px;border:1px solid #CDE7DD;border-radius:7px;color:#176B50;background:#F2FBF7}@media(max-width:700px){.main{width:calc(100% - 28px)}.page-head{display:block}.head-actions{margin-top:13px}.resume-card{grid-template-columns:40px minmax(0,1fr)}.resume-file-icon{width:38px;height:46px}.resume-actions{grid-column:2;justify-content:flex-start}.list-foot{display:block}.list-foot a{display:inline-block;margin-top:7px}}@media(max-width:460px){.head-actions button{flex:1}.resume-meta{display:grid}.empty-actions{width:100%}.empty-actions button{flex:1}}
 .upload-resume-button{min-width:136px;flex:0 0 auto;padding-right:18px;padding-left:18px;white-space:nowrap}.attachment-row{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:9px;color:#6B7A90;font-size:10px}.attachment-label,.attachment-empty{color:#96A3B5}.attachment-icon{display:inline-grid;width:22px;height:25px;margin-right:5px;place-items:center;border:1px solid #BFD6F5;border-radius:3px;color:#2B7FFF;background:#F0F6FF;font-size:7px;font-weight:800;vertical-align:middle}.attachment-size{margin-left:3px;color:#96A3B5}.file-link-button{padding:0;border:0;color:#2B7FFF;background:transparent;font:inherit;cursor:pointer;text-align:left}.attachment-action{height:32px;padding:0 10px;border:1px solid #CBD9EA;border-radius:5px;color:#2B7FFF;background:#fff;font-size:11px;white-space:nowrap;cursor:pointer}.attachment-action:hover{border-color:#2B7FFF;background:#F8FBFF}@media(max-width:460px){.upload-resume-button{min-width:0}}
+.resume-preview-mask{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:24px;background:rgba(23,43,77,.58)}.resume-preview-panel{display:flex;flex-direction:column;width:min(960px,100%);height:min(760px,100%);overflow:hidden;border-radius:10px;background:#fff;box-shadow:0 18px 50px rgba(23,43,77,.28)}.resume-preview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:0 16px;border-bottom:1px solid #E5EAF1;color:#1A3C6E;font-size:13px}.preview-close{width:28px;height:28px;border:0;border-radius:5px;color:#6B7A90;background:#F3F6FA;font-size:22px;line-height:1;cursor:pointer}.resume-preview-frame{width:100%;height:100%;border:0;background:#F5F7FA}
 </style>

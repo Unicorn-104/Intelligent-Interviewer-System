@@ -15,6 +15,7 @@ public class AgentJob
     private String title;
     private String category;
     private Long companyId;
+    private Long publisherId;
     private String companyName;
     private String companyLogoUrl;
     private String companyIndustry;
@@ -53,6 +54,8 @@ public class AgentJob
     public void setCategory(String category) { this.category = category; }
     public Long getCompanyId() { return companyId; }
     public void setCompanyId(Long companyId) { this.companyId = companyId; }
+    public Long getPublisherId() { return publisherId; }
+    public void setPublisherId(Long publisherId) { this.publisherId = publisherId; }
     public String getCompanyName() { return companyName; }
     public void setCompanyName(String companyName) { this.companyName = companyName; }
     public String getCompanyLogoUrl() { return companyLogoUrl; }

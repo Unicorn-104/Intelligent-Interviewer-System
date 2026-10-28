@@ -1,5 +1,6 @@
 package com.ruoyi.system.service.impl;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,6 +64,17 @@ public class ImServiceImpl implements IImService
         String content = StringUtils.nvl(message.getContent(), "").trim();
         if ((type == 1 || type == 4) && content.isEmpty()) throw new ServiceException("消息内容不能为空");
         if ((type == 1 || type == 4) && content.length() > 1000) throw new ServiceException("消息内容不能超过1000个字符");
+        if (type == 2 || type == 3)
+        {
+            String attachmentUrl = StringUtils.nvl(message.getAttachmentUrl(), "").trim();
+            if (attachmentUrl.isEmpty()) throw new ServiceException("附件地址不能为空");
+            if (attachmentUrl.length() > 2048 || attachmentUrl.matches(".*[\\u0000-\\u0020\\u007f].*")
+                    || !isSafeAttachmentUrl(attachmentUrl))
+                throw new ServiceException("附件地址无效");
+            if (content.isEmpty()) content = type == 2 ? "图片" : "文件";
+            if (content.length() > 180) throw new ServiceException("附件名称不能超过180个字符");
+            message.setAttachmentUrl(attachmentUrl);
+        }
         message.setContent(content);
         Long sessionId = message.getSessionId();
         ImSession session = null;
@@ -104,6 +116,25 @@ public class ImServiceImpl implements IImService
         Long receiverId = session.getUserAId().equals(senderId) ? session.getUserBId() : session.getUserAId();
         sessionMapper.updateSessionOnSend(sessionId, summary, receiverId);
         return sessionId;
+    }
+
+    private boolean isSafeAttachmentUrl(String attachmentUrl)
+    {
+        try
+        {
+            URI uri = URI.create(attachmentUrl);
+            if (uri.getScheme() != null && !"http".equalsIgnoreCase(uri.getScheme())
+                    && !"https".equalsIgnoreCase(uri.getScheme()))
+            {
+                return false;
+            }
+            String path = uri.getPath();
+            return path != null && path.startsWith("/profile/") && uri.getFragment() == null;
+        }
+        catch (IllegalArgumentException ex)
+        {
+            return false;
+        }
     }
 
     private String buildSummary(ImMessage message)

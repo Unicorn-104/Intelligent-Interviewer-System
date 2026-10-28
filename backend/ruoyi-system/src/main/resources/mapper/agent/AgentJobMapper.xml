@@ -9,6 +9,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="title" column="job_title"/>
         <result property="category" column="job_category"/>
         <result property="companyId" column="company_id"/>
+        <result property="publisherId" column="publisher_id"/>
         <result property="companyName" column="company_name"/>
         <result property="companyLogoUrl" column="company_logo_url"/>
         <result property="companyIndustry" column="company_industry"/>
@@ -40,6 +41,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             pos.pos_title AS job_title,
             pos.pos_department AS job_category,
             pos.pos_company_id AS company_id,
+            pos.pos_publisher_id AS publisher_id,
             cmp.cmp_name AS company_name,
             cmp.cmp_logo_url AS company_logo_url,
             cmp.cmp_industry AS company_industry,
