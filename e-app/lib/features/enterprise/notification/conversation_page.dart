@@ -8,8 +8,8 @@ import '../../../api/interview_room_api.dart' as room;
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/skeleton_list.dart';
+import '../conference/conference_room_page.dart';
 import '../jobs/job_detail_page.dart';
-import '../schedule/interview_appointment_detail_page.dart';
 import '../talent/talent_detail_page.dart';
 import '../talent/talent_discovery_profile.dart';
 import '../talent/data/talent_discovery_data_source.dart';
@@ -35,6 +35,7 @@ class ChatPage extends StatefulWidget {
     this.pollInterval = const Duration(seconds: 8),
     this.rescheduleSource,
     this.loadCurrentSession = room.getCurrentSession,
+    this.conferenceRoomBuilder = _buildConferenceRoom,
   });
   final Map<String, dynamic> session;
   final MessageDataSource source;
@@ -43,6 +44,12 @@ class ChatPage extends StatefulWidget {
 
   /// 查询当前待开始/进行中面试会话（可注入以隔离网络，测试用）。
   final Future<Map<String, dynamic>> Function() loadCurrentSession;
+
+  /// 「进入面试」打开的会议室页面（可注入以隔离音视频/网络，测试用）。
+  final Widget Function(Map<String, dynamic> session) conferenceRoomBuilder;
+
+  static Widget _buildConferenceRoom(Map<String, dynamic> session) =>
+      ConferenceRoomPage(session: session);
   @override
   State<ChatPage> createState() => _ChatPageState();
 }
@@ -881,7 +888,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return (text: text, url: url);
   }
 
-  /// 「进入面试」：查询当前待开始/进行中的面试场次并打开面试详情。
+  /// 「进入面试」：查询当前待开始/进行中的面试场次，直接进入 LiveKit 视频会议室。
   Future<void> _enterInterview() async {
     if (_entering) return;
     _entering = true;
@@ -895,31 +902,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             .showSnackBar(SnackBar(content: Text('查询面试状态失败：$error')));
         return;
       }
-      final sessionId = messageId(session['sessionId']);
-      final appointmentId = messageId(session['appointmentId']);
-      if (sessionId == null || appointmentId == null) {
+      if (messageId(session['sessionId']) == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('当前没有待开始或进行中的面试，可在面试安排中查看')),
         );
         return;
       }
-      final status = messageId(session['status']) == 1 ? '进行中' : '待开始';
       if (!mounted) return;
       await Navigator.of(context).push<void>(
         MaterialPageRoute(
-          builder: (_) => InterviewAppointmentDetailPage(
-            appointment: {
-              'sessionId': sessionId,
-              'appointmentId': appointmentId,
-              'positionTitle': messageText(session['positionTitle'], ''),
-              'candidateName': messageText(session['candidateName'], ''),
-              'interviewerName': messageText(session['interviewerName'], ''),
-              'startTime': messageText(session['appointmentStartAt'], ''),
-              'endTime': messageText(session['appointmentEndAt'], ''),
-              'status': status,
-            },
-          ),
+          builder: (_) => widget.conferenceRoomBuilder(session),
         ),
       );
     } finally {
