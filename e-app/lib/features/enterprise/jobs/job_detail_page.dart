@@ -428,13 +428,15 @@ class _JobDetailPageState extends State<JobDetailPage>
       _detail.data?.job['title'] ?? widget.job['title'],
       fallback: '该岗位',
     );
+    final applicants = _detail.data?.funnel['total'];
+    final warning = applicants is num && applicants > 0
+        ? '该岗位已有 $applicants 人投递，删除后投递、面试、笔试等相关数据将一并删除，不可恢复。'
+        : '删除后不可恢复。';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('删除岗位'),
-        content: Text(
-          '确认删除岗位「$title」吗？删除后不可恢复。\n已有投递、面试等业务数据的岗位无法删除，可改为停招或下线。',
-        ),
+        content: Text('确认删除岗位「$title」吗？$warning'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),

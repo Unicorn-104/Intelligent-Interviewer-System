@@ -300,14 +300,20 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         {
             throw new ServiceException("岗位不存在或无权访问");
         }
-        // 任何状态都可删，但已有投递、面试等业务数据时拒绝，避免级联删除真实数据
-        if (jobMapper.countJobBusinessData(posId) > 0)
-        {
-            throw new ServiceException("该岗位已有投递、面试等业务数据，无法删除；可将岗位改为停招或下线");
-        }
+        // 显式清理无外键约束、数据库级联覆盖不到的业务数据，避免残留孤儿记录
+        jobMapper.deleteAiAnalysisByPosition(posId);
+        jobMapper.deleteScreeningResultByPosition(posId);
+        jobMapper.deleteScreeningTaskByPosition(posId);
+        jobMapper.deleteRescheduleRequestsByPosition(posId);
+        jobMapper.deleteInterviewMeetingStatesByPosition(posId);
+        jobMapper.deleteInterviewParticipantStatesByPosition(posId);
+        jobMapper.deleteInterviewCopilotsByPosition(posId);
+        // 人才档案属于公司人才池，仅解除与本岗位流程实例/笔试记录的关联，不删除档案本身
+        jobMapper.detachTalentFromPosition(posId);
         try
         {
-            // 先清除岗位技能关联，再物理删除岗位本体
+            // 岗位技能关联与岗位本体显式删除；投递、流程实例、预约、面试、笔试、Offer
+            // 等业务数据由数据库外键 ON DELETE CASCADE 级联删除
             jdMapper.deletePositionSkills(posId);
             if (jobMapper.deleteJob(posId, companyId) != 1)
             {
@@ -316,8 +322,8 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         }
         catch (DataIntegrityViolationException e)
         {
-            // 删除校验后仍有新引用时兜底保护，事务回滚保证技能关联不被误删
-            throw new ServiceException("该岗位已有关联的投递、面试等业务数据，无法删除");
+            // 删除时仍有未知外键引用则兜底保护，事务回滚保证前置清理不被误删
+            throw new ServiceException("该岗位已有关联的业务数据，无法删除");
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("posId", posId);

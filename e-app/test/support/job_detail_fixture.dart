@@ -199,7 +199,7 @@ final class DetailFakeSource extends JobDetailDataSource {
   @override
   Future<void> deleteJob(int id) async {
     if (deleteFailure) {
-      throw const ApiException('该岗位已有投递、面试等业务数据，无法删除；可将岗位改为停招或下线');
+      throw const ApiException('岗位删除失败，请稍后重试');
     }
     deletedJobs.add(id);
   }
