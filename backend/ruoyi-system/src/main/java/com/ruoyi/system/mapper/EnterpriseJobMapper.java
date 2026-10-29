@@ -140,7 +140,42 @@ public interface EnterpriseJobMapper
     public int updateTalentInstanceIfAbsent(@Param("talentId") Long talentId, @Param("instanceId") Long instanceId);
 
     /**
-     * 岗位已产生的业务数据量（投递/流程实例/面试）
+     * 删除岗位前清理无外键约束的 AI 分析结果（按岗位）
      */
-    public int countJobBusinessData(@Param("posId") Long posId);
+    public int deleteAiAnalysisByPosition(@Param("posId") Long posId);
+
+    /**
+     * 删除岗位前清理无外键约束的 AI 筛选结果（按岗位）
+     */
+    public int deleteScreeningResultByPosition(@Param("posId") Long posId);
+
+    /**
+     * 删除岗位前清理无外键约束的 AI 筛选任务（按岗位）
+     */
+    public int deleteScreeningTaskByPosition(@Param("posId") Long posId);
+
+    /**
+     * 删除岗位前清理该岗位预约的改期申请（无外键约束）
+     */
+    public int deleteRescheduleRequestsByPosition(@Param("posId") Long posId);
+
+    /**
+     * 删除岗位前清理该岗位面试会话的会议状态（无外键约束）
+     */
+    public int deleteInterviewMeetingStatesByPosition(@Param("posId") Long posId);
+
+    /**
+     * 删除岗位前清理该岗位面试会话的参会人状态（无外键约束）
+     */
+    public int deleteInterviewParticipantStatesByPosition(@Param("posId") Long posId);
+
+    /**
+     * 删除岗位前清理该岗位面试会话的 AI 副驾记录（无外键约束）
+     */
+    public int deleteInterviewCopilotsByPosition(@Param("posId") Long posId);
+
+    /**
+     * 人才档案保留在公司人才池，仅解除与本岗位流程实例/笔试记录的关联
+     */
+    public int detachTalentFromPosition(@Param("posId") Long posId);
 }

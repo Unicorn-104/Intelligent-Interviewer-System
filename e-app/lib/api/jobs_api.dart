@@ -113,7 +113,7 @@ Future<void> saveJobWorkflow(int positionId, Map<String, Object?> body) async {
   );
 }
 
-/// UC-01：删除岗位（仅无投递/面试等业务数据的岗位可删，后端校验拒绝级联删除）。
+/// UC-01：删除岗位（连同该岗位的投递、面试、笔试等相关业务数据一并删除，界面二次确认）。
 /// 已对接：DELETE /system/enterprise/jobs/{posId}
 Future<void> deleteJob(int positionId) async {
   await EnterpriseApiClient().delete('/system/enterprise/jobs/$positionId');

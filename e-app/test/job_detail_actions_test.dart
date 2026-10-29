@@ -69,7 +69,8 @@ void main() {
     await pumpDetail(tester, source);
     await tester.tap(find.byKey(const Key('job-delete-entry')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('删除后不可恢复'), findsOneWidget);
+    expect(find.textContaining('已有 2 人投递'), findsOneWidget);
+    expect(find.textContaining('不可恢复'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(source.deletedJobs, isEmpty);
@@ -92,7 +93,7 @@ void main() {
     await tester.tap(find.byKey(const Key('job-delete-confirm')));
     await tester.pumpAndSettle();
     expect(find.byType(JobDetailPage), findsOneWidget);
-    expect(find.textContaining('无法删除'), findsOneWidget);
+    expect(find.textContaining('删除失败'), findsOneWidget);
     expect(source.deletedJobs, isEmpty);
   });
 

@@ -21,7 +21,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 
-/** 删除岗位：仅无业务数据可删，有投递/面试数据时拒绝且不级联删除。 */
+/** 删除岗位：任何状态可删；无外键的业务数据由服务显式清理，有外键的数据由数据库级联删除。 */
 public class EnterpriseJobDeleteTest
 {
     private JdbcTemplate jdbc;
@@ -60,6 +60,17 @@ public class EnterpriseJobDeleteTest
         jdbc.execute("create table t_app_record (app_id bigint auto_increment primary key, app_position_id bigint)");
         jdbc.execute("create table t_process_instance (pin_id bigint auto_increment primary key, pin_position_id bigint)");
         jdbc.execute("create table t_sch_appointment (apt_id bigint auto_increment primary key, apt_position_id bigint)");
+        jdbc.execute("create table t_ai_candidate_analysis (asr_position_id bigint)");
+        jdbc.execute("create table t_ai_screening_result (asr_position_id bigint)");
+        jdbc.execute("create table t_ai_screening_task (ast_position_id bigint)");
+        jdbc.execute("create table t_sch_reschedule_request (rsr_id bigint auto_increment primary key, rsr_appointment_id bigint, rsr_pending_appointment_id bigint)");
+        jdbc.execute("create table t_exam_schedule (esd_id bigint auto_increment primary key, esd_position_id bigint)");
+        jdbc.execute("create table t_exam_record (erc_id bigint auto_increment primary key, erc_schedule_id bigint)");
+        jdbc.execute("create table t_int_session (ses_id bigint auto_increment primary key, ses_position_id bigint)");
+        jdbc.execute("create table t_int_meeting_state (mst_id bigint auto_increment primary key, mst_session_id bigint)");
+        jdbc.execute("create table t_int_participant_state (pst_id bigint auto_increment primary key, pst_session_id bigint)");
+        jdbc.execute("create table t_int_copilot (cpt_id bigint auto_increment primary key, cpt_session_id bigint)");
+        jdbc.execute("create table t_tal (tal_id bigint auto_increment primary key, tal_process_instance_id bigint, tal_exam_record_id bigint)");
         jdbc.execute("CREATE ALIAS IF NOT EXISTS DATE_FORMAT FOR \"" +
                 EnterpriseJobDeleteTest.class.getName() + ".dateFormat\"");
         SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
@@ -91,6 +102,7 @@ public class EnterpriseJobDeleteTest
         return jdbc.queryForObject("select max(pos_id) from t_pos", Long.class);
     }
 
+    /** 无业务数据时任何状态都可删，岗位与技能关联一并删除。 */
     @Test
     void deletesJobWithoutBusinessDataRegardlessOfStatus()
     {
@@ -105,25 +117,45 @@ public class EnterpriseJobDeleteTest
         assertEquals(0, jdbc.queryForObject("select count(*) from t_pos where pos_id = ?", Integer.class, published));
     }
 
+    /** 已有投递、面试、笔试等业务数据时仍可删，无外键的业务数据被显式清理，人才档案仅解除关联。 */
     @Test
-    void refusesDeletionWhenApplicationsExist()
+    void deletesJobWithBusinessDataAndCleansRelatedRecords()
     {
         long positionId = position(1);
         jdbc.update("insert into t_app_record (app_position_id) values (?)", positionId);
-        ServiceException error = assertThrows(ServiceException.class, () -> service.deleteDraftJob(100L, positionId));
-        assertTrue(error.getMessage().contains("无法删除"));
-        assertEquals(1, jdbc.queryForObject("select count(*) from t_pos where pos_id = ?", Integer.class, positionId));
-        assertEquals(1, jdbc.queryForObject("select count(*) from t_app_record where app_position_id = ?", Integer.class, positionId));
-    }
-
-    @Test
-    void refusesDeletionWhenInterviewsExist()
-    {
-        long positionId = position(2);
+        jdbc.update("insert into t_process_instance (pin_position_id) values (?)", positionId);
+        long instanceId = jdbc.queryForObject("select max(pin_id) from t_process_instance", Long.class);
         jdbc.update("insert into t_sch_appointment (apt_position_id) values (?)", positionId);
-        assertThrows(ServiceException.class, () -> service.deleteDraftJob(100L, positionId));
-        assertEquals(1, jdbc.queryForObject("select count(*) from t_pos where pos_id = ?", Integer.class, positionId));
-        assertEquals(1, jdbc.queryForObject("select count(*) from t_sch_appointment where apt_position_id = ?", Integer.class, positionId));
+        long appointmentId = jdbc.queryForObject("select max(apt_id) from t_sch_appointment", Long.class);
+        jdbc.update("insert into t_ai_candidate_analysis (asr_position_id) values (?)", positionId);
+        jdbc.update("insert into t_ai_screening_result (asr_position_id) values (?)", positionId);
+        jdbc.update("insert into t_ai_screening_task (ast_position_id) values (?)", positionId);
+        jdbc.update("insert into t_sch_reschedule_request (rsr_appointment_id, rsr_pending_appointment_id) values (?, ?)", appointmentId, appointmentId);
+        jdbc.update("insert into t_exam_schedule (esd_position_id) values (?)", positionId);
+        long scheduleId = jdbc.queryForObject("select max(esd_id) from t_exam_schedule", Long.class);
+        jdbc.update("insert into t_exam_record (erc_schedule_id) values (?)", scheduleId);
+        long examRecordId = jdbc.queryForObject("select max(erc_id) from t_exam_record", Long.class);
+        jdbc.update("insert into t_int_session (ses_position_id) values (?)", positionId);
+        long sessionId = jdbc.queryForObject("select max(ses_id) from t_int_session", Long.class);
+        jdbc.update("insert into t_int_meeting_state (mst_session_id) values (?)", sessionId);
+        jdbc.update("insert into t_int_participant_state (pst_session_id) values (?)", sessionId);
+        jdbc.update("insert into t_int_copilot (cpt_session_id) values (?)", sessionId);
+        jdbc.update("insert into t_tal (tal_process_instance_id, tal_exam_record_id) values (?, ?)", instanceId, examRecordId);
+
+        assertEquals(positionId, ((Number) service.deleteDraftJob(100L, positionId).get("posId")).longValue());
+
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_pos where pos_id = ?", Integer.class, positionId));
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_ai_candidate_analysis where asr_position_id = ?", Integer.class, positionId));
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_ai_screening_result where asr_position_id = ?", Integer.class, positionId));
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_ai_screening_task where ast_position_id = ?", Integer.class, positionId));
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_sch_reschedule_request where rsr_appointment_id = ?", Integer.class, appointmentId));
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_int_meeting_state where mst_session_id = ?", Integer.class, sessionId));
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_int_participant_state where pst_session_id = ?", Integer.class, sessionId));
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_int_copilot where cpt_session_id = ?", Integer.class, sessionId));
+        // 人才档案保留，但与本岗位流程实例/笔试记录的关联已解除
+        assertEquals(1, jdbc.queryForObject("select count(*) from t_tal", Integer.class));
+        assertNull(jdbc.queryForObject("select tal_process_instance_id from t_tal where tal_id = (select max(tal_id) from t_tal)", Long.class));
+        assertNull(jdbc.queryForObject("select tal_exam_record_id from t_tal where tal_id = (select max(tal_id) from t_tal)", Long.class));
     }
 
     @Test

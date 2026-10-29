@@ -44,7 +44,7 @@ public interface IEnterpriseJobService
     public Map<String, Object> duplicateJob(Long userId, Long posId);
 
     /**
-     * 删除草稿岗位（仅允许删除状态为草稿的岗位，已产生业务数据时拒绝删除）
+     * 删除岗位（任何状态可删，投递、面试、笔试等相关业务数据一并级联删除）
      */
     public Map<String, Object> deleteDraftJob(Long userId, Long posId);
 
