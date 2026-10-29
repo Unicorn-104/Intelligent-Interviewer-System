@@ -155,9 +155,14 @@ class ProfileDataSource {
     if (path.isEmpty) return null;
     final uri = Uri.tryParse(path);
     if (uri == null) return null;
-    final resolved = Uri.parse(AppConfig.apiBaseUrl).resolveUri(uri);
-    if (!['http', 'https'].contains(resolved.scheme)) return null;
-    return resolved.toString();
+    // 已是完整 URL（http/https）时直接使用，其他协议拒绝
+    if (uri.hasScheme) {
+      return ['http', 'https'].contains(uri.scheme) ? uri.toString() : null;
+    }
+    // 相对路径：字符串拼接，保留 base 的子路径（如 /prod-api）。
+    // 不能用 resolveUri：当 base 含子路径、引用以 / 开头时，子路径会被整个丢弃。
+    final base = AppConfig.apiBaseUrl;
+    return '$base${path.startsWith('/') ? path : '/$path'}';
   }
 }
 

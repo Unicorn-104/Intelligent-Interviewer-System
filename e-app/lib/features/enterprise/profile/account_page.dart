@@ -29,10 +29,42 @@ class AccountPageState extends State<AccountPage> {
   String? _error;
   bool _loading = true, _actionOpen = false;
   int _request = 0, _avatarRevision = 0;
+  // “我的”列表滚动控制器，用于 Tab 重新选中时回到顶部
+  final ScrollController _scrollController = ScrollController();
+  // 回到顶部请求标志（reload 时列表会被骨架替换，controller 无 client，需延迟执行）
+  bool _scrollTopRequested = false;
   @override
   void initState() {
     super.initState();
     reload();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// 由 Shell 在“我的”Tab 被选中时调用：滚动到页面顶部。
+  Future<void> scrollToTop() async {
+    _scrollTopRequested = true;
+    _applyScrollTop();
+  }
+
+  /// 实际执行回顶；若列表尚未挂载（reload 骨架），下一帧继续尝试。
+  void _applyScrollTop() {
+    if (!_scrollTopRequested) return;
+    if (!_scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _applyScrollTop());
+      return;
+    }
+    _scrollTopRequested = false;
+    if (_scrollController.offset <= 0) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   /// 每次进入“我的”重新读取服务端资料，保持企业壳原有刷新入口。
@@ -166,6 +198,7 @@ class AccountPageState extends State<AccountPage> {
     return RefreshIndicator(
       onRefresh: reload,
       child: ListView(
+        controller: _scrollController,
         key: const Key('profile-scroll'),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.zero,

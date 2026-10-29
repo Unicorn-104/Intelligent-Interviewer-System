@@ -19,10 +19,10 @@ class HomeCarousel extends StatefulWidget {
   final HomeInterview? nextInterview;
   final bool interviewsLoaded;
   @override
-  State<HomeCarousel> createState() => _HomeCarouselState();
+  State<HomeCarousel> createState() => HomeCarouselState();
 }
 
-class _HomeCarouselState extends State<HomeCarousel>
+class HomeCarouselState extends State<HomeCarousel>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _controller = PageController();
   late final AnimationController _ambient;
@@ -97,6 +97,24 @@ class _HomeCarouselState extends State<HomeCarousel>
       _restart();
     }
     return false;
+  }
+
+  /// 由首页在 Tab 重新选中时调用：把轮播复位到第 1 页。
+  ///
+  /// 必须先暂停自动轮播定时器，否则复位动画可能与定时翻页竞争，导致页面
+  /// 被定时器拉走；复位完成后再重启定时器。animateToPage 会触发
+  /// onPageChanged(0)，由其内部 setState 同步 _index 与底部圆点。
+  Future<void> resetToFirst() async {
+    if (!mounted || !_controller.hasClients) return;
+    // 暂停自动轮播，避免与复位动画竞争
+    _timer?.cancel();
+    await _controller.animateToPage(
+      0,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOutCubic,
+    );
+    // 复位完成后重启自动轮播（从当前时刻重新计时）
+    if (mounted) _restart();
   }
 
   @override

@@ -37,7 +37,7 @@ class HomePage extends StatefulWidget {
   final HomeDataSource? dataSource;
   final Future<void> Function(HomeInterview interview)? onStartInterview;
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => HomePageState();
 }
 
 class _HomeSectionState<T> {
@@ -47,8 +47,15 @@ class _HomeSectionState<T> {
   int request = 0;
 }
 
-class _HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> {
   late final HomeDataSource _source = widget.dataSource ?? HomeDataSource();
+  // 首页滚动控制器，用于 Tab 重新选中时回到页面顶部
+  final ScrollController _scrollController = ScrollController();
+  // 轮播 key，用于在回到顶部时同时把轮播复位到第 1 页
+  final _carouselKey = GlobalKey<HomeCarouselState>();
+  // 回到顶部请求标志：列表可能正处于加载骨架（controller 无 client），
+  // 需延迟到 hasClients 后再执行，保证数据回来后也能回到顶部。
+  bool _scrollTopRequested = false;
   final _identity = _HomeSectionState<HomeIdentity>();
   final _unread = _HomeSectionState<int>();
   final _stats = _HomeSectionState<HomeStats>();
@@ -77,6 +84,36 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _selectedInterviewDate = _calendarToday;
     unawaited(_refresh());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// 由 Shell 在首页 Tab 被选中时调用：滚动到顶部并把轮播复位到第 1 页。
+  Future<void> scrollToTop() async {
+    _scrollTopRequested = true;
+    // 轮播复位到第 1 页
+    _carouselKey.currentState?.resetToFirst();
+    _applyScrollTop();
+  }
+
+  /// 实际执行回顶；若列表尚未挂载（加载骨架），下一帧继续尝试。
+  void _applyScrollTop() {
+    if (!_scrollTopRequested) return;
+    if (!_scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _applyScrollTop());
+      return;
+    }
+    _scrollTopRequested = false;
+    if (_scrollController.offset <= 0) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _load<T>(
@@ -338,6 +375,7 @@ class _HomePageState extends State<HomePage> {
         child: RefreshIndicator(
           onRefresh: _refresh,
           child: SingleChildScrollView(
+            controller: _scrollController,
             key: const PageStorageKey('enterprise-home-scroll'),
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -401,6 +439,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 const SizedBox(height: 24),
                 HomeCarousel(
+                  key: _carouselKey,
                   identity: identity,
                   stats: stats,
                   nextInterview: interviews?.firstOrNull,

@@ -26,11 +26,15 @@ class MessageCenterPage extends StatefulWidget {
   final MessageDataSource source;
   final EnterpriseAiDataSource? assistantSource;
   @override
-  State<MessageCenterPage> createState() => _MessageCenterPageState();
+  State<MessageCenterPage> createState() => MessageCenterPageState();
 }
 
-class _MessageCenterPageState extends State<MessageCenterPage>
+class MessageCenterPageState extends State<MessageCenterPage>
     with WidgetsBindingObserver {
+  // 消息列表滚动控制器，用于 Tab 重新选中时回到顶部
+  final ScrollController _scrollController = ScrollController();
+  // 回到顶部请求标志（列表加载骨架时 controller 无 client，需延迟执行）
+  bool _scrollTopRequested = false;
   List<MessageSession> _sessions = [];
   NotificationSlice? _notifications;
   bool _loading = true, _action = false;
@@ -180,9 +184,32 @@ class _MessageCenterPageState extends State<MessageCenterPage>
       (_notifications?.unreadCount ?? 0);
   @override
   void dispose() {
+    _scrollController.dispose();
     _refreshTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// 由 Shell 在消息 Tab 被选中时调用：滚动到消息列表顶部。
+  Future<void> scrollToTop() async {
+    _scrollTopRequested = true;
+    _applyScrollTop();
+  }
+
+  /// 实际执行回顶；若列表尚未挂载（加载骨架），下一帧继续尝试。
+  void _applyScrollTop() {
+    if (!_scrollTopRequested) return;
+    if (!_scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _applyScrollTop());
+      return;
+    }
+    _scrollTopRequested = false;
+    if (_scrollController.offset <= 0) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -237,6 +264,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
+        controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [

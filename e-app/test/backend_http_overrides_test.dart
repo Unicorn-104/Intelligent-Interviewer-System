@@ -60,10 +60,19 @@ void main() {
     },
   );
 
-  test('private CA never applies to other hosts, ports or HTTP', () async {
+  test(
+    'private CA covers same-host HTTPS on other ports (LiveKit wss)',
+    () async {
+      await client.getUrl(Uri.parse('https://backend.example:8444/livekit'));
+      await client.getUrl(Uri.parse('wss://backend.example:8444/livekit'));
+      expect(backend.requests, hasLength(2));
+      expect(system.requests, isEmpty);
+    },
+  );
+
+  test('private CA never applies to other hosts or HTTP', () async {
     for (final url in [
       'https://other.example:8443/file',
-      'https://backend.example/file',
       'http://backend.example:8443/file',
       'https://backend.example.attacker.test:8443/file',
       'https://backend.example@attacker.test:8443/file',
@@ -71,7 +80,7 @@ void main() {
       await client.getUrl(Uri.parse(url));
     }
     expect(backend.requests, isEmpty);
-    expect(system.requests, hasLength(5));
+    expect(system.requests, hasLength(4));
     expect(system.request.followRedirects, isTrue);
   });
 
