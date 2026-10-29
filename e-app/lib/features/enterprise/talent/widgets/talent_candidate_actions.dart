@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../../theme/app_theme.dart';
+import '../../notification/conversation_page.dart';
 import '../data/talent_detail_data_source.dart';
 import '../models/talent_detail_view_data.dart';
-import 'talent_greeting_sheet.dart';
 import 'talent_interview_invite_sheet.dart';
 import 'talent_workflow_progress.dart';
 
@@ -14,6 +14,7 @@ class TalentCandidateActions extends StatefulWidget {
     required this.candidateId,
     required this.name,
     required this.source,
+    this.peerId,
     this.job,
     this.onInvited,
     this.workflowRevision = 0,
@@ -23,6 +24,9 @@ class TalentCandidateActions extends StatefulWidget {
   final int? candidateId;
   final String name;
   final TalentDetailDataSource source;
+
+  /// 求职者真实 sys_user userId；「打招呼」直接进入聊天页时作为对方 peerId。
+  final int? peerId;
   final TalentJobContext? job;
   final VoidCallback? onInvited;
   final String keyPrefix;
@@ -37,34 +41,49 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
   int _workflowRevision = 0;
   bool get _enabled => !_busy && widget.candidateId != null;
 
-  Future<void> _open({required bool invite}) async {
+  /// 打招呼：跳过招呼语预览弹窗，直接进入与该求职者的聊天页。
+  Future<void> _openChat() async {
+    final peerId = widget.peerId;
+    if (_busy || peerId == null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('求职者信息缺失，暂时无法发起对话')));
+      return;
+    }
+    // 仅需对方真实 userId；无历史会话时聊天页允许直接编辑首条消息，
+    // 发送首条消息时后端自动创建会话，不发送占位消息。
+    final session = <String, dynamic>{
+      'peerId': peerId,
+      'peerName': widget.name,
+      'fromTalentDiscovery': true,
+    };
+    await Navigator.of(context, rootNavigator: true).push<void>(
+      MaterialPageRoute(builder: (_) => ChatPage(session: session)),
+    );
+  }
+
+  /// 邀请面试：打开分阶段邀约面板（保留原有流程）。
+  Future<void> _openInvite() async {
     if (!_enabled) return;
     setState(() => _busy = true);
     try {
       final result = await showModalBottomSheet<bool>(
         context: context,
         isScrollControlled: true,
-        isDismissible: !invite,
-        enableDrag: !invite,
+        isDismissible: false,
+        enableDrag: false,
         useSafeArea: true,
         builder: (_) => FractionallySizedBox(
           heightFactor: .9,
-          child: invite
-              ? TalentInterviewInviteSheet(
-                  candidateId: widget.candidateId!,
-                  candidateName: widget.name,
-                  source: widget.source,
-                  job: widget.job,
-                )
-              : TalentGreetingSheet(
-                  candidateId: widget.candidateId!,
-                  name: widget.name,
-                  source: widget.source,
-                  job: widget.job,
-                ),
+          child: TalentInterviewInviteSheet(
+            candidateId: widget.candidateId!,
+            candidateName: widget.name,
+            source: widget.source,
+            job: widget.job,
+          ),
         ),
       );
-      if (!mounted || !invite || result != true) return;
+      if (!mounted || result != true) return;
       setState(() => _workflowRevision++);
       widget.onInvited?.call();
       ScaffoldMessenger.of(context)
@@ -99,7 +118,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
     builder: (context, constraints) {
       final greeting = OutlinedButton.icon(
         key: ValueKey('${widget.keyPrefix}-greeting'),
-        onPressed: _enabled ? () => _open(invite: false) : null,
+        onPressed: _openChat,
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(0, 46),
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -122,7 +141,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
             Expanded(
               child: FilledButton.icon(
                 key: ValueKey('${widget.keyPrefix}-invite'),
-                onPressed: _enabled ? () => _open(invite: true) : null,
+                onPressed: _enabled ? _openInvite : null,
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 46),
                   padding: const EdgeInsets.symmetric(horizontal: 8),

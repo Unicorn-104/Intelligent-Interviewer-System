@@ -375,6 +375,8 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
                   keyPrefix: 'job-candidate-$_id',
                   workflowRevision: widget.workflowRevision,
                   candidateId: _id,
+                  // 求职者真实 userId，用于「打招呼」直接进入聊天页
+                  peerId: jobPositiveId(widget.candidate['userId']),
                   name: jobValue(widget.candidate['name'], fallback: '姓名未填写'),
                   source: widget.actionsSource,
                   job: TalentJobContext(
