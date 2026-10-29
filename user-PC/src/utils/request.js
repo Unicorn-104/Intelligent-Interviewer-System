@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { appHref } from '@/utils/agentNavigation'
 import { ElNotification , ElMessageBox, ElMessage, ElLoading } from 'element-plus'
 import { getToken } from '@/utils/auth'
 import errorCode from '@/utils/errorCode'
@@ -101,7 +102,7 @@ service.interceptors.response.use(res => {
         ElMessageBox.confirm('登录状态已过期，您可以继续留在该页面，或者重新登录', '系统提示', { confirmButtonText: '重新登录', cancelButtonText: '取消', type: 'warning' }).then(() => {
           isRelogin.show = false
           useUserStore().logOut().catch(() => {}).finally(() => {
-            location.href = '/index'
+            location.href = appHref('/login')
           })
       }).catch(() => {
         isRelogin.show = false

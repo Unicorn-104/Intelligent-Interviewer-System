@@ -28,7 +28,7 @@
               {{ entry.recordStatus === 1 ? '继续作答' : '开始作答' }}
             </button>
             <button v-else class="primary-btn" type="button" disabled>{{ blockedText }}</button>
-            <a class="ghost-link" href="/agent/exam">返回考试列表</a>
+            <a class="ghost-link" :href="appHref('/exam')">返回考试列表</a>
           </div>
         </template>
         <div v-else class="empty-state">{{ loadError || '考试不存在或无权访问' }}</div>
@@ -46,7 +46,7 @@
               <div class="exam-meta">{{ item.durationMin }} 分钟 · {{ item.totalScore }} 分</div>
             </div>
             <span class="status-pill" :class="listPillClass(item)">{{ listPillText(item) }}</span>
-            <a class="enter-link" :href="`/agent/exam?scheduleId=${item.scheduleId}`">进入考试 →</a>
+            <a class="enter-link" :href="appHref(`/exam?scheduleId=${item.scheduleId}`)">进入考试 →</a>
           </article>
           <div v-if="!exams.length" class="empty-state">暂无笔试安排。收到企业笔试通知后，可点击通知中的链接进入考试。</div>
         </template>
@@ -57,6 +57,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
@@ -131,8 +132,7 @@ function fmt(value) {
 }
 
 function goRoom() {
-  // 走路由跳转，自动带上部署子路径（/user/），避免硬编码根路径
-  router.push({ path: '/agent/exam-room', query: { scheduleId } })
+  router.push({ path: '/exam-room', query: { scheduleId } })
 }
 
 async function load() {

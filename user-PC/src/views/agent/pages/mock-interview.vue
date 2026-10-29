@@ -1,10 +1,10 @@
 <template>
 <header class="topbar">
     <div class="topbar-inner">
-      <a class="brand" href="/agent/index"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span><span class="brand-tag">模拟面试</span></a>
+      <a class="brand" :href="appHref('/index')"><span class="brand-mark">智</span><span class="brand-name">智聘 AI</span><span class="brand-tag">模拟面试</span></a>
       <div class="header-context">
         <span class="secure-state"><svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5z"/></svg>设备画面仅在本机预览</span>
-        <a class="exit-link" id="exitLink" href="/agent/applications">退出模拟</a>
+        <a class="exit-link" id="exitLink" :href="appHref('/applications')">退出模拟</a>
       </div>
     </div>
   </header>
@@ -51,12 +51,13 @@
     </section>
 
     <!-- 第三步：本地生成练习结果 -->
-    <section class="result-view" id="resultView"><div class="panel result-panel"><div class="result-mark"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></div><h2>本次模拟面试已完成</h2><p>以下结果根据答题完整度生成，仅作为练习参考。</p><div class="score-row"><div class="score-cell"><strong id="scoreValue">--</strong><small>模拟完成度</small></div><div class="score-cell"><strong id="answeredValue">--</strong><small>已回答</small></div><div class="score-cell"><strong id="skippedValue">--</strong><small>待补充</small></div></div><div class="feedback"><strong>练习建议</strong><p id="feedbackText"></p></div><div class="result-actions"><a id="returnLink" href="/agent/applications">返回投递跟踪</a><button id="restartButton">重新模拟</button></div></div></section>
+    <section class="result-view" id="resultView"><div class="panel result-panel"><div class="result-mark"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></div><h2>本次模拟面试已完成</h2><p>以下结果根据答题完整度生成，仅作为练习参考。</p><div class="score-row"><div class="score-cell"><strong id="scoreValue">--</strong><small>模拟完成度</small></div><div class="score-cell"><strong id="answeredValue">--</strong><small>已回答</small></div><div class="score-cell"><strong id="skippedValue">--</strong><small>待补充</small></div></div><div class="feedback"><strong>练习建议</strong><p id="feedbackText"></p></div><div class="result-actions"><a id="returnLink" :href="appHref('/applications')">返回投递跟踪</a><button id="restartButton">重新模拟</button></div></div></section>
   </main>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { onMounted } from 'vue'
 import { resolveApplicationDetailPath } from '@/utils/agentApplication'
 
@@ -81,7 +82,7 @@ onMounted(async () => {
       ];
       const params=new URLSearchParams(location.search),jobId=params.get('job')||'ai-product',job=jobProfiles[jobId]||jobProfiles['ai-product'];
       const detailUrl=await resolveApplicationDetailPath(jobId);
-      document.getElementById('pageTitle').textContent=job.title;document.getElementById('companyMeta').textContent=`${job.company} · 共 ${questions.length} 道岗位高频问题`;document.getElementById('exitLink').href=detailUrl;document.getElementById('returnLink').href=detailUrl;document.title=`${job.title} · AI 模拟面试`;
+      document.getElementById('pageTitle').textContent=job.title;document.getElementById('companyMeta').textContent=`${job.company} · 共 ${questions.length} 道岗位高频问题`;document.getElementById('exitLink').href=appHref(detailUrl);document.getElementById('returnLink').href=appHref(detailUrl);document.title=`${job.title} · AI 模拟面试`;
   
       let mediaStream=null,currentIndex=0,answers=Array(questions.length).fill(''),skipped=new Set(),secondsLeft=120,timerId=null;
       const setupView=document.getElementById('setupView'),interviewView=document.getElementById('interviewView'),resultView=document.getElementById('resultView'),answerInput=document.getElementById('answerInput');

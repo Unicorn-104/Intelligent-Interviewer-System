@@ -50,8 +50,8 @@
       </div>
 
       <div class="cab-actions">
-        <button class="cab-ghost" @click="go('/agent/index')">返回首页</button>
-        <button class="cab-primary" @click="go('/agent/interview-schedule')">查看面试安排</button>
+        <button class="cab-ghost" @click="go('/index')">返回首页</button>
+        <button class="cab-primary" @click="go('/interview-schedule')">查看面试安排</button>
       </div>
 
       <p class="cab-tip">若因网络或设备问题导致中断，可联系 HR 申请重新安排面试，本次记录不会影响你的正常应聘流程。</p>

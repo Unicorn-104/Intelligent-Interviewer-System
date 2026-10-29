@@ -5,7 +5,7 @@
       <div v-if="loading" class="state">正在加载投递详情...</div>
       <div v-else-if="errorMessage" class="state"><strong>投递详情加载失败</strong><span>{{ errorMessage }}</span><div class="state-actions"><button class="primary-button" type="button" @click="loadApplication">重新加载</button><button class="secondary-button" type="button" @click="openApplications">返回投递跟踪</button></div></div>
       <template v-else-if="application">
-        <section class="panel job-panel"><a class="breadcrumb" href="/agent/applications"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>投递跟踪 / 投递详情</a><div class="job-row"><div><h1>{{ application.jobTitle }}</h1><div class="job-meta"><strong>{{ application.companyName }}</strong><span>{{ application.locationText }}</span><span>投递于 {{ formatDate(application.appliedAt) }}</span><span>简历：{{ application.resumeName || '本次选择的简历' }}</span></div><span class="salary">{{ application.salaryText }}</span></div><span class="flow-state">{{ application.statusText }}</span></div></section>
+        <section class="panel job-panel"><a class="breadcrumb" :href="appHref('/applications')"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>投递跟踪 / 投递详情</a><div class="job-row"><div><h1>{{ application.jobTitle }}</h1><div class="job-meta"><strong>{{ application.companyName }}</strong><span>{{ application.locationText }}</span><span>投递于 {{ formatDate(application.appliedAt) }}</span><span>简历：{{ application.resumeName || '本次选择的简历' }}</span></div><span class="salary">{{ application.salaryText }}</span></div><span class="flow-state">{{ application.statusText }}</span></div></section>
         <section class="panel timeline-panel"><div class="panel-head"><h2>投递进度</h2><span>共 {{ timeline.length }} 个流程节点 · 状态由企业处理结果产生</span></div><ol class="timeline"><li v-for="(node, index) in timeline" :key="`${node.stage}-${index}`" class="timeline-item" :class="[nodeClass(node), directionClass(index), connectorClass(index)]" :style="nodeStyle(index)"><span class="dot">{{ nodeClass(node) === 'done' ? '✓' : index + 1 }}</span><div class="timeline-copy"><div class="timeline-title"><span>{{ node.title }}</span><span class="node-state">{{ stateText(node) }}</span></div><div class="timeline-desc">{{ node.description || '该节点暂无补充说明' }}</div><div class="timeline-time">{{ formatDate(node.occurredAt) }}</div></div></li></ol></section>
         <section class="panel info-grid"><div><h2>本次投递</h2><p>使用简历：<strong>{{ application.resumeName || '本次选择的简历' }}</strong></p><p>岗位匹配度：<strong>{{ application.matchedScore || 0 }}%</strong></p><p>最近更新：<strong>{{ formatDate(application.updatedAt) }}</strong></p></div><div><h2>接下来会发生什么</h2><p>企业处理投递后，新的筛选、测评、面试或结果节点会自动出现在上方进度中。</p><button class="secondary-button" type="button" @click="openMessages">去消息通知</button></div></section>
       </template>
@@ -15,6 +15,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
@@ -78,11 +79,11 @@ function formatDate(value) {
 }
 
 function openMessages() {
-  window.__agentNavigate('/agent/messages')
+  window.__agentNavigate('/messages')
 }
 
 function openApplications() {
-  window.__agentNavigate('/agent/applications')
+  window.__agentNavigate('/applications')
 }
 
 onMounted(loadApplication)

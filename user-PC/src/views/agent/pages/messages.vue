@@ -76,7 +76,7 @@
             </div>
           </header>
 
-          <div ref="messagesContainer" class="messages">
+          <div ref="messagesContainer" class="messages" @scroll="updateMessageScroll">
             <div v-if="messagesLoading" class="notification-state">正在读取聊天记录...</div>
             <div v-else-if="messagesError" class="notification-state error">
               <span>聊天记录暂时无法读取</span>
@@ -88,20 +88,20 @@
                  <span v-if="!message.isMine" class="bubble-avatar">{{ avatarText(activeConversation.peerName) }}</span>
                   <div class="bubble-wrap">
                    <div class="bubble">
-                     <template v-if="message.type === 2 && message.attachmentUrl">
+                     <template v-if="isImageMessage(message)">
                        <template v-if="!message.attachmentUnavailable">
                          <button class="attachment-image-button" type="button" :aria-label="`查看图片 ${message.content || ''}`" @click="previewAttachment(message)">
-                           <img class="attachment-image" :src="message.attachmentUrl" :alt="message.content || '聊天图片'" @error="markAttachmentUnavailable(message)" />
+                           <img class="attachment-image" :src="message.attachmentUrl" :alt="message.content || '聊天图片'" @load="handleMessageImageLoad" @error="markAttachmentUnavailable(message)" />
                          </button>
                          <button class="attachment-name" type="button" @click="previewAttachment(message)">{{ message.content || '查看图片' }}</button>
                        </template>
-                       <span v-else class="attachment-unavailable">图片已失效，请重新上传</span>
+                       <div v-else class="attachment-unavailable">图片暂时无法加载 <button type="button" @click="message.attachmentUnavailable = false">重新加载</button></div>
                      </template>
                      <button v-else-if="message.type === 3 && message.attachmentUrl" class="attachment-file" type="button" @click="openAttachment(message)">
                        <span class="attachment-file-icon" aria-hidden="true">↧</span>
                        <span class="attachment-file-copy"><strong>{{ message.content || '文件附件' }}</strong><small>点击打开或下载</small></span>
                      </button>
-                     <span v-else>{{ message.content || '[非文本消息]' }}</span>
+                     <span v-else class="message-text"><template v-for="(part, index) in message.linkParts" :key="index"><a v-if="part.href" class="message-link" :href="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a><template v-else>{{ part.text }}</template></template></span>
                    </div>
                    <div class="bubble-time">{{ formatMessageTime(message.sendTime) }}</div>
                  </div>
@@ -115,6 +115,15 @@
             <input ref="fileInput" class="attachment-input" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" @change="handleAttachmentChange($event, false)" />
             <div class="composer-tools">
               <div class="composer-tool-list">
+                <div ref="emojiPicker" class="message-emoji-picker" @keydown.esc.stop="emojiOpen = false">
+                  <button class="composer-tool" type="button" :disabled="sending" title="发送表情" aria-controls="message-emoji-panel" :aria-expanded="emojiOpen" @click="emojiOpen = !emojiOpen">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 14s1 3 4 3 4-3 4-3M8 8v2M16 8v2"/></svg>
+                    <span>表情</span>
+                  </button>
+                  <div v-if="emojiOpen" id="message-emoji-panel" class="message-emoji-panel" role="group" aria-label="选择表情">
+                    <button v-for="emoji in messageEmojis" :key="emoji.value" type="button" :title="emoji.label" :aria-label="emoji.label" :disabled="sending" @click="addEmoji(emoji.value)">{{ emoji.value }}</button>
+                  </div>
+                </div>
                 <button class="composer-tool" type="button" :disabled="sending" title="发送图片" @click="imageInput?.click()">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 2-2 6 6"/></svg>
                   <span>图片</span>
@@ -129,10 +138,12 @@
             <div class="composer-main">
               <div class="composer-box">
                 <input
+                  ref="messageInput"
                   v-model="draftMessage"
                   type="text"
+                  :disabled="sending"
                   maxlength="1000"
-                  placeholder="输入消息，Enter 发送，Shift+Enter 换行…"
+                  placeholder="输入消息，Enter 发送…"
                   aria-label="消息内容"
                   autocomplete="off"
                 />
@@ -267,14 +278,23 @@
     <span>AI</span>
   </button>
   <div class="toast" :class="{ show: toastVisible }" role="status" aria-live="polite">{{ toastText }}</div>
+  <Teleport to="body">
+    <div v-if="previewImage" class="message-image-preview" role="dialog" aria-modal="true" aria-label="聊天图片预览" @click.self="closeImagePreview" @keydown.esc="closeImagePreview" @keydown.tab.prevent="previewCloseButton?.focus()">
+      <button ref="previewCloseButton" class="message-image-preview-close" type="button" aria-label="关闭图片预览" @click="closeImagePreview">×</button>
+      <img :src="previewImage.attachmentUrl" :alt="previewImage.content || '聊天图片'" />
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
 import { listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
 import { cancelAiRun, createAiSession, listAiMessages, listAiSessions, startAiRun, streamAiRun } from '@/api/agent/ai'
+import { getToken } from '@/utils/auth'
+import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageLinkParts, resolveMessageAttachment, uploadedMessageAttachmentPath } from '@/utils/agentMessage'
 
 const sessions = ref([])
 const selectedSessionId = ref(null)
@@ -290,11 +310,32 @@ const draftMessage = ref('')
 const sending = ref(false)
 const imageInput = ref(null)
 const fileInput = ref(null)
+const messageInput = ref(null)
+const emojiPicker = ref(null)
+const emojiOpen = ref(false)
+const previewImage = ref(null)
+const previewCloseButton = ref(null)
+const messageEmojis = [
+  { value: '😀', label: '开心' }, { value: '😊', label: '微笑' },
+  { value: '😂', label: '笑哭' }, { value: '😄', label: '大笑' },
+  { value: '😉', label: '眨眼' }, { value: '🤔', label: '思考' },
+  { value: '😅', label: '不好意思' }, { value: '🥳', label: '庆祝' },
+  { value: '👍', label: '赞' }, { value: '👌', label: '好的' },
+  { value: '🙏', label: '感谢' }, { value: '🤝', label: '握手' },
+  { value: '👏', label: '鼓掌' }, { value: '💪', label: '加油' },
+  { value: '👋', label: '你好' }, { value: '❤️', label: '爱心' },
+  { value: '🎉', label: '祝贺' }, { value: '🌹', label: '鲜花' },
+  { value: '✅', label: '确认' }, { value: '💼', label: '工作' },
+  { value: '📄', label: '简历' }, { value: '📅', label: '日程' },
+  { value: '☕', label: '咖啡' }, { value: '🚀', label: '出发' }
+]
+let previewReturnTarget = null
 const noticeItems = ref([])
 const noticesLoading = ref(true)
 const noticesError = ref(false)
 const activeNotice = ref(null)
 const messagesContainer = ref(null)
+const followLatestMessages = ref(true)
 const toastText = ref('')
 const toastVisible = ref(false)
 const aiOpen = ref(false)
@@ -407,18 +448,32 @@ function startNewConversation(peerId, peerName = '企业 HR', updateUrl = true) 
   messages.value = []
   messagesError.value = false
   if (updateUrl) {
-    history.replaceState(null, '', `/agent/messages?peerId=${encodeURIComponent(peerId)}&peerName=${encodeURIComponent(peerName)}`)
+    history.replaceState(history.state, '', appHref(`/messages?peerId=${encodeURIComponent(peerId)}&peerName=${encodeURIComponent(peerName)}`))
   }
 }
 
 async function loadMessages(sessionId, { silent = false } = {}) {
   if (!sessionId) return
-  if (!silent) messagesLoading.value = true
+  const shouldFollowLatest = !silent || followLatestMessages.value
+  if (!silent) followLatestMessages.value = true
+  if (!silent && !messages.value.length) messagesLoading.value = true
   messagesError.value = false
   try {
     const response = await listImMessages(sessionId)
+    if (selectedSessionId.value !== sessionId) return
+    const previousMessages = new Map(messages.value.map(message => [message.messageId, message]))
     messages.value = Array.isArray(response.data)
-      ? response.data.map(message => ({ ...message, attachmentUrl: attachmentUrl(message.attachmentUrl) }))
+      ? response.data.map(message => {
+        const url = attachmentUrl(message.attachmentUrl)
+        const previous = previousMessages.get(message.messageId)
+        return {
+          ...message,
+          type: Number(message.type),
+          attachmentUrl: url,
+          attachmentUnavailable: previous?.attachmentUrl === url && previous.attachmentUnavailable,
+          linkParts: messageLinkParts(message.content || '[非文本消息]')
+        }
+      })
       : []
   } catch (error) {
     if (!silent) {
@@ -426,20 +481,34 @@ async function loadMessages(sessionId, { silent = false } = {}) {
       showToast(error?.message || '聊天记录加载失败')
     }
   } finally {
-    if (!silent) {
-      messagesLoading.value = false
-      await nextTick()
-      if (messagesContainer.value) messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+    if (!silent) messagesLoading.value = false
+    await nextTick()
+    if (selectedSessionId.value === sessionId && shouldFollowLatest && messagesContainer.value) {
+      followLatestMessages.value = true
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
     }
   }
 }
 
+function updateMessageScroll() {
+  const container = messagesContainer.value
+  if (container) followLatestMessages.value = container.scrollHeight - container.scrollTop - container.clientHeight < 64
+}
+
+function handleMessageImageLoad() {
+  if (followLatestMessages.value && messagesContainer.value) {
+    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+  }
+}
+
 async function selectSession(session, updateUrl = true) {
+  emojiOpen.value = false
+  previewImage.value = null
   activeView.value = 'chat'
   selectedSessionId.value = session.sessionId
   newConversation.value = null
   messages.value = []
-  if (updateUrl) history.replaceState(null, '', `/agent/messages?conversation=${encodeURIComponent(session.sessionId)}`)
+  if (updateUrl) history.replaceState(history.state, '', appHref(`/messages?conversation=${encodeURIComponent(session.sessionId)}`))
   await Promise.all([
     loadMessages(session.sessionId),
     markImSessionRead(session.sessionId).catch(() => {})
@@ -448,10 +517,12 @@ async function selectSession(session, updateUrl = true) {
 }
 
 function selectSystem(updateUrl = true) {
+  emojiOpen.value = false
+  previewImage.value = null
   activeView.value = 'system'
   selectedSessionId.value = null
   newConversation.value = null
-  if (updateUrl) history.replaceState(null, '', '/agent/messages?view=system')
+  if (updateUrl) history.replaceState(history.state, '', appHref('/messages?view=system'))
 }
 
 async function sendMessage() {
@@ -464,6 +535,7 @@ async function sendMessage() {
     else body.peerId = newConversation.value.peerId
     const response = await sendImMessage(body)
     draftMessage.value = ''
+    emojiOpen.value = false
     const sessionsResponse = await listImSessions()
     sessions.value = Array.isArray(sessionsResponse.data) ? sessionsResponse.data : []
     if (!selectedSession.value) {
@@ -481,41 +553,44 @@ async function sendMessage() {
   }
 }
 
-// 附件统一存相对路径（/profile/...）：写入消息的地址不能带当前访问域名/端口，否则另一端打开时必然连不上
-function attachmentPath(value) {
-  const raw = String(value || '').trim()
-  if (!raw || /[\u0000-\u0020\u007f]/.test(raw)) return ''
-  try {
-    const apiBase = String(import.meta.env.VITE_APP_BASE_API || '').replace(/\/$/, '')
-    let path = /^https?:\/\//i.test(raw) ? new URL(raw).pathname : raw
-    if (apiBase && (path === apiBase || path.startsWith(`${apiBase}/`))) path = path.slice(apiBase.length)
-    if (!path.startsWith('/')) path = `/${path}`
-    return path
-  } catch {
-    return ''
-  }
+function attachmentUrl(value) {
+  return resolveMessageAttachment(value, import.meta.env.VITE_APP_BASE_API, window.location.origin)
 }
 
-function attachmentUrl(value) {
-  const path = attachmentPath(value)
-  if (!path) return ''
-  try {
-    // 展示时再按当前部署的接口前缀拼接；历史消息里带别的端域名（如 5180/dev-api）也会被还原成本机地址
-    const apiBase = String(import.meta.env.VITE_APP_BASE_API || '').replace(/\/$/, '')
-    const url = new URL(`${apiBase}${path}`, window.location.origin)
-    if (!['http:', 'https:'].includes(url.protocol)) return ''
-    return url.toString()
-  } catch {
-    return ''
+async function addEmoji(emoji) {
+  if (sending.value) return
+  const input = messageInput.value
+  const next = insertMessageEmoji(draftMessage.value, emoji, input?.selectionStart ?? draftMessage.value.length, input?.selectionEnd ?? draftMessage.value.length)
+  if (!next) {
+    showToast('消息不能超过 1000 个字符')
+    return
   }
+  draftMessage.value = next.text
+  emojiOpen.value = false
+  await nextTick()
+  input?.focus()
+  input?.setSelectionRange(next.cursor, next.cursor)
+}
+
+function closeEmojiPicker(event) {
+  if (!emojiPicker.value?.contains(event.target)) emojiOpen.value = false
 }
 
 function markAttachmentUnavailable(message) {
   message.attachmentUnavailable = true
 }
 
-function previewAttachment(message) {
-  openAttachment(message)
+async function previewAttachment(message) {
+  previewReturnTarget = document.activeElement
+  previewImage.value = message
+  await nextTick()
+  previewCloseButton.value?.focus()
+}
+
+function closeImagePreview() {
+  previewImage.value = null
+  previewReturnTarget?.focus()
+  previewReturnTarget = null
 }
 
 async function openAttachment(message) {
@@ -530,16 +605,17 @@ async function openAttachment(message) {
       window.open(url, '_blank', 'noopener,noreferrer')
       return
     }
-    const response = await fetch(url, { credentials: 'include' })
+    const token = getToken()
+    const headers = token && messageAttachmentPath(url) ? { Authorization: `Bearer ${token}` } : {}
+    const response = await fetch(url, { credentials: 'include', headers })
     const blob = await response.blob()
     const contentType = response.headers.get('content-type') || ''
-    if (!response.ok || contentType.includes('application/json')) {
-      let messageText = '附件不存在或已失效，请重新上传'
+    if (!response.ok || /(?:application\/json|text\/html)/i.test(contentType)) {
+      let payload
       try {
-        const payload = JSON.parse(await blob.text())
-        messageText = payload.msg || messageText
+        payload = JSON.parse(await blob.text())
       } catch (_) {}
-      throw new Error(messageText)
+      throw new Error(messageAttachmentError(response.status, payload))
     }
     const objectUrl = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -551,7 +627,6 @@ async function openAttachment(message) {
     link.remove()
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000)
   } catch (error) {
-    if (message.type === 2) message.attachmentUnavailable = true
     showToast(error?.message || '附件打开失败，请稍后重试')
   }
 }
@@ -583,13 +658,12 @@ async function handleAttachmentChange(event, isImage) {
   sending.value = true
   try {
     const uploadResponse = await uploadImAttachment(file)
-    const data = uploadResponse?.fileName || uploadResponse?.url ? uploadResponse : (uploadResponse?.data || {})
-    const path = attachmentPath(data.fileName || data.url)
-    if (!path) throw new Error('附件上传成功但未返回有效地址')
+    const url = uploadedMessageAttachmentPath(uploadResponse)
+    if (!url) throw new Error('上传接口未返回可用的附件路径，消息未发送，请联系管理员检查上传接口')
     const body = {
       type: isImage ? 2 : 3,
-      content: data.originalFilename || file.name,
-      attachmentUrl: path
+      content: file.name,
+      attachmentUrl: url
     }
     if (selectedSession.value) body.sessionId = selectedSession.value.sessionId
     else body.peerId = newConversation.value.peerId
@@ -834,12 +908,14 @@ async function stopAiMessage() {
 }
 
 onMounted(() => {
+  document.addEventListener('pointerdown', closeEmojiPicker)
   loadNotices()
   loadSessions()
   refreshTimer = window.setInterval(refreshMessages, 5000)
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeEmojiPicker)
   if (refreshTimer) window.clearInterval(refreshTimer)
   aiAbortController?.abort()
   clearTimeout(toastTimer)
@@ -847,6 +923,21 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
+.message-shell .message-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.message-shell .bubble .attachment-image-button{max-width:100%}
+.message-shell .attachment-image,.message-shell .attachment-name{max-width:100%}
+.message-shell .attachment-file{min-width:0;max-width:100%;width:220px}
+.message-shell .message-link{color:#1761bd;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
+.message-shell .message-link:hover{color:#0d438a}
+.message-shell .me .message-link,.message-shell .me .message-link:hover{color:#fff}
+.message-shell .message-emoji-picker{position:relative;flex:0 0 auto}
+.message-shell .message-emoji-panel{position:absolute;bottom:calc(100% + 8px);left:0;z-index:10;display:grid;grid-template-columns:repeat(6,32px);gap:4px;padding:10px;border:1px solid #d8e3ef;border-radius:10px;background:#fff;box-shadow:0 6px 24px rgba(26,60,110,.16)}
+.message-shell .message-emoji-panel button{display:grid;width:32px;height:32px;place-items:center;padding:0;border:0;border-radius:6px;background:transparent;font-family:'Segoe UI Emoji','Apple Color Emoji',sans-serif;font-size:22px;line-height:1}
+.message-shell .message-emoji-panel button:hover,.message-shell .message-emoji-panel button:focus-visible{background:#eaf2ff;outline:2px solid #afc9ec}
+.message-shell .attachment-unavailable button{padding:2px 5px;border:0;color:#1761bd;background:transparent;text-decoration:underline}
+.message-image-preview{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;padding:56px 20px;background:rgba(13,23,39,.85)}
+.message-image-preview img{display:block;max-width:100%;max-height:100%;object-fit:contain}
+.message-image-preview-close{position:absolute;top:12px;right:16px;display:grid;width:36px;height:36px;place-items:center;padding:0;border:1px solid #fff;border-radius:50%;color:#fff;background:#263445;font-size:25px;cursor:pointer}
 .message-shell{--primary:#1A3C6E;--blue:#2B7FFF;--blue-soft:#EAF2FF;--bg:#F5F7FA;--text:#172B4D;--muted:#6B7A90;--light:#96A3B5;--line:#E6EBF2;--red:#D94B55;--shadow:0 5px 18px rgba(26,60,110,.045)}
 .attachment-input{display:none}.attachment-actions{display:flex;align-items:center;gap:6px}.attachment-button{height:34px;padding:0 9px;border:1px solid #D8E3EF;border-radius:7px;color:var(--muted);background:#fff;font-size:10px}.attachment-button:hover:not(:disabled){border-color:#AFC9EC;color:var(--blue);background:var(--blue-soft)}.attachment-button:disabled{cursor:not-allowed;opacity:.5}.bubble .attachment-image-button{display:block;max-width:220px;padding:0;border:0;border-radius:7px;background:transparent;overflow:hidden}.attachment-image{display:block;max-width:220px;max-height:180px;border-radius:7px;object-fit:contain;background:#F2F5F9}.attachment-name{display:block;max-width:220px;margin-top:6px;padding:0;border:0;color:inherit;background:transparent;font-size:10px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-name:hover{color:var(--blue)}.attachment-unavailable{display:block;max-width:220px;padding:18px 12px;border:1px dashed #D5DEE9;border-radius:7px;color:var(--muted);font-size:10px}.attachment-file{display:flex;align-items:center;gap:9px;min-width:180px;max-width:260px;padding:0;border:0;color:inherit;background:transparent;text-align:left;text-decoration:none}.attachment-file:hover .attachment-file-copy strong{text-decoration:underline}.attachment-file-icon{display:grid;width:28px;height:28px;place-items:center;flex:0 0 auto;border-radius:7px;background:rgba(255,255,255,.2);font-size:18px;font-weight:800}.attachment-file-copy{min-width:0}.attachment-file-copy strong,.attachment-file-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-file-copy strong{font-size:11px}.attachment-file-copy small{margin-top:3px;opacity:.72;font-size:9px}.me .attachment-file-icon{color:#fff;background:rgba(255,255,255,.2)}
 .message-shell,.message-shell *{box-sizing:border-box}.message-shell button,.message-shell input{font:inherit}.message-shell button{cursor:pointer}.message-shell svg{display:block}

@@ -609,7 +609,7 @@ async function endMeeting() {
       // 结束接口失败不阻塞跳转
     }
   }
-  window.__agentNavigate('/agent/conference-ended')
+  window.__agentNavigate('/conference-ended')
 }
 
 function scrollCaptions() {

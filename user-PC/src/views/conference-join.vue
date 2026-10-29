@@ -2,7 +2,7 @@
   <div class="cj-page">
     <header class="cj-topbar">
       <div class="cj-bar">
-        <a class="cj-brand" :href="userAppUrl('/agent/index')"><span class="cj-mark">智</span>智聘 AI</a>
+        <a class="cj-brand" :href="appHref('/index')"><span class="cj-mark">智</span>智聘 AI</a>
       </div>
     </header>
 
@@ -40,10 +40,11 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { verifyRoomToken } from '@/api/system/conference'
-import { enterpriseJoinUrl, userAppUrl } from '@/utils/appLink'
+import { enterpriseJoinUrl } from '@/utils/appLink'
 
 const route = useRoute()
 const router = useRouter()
@@ -64,7 +65,7 @@ const timeText = computed(() => {
 
 // 选择身份后按当前部署位置拼接后续路径：求职者走用户端路由（自带 /user/ 子路径），面试官跳企业端
 function asCandidate() {
-  router.push({ path: '/agent/conference-entry', query: { token: token.value } })
+  router.push({ path: '/conference-entry', query: { token: token.value } })
 }
 
 function asInterviewer() {

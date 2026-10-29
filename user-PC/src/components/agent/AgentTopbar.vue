@@ -1,14 +1,14 @@
 <template>
   <header class="agent-topbar">
     <div class="agent-topbar-inner">
-      <a class="agent-brand" href="/agent/index" aria-label="智聘 AI 首页">
+      <a class="agent-brand" :href="appHref('/index')" aria-label="智聘 AI 首页">
         <span class="agent-brand-mark">智</span>
         <span class="agent-brand-name">智聘 AI</span>
         <span class="agent-brand-tag">求职者工作台</span>
       </a>
 
       <nav class="agent-main-nav" aria-label="主导航">
-        <a v-for="item in navItems" :key="item.path" class="agent-nav-link" :class="{ active: active === item.key }" :href="item.path">
+        <a v-for="item in navItems" :key="item.path" class="agent-nav-link" :class="{ active: active === item.key }" :href="appHref(item.path)">
           {{ item.label }}<span v-if="item.badge" class="agent-nav-badge" data-unread-badge>{{ item.badge }}</span>
         </a>
       </nav>
@@ -19,9 +19,9 @@
           <span class="agent-profile-meta"><span class="agent-profile-name">{{ displayName }}</span><span class="agent-profile-role">候选人</span></span>
         </button>
         <div class="agent-profile-popover" role="menu" aria-label="账号功能">
-          <a href="/agent/profile-basic" role="menuitem">基础资料</a>
-          <a href="/agent/profile-resumes" role="menuitem">我的简历</a>
-          <a href="/agent/profile-security" role="menuitem">账号安全</a>
+          <a :href="appHref('/profile-basic')" role="menuitem">基础资料</a>
+          <a :href="appHref('/profile-resumes')" role="menuitem">我的简历</a>
+          <a :href="appHref('/profile-security')" role="menuitem">账号安全</a>
           <div class="agent-profile-divider"></div>
           <button class="agent-profile-action" type="button" @click="handleSwitchAccount">切换账号</button>
           <button class="agent-profile-action danger" type="button" @click="handleLogout">退出登录</button>
@@ -32,6 +32,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { clearCandidateSession } from '@/utils/agentSession'
@@ -53,10 +54,10 @@ const displayName = computed(() => userStore.nickName || userStore.name || '求�
 const avatarText = computed(() => displayName.value.slice(0, 1))
 
 const baseNavItems = [
-  { key: 'index', label: '首页', path: '/agent/index' },
-  { key: 'jobs', label: '岗位浏览', path: '/agent/jobs' },
-  { key: 'applications', label: '投递跟踪', path: '/agent/applications' },
-  { key: 'messages', label: '消息通知', path: '/agent/messages' }
+  { key: 'index', label: '首页', path: '/index' },
+  { key: 'jobs', label: '岗位浏览', path: '/jobs' },
+  { key: 'applications', label: '投递跟踪', path: '/applications' },
+  { key: 'messages', label: '消息通知', path: '/messages' }
 ]
 const navItems = computed(() => baseNavItems.map(item => ({
   ...item,
@@ -90,7 +91,7 @@ async function clearAuthAndRedirect(target) {
 }
 
 async function handleSwitchAccount() {
-  await clearAuthAndRedirect({ path: '/agent/login', query: { switch: '1' } })
+  await clearAuthAndRedirect({ path: '/login', query: { switch: '1' } })
 }
 
 async function handleLogout() {
@@ -100,7 +101,7 @@ async function handleLogout() {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    await clearAuthAndRedirect('/agent/login')
+    await clearAuthAndRedirect('/login')
   } catch {
     // 用户取消确认时保持当前页面与会话不变。
   }

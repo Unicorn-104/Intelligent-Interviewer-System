@@ -65,7 +65,7 @@
 
       <section class="jobs-section" id="jobs" aria-labelledby="jobsHeading">
         <div class="section-heading">
-          <div><h2 id="jobsHeading">为你推荐的岗位</h2><p>基于你的经历、偏好与近期浏览行为智能匹配</p></div>
+          <div><h2 id="jobsHeading">为你推荐的岗位</h2><p>根据默认简历技能、求职方向和城市偏好提供参考匹配</p></div>
           <div class="jobs-controls"><select v-model="sort" class="filter-select" id="jobFilter" aria-label="岗位排序" @change="loadJobs"><option value="match">按匹配度排序</option><option value="salary">按薪资排序</option><option value="latest">按最新发布排序</option></select><button class="text-button" type="button" :disabled="loading" @click="loadJobs">刷新岗位 ↻</button></div>
         </div>
 
@@ -81,7 +81,7 @@
               <div class="job-card-top"><div class="company-logo" :class="companyLogoClass(job.companyName)">{{ companyMark(job.companyName) }}</div><button class="bookmark-button" :class="{ saved: isSaved(job.id) }" type="button" :aria-label="isSaved(job.id) ? `取消收藏${job.title}岗位` : `收藏${job.title}岗位`" title="收藏岗位" @click.stop="toggleSaved(job.id)"><svg viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg></button></div>
               <h3>{{ job.title }}</h3><div class="job-card-company">{{ job.companyName }} · {{ job.workCity || '地点不限' }}</div>
               <div class="job-card-meta"><span class="meta-item"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z" /><circle cx="12" cy="9" r="2.2" /></svg>{{ job.experienceRequired || '经验不限' }}</span><span class="meta-item"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></svg>{{ job.educationText }}</span></div>
-              <div class="job-card-tags"><span class="match-tag">{{ job.matchScore != null ? `${job.matchScore}%匹配` : job.statusText }}</span><span v-if="job.skills?.[0]" class="job-tag">{{ job.skills[0] }}</span><span v-if="job.jobTypeText" class="job-tag">{{ job.jobTypeText }}</span></div><div class="job-card-footer"><span class="salary">{{ job.salaryText }}</span><button class="apply-button" type="button" @click.stop="applyJob(job)">{{ job.appliedFlag ? '查看投递' : '立即投递' }}</button></div>
+              <div class="job-card-tags"><span class="match-tag" :title="job.matchScore != null ? '规则参考分：岗位技能覆盖占60%，求职方向占25%，城市偏好占15%；缺失信息不加分，不代表录用概率' : '请补充默认简历技能或求职方向后查看匹配度'">{{ job.matchScore != null ? `${job.matchScore}%参考匹配` : '完善资料后匹配' }}</span><span v-if="job.skills?.[0]" class="job-tag">{{ job.skills[0] }}</span><span v-if="job.jobTypeText" class="job-tag">{{ job.jobTypeText }}</span></div><div class="job-card-footer"><span class="salary">{{ job.salaryText }}</span><button class="apply-button" type="button" @click.stop="applyJob(job)">{{ job.appliedFlag ? '查看投递' : '立即投递' }}</button></div>
             </article>
           </template>
           <div v-else class="empty-state visible">当前暂无企业发布的在招岗位。</div>
@@ -198,13 +198,13 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { listJobs } from '@/api/agent/job'
 import { listApplications } from '@/api/agent/application'
 import { listCandidateSchedule } from '@/api/system/conference'
 import { listNoticeTop, markNoticeRead } from '@/api/system/notice'
-import { userAppUrl } from '@/utils/appLink'
 import useUserStore from '@/store/modules/user'
 
 const userStore = useUserStore()
@@ -410,7 +410,7 @@ function formatScheduleDateTime(startAt, endAt) {
 function getInterviewLink(item) {
   if (item?.interviewLink) return item.interviewLink
   if (!item?.roomToken) return ''
-  return userAppUrl(`/conference-join?token=${encodeURIComponent(item.roomToken)}`)
+  return new URL(appHref(`/conference-join?token=${encodeURIComponent(item.roomToken)}`), window.location.origin).href
 }
 
 function hasInterviewLink(item) {
@@ -472,7 +472,7 @@ function scheduleStatusClass(item) {
 }
 
 function openSchedule(item) {
-  window.__agentNavigate(`/agent/conference-prep?sessionId=${encodeURIComponent(item.sessionId)}`)
+  window.__agentNavigate(`/conference-prep?sessionId=${encodeURIComponent(item.sessionId)}`)
 }
 
 function startOfMonth(date) {
@@ -530,27 +530,27 @@ function toggleSaved(id) {
 }
 
 function openJob(id) {
-  window.__agentNavigate(`/agent/job-detail?id=${encodeURIComponent(id)}`)
+  window.__agentNavigate(`/job-detail?id=${encodeURIComponent(id)}`)
 }
 
 function applyJob(job) {
   if (job.appliedFlag && job.applicationId) {
-    window.__agentNavigate(`/agent/application-detail?id=${encodeURIComponent(job.applicationId)}`)
+    window.__agentNavigate(`/application-detail?id=${encodeURIComponent(job.applicationId)}`)
   } else {
-    window.__agentNavigate(`/agent/resume-select?job=${encodeURIComponent(job.id)}`)
+    window.__agentNavigate(`/resume-select?job=${encodeURIComponent(job.id)}`)
   }
 }
 
 function openApplications() {
-  window.__agentNavigate('/agent/applications')
+  window.__agentNavigate('/applications')
 }
 
 function openMessages() {
-  window.__agentNavigate('/agent/messages?view=system')
+  window.__agentNavigate('/messages?view=system')
 }
 
 function openApplication(application) {
-  window.__agentNavigate(`/agent/application-detail?id=${encodeURIComponent(application.id)}`)
+  window.__agentNavigate(`/application-detail?id=${encodeURIComponent(application.id)}`)
 }
 
 async function openNotice(notice) {
@@ -563,7 +563,7 @@ async function openNotice(notice) {
       // 通知打开失败时仍允许进入消息中心查看详情。
     }
   }
-  window.__agentNavigate(`/agent/messages?view=system#notice-${encodeURIComponent(notice.noticeId)}`)
+  window.__agentNavigate(`/messages?view=system#notice-${encodeURIComponent(notice.noticeId)}`)
 }
 
 function plainText(value) {

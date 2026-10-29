@@ -2,14 +2,15 @@
 <!-- 与求职者端其他页面一致的全局导航 -->
   <AgentTopbar active="messages" />
   <main class="page">
-    <a class="back" id="backLink" href="/agent/messages">← 返回消息中心</a>
-    <section class="hero"><div class="identity"><div class="large-avatar" id="personAvatar">王</div><div><h1 id="personName">王雨晴</h1><div class="title-line"><span id="personRole">资深招聘经理</span><span class="verified">企业已认证</span></div><div class="online">● 当前在线 · 通常 10 分钟内回复</div></div></div><div class="hero-actions"><a class="button" id="companyButton" href="/agent/company-profile?id=zkr">企业主页</a><a class="button primary" id="messageButton" href="/agent/messages?conversation=hr">发起沟通</a></div></section>
+    <a class="back" id="backLink" :href="appHref('/messages')">← 返回消息中心</a>
+    <section class="hero"><div class="identity"><div class="large-avatar" id="personAvatar">王</div><div><h1 id="personName">王雨晴</h1><div class="title-line"><span id="personRole">资深招聘经理</span><span class="verified">企业已认证</span></div><div class="online">● 当前在线 · 通常 10 分钟内回复</div></div></div><div class="hero-actions"><a class="button" id="companyButton" :href="appHref('/company-profile?id=zkr')">企业主页</a><a class="button primary" id="messageButton" :href="appHref('/messages?conversation=hr')">发起沟通</a></div></section>
     <div class="grid"><div><section class="section"><h2>个人简介</h2><p class="intro" id="personIntro"></p></section><section class="section"><h2>招聘信息</h2><div class="facts" id="facts"></div></section><section class="section"><h2>正在招聘</h2><div class="jobs" id="jobs"></div></section></div><aside><section class="side-card"><div class="company-logo" id="companyLogo">Z</div><div class="company-name" id="companyName"></div><div class="company-meta" id="companyMeta"></div></section><section class="side-card"><h2>招聘活跃度</h2><div class="stat-list"><div class="stat"><strong>98%</strong><span>近 7 日回复率</span></div><div class="stat"><strong>10 分钟</strong><span>平均回复</span></div><div class="stat"><strong id="openCount">12</strong><span>在招岗位</span></div><div class="stat"><strong>今日</strong><span>最近活跃</span></div></div></section></aside></div>
   </main>
   <div class="toast" id="toast" role="status">资料已加载</div>
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { onMounted } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 
@@ -21,9 +22,9 @@ onMounted(() => {
         'li-jing':{conversation:'li',avatar:'李',name:'李静',role:'设计招聘顾问',companyId:'lanhu',company:'蓝湖创新科技有限公司',short:'蓝湖创新科技',logo:'蓝',meta:'企业服务 · 500-999 人 · 深圳',intro:'负责产品设计、设计系统和用户研究方向的招聘。重视求职者的问题定义能力、作品集叙事与复杂产品经验，也乐于为设计师提供清晰及时的流程反馈。',facts:[['当前负责方向','产品设计 / 用户研究'],['招聘经验','5 年'],['本月沟通求职者','48 人'],['常驻城市','深圳']],jobs:[['UI/UX 设计师','深圳 · 本科 · 3-5年','20-32K · 13薪','saas-ux'],['资深产品设计师','深圳 · 本科 · 5-10年','30-45K · 13薪','senior-designer']]}
       };
       const params=new URLSearchParams(location.search),profile=profiles[params.get('id')]||profiles['wang-yuqing'],from=params.get('from')||profile.conversation;
-      document.title=profile.name+' · 招聘联系人主页';document.getElementById('backLink').href=`/agent/messages?conversation=${encodeURIComponent(from)}`;document.getElementById('messageButton').href=`/agent/messages?conversation=${encodeURIComponent(profile.conversation)}`;document.getElementById('companyButton').href=`/agent/company-profile?id=${encodeURIComponent(profile.companyId)}&from=${encodeURIComponent(profile.conversation)}`;
+      document.title=profile.name+' · 招聘联系人主页';document.getElementById('backLink').href=appHref(`/messages?conversation=${encodeURIComponent(from)}`);document.getElementById('messageButton').href=appHref(`/messages?conversation=${encodeURIComponent(profile.conversation)}`);document.getElementById('companyButton').href=appHref(`/company-profile?id=${encodeURIComponent(profile.companyId)}&from=${encodeURIComponent(profile.conversation)}`);
       document.getElementById('personAvatar').textContent=profile.avatar;document.getElementById('personName').textContent=profile.name;document.getElementById('personRole').textContent=profile.role;document.getElementById('personIntro').textContent=profile.intro;document.getElementById('companyLogo').textContent=profile.logo;document.getElementById('companyName').textContent=profile.company;document.getElementById('companyMeta').textContent=profile.meta;document.getElementById('openCount').textContent=profile.jobs.length+10;
-      document.getElementById('facts').innerHTML=profile.facts.map(([label,value])=>`<div class="fact"><span>${label}</span><strong>${value}</strong></div>`).join('');document.getElementById('jobs').innerHTML=profile.jobs.map(([name,meta,salary,id])=>`<a class="job" href="/agent/job-detail?id=${encodeURIComponent(id)}"><div class="job-main"><div class="job-name">${name}</div><div class="job-meta">${meta}</div></div><span class="salary">${salary}</span><span class="arrow">›</span></a>`).join('');
+      document.getElementById('facts').innerHTML=profile.facts.map(([label,value])=>`<div class="fact"><span>${label}</span><strong>${value}</strong></div>`).join('');document.getElementById('jobs').innerHTML=profile.jobs.map(([name,meta,salary,id])=>`<a class="job" href="${appHref(`/job-detail?id=${encodeURIComponent(id)}`)}"><div class="job-main"><div class="job-name">${name}</div><div class="job-meta">${meta}</div></div><span class="salary">${salary}</span><span class="arrow">›</span></a>`).join('');
 })
 </script>
 

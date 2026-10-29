@@ -26,7 +26,7 @@ const router = useRouter()
 const status = ref('loading')
 
 function goWorkbench() {
-  router.replace('/agent/index')
+  router.replace('/index')
 }
 
 onMounted(async () => {
@@ -37,7 +37,7 @@ onMounted(async () => {
   }
   // 面试链接不允许绕过身份校验直接进入准备页：未登录时先登录，登录后回到本页按链接校验候选人身份
   if (!getToken()) {
-    router.replace({ path: '/agent/login', query: { redirect: route.fullPath } })
+    router.replace({ path: '/login', query: { redirect: route.fullPath } })
     return
   }
   try {
@@ -47,7 +47,7 @@ onMounted(async () => {
       status.value = 'error'
       return
     }
-    router.replace('/agent/conference-prep?sessionId=' + sessionId)
+    router.replace('/conference-prep?sessionId=' + sessionId)
   } catch (error) {
     status.value = 'error'
   }

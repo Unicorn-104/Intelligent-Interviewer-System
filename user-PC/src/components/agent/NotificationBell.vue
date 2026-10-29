@@ -62,7 +62,7 @@ function openNotification(id) {
   const ids = readUnreadIds().filter((item) => item !== id)
   saveUnreadIds(ids)
   open.value = false
-  router.push({ path: '/agent/messages', query: { view: 'system' }, hash: `#${id}` })
+  router.push({ path: '/messages', query: { view: 'system' }, hash: `#${id}` })
 }
 
 function closeOnOutsideClick(event) {

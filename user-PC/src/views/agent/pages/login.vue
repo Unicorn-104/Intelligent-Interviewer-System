@@ -1,7 +1,7 @@
 <template>
   <header class="topbar">
     <div class="topbar-inner">
-      <a class="brand" href="/agent/index"><span class="mark">智</span>智聘 AI</a>
+      <a class="brand" :href="appHref('/index')"><span class="mark">智</span>智聘 AI</a>
       <span class="hint">求职者端安全登录</span>
     </div>
   </header>
@@ -51,12 +51,13 @@
         <button class="primary" :disabled="loading" type="submit">{{ loading ? '登录中...' : '登录' }}</button>
       </form>
 
-      <div class="footer-link">还没有账号？ <a href="/agent/register">立即注册</a></div>
+      <div class="footer-link">还没有账号？ <a :href="appHref('/register')">立即注册</a></div>
     </section>
   </main>
 </template>
 
 <script setup>
+import { appHref, candidateRedirect } from '@/utils/agentNavigation'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { isValidAccountOrPhone, isValidPhoneNumber, isValidSmsCode } from '@/utils/agentValidation'
 import { sendSmsCode } from '@/api/login'
@@ -130,8 +131,7 @@ async function handleSubmit() {
   resetCandidateLoginState()
   try {
     await userStore.login(form)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/agent/index'
-    await router.push(redirect.startsWith('/agent') ? redirect : '/agent/index')
+    await router.push(candidateRedirect(route.query.redirect))
   } catch (requestError) {
     error.value = requestError?.message || '登录失败，请检查登录凭证'
   } finally {

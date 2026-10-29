@@ -2,7 +2,7 @@
   <div class="cw-page">
     <header class="cw-topbar">
       <div class="cw-bar">
-        <a class="cw-brand" href="/agent/index"><span class="cw-mark">智</span>智聘 AI</a>
+        <a class="cw-brand" :href="appHref('/index')"><span class="cw-mark">智</span>智聘 AI</a>
         <span class="cw-user">求职者</span>
       </div>
     </header>
@@ -28,6 +28,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getWaitingRoom } from '@/api/system/conference'
@@ -54,7 +55,7 @@ async function poll() {
     sessionStatus.value = data.sessionStatus
     if (Number(data.sessionStatus) === 1) {
       stopPolling()
-      router.replace('/agent/conference-ai?sessionId=' + sessionId.value)
+      router.replace('/conference-ai?sessionId=' + sessionId.value)
     }
   } catch (error) {
     // 单次轮询失败保留上一次状态，等待下次轮询
@@ -70,7 +71,7 @@ function stopPolling() {
 onMounted(() => {
   sessionId.value = route.query.sessionId || ''
   if (!sessionId.value) {
-    router.replace('/agent/index')
+    router.replace('/index')
     return
   }
   poll()

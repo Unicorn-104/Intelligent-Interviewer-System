@@ -109,24 +109,24 @@
         <div class="done-icon">✓</div>
         <h2>{{ autoSubmitted ? '时间用尽，已自动交卷' : '交卷成功' }}</h2>
         <p>你的答卷已提交，成绩与报告将在企业评阅后生成。</p>
-        <a href="/agent/exam">返回笔试列表</a>
+        <a :href="appHref('/exam')">返回笔试列表</a>
       </div>
       <div v-else class="center-card error">
         <h2>无法进入考试</h2>
         <p>{{ loadError }}</p>
-        <a href="/agent/exam">返回笔试列表</a>
+        <a :href="appHref('/exam')">返回笔试列表</a>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Room, Track } from 'livekit-client'
 import QRCode from 'qrcode'
 import { getExamEntry, getExamMonitor, saveExamAnswers, startExam, submitExam } from '@/api/agent/exam'
-import { userAppUrl } from '@/utils/appLink'
 
 const route = useRoute()
 const scheduleId = String(route.query.scheduleId || '')
@@ -285,8 +285,7 @@ async function loadMonitor() {
     monitorInfo = res.data || {}
     forceDual.value = Number(monitorInfo.forceDualCamera) === 1
     subInfo.value = monitorInfo.sub || { subStatus: 0, subOnline: false }
-    // 副机位地址按当前部署位置拼接，兼容 /user/ 子路径
-    subUrl.value = userAppUrl(monitorInfo.subUrl || '')
+    subUrl.value = monitorInfo.subUrl ? new URL(appHref(monitorInfo.subUrl), window.location.origin).href : ''
     await nextTick()
     if (subQr.value && subUrl.value) {
       await QRCode.toCanvas(subQr.value, subUrl.value, { width: 150, margin: 1 })

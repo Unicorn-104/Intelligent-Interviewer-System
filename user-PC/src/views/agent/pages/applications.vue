@@ -19,7 +19,7 @@
               <div class="application-copy"><div class="application-title">{{ item.jobTitle }}</div><div class="application-sub">{{ item.companyName }} · 投递于 {{ formatDate(item.appliedAt) }}</div></div>
               <span class="status-pill" :class="statusClass(item.status)">{{ item.statusText }}</span><button class="expand-button" type="button" :aria-label="expandedId === item.id ? '收起进度' : '展开进度'" @click.stop="toggleItem(item)">⌄</button>
             </div>
-            <div v-if="expandedId === item.id" class="progress-panel"><div v-if="detailLoading" class="progress-content">正在加载流程节点...</div><div v-else class="progress-content"><div class="progress-caption">流程进度 <span>当前阶段：{{ item.statusText }}</span></div><div v-if="details[item.id]?.timeline?.length" class="progress-steps"><div v-for="(node, index) in details[item.id].timeline" :key="`${node.stage}-${index}`" class="progress-step" :class="node.state === 'current' ? 'current' : node.state === 'closed' || node.state === 'done' ? 'done' : ''"><span class="step-dot">{{ node.state === 'done' ? '✓' : index + 1 }}</span><span class="step-name">{{ node.title }}</span><span class="step-time">{{ formatDate(node.occurredAt) }}</span></div></div><div v-else class="empty-inline">暂无状态日志</div><div class="detail-row"><a class="detail-link" :href="`/agent/application-detail?id=${item.id}`" @click.stop>查看详细进度 →</a></div></div></div>
+            <div v-if="expandedId === item.id" class="progress-panel"><div v-if="detailLoading" class="progress-content">正在加载流程节点...</div><div v-else class="progress-content"><div class="progress-caption">流程进度 <span>当前阶段：{{ item.statusText }}</span></div><div v-if="details[item.id]?.timeline?.length" class="progress-steps"><div v-for="(node, index) in details[item.id].timeline" :key="`${node.stage}-${index}`" class="progress-step" :class="node.state === 'current' ? 'current' : node.state === 'closed' || node.state === 'done' ? 'done' : ''"><span class="step-dot">{{ node.state === 'done' ? '✓' : index + 1 }}</span><span class="step-name">{{ node.title }}</span><span class="step-time">{{ formatDate(node.occurredAt) }}</span></div></div><div v-else class="empty-inline">暂无状态日志</div><div class="detail-row"><a class="detail-link" :href="appHref(`/application-detail?id=${item.id}`)" @click.stop>查看详细进度 →</a></div></div></div>
           </article>
         </div>
         <div v-else class="empty-state visible">当前筛选条件下没有投递记录。</div>
@@ -30,6 +30,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getApplication, listApplications } from '@/api/agent/application'
