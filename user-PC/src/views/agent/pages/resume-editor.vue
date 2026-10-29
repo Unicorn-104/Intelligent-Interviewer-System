@@ -1,7 +1,7 @@
 <template>
   <AgentTopbar active="" />
   <main class="main">
-    <div class="breadcrumb"><a href="/agent/profile-resumes">我的简历</a> / 编辑简历</div>
+    <div class="breadcrumb"><a :href="appHref('/profile-resumes')">我的简历</a> / 编辑简历</div>
     <div v-if="loading" class="state">正在读取简历...</div>
     <div v-else-if="errorMessage" class="state error-state">
       <strong>简历暂时无法读取</strong>
@@ -180,7 +180,7 @@
         </section>
 
         <div class="savebar">
-          <a class="resume-savebar-action resume-savebar-cancel" href="/agent/profile-resumes">取消</a>
+          <a class="resume-savebar-action resume-savebar-cancel" :href="appHref('/profile-resumes')">取消</a>
           <button class="resume-savebar-action resume-savebar-submit" type="submit" :disabled="saving || parsing">{{ saving ? '保存中...' : '保存修改' }}</button>
         </div>
       </form>
@@ -190,6 +190,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { onMounted, reactive, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { createResume, deleteResumeAttachment, getResume, getResumeAttachmentFile, getResumeAttachments, getResumeFile, importResumePdf, parseResumePdf, updateResume, uploadResumeAttachments } from '@/api/agent/resume'

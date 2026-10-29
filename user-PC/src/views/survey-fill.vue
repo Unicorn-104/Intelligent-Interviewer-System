@@ -2,7 +2,7 @@
   <div class="sf-page">
     <header class="sf-topbar">
       <div class="sf-bar">
-        <a class="sf-brand" href="/agent/index"><span class="sf-mark">智</span>智聘 AI</a>
+        <a class="sf-brand" :href="appHref('/index')"><span class="sf-mark">智</span>智聘 AI</a>
       </div>
     </header>
 
@@ -74,6 +74,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getSurveyFill, submitSurveyFill } from '@/api/system/survey'
@@ -98,7 +99,7 @@ const answeredCount = computed(() => questions.value.filter(q => {
 // 返回：优先回上一页（从消息里的链接进入），直接打开链接时没有上一页，回到求职者首页
 function goBack() {
   if (window.history.state && window.history.state.back) router.back()
-  else router.push('/agent/index')
+  else router.push('/index')
 }
 
 function isChecked(qid, opt) {

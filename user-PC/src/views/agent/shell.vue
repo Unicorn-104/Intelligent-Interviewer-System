@@ -3,34 +3,46 @@
 </template>
 
 <script setup>
+import { toAppRoute } from '@/utils/agentNavigation'
+
 const router = useRouter()
 
-window.__agentNavigate = (target) => {
-  const url = new URL(target, window.location.origin)
-  router.push(`${url.pathname}${url.search}${url.hash}`)
+function navigate(target) {
+  const route = toAppRoute(target)
+  if (route !== null) return router.push(route)
 }
+
+window.__agentNavigate = navigate
 
 function handleInternalLink(event) {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
     return
   }
 
-  const link = event.target.closest('a')
+  const link = event.target.closest?.('a')
   if (!link || link.target === '_blank' || link.hasAttribute('download')) {
     return
   }
 
   const href = link.getAttribute('href')
-  if (!href || !href.startsWith('/agent')) {
+  if (!href || href.startsWith('#') || /^https?:\/\//i.test(href)) {
     return
   }
 
+  const route = toAppRoute(href)
+  if (route === null || !router.resolve(route).meta.candidate) return
+
   event.preventDefault()
-  router.push(href)
+  router.push(route)
 }
 
-onMounted(() => document.addEventListener('click', handleInternalLink))
-onBeforeUnmount(() => document.removeEventListener('click', handleInternalLink))
+onMounted(() => {
+  document.addEventListener('click', handleInternalLink)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleInternalLink)
+  if (window.__agentNavigate === navigate) delete window.__agentNavigate
+})
 </script>
 
 <style scoped>

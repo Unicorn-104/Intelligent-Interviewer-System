@@ -1,14 +1,14 @@
 <template>
   <div class="page">
-    <header class="topbar"><div class="topbar-inner"><a class="brand" href="/agent/index"><span class="brand-mark">智</span><strong>智聘 AI</strong></a><a class="back-link" :href="detailUrl"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>返回岗位详情</a></div></header>
+    <header class="topbar"><div class="topbar-inner"><a class="brand" :href="appHref('/index')"><span class="brand-mark">智</span><strong>智聘 AI</strong></a><a class="back-link" :href="appHref(detailUrl)"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>返回岗位详情</a></div></header>
     <main class="main">
-      <section v-if="successApplication" class="panel success"><span class="success-icon">✓</span><h1>投递成功</h1><p>简历已发送给企业，可在投递跟踪中查看后续进度。</p><div class="success-actions"><a class="secondary" :href="detailUrl">返回岗位详情</a><button class="primary" type="button" @click="goApplication">查看投递进度</button></div></section>
+      <section v-if="successApplication" class="panel success"><span class="success-icon">✓</span><h1>投递成功</h1><p>简历已发送给企业，可在投递跟踪中查看后续进度。</p><div class="success-actions"><a class="secondary" :href="appHref(detailUrl)">返回岗位详情</a><button class="primary" type="button" @click="goApplication">查看投递进度</button></div></section>
       <template v-else>
         <div class="page-head"><div><h1>选择投递简历</h1><p>选择最适合当前岗位的一份有效简历，确认后将发送给企业。</p></div><div class="steps"><span class="step"><span class="step-number">1</span>选择简历</span><span class="step-line"></span><span class="step pending"><span class="step-number">2</span>投递完成</span></div></div>
         <div v-if="loading" class="panel state">正在读取岗位和简历...</div>
         <div v-else-if="errorMessage" class="panel state"><strong>无法继续投递</strong><span>{{ errorMessage }}</span><button class="primary" type="button" @click="loadData">重新加载</button></div>
         <div v-else class="layout">
-          <section class="panel"><div class="panel-head"><h2>我的简历</h2><p>AI 已根据岗位要求计算每份简历的匹配度</p></div><div v-if="resumes.length" class="resume-list"><label v-for="resume in resumes" :key="resume.id" class="resume-option" :class="{ selected: selectedResume?.id === resume.id }"><input v-model="selectedResumeId" type="radio" name="resume" :value="resume.id" /><span class="file-icon">▤</span><span><span class="resume-name">{{ resume.name }} <span v-if="resume.recommended" class="badge">AI 推荐</span><span v-else-if="resume.isDefault" class="badge">默认简历</span></span><span class="resume-summary">{{ resume.jobDirection || '综合求职方向' }} · 完整度 {{ resume.completion }}%</span><span class="resume-meta"><span>更新于 {{ formatDate(resume.updatedAt) }}</span><span>已使用 {{ resume.usedApplicationCount || 0 }} 次</span></span></span><span class="match"><strong>{{ resume.matchScore }}%</strong><span>岗位匹配</span></span></label></div><div v-else class="empty"><span>暂无可投递简历，请先创建一份简历。</span><button class="secondary create-button" type="button" :disabled="creatingResume" @click="createFirstResume">{{ creatingResume ? '创建中...' : '创建第一份简历' }}</button></div><div class="panel-foot"><span>企业只能查看本次选择的简历</span><a href="/agent/profile-resumes">管理我的简历</a></div></section>
+          <section class="panel"><div class="panel-head"><h2>我的简历</h2><p>AI 已根据岗位要求计算每份简历的匹配度</p></div><div v-if="resumes.length" class="resume-list"><label v-for="resume in resumes" :key="resume.id" class="resume-option" :class="{ selected: selectedResume?.id === resume.id }"><input v-model="selectedResumeId" type="radio" name="resume" :value="resume.id" /><span class="file-icon">▤</span><span><span class="resume-name">{{ resume.name }} <span v-if="resume.recommended" class="badge">AI 推荐</span><span v-else-if="resume.isDefault" class="badge">默认简历</span></span><span class="resume-summary">{{ resume.jobDirection || '综合求职方向' }} · 完整度 {{ resume.completion }}%</span><span class="resume-meta"><span>更新于 {{ formatDate(resume.updatedAt) }}</span><span>已使用 {{ resume.usedApplicationCount || 0 }} 次</span></span></span><span class="match"><strong>{{ resume.matchScore }}%</strong><span>岗位匹配</span></span></label></div><div v-else class="empty"><span>暂无可投递简历，请先创建一份简历。</span><button class="secondary create-button" type="button" :disabled="creatingResume" @click="createFirstResume">{{ creatingResume ? '创建中...' : '创建第一份简历' }}</button></div><div class="panel-foot"><span>企业只能查看本次选择的简历</span><a :href="appHref('/profile-resumes')">管理我的简历</a></div></section>
           <aside class="panel job-panel"><div class="job-summary"><div class="company">{{ job?.companyName }}</div><h2 class="job-title">{{ job?.title }}</h2><div class="salary">{{ job?.salaryText }}</div><div class="job-meta"><span>{{ job?.workCity || '地点不限' }}</span><span>{{ job?.educationText }}</span><span>{{ job?.experienceRequired || '经验不限' }}</span><span>{{ job?.jobTypeText }}</span></div></div><div class="match-box"><div class="match-head"><span>当前简历匹配度</span><strong>{{ selectedResume?.matchScore || 0 }}%</strong></div><div class="track"><div class="value" :style="{ width: `${selectedResume?.matchScore || 0}%` }"></div></div><div class="match-note">{{ selectedResume ? (selectedResume.matchScore >= 80 ? '该简历与岗位要求匹配度较高' : '建议补充与岗位相关的项目成果后再投递') : '请选择一份简历' }}</div></div><div class="agreement"><input id="application-agreement" v-model="agreement" type="checkbox" /><label class="agreement-copy" for="application-agreement">我已确认简历内容真实，并同意 <button class="agreement-link" type="button" @click.stop="openPolicy('agreement')">《投递协议》</button> 与 <button class="agreement-link" type="button" @click.stop="openPolicy('privacy')">《隐私政策》</button></label></div><div class="actions"><button class="secondary" type="button" @click="cancel">取消</button><button class="primary" type="button" :disabled="!selectedResume || !agreement || submitting" @click="submitApplication">{{ submitting ? '提交中...' : '确认投递' }}</button></div></aside>
         </div>
       </template>
@@ -27,6 +27,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { getJob, getResumeOptions } from '@/api/agent/job'
@@ -46,7 +47,7 @@ const submitting = ref(false)
 const creatingResume = ref(false)
 const errorMessage = ref('')
 const successApplication = ref(null)
-const detailUrl = computed(() => `/agent/job-detail?id=${encodeURIComponent(jobId || '')}`)
+const detailUrl = computed(() => `/job-detail?id=${encodeURIComponent(jobId || '')}`)
 const selectedResume = computed(() => resumes.value.find(item => item.id === selectedResumeId.value))
 const policyTitle = computed(() => policyType.value === 'agreement' ? '投递协议' : '隐私政策')
 
@@ -81,7 +82,7 @@ async function submitApplication() {
     const response = await createApplication({ jobId: Number(jobId), resumeId: selectedResume.value.id, consentVersion: 'v1' })
     const application = response.data
     if (application?.duplicate) {
-      window.__agentNavigate(`/agent/application-detail?id=${application.id}`)
+      window.__agentNavigate(`/application-detail?id=${application.id}`)
       return
     }
     successApplication.value = application
@@ -111,7 +112,7 @@ async function createFirstResume() {
 
 function goApplication() {
   if (successApplication.value?.id) {
-    window.__agentNavigate(`/agent/application-detail?id=${successApplication.value.id}`)
+    window.__agentNavigate(`/application-detail?id=${successApplication.value.id}`)
   }
 }
 

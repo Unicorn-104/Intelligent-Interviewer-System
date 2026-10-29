@@ -15,7 +15,7 @@ import { clearCandidateSession, hasCandidateAccessToken } from '@/utils/agentSes
 NProgress.configure({ showSpinner: false })
 
 const whiteList = ['/login', '/register']
-const agentPublicRoutes = ['/agent/login', '/agent/register']
+const agentPublicRoutes = ['/login', '/register']
 
 const isWhiteList = (path) => {
   return whiteList.some(pattern => isPathMatch(pattern, path))
@@ -51,25 +51,11 @@ router.beforeEach(async (to, from) => {
     NProgress.done()
     return true
   }
-  if (to.path === '/' || to.path === '/index') {
-    if (hasCandidateAccessToken()) {
-      removeToken()
-      clearCandidateSession()
-      useUserStore().$reset()
-      isRelogin.show = false
-    }
-    NProgress.done()
-    return { path: '/agent/login', query: to.query, replace: true }
-  }
   if (import.meta.env.VITE_FRONTEND_ONLY === 'true') {
-    if (to.path === '/login') {
-      NProgress.done()
-      return { path: '/agent/login', query: to.query, replace: true }
-    }
     NProgress.done()
     return true
   }
-  if (to.path.startsWith('/agent/')) {
+  if (to.meta.candidate === true) {
     to.meta.title && useSettingsStore().setTitle(to.meta.title)
     if (agentPublicRoutes.includes(to.path)) {
       // 登录/注册页必须始终可进入，避免浏览器残留的过期 token 触发 getInfo 弹窗。
@@ -93,30 +79,30 @@ router.beforeEach(async (to, from) => {
           userStore.$reset()
           ElMessage.error('登录状态已失效，请重新登录')
           NProgress.done()
-          return { path: '/agent/login', query: { redirect: to.fullPath }, replace: true }
+          return { path: '/login', query: { redirect: to.fullPath }, replace: true }
         }
       }
       // 身份准入：仅求职者(biz_4)可进入候选人端，企业角色等登录后立即拦回登录页
       if (!hasCandidateAccess()) {
         await denyNonCandidate()
         NProgress.done()
-        return { path: '/agent/login', replace: true }
+        return { path: '/login', replace: true }
       }
       return true
     }
     NProgress.done()
-    return { path: '/agent/login', query: { redirect: to.fullPath }, replace: true }
+    return { path: '/login', query: { redirect: to.fullPath }, replace: true }
   }
   if (getToken()) {
     to.meta.title && useSettingsStore().setTitle(to.meta.title)
     const isLock = useLockStore().isLock
     if (to.path === '/login') {
       NProgress.done()
-      return { path: '/agent/index', replace: true }
+      return { path: '/index', replace: true }
     }
     if (to.path === '/register') {
       NProgress.done()
-      return { path: '/agent/index', replace: true }
+      return { path: '/index', replace: true }
     }
     if (isWhiteList(to.path)) {
       return true
@@ -161,7 +147,7 @@ router.beforeEach(async (to, from) => {
     }
     NProgress.done()
     return {
-      path: '/agent/login',
+      path: '/login',
       query: { redirect: to.fullPath },
       replace: true
     }

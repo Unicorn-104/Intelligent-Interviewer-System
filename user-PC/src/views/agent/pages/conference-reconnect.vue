@@ -36,7 +36,7 @@
       </div>
 
       <div class="cr-actions">
-        <button class="cr-ghost" @click="go('/agent/index')">返回首页</button>
+        <button class="cr-ghost" @click="go('/index')">返回首页</button>
         <button class="cr-primary" :disabled="state === 'ok'" @click="reconnect(true)">
           {{ state === 'ok' ? '正在返回…' : '手动重连' }}
         </button>
@@ -91,7 +91,7 @@ function reconnect(manual) {
           // 心跳失败不阻塞返回面试
         }
       }
-      go('/agent/conference-waiting?sessionId=' + (sessionId.value || ''))
+      go('/conference-waiting?sessionId=' + (sessionId.value || ''))
     }, 1200)
   }, 2200)
 }

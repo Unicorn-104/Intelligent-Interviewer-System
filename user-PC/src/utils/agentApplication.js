@@ -45,14 +45,14 @@ export async function resolveApplicationId(value) {
 
 export function applicationDetailPath(applicationId) {
   return isApplicationId(applicationId)
-    ? `/agent/application-detail?id=${encodeURIComponent(Number(applicationId))}`
-    : '/agent/applications'
+    ? `/application-detail?id=${encodeURIComponent(Number(applicationId))}`
+    : '/applications'
 }
 
 export async function resolveApplicationDetailPath(value) {
   try {
     return applicationDetailPath(await resolveApplicationId(value))
   } catch {
-    return '/agent/applications'
+    return '/applications'
   }
 }

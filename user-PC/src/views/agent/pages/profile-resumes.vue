@@ -69,7 +69,7 @@
 
     <div v-if="resumes.length" class="list-foot">
       <span>最多可创建 10 份有效简历，当前已使用 {{ resumes.length }} 份</span>
-      <a href="/agent/resume-select?job=1">体验投递选简历流程</a>
+      <a :href="appHref('/resume-select?job=1')">体验投递选简历流程</a>
     </div>
   </main>
   <div v-if="previewUrl" class="resume-preview-mask" role="dialog" aria-modal="true" :aria-label="`预览 ${previewName}`" @click.self="closePreview">
@@ -85,6 +85,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { deleteResume, getResumes, getResumeFile, importResumePdf, parseResumePdf } from '@/api/agent/resume'
@@ -182,7 +183,7 @@ async function removeResume(resume) {
 }
 
 function goEditor(resumeId) {
-  window.__agentNavigate(`/agent/resume-editor?id=${encodeURIComponent(resumeId)}`)
+  window.__agentNavigate(`/resume-editor?id=${encodeURIComponent(resumeId)}`)
 }
 
 function formatDate(value) {

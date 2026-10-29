@@ -1,58 +1,19 @@
 import { createWebHistory, createRouter } from 'vue-router'
 /* Layout */
 import Layout from '@/layout'
+import { agentPageDefinitions } from './agentPages'
+import { toAppRoute } from '@/utils/agentNavigation'
 
 const agentPageModules = import.meta.glob('../views/agent/pages/*.vue')
-const redirectToAgentLogin = (to) => ({
-  path: '/agent/login',
-  query: to.query
-})
-const redirectToAgentRegister = (to) => ({
-  path: '/agent/register',
-  query: to.query
-})
-
-const agentPageDefinitions = [
-  ['index', 'AgentIndex', '求职者端工作台'],
-  ['login', 'AgentLogin', '求职者端登录'],
-  ['register', 'AgentRegister', '求职者端注册'],
-  ['jobs', 'AgentJobs', '岗位浏览'],
-  ['job-detail', 'AgentJobDetail', '岗位详情'],
-  ['job-assistant', 'AgentJobAssistant', '求职助手'],
-  ['applications', 'AgentApplications', '投递跟踪'],
-  ['application-detail', 'AgentApplicationDetail', '投递详情'],
-  ['messages', 'AgentMessages', '消息通知'],
-  ['profile-basic', 'AgentProfileBasic', '基础资料'],
-  ['profile-resumes', 'AgentProfileResumes', '我的简历'],
-  ['profile-security', 'AgentProfileSecurity', '账号安全'],
-  ['resume-editor', 'AgentResumeEditor', '简历编辑'],
-  ['resume-select', 'AgentResumeSelect', '简历选择'],
-  ['mock-interview', 'AgentMockInterview', '模拟面试'],
-  ['interview-schedule', 'AgentInterviewSchedule', '面试安排'],
-  ['interview-invitation', 'AgentInterviewInvitation', '面试邀请'],
-  ['interview-result', 'AgentInterviewResult', '面试结果'],
-  ['video-meeting', 'AgentVideoMeeting', '视频面试'],
-  ['company-profile', 'AgentCompanyProfile', '企业主页'],
-  ['contact-profile', 'AgentContactProfile', '联系人主页'],
-  ['exam', 'AgentExam', '在线笔试'],
-  ['exam-room', 'AgentExamRoom', '笔试答题'],
-  ['conference-entry', 'AgentConferenceEntry', '面试链接校验'],
-  ['conference-prep', 'AgentConferencePrep', '会议准备'],
-  ['conference-waiting', 'AgentConferenceWaiting', '等候室'],
-  ['conference-ai', 'AgentConferenceAi', 'AI 面试进行中'],
-  ['conference-ended', 'AgentConferenceEnded', '面试结束'],
-  ['conference-reconnect', 'AgentConferenceReconnect', '连接中断'],
-  ['conference-aborted', 'AgentConferenceAborted', '面试异常终止']
-]
-
 const agentRoutes = [{
-  path: '/agent',
+  path: '/',
+  meta: { candidate: true },
   component: () => import('@/views/agent/shell.vue'),
-  redirect: '/agent/index',
+  redirect: '/index',
   children: [
     {
       path: 'profile',
-      redirect: '/agent/profile-basic'
+      redirect: '/profile-basic'
     },
     ...agentPageDefinitions.map(([path, name, title]) => ({
       path,
@@ -65,16 +26,16 @@ const agentRoutes = [{
 
 const legacyAgentRoutes = agentPageDefinitions.map(([path]) => ({
   path: `/${path}.html`,
-  redirect: (to) => ({ path: `/agent/${path}`, query: to.query })
+  redirect: (to) => ({ path: `/${path}`, query: to.query })
 }))
 
 // 已下线页面（面试确认 interview-check / 面试房间 interview-room）的旧地址兼容，
 // 统一引导到新的视频会议模块，避免旧书签与外部链接 404。
 const retiredAgentRoutes = [
-  { path: '/agent/interview-check', redirect: (to) => ({ path: '/agent/conference-prep', query: to.query }) },
-  { path: '/interview-check.html', redirect: (to) => ({ path: '/agent/conference-prep', query: to.query }) },
-  { path: '/agent/interview-room', redirect: (to) => ({ path: '/agent/conference-ai', query: to.query }) },
-  { path: '/interview-room.html', redirect: (to) => ({ path: '/agent/conference-ai', query: to.query }) }
+  { path: '/interview-check', redirect: (to) => ({ path: '/conference-prep', query: to.query }) },
+  { path: '/interview-check.html', redirect: (to) => ({ path: '/conference-prep', query: to.query }) },
+  { path: '/interview-room', redirect: (to) => ({ path: '/conference-ai', query: to.query }) },
+  { path: '/interview-room.html', redirect: (to) => ({ path: '/conference-ai', query: to.query }) }
 ]
 
 /**
@@ -113,16 +74,6 @@ export const constantRoutes = [
     ]
   },
   {
-    path: '/login',
-    redirect: redirectToAgentLogin,
-    hidden: true
-  },
-  {
-    path: '/register',
-    redirect: redirectToAgentRegister,
-    hidden: true
-  },
-  {
     path: "/:pathMatch(.*)*",
     component: () => import('@/views/error/404'),
     hidden: true
@@ -131,19 +82,6 @@ export const constantRoutes = [
     path: '/401',
     component: () => import('@/views/error/401'),
     hidden: true
-  },
-  {
-    path: '',
-    component: Layout,
-    redirect: redirectToAgentLogin,
-    children: [
-      {
-        path: '/index',
-        component: () => import('@/views/index'),
-        name: 'Index',
-        meta: { title: '首页', icon: 'dashboard', affix: true }
-      }
-    ]
   },
   {
     path: '/lock',
@@ -185,6 +123,7 @@ export const constantRoutes = [
   },
   ...agentRoutes,
   ...legacyAgentRoutes,
+  { path: '/agent/:legacyPath(.*)*', redirect: (to) => toAppRoute(to.fullPath) },
   ...retiredAgentRoutes
 ]
 
@@ -263,7 +202,7 @@ export const dynamicRoutes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: constantRoutes,
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) {

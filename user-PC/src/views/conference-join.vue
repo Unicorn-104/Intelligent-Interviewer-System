@@ -2,7 +2,7 @@
   <div class="cj-page">
     <header class="cj-topbar">
       <div class="cj-bar">
-        <a class="cj-brand" href="/agent/index"><span class="cj-mark">智</span>智聘 AI</a>
+        <a class="cj-brand" :href="appHref('/index')"><span class="cj-mark">智</span>智聘 AI</a>
       </div>
     </header>
 
@@ -40,6 +40,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { verifyRoomToken } from '@/api/system/conference'
@@ -62,7 +63,7 @@ const timeText = computed(() => {
 })
 
 function asCandidate() {
-  router.push('/agent/conference-entry?token=' + encodeURIComponent(token.value))
+  router.push('/conference-entry?token=' + encodeURIComponent(token.value))
 }
 
 function asInterviewer() {

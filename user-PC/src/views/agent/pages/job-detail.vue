@@ -7,7 +7,7 @@
       <template v-else-if="job">
         <div class="main-column">
           <section class="panel job-hero">
-            <a class="breadcrumb" href="/agent/jobs"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>岗位浏览 / 职位详情</a>
+            <a class="breadcrumb" :href="appHref('/jobs')"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>岗位浏览 / 职位详情</a>
             <div class="hero-row">
               <div>
                 <h1 class="job-title">{{ job.title }}</h1>
@@ -38,6 +38,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
@@ -87,9 +88,9 @@ function toggleSaved() {
 
 function apply() {
   if (job.value.appliedFlag && job.value.applicationId) {
-    window.__agentNavigate(`/agent/application-detail?id=${job.value.applicationId}`)
+    window.__agentNavigate(`/application-detail?id=${job.value.applicationId}`)
   } else {
-    window.__agentNavigate(`/agent/resume-select?job=${job.value.id}`)
+    window.__agentNavigate(`/resume-select?job=${job.value.id}`)
   }
 }
 
@@ -100,11 +101,11 @@ function startConversation() {
     return
   }
   const peerName = `${job.value.companyName || '企业'} HR`
-  window.__agentNavigate(`/agent/messages?peerId=${encodeURIComponent(publisherId)}&peerName=${encodeURIComponent(peerName)}&jobId=${encodeURIComponent(job.value.id)}`)
+  window.__agentNavigate(`/messages?peerId=${encodeURIComponent(publisherId)}&peerName=${encodeURIComponent(peerName)}&jobId=${encodeURIComponent(job.value.id)}`)
 }
 
 function openAssistant() {
-  window.__agentNavigate(`/agent/job-assistant?job=${job.value.id}`)
+  window.__agentNavigate(`/job-assistant?job=${job.value.id}`)
 }
 
 function companyMark(name) {

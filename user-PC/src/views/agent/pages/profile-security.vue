@@ -396,7 +396,7 @@ async function logoutCurrentDevice() {
     removeToken()
   } finally {
     clearCandidateSession()
-    window.__agentNavigate('/agent/login')
+    window.__agentNavigate('/login')
   }
 }
 

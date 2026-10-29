@@ -44,8 +44,8 @@
       </div>
 
       <div class="ce-actions">
-        <button class="ce-ghost" @click="go('/agent/index')">返回首页</button>
-        <button class="ce-primary" @click="go('/agent/interview-result')">查看面试记录</button>
+        <button class="ce-ghost" @click="go('/index')">返回首页</button>
+        <button class="ce-primary" @click="go('/interview-result')">查看面试记录</button>
       </div>
 
       <p class="ce-tip">如需补面或对结果有疑问，可通过「消息」联系 HR。</p>

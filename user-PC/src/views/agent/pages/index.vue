@@ -198,6 +198,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { listJobs } from '@/api/agent/job'
@@ -409,7 +410,7 @@ function formatScheduleDateTime(startAt, endAt) {
 function getInterviewLink(item) {
   if (item?.interviewLink) return item.interviewLink
   if (!item?.roomToken) return ''
-  return `${window.location.origin}/conference-join?token=${encodeURIComponent(item.roomToken)}`
+  return new URL(appHref(`/conference-join?token=${encodeURIComponent(item.roomToken)}`), window.location.origin).href
 }
 
 function hasInterviewLink(item) {
@@ -471,7 +472,7 @@ function scheduleStatusClass(item) {
 }
 
 function openSchedule(item) {
-  window.__agentNavigate(`/agent/conference-prep?sessionId=${encodeURIComponent(item.sessionId)}`)
+  window.__agentNavigate(`/conference-prep?sessionId=${encodeURIComponent(item.sessionId)}`)
 }
 
 function startOfMonth(date) {
@@ -529,27 +530,27 @@ function toggleSaved(id) {
 }
 
 function openJob(id) {
-  window.__agentNavigate(`/agent/job-detail?id=${encodeURIComponent(id)}`)
+  window.__agentNavigate(`/job-detail?id=${encodeURIComponent(id)}`)
 }
 
 function applyJob(job) {
   if (job.appliedFlag && job.applicationId) {
-    window.__agentNavigate(`/agent/application-detail?id=${encodeURIComponent(job.applicationId)}`)
+    window.__agentNavigate(`/application-detail?id=${encodeURIComponent(job.applicationId)}`)
   } else {
-    window.__agentNavigate(`/agent/resume-select?job=${encodeURIComponent(job.id)}`)
+    window.__agentNavigate(`/resume-select?job=${encodeURIComponent(job.id)}`)
   }
 }
 
 function openApplications() {
-  window.__agentNavigate('/agent/applications')
+  window.__agentNavigate('/applications')
 }
 
 function openMessages() {
-  window.__agentNavigate('/agent/messages?view=system')
+  window.__agentNavigate('/messages?view=system')
 }
 
 function openApplication(application) {
-  window.__agentNavigate(`/agent/application-detail?id=${encodeURIComponent(application.id)}`)
+  window.__agentNavigate(`/application-detail?id=${encodeURIComponent(application.id)}`)
 }
 
 async function openNotice(notice) {
@@ -562,7 +563,7 @@ async function openNotice(notice) {
       // 通知打开失败时仍允许进入消息中心查看详情。
     }
   }
-  window.__agentNavigate(`/agent/messages?view=system#notice-${encodeURIComponent(notice.noticeId)}`)
+  window.__agentNavigate(`/messages?view=system#notice-${encodeURIComponent(notice.noticeId)}`)
 }
 
 function plainText(value) {

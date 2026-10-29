@@ -2,7 +2,7 @@
   <div class="cp-page">
     <header class="cp-topbar">
       <div class="cp-bar">
-        <a class="cp-brand" href="/agent/index"><span class="cp-mark">智</span>智聘 AI</a>
+        <a class="cp-brand" :href="appHref('/index')"><span class="cp-mark">智</span>智聘 AI</a>
         <span class="cp-user">求职者 · {{ userName }}</span>
         <button class="cp-quit" @click="quit">退出</button>
       </div>
@@ -204,6 +204,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCurrentSession, getSessionContext, reportParticipantState, startSession, submitConsent } from '@/api/system/conference'
@@ -452,7 +453,7 @@ async function detectNetwork() {
   const started = performance.now()
   let rtt = null
   try {
-    await fetch(`${window.location.origin}/favicon.ico?t=${Date.now()}`, { method: 'HEAD', cache: 'no-store' })
+    await fetch(`${import.meta.env.BASE_URL}favicon.ico?t=${Date.now()}`, { method: 'HEAD', cache: 'no-store' })
     rtt = Math.max(1, Math.round(performance.now() - started))
   } catch (error) {
     rtt = null
@@ -547,10 +548,10 @@ async function enter() {
     } catch (error) {
       // 场次已开始时重复启动会失败，不影响进入面试页
     }
-    router.replace('/agent/conference-ai?sessionId=' + sessionId.value)
+    router.replace('/conference-ai?sessionId=' + sessionId.value)
     return
   }
-  router.replace('/agent/conference-waiting?sessionId=' + (sessionId.value || ''))
+  router.replace('/conference-waiting?sessionId=' + (sessionId.value || ''))
 }
 
 function guideTip() {
@@ -559,7 +560,7 @@ function guideTip() {
 
 function quit() {
   stream?.getTracks().forEach((track) => track.stop())
-  window.__agentNavigate('/agent/interview-schedule')
+  window.__agentNavigate('/interview-schedule')
 }
 
 // 后端时间格式 '2026-06-18 14:30' → '06月18日 14:30 - 15:15'

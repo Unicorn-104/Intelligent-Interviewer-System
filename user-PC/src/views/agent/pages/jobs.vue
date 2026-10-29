@@ -183,7 +183,7 @@
               <div class="job-card-head">
                 <div class="company-logo">{{ companyMark(job.companyName) }}</div>
                 <div class="job-heading">
-                  <a class="job-title" :href="`/agent/job-detail?id=${job.id}`" @click.stop>{{ job.title }}</a>
+                  <a class="job-title" :href="appHref(`/job-detail?id=${job.id}`)" @click.stop>{{ job.title }}</a>
                   <div class="job-company">{{ job.companyName }}</div>
                   <div class="job-location"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z" /><circle cx="12" cy="9" r="2.2" /></svg>{{ job.workCity || '地点不限' }}</div>
                 </div>
@@ -225,6 +225,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { listJobFilterOptions, listJobs } from '@/api/agent/job'
@@ -664,14 +665,14 @@ function toggleSaved(id) {
 }
 
 function openJob(id) {
-  window.__agentNavigate(`/agent/job-detail?id=${encodeURIComponent(id)}`)
+  window.__agentNavigate(`/job-detail?id=${encodeURIComponent(id)}`)
 }
 
 function applyJob(job) {
   if (job.appliedFlag && job.applicationId) {
-    window.__agentNavigate(`/agent/application-detail?id=${encodeURIComponent(job.applicationId)}`)
+    window.__agentNavigate(`/application-detail?id=${encodeURIComponent(job.applicationId)}`)
   } else {
-    window.__agentNavigate(`/agent/resume-select?job=${encodeURIComponent(job.id)}`)
+    window.__agentNavigate(`/resume-select?job=${encodeURIComponent(job.id)}`)
   }
 }
 
@@ -682,7 +683,7 @@ function startConversation(job) {
     return
   }
   const peerName = `${job.companyName || '企业'} HR`
-  window.__agentNavigate(`/agent/messages?peerId=${encodeURIComponent(publisherId)}&peerName=${encodeURIComponent(peerName)}&jobId=${encodeURIComponent(job.id)}`)
+  window.__agentNavigate(`/messages?peerId=${encodeURIComponent(publisherId)}&peerName=${encodeURIComponent(peerName)}&jobId=${encodeURIComponent(job.id)}`)
 }
 
 function companyMark(name) {

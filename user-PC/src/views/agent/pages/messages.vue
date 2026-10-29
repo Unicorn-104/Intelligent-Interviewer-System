@@ -287,6 +287,7 @@
 </template>
 
 <script setup>
+import { appHref } from '@/utils/agentNavigation'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
@@ -447,7 +448,7 @@ function startNewConversation(peerId, peerName = '企业 HR', updateUrl = true) 
   messages.value = []
   messagesError.value = false
   if (updateUrl) {
-    history.replaceState(null, '', `/agent/messages?peerId=${encodeURIComponent(peerId)}&peerName=${encodeURIComponent(peerName)}`)
+    history.replaceState(history.state, '', appHref(`/messages?peerId=${encodeURIComponent(peerId)}&peerName=${encodeURIComponent(peerName)}`))
   }
 }
 
@@ -507,7 +508,7 @@ async function selectSession(session, updateUrl = true) {
   selectedSessionId.value = session.sessionId
   newConversation.value = null
   messages.value = []
-  if (updateUrl) history.replaceState(null, '', `/agent/messages?conversation=${encodeURIComponent(session.sessionId)}`)
+  if (updateUrl) history.replaceState(history.state, '', appHref(`/messages?conversation=${encodeURIComponent(session.sessionId)}`))
   await Promise.all([
     loadMessages(session.sessionId),
     markImSessionRead(session.sessionId).catch(() => {})
@@ -521,7 +522,7 @@ function selectSystem(updateUrl = true) {
   activeView.value = 'system'
   selectedSessionId.value = null
   newConversation.value = null
-  if (updateUrl) history.replaceState(null, '', '/agent/messages?view=system')
+  if (updateUrl) history.replaceState(history.state, '', appHref('/messages?view=system'))
 }
 
 async function sendMessage() {
