@@ -8,7 +8,7 @@
 
 根目录的PFX为服务器TLS证书容器，含私钥，受.gitignore保护。仅从中导出公开根CA到assets/certificates/baota_root.pem，PFX、口令和私钥不放入assets、源码或安装包。导出的证书链及服务器IP SAN已验证，App同路径Dart网络代码严格校验访问公开验证码HTTP200、业务200。
 
-显式启用TRUST_BAOTA_CERTIFICATE后，在runApp前加载公开CA并安装BackendHttpOverrides。仅API配置中的HTTPS主机与端口使用私有CA；其他主机、端口或HTTP继续走系统默认信任，不改系统证书库。仍校验证书链、有效期与主机身份，不允许接受所有证书回调。私有CA请求不自动跟随重定向，避免扩大信任边界。
+显式启用TRUST_BAOTA_CERTIFICATE后，在runApp前加载公开CA并安装BackendHttpOverrides。私有CA信任限定于API配置中的HTTPS主机（含同主机的TLS/WSS任意端口，覆盖LiveKit入会地址，如 wss://同主机:8444/livekit）；其他主机或明文HTTP/WS继续走系统默认信任，不改系统证书库。仍校验证书链、有效期与主机身份，不允许接受所有证书回调。私有CA请求不自动跟随重定向，避免扩大信任边界。
 
 ## 构建
 

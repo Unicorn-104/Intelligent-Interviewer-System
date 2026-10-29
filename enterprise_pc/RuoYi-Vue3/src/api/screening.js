@@ -20,6 +20,22 @@ export function listScreeningTasks(query) {
   })
 }
 
+// 对全部有待初筛投递的岗位发起 AI 初筛
+export function screenAllPending() {
+  return request({
+    url: '/enterprise/screening/screen-all',
+    method: 'post'
+  })
+}
+
+// 历史数据补偿：按已有 AI 分析结果回写待筛选投递的评分与初筛状态
+export function syncScreeningApplications() {
+  return request({
+    url: '/enterprise/screening/sync-applications',
+    method: 'post'
+  })
+}
+
 // 匹配度评分与维度明细（按综合评分降序）
 export function listScreeningResults(taskId) {
   return request({

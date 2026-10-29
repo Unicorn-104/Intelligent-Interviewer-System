@@ -266,11 +266,19 @@ class MessageDataSource {
       return null;
     }
     final base = Uri.parse(AppConfig.apiBaseUrl);
-    final url = base.resolveUri(parsed);
+    // 字符串拼接而非 resolveUri：base 含子路径（如 /prod-api）时，
+    // resolveUri 会丢弃子路径，导致绕过 Nginx 反代返回 404。
+    final resolved = parsed.hasScheme
+        ? parsed.toString()
+        : '${AppConfig.apiBaseUrl}${path.startsWith('/') ? path : '/$path'}';
+    final url = Uri.parse(resolved);
+    // 去掉 base 尾部斜杠后，附件路径必须位于 /profile/ 目录下
+    final profilePrefix =
+        '${base.path.replaceAll(RegExp(r'/+$'), '')}/profile/';
     if (!['http', 'https'].contains(url.scheme) ||
         url.origin != base.origin ||
         url.query.isNotEmpty ||
-        !url.path.startsWith('/profile/') ||
+        !url.path.startsWith(profilePrefix) ||
         RegExp(r'%2f|%5c|%2e', caseSensitive: false).hasMatch(url.path) ||
         parsed.pathSegments.contains('..')) {
       return null;
@@ -325,8 +333,14 @@ class MessageDataSource {
     if (path.isEmpty) return null;
     final parsed = Uri.tryParse(path);
     if (parsed == null) return null;
-    final url = Uri.parse(AppConfig.apiBaseUrl).resolveUri(parsed);
-    return ['http', 'https'].contains(url.scheme) ? url.toString() : null;
+    // 已是完整 URL（http/https）时直接使用，其他协议拒绝
+    if (parsed.hasScheme) {
+      return ['http', 'https'].contains(parsed.scheme) ? parsed.toString() : null;
+    }
+    // 相对路径：字符串拼接，保留 base 的子路径（如 /prod-api）。
+    // 不能用 resolveUri：当 base 含子路径、引用以 / 开头时，子路径会被整个丢弃。
+    final base = AppConfig.apiBaseUrl;
+    return '$base${path.startsWith('/') ? path : '/$path'}';
   }
 }
 

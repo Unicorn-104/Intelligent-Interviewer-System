@@ -59,11 +59,12 @@
 <script setup>
 import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getExamEntry, listMyExams } from '@/api/agent/exam'
 
 const route = useRoute()
+const router = useRouter()
 const scheduleId = route.query.scheduleId ? String(route.query.scheduleId) : null
 
 const loading = ref(false)
@@ -131,7 +132,7 @@ function fmt(value) {
 }
 
 function goRoom() {
-  window.__agentNavigate(`/exam-room?scheduleId=${scheduleId}`)
+  router.push({ path: '/exam-room', query: { scheduleId } })
 }
 
 async function load() {

@@ -1,6 +1,6 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Search, Plus, Sparkles, GraduationCap, CalendarClock, Users, WandSparkles, ChevronRight, Pencil, Copy } from '@/views/enterprise/components/icons'
 import JobCard from '@/views/enterprise/components/JobCard.vue'
 import PublishJobModal from '@/views/enterprise/components/PublishJobModal.vue'
@@ -8,10 +8,12 @@ import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listJobs, jobDepartments, changeJobStatus, jobDetail, duplicateJob } from '@/api/system/job'
 
 const router = useRouter()
+const route = useRoute()
 const jobs = ref([])
 const total = ref(0)
 const pageNum = ref(1)
-const search = ref('')
+// 顶栏全局搜索带 ?keyword= 进入岗位页时，直接带入关键词
+const search = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const department = ref('')
 const statusFilter = ref('')
 const departments = ref([])
@@ -87,6 +89,14 @@ function doFilter() {
   pageNum.value = 1
   fetchJobs()
 }
+
+// 已在岗位页时再次使用顶栏搜索，仅查询串变化，这里同步关键词并重新检索
+watch(() => route.query.keyword, kw => {
+  if (typeof kw !== 'string') return
+  search.value = kw
+  pageNum.value = 1
+  fetchJobs()
+})
 
 async function toggleJob(job) {
   const next = job.active ? 2 : 1

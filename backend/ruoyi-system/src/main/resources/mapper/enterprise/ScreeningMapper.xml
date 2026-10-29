@@ -174,4 +174,54 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where app_id = #{applicationId}
     </update>
 
+    <!-- 按岗位 + 候选人回写投递评分与状态 -->
+    <update id="updateApplicationByCandidate">
+        update t_app_record
+        set app_matched_score = #{score}, app_status = #{status}, app_updated_at = now()
+        where app_position_id = #{positionId} and app_candidate_id = #{talId}
+    </update>
+
+    <!-- 按岗位 + 候选人只更新投递状态 -->
+    <update id="updateApplicationStatusByCandidate">
+        update t_app_record
+        set app_status = #{status}, app_updated_at = now()
+        where app_position_id = #{positionId} and app_candidate_id = #{talId}
+    </update>
+
+    <!-- 流程环节推进时同步投递状态；只在投递尚未进入后续环节时更新，避免覆盖更靠后的状态 -->
+    <update id="advanceApplicationStatus">
+        update t_app_record
+        set app_status = #{status}, app_updated_at = now()
+        where app_position_id = #{positionId} and app_candidate_id = #{talId}
+          and app_status in
+        <foreach collection="fromStatuses" item="s" open="(" separator="," close=")">#{s}</foreach>
+    </update>
+
+    <!-- 本企业仍有待初筛投递的岗位 -->
+    <select id="selectPendingPositions" resultType="java.lang.Long">
+        select distinct a.app_position_id
+        from t_app_record a
+        join t_pos p on p.pos_id = a.app_position_id
+        where p.pos_company_id = #{companyId} and a.app_status = 0
+        order by a.app_position_id
+    </select>
+
+    <!-- 投递记录关联的简历ID（人工评分创建分析记录时使用） -->
+    <select id="selectApplicationResume" resultType="java.lang.Long">
+        select a.app_resume_id
+        from t_app_record a
+        join t_pos p on p.pos_id = a.app_position_id
+        where a.app_position_id = #{positionId} and a.app_candidate_id = #{talId}
+          and p.pos_company_id = #{companyId}
+        limit 1
+    </select>
+
+    <!-- 回写 HR 复核调整后的 AI 分析报告（仅调整分数，维度明细保持不动） -->
+    <update id="updateAnalysisReport">
+        update t_ai_candidate_analysis
+        set asr_report = #{report}, asr_updated_at = now()
+        where asr_company_id = #{companyId} and asr_position_id = #{positionId}
+          and asr_candidate_id = #{talId}
+    </update>
+
 </mapper>

@@ -113,14 +113,33 @@ public class ScreeningController extends BaseController
     }
 
     /**
-     * UC-06：HR 短名单复核（确认通过 / 调整评分）
+     * 待初筛：对本企业所有待初筛岗位批量发起 AI 初筛
+     */
+    @PostMapping("/screen-all")
+    public AjaxResult screenAll()
+    {
+        return success(screeningService.screenAllPendingPositions(getUserId()));
+    }
+
+    /**
+     * 历史数据补偿：按已有 AI 分析结果回写待筛选投递的评分与初筛状态
+     */
+    @PostMapping("/sync-applications")
+    public AjaxResult syncApplications()
+    {
+        return success(screeningService.syncAllPendingApplications(getUserId()));
+    }
+
+    /**
+     * UC-06：HR 短名单复核（确认通过 / 驳回 / 仅人工评分）
      */
     @PutMapping("/results/{resultId}/review")
     public AjaxResult review(@PathVariable("resultId") Long resultId, @RequestBody Map<String, Object> body)
     {
         Boolean approved = body.get("approved") == null ? null : Boolean.valueOf(String.valueOf(body.get("approved")));
         Double adjustScore = body.get("adjustScore") == null ? null : Double.valueOf(String.valueOf(body.get("adjustScore")));
-        return success(screeningService.reviewResult(getUserId(), resultId, approved, adjustScore));
+        Long positionId = asLong(body.get("positionId"));
+        return success(screeningService.reviewResult(getUserId(), resultId, approved, adjustScore, positionId));
     }
 
     private Long asLong(Object v)

@@ -44,6 +44,7 @@ import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { verifyRoomToken } from '@/api/system/conference'
+import { enterpriseJoinUrl } from '@/utils/appLink'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,13 +63,13 @@ const timeText = computed(() => {
   return end ? `${start} - ${end.split(' ')[1] || ''}` : start
 })
 
+// 选择身份后按当前部署位置拼接后续路径：求职者走用户端路由（自带 /user/ 子路径），面试官跳企业端
 function asCandidate() {
-  router.push('/conference-entry?token=' + encodeURIComponent(token.value))
+  router.push({ path: '/conference-entry', query: { token: token.value } })
 }
 
 function asInterviewer() {
-  const base = import.meta.env.VITE_ENTERPRISE_APP_URL || ''
-  window.location.href = base + '/enterprise/conference/join?token=' + encodeURIComponent(token.value)
+  window.location.href = enterpriseJoinUrl(token.value)
 }
 
 onMounted(async () => {

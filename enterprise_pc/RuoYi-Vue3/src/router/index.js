@@ -128,9 +128,8 @@ export const constantRoutes = [
       },
       {
         path: 'candidates/unscreened',
-        component: () => import('@/views/enterprise/candidates/unscreened.vue'),
-        name: 'EnterpriseCandidateUnscreened',
-        meta: { title: '待初筛投递' }
+        redirect: { path: '/enterprise/resume-screening' },
+        name: 'EnterpriseCandidateUnscreened'
       },
       {
         path: 'candidates/:id/process',
@@ -139,10 +138,27 @@ export const constantRoutes = [
         meta: { title: '候选人流程' }
       },
       {
-        path: 'screening',
+        path: 'resume-screening',
         component: () => import('@/views/enterprise/screening/index.vue'),
-        name: 'EnterpriseScreening',
-        meta: { title: 'AI 初筛' }
+        name: 'EnterpriseResumeScreening',
+        meta: { title: '投递详情' }
+      },
+      {
+        path: 'resume-screening/ai',
+        component: () => import('@/views/enterprise/screening/ai.vue'),
+        name: 'EnterpriseResumeScreeningAi',
+        meta: { title: 'AI 初筛详情' }
+      },
+      {
+        path: 'screening',
+        redirect: { path: '/enterprise/resume-screening/ai' },
+        name: 'EnterpriseScreening'
+      },
+      {
+        path: 'search',
+        component: () => import('@/views/enterprise/search/index.vue'),
+        name: 'EnterpriseSearch',
+        meta: { title: '搜索结果' }
       },
       {
         path: 'talent',

@@ -12,6 +12,7 @@ import {
 } from '@/api/exam'
 import { listJobs } from '@/api/system/job'
 import { listInterviewers } from '@/api/system/conference'
+import { candidateAppUrl } from '@/utils/appLink'
 
 const route = useRoute()
 const router = useRouter()
@@ -261,8 +262,7 @@ const CHANNEL_META = [
 ]
 const CHANNEL_RESULT = { sent: '已发送', failed: '发送失败', skipped_no_email: '无邮箱跳过', not_selected: '未选渠道' }
 function defaultExamUrl(row) {
-  const base = import.meta.env.VITE_CANDIDATE_APP_URL || ''
-  return `${base}/exam?scheduleId=${row.scheduleId}`
+  return candidateAppUrl(`/agent/exam?scheduleId=${row.scheduleId}`)
 }
 async function openNotify(row) {
   notifyModal.open = true; notifyModal.row = row; notifyModal.result = null; notifyModal.selected = []

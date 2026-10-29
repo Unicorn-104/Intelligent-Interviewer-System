@@ -1,7 +1,5 @@
 package com.ruoyi.enterprise.service.impl;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -33,12 +31,8 @@ import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
 @Service
 public class ScreeningServiceImpl implements IScreeningService
 {
-    /** 仅供 dev 的待投递初筛兼容入口使用，不参与真实大模型六维评分。 */
-    private static final double SKILL_WEIGHT = 0.30;
-    private static final double PROJECT_WEIGHT = 0.30;
-    private static final double EDUCATION_WEIGHT = 0.20;
-    private static final double INDUSTRY_WEIGHT = 0.20;
-    private static final double BASE_SEMANTIC_SCORE = 70.0;
+    /** 初筛通过线：AI 六维加权总分达到该值即可进入初筛通过 */
+    public static final double PASS_THRESHOLD = 60.0;
 
     @Autowired private ScreeningMapper screeningMapper;
     @Autowired private DashboardMapper dashboardMapper;
@@ -178,6 +172,13 @@ public class ScreeningServiceImpl implements IScreeningService
                     row.put("companyId", companyId);
                     row.put("report", JSON.toJSONString(analysis));
                     screeningMapper.saveAnalysis(row);
+                    // AI 初筛完成后同步回写该岗位该候选人的投递记录（评分 + 初筛状态）
+                    Double totalScore = asDouble(analysis.get("totalScore"));
+                    if (totalScore != null)
+                    {
+                        screeningMapper.updateApplicationByCandidate(positionId, id, totalScore,
+                                totalScore >= PASS_THRESHOLD ? 1 : 2);
+                    }
                     // Result and progress commit together. No HTTP/model call inside this transaction.
                     String state = nextCompleted == candidates.size() ? "completed" : "processing";
                     if (screeningMapper.updateTask(companyId, positionId, runId, state,
@@ -194,7 +195,14 @@ public class ScreeningServiceImpl implements IScreeningService
             try { screeningMapper.updateTask(companyId, positionId, runId, "failed", completed, scored, message); }
             catch (RuntimeException ignored) { /* Never log resumes, credentials or database details. */ }
         }
-        finally { capacity.release(); }
+        finally
+        {
+            // 任务结束（含失败）统一同步一次：已有分析结果的投递按评分回写，
+            // 无分析结果（评估失败）的投递保持待筛选，等待 HR 人工评分
+            try { syncScreenedApplications(companyId, positionId); }
+            catch (RuntimeException ignored) { /* 同步失败不影响已保存的分析结果 */ }
+            capacity.release();
+        }
     }
 
     private Map<String, Object> resumeEvidence(Map<String, Object> candidate)
@@ -280,75 +288,108 @@ public class ScreeningServiceImpl implements IScreeningService
     }
 
     @Override
-    public Map<String, Object> screenPendingApplications(Long positionId)
+    public Map<String, Object> screenPendingApplications(Long userId, Long positionId)
     {
-        if (positionId == null)
-        {
-            throw new ServiceException("岗位ID不能为空");
-        }
-        List<String> requiredSkills = screeningMapper.selectPositionSkills(positionId);
-        if (requiredSkills.isEmpty())
-        {
-            throw new ServiceException("该岗位尚未生成技能标签画像，请先在岗位详情解析 JD");
-        }
+        Long companyId = resolveCompanyId(userId);
+        requirePosition(companyId, positionId);
         List<Map<String, Object>> applications = screeningMapper.selectPendingApplications(positionId);
-        int passedCount = 0;
-        int rejectedCount = 0;
-        for (Map<String, Object> application : applications)
+        if (applications.isEmpty())
         {
-            Long applicationId = Long.valueOf(String.valueOf(application.get("applicationId")));
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("positionId", positionId);
+            empty.put("state", "completed");
+            empty.put("processing", false);
+            empty.put("message", "该岗位暂无待初筛的投递");
+            return empty;
+        }
+        // 已有 AI 分析结果的投递直接按真实评分回写，避免前台长期停留在待筛选
+        int writtenBack = syncScreenedApplications(companyId, positionId);
+        Map<String, Object> task = new LinkedHashMap<>(triggerScreeningAsync(userId, positionId, 20));
+        task.put("writtenBackCount", writtenBack);
+        return task;
+    }
+
+    /** 按已有 AI 分析结果回写待筛选投递的评分与初筛状态；无分析结果（评估失败）的保持待筛选，可人工评分。 */
+    private int syncScreenedApplications(Long companyId, Long positionId)
+    {
+        int writtenBack = 0;
+        for (Map<String, Object> application : screeningMapper.selectPendingApplications(positionId))
+        {
             Long talId = Long.valueOf(String.valueOf(application.get("talentId")));
-            List<String> candidateSkills = screeningMapper.selectCandidateSkills(talId);
-            double skillScore = computeOverlapScore(requiredSkills, candidateSkills);
-            if (skillScore <= 0)
+            Map<String, Object> analysis = readAnalysis(screeningMapper.selectAnalysis(companyId, positionId, talId));
+            Double score = analysis == null ? null : asDouble(analysis.get("totalScore"));
+            if (score == null)
             {
-                // UC-04：无任何必备技能重合，判定初筛淘汰（四态：3-已淘汰）
-                screeningMapper.updateApplicationScreened(applicationId, 0D, 3);
-                rejectedCount++;
                 continue;
             }
-            double total = skillScore * SKILL_WEIGHT
-                    + BASE_SEMANTIC_SCORE * PROJECT_WEIGHT
-                    + BASE_SEMANTIC_SCORE * EDUCATION_WEIGHT
-                    + BASE_SEMANTIC_SCORE * INDUSTRY_WEIGHT;
-            double score = round(total);
-            screeningMapper.updateMatchedScore(talId, score);
-            screeningMapper.updateApplicationScreened(applicationId, score, 2);
-            passedCount++;
+            screeningMapper.updateApplicationScreened(Long.valueOf(String.valueOf(application.get("applicationId"))),
+                    score, score >= PASS_THRESHOLD ? 1 : 2);
+            writtenBack++;
         }
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("positionId", positionId);
-        summary.put("candidateCount", applications.size());
-        summary.put("passedCount", passedCount);
-        summary.put("rejectedCount", rejectedCount);
-        return summary;
+        return writtenBack;
     }
 
-    /** 保持待投递初筛入口原有的必备技能命中规则。 */
-    private double computeOverlapScore(List<String> requiredSkills, List<String> candidateSkills)
+    @Override
+    public Map<String, Object> syncAllPendingApplications(Long userId)
     {
-        if (requiredSkills.isEmpty())
+        Long companyId = resolveCompanyId(userId);
+        int synced = 0;
+        int touchedPositions = 0;
+        for (Long positionId : screeningMapper.selectPendingPositions(companyId))
         {
-            return 0;
-        }
-        int overlap = 0;
-        for (String required : requiredSkills)
-        {
-            for (String skill : candidateSkills)
+            int count = syncScreenedApplications(companyId, positionId);
+            if (count > 0)
             {
-                if (required.equalsIgnoreCase(skill))
+                touchedPositions++;
+            }
+            synced += count;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("syncedApplications", synced);
+        result.put("positions", touchedPositions);
+        result.put("message", synced == 0
+                ? "暂无可用 AI 分析结果回写的待筛选投递"
+                : "已按 AI 分析结果回写 " + synced + " 条投递的评分和初筛状态");
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> screenAllPendingPositions(Long userId)
+    {
+        Long companyId = resolveCompanyId(userId);
+        List<Long> positionIds = screeningMapper.selectPendingPositions(companyId);
+        int queuedPositions = 0;
+        int queuedCandidates = 0;
+        int skippedPositions = 0;
+        for (Long positionId : positionIds)
+        {
+            try
+            {
+                Map<String, Object> task = triggerScreeningAsync(userId, positionId, 20);
+                // 仅本次真正派发的新任务计入排队；已在处理中的岗位与无新人选的岗位跳过
+                if (!task.containsKey("fullAnalysis"))
                 {
-                    overlap++;
-                    break;
+                    skippedPositions++;
+                    continue;
                 }
+                queuedPositions++;
+                int candidateCount = asInt(task.get("candidateCount"));
+                int skippedCount = asInt(task.get("skippedCount"));
+                queuedCandidates += Math.max(0, candidateCount - skippedCount);
+            }
+            catch (RuntimeException error)
+            {
+                skippedPositions++;
             }
         }
-        return overlap * 100.0 / requiredSkills.size();
-    }
-
-    private double round(double value)
-    {
-        return BigDecimal.valueOf(value).setScale(1, RoundingMode.HALF_UP).doubleValue();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("queuedPositions", queuedPositions);
+        result.put("queuedCandidates", queuedCandidates);
+        result.put("skippedPositions", skippedPositions);
+        result.put("message", queuedPositions == 0
+                ? "暂无需要发起 AI 初筛的岗位"
+                : "已为 " + queuedPositions + " 个岗位发起 AI 初筛，共 " + queuedCandidates + " 位求职者");
+        return result;
     }
 
     @Override
@@ -372,6 +413,8 @@ public class ScreeningServiceImpl implements IScreeningService
         Long companyId = resolveCompanyId(userId);
         requirePosition(companyId, taskId);
         List<Map<String, Object>> candidates = screeningMapper.selectResultsByPosition(taskId);
+        // 岗位必备技能整批只查一次，供逐行硬性条件比对
+        List<String> requiredSkills = screeningMapper.selectPositionSkills(taskId);
         for (Map<String, Object> candidate : candidates)
         {
             Long id = Long.valueOf(candidate.get("resultId").toString());
@@ -381,10 +424,37 @@ public class ScreeningServiceImpl implements IScreeningService
             for (String key : ScreeningAiEvaluator.WEIGHTS.keySet()) candidate.put(key, null);
             candidate.put("source", "not_analyzed");
             if (analysis != null) candidate.putAll(analysis);
+            Double totalScore = asDouble(candidate.get("totalScore"));
+            List<String> missingSkills = missingSkills(requiredSkills, screeningMapper.selectCandidateSkills(id));
+            candidate.put("threshold", PASS_THRESHOLD);
+            candidate.put("passed", totalScore != null && totalScore >= PASS_THRESHOLD);
+            candidate.put("requiredSkills", requiredSkills);
+            candidate.put("missingSkills", missingSkills);
+            candidate.put("hardFilterPassed", requiredSkills.isEmpty() || missingSkills.size() < requiredSkills.size());
         }
         candidates.sort(Comparator.comparing((Map<String, Object> c) ->
                 c.get("totalScore") instanceof Number n ? n.doubleValue() : -1.0).reversed());
         return candidates;
+    }
+
+    /** 必备技能中未被候选人技能覆盖的部分（忽略大小写与首尾空白） */
+    private List<String> missingSkills(List<String> requiredSkills, List<String> candidateSkills)
+    {
+        List<String> missing = new ArrayList<>();
+        if (requiredSkills.isEmpty()) return missing;
+        List<String> owned = new ArrayList<>();
+        if (candidateSkills != null)
+        {
+            for (String skill : candidateSkills)
+            {
+                if (skill != null) owned.add(skill.trim().toLowerCase());
+            }
+        }
+        for (String required : requiredSkills)
+        {
+            if (required != null && !owned.contains(required.trim().toLowerCase())) missing.add(required);
+        }
+        return missing;
     }
 
     @Override
@@ -410,7 +480,8 @@ public class ScreeningServiceImpl implements IScreeningService
     {
         if (row == null || row.get("report") == null) return null;
         Map<String, Object> report = JSON.parseObject(row.get("report").toString());
-        if (!"llm".equals(report.get("source"))) return null;
+        // 只认 AI 真实评估（llm）与 HR 人工评分（manual），历史规则分不作为有效结果
+        if (!"llm".equals(report.get("source")) && !"manual".equals(report.get("source"))) return null;
         // Normalize cached pre-zero-policy reports without invoking the provider or writing on GET.
         // Retain original evidence and distinguish missing material from a model-backed zero.
         if (report.get("dimensions") instanceof Map<?, ?> storedDimensions)
@@ -437,6 +508,11 @@ public class ScreeningServiceImpl implements IScreeningService
             report.put("totalScore", Math.round(weighted / 100.0 * 10.0) / 10.0);
             report.put("scoringPolicy", "missing-zero-v1");
         }
+        // HR 复核调整过的分数优先展示，其余评分逻辑保持不变
+        Double adjusted = asDouble(report.get("adjustedTotalScore"));
+        if (adjusted != null) report.put("totalScore", adjusted);
+        report.putIfAbsent("adjustedTotalScore", adjusted);
+        report.putIfAbsent("hrAdjusted", adjusted != null);
         report.put("generatedAt", row.get("generatedAt"));
         report.put("content", report.get("recommendation"));
         List<String> points = new ArrayList<>();
@@ -465,28 +541,99 @@ public class ScreeningServiceImpl implements IScreeningService
     }
 
     @Override
-    public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore)
+    public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore,
+            Long positionId)
     {
-        requireCandidate(resolveCompanyId(userId), resultId);
-        if (approved == null) throw new ServiceException("复核结论不能为空");
+        Long companyId = resolveCompanyId(userId);
+        requireCandidate(companyId, resultId);
+        // approved 为空且未填分数时无从判断；只填分数表示 HR 对未完成 AI 评估的候选人进行人工评分
+        if (approved == null && adjustScore == null) throw new ServiceException("请选择复核结论或填写人工评分");
         if (adjustScore != null && (!Double.isFinite(adjustScore) || adjustScore < 0 || adjustScore > 100))
             throw new ServiceException("调整评分须为0至100");
+        if (positionId != null) requirePosition(companyId, positionId);
+        if (approved == null && positionId == null) throw new ServiceException("人工评分须指定岗位");
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("resultId", resultId);
         result.put("approved", approved);
+        Double currentScore = null;
+        if (adjustScore != null)
+        {
+            double rounded = Math.round(adjustScore * 10.0) / 10.0;
+            screeningMapper.updateMatchedScore(resultId, rounded);
+            result.put("adjustScore", rounded);
+            currentScore = rounded;
+            // HR 调整后的分数写回 AI 分析报告，列表与报告统一按调整后总分展示
+            if (positionId != null) writeAdjustedReport(companyId, positionId, resultId, rounded);
+        }
+        else if (positionId != null)
+        {
+            Map<String, Object> analysis = readAnalysis(screeningMapper.selectAnalysis(companyId, positionId, resultId));
+            currentScore = analysis == null ? null : asDouble(analysis.get("totalScore"));
+        }
+        if (approved == null)
+        {
+            // 人工评分：按分数阈值更新该岗位投递状态，不推进候选人状态（供 AI 评估失败的投递使用）
+            int status = currentScore >= PASS_THRESHOLD ? 1 : 2;
+            screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, status);
+            result.put("applicationStatus", status);
+            result.put("message", "已保存人工评分 " + currentScore + " 分，该岗位投递状态更新为"
+                    + (status == 1 ? "通过初筛" : "初筛淘汰") + "；候选人状态保持不变，可在人才库继续跟进");
+            return result;
+        }
         if (Boolean.TRUE.equals(approved))
         {
-            if (adjustScore != null)
-            {
-                double rounded = Math.round(adjustScore * 10.0) / 10.0;
-                screeningMapper.updateMatchedScore(resultId, rounded);
-                result.put("adjustScore", rounded);
-            }
             if (screeningMapper.updateTalStatus(resultId, 2) == 0) throw new ServiceException("候选人不存在");
-            result.put("message", "已确认通过，候选人状态推进为待面试，等待流入面试邀约");
+            if (positionId != null)
+            {
+                if (currentScore == null) screeningMapper.updateApplicationStatusByCandidate(positionId, resultId, 1);
+                else screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, 1);
+                result.put("applicationStatus", 1);
+            }
+            result.put("message", positionId == null
+                    ? "已确认通过，候选人状态推进为待面试，等待流入面试邀约"
+                    : "已确认通过，该岗位投递状态更新为通过初筛，候选人状态推进为待面试，等待流入面试邀约");
         }
-        else result.put("message", "已驳回，候选人保持在人才库待观察");
+        else
+        {
+            if (positionId != null)
+            {
+                // 驳回时同步当前总分，避免投递匹配度与 AI 报告分数不一致
+                if (currentScore == null) screeningMapper.updateApplicationStatusByCandidate(positionId, resultId, 2);
+                else screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, 2);
+                result.put("applicationStatus", 2);
+                result.put("message", "已驳回，该岗位投递状态更新为初筛淘汰，候选人保持在人才库待观察");
+            }
+            else result.put("message", "已驳回，候选人保持在人才库待观察");
+        }
         return result;
+    }
+
+    /** 把 HR 调整后的总分写入该岗位该候选人的 AI 分析报告，维度明细保持不变。 */
+    private void writeAdjustedReport(Long companyId, Long positionId, Long talId, double score)
+    {
+        Map<String, Object> row = screeningMapper.selectAnalysis(companyId, positionId, talId);
+        if (row == null || row.get("report") == null)
+        {
+            // AI 评估失败（无分析记录）时创建人工评分记录，让 HR 打分有据可查
+            Map<String, Object> manual = new LinkedHashMap<>();
+            manual.put("resultId", talId);
+            manual.put("positionId", positionId);
+            manual.put("resumeId", screeningMapper.selectApplicationResume(companyId, positionId, talId));
+            manual.put("source", "manual");
+            manual.put("manual", true);
+            manual.put("totalScore", score);
+            manual.put("adjustedTotalScore", score);
+            manual.put("hrAdjusted", true);
+            manual.put("recommendation", "该候选人未完成 AI 评估，当前分数由 HR 人工评分录入");
+            manual.put("companyId", companyId);
+            manual.put("report", JSON.toJSONString(manual));
+            screeningMapper.saveAnalysis(manual);
+            return;
+        }
+        com.alibaba.fastjson2.JSONObject report = JSON.parseObject(row.get("report").toString());
+        report.put("adjustedTotalScore", score);
+        report.put("hrAdjusted", true);
+        screeningMapper.updateAnalysisReport(companyId, positionId, talId, JSON.toJSONString(report));
     }
 
     private Map<String, Object> requirePosition(Long companyId, Long positionId)
@@ -501,6 +648,23 @@ public class ScreeningServiceImpl implements IScreeningService
     {
         if (resultId == null || screeningMapper.selectOwnedCandidate(companyId, resultId) == null)
             throw new ServiceException("候选人不存在或无权访问");
+    }
+
+    /** 数值型字段兼容 Number 与数字字符串，非法值返回 null。 */
+    private Double asDouble(Object value)
+    {
+        if (value instanceof Number number) return Double.isFinite(number.doubleValue()) ? number.doubleValue() : null;
+        if (value == null) return null;
+        try { return Double.valueOf(value.toString().trim()); }
+        catch (NumberFormatException error) { return null; }
+    }
+
+    private int asInt(Object value)
+    {
+        if (value instanceof Number number) return number.intValue();
+        if (value == null) return 0;
+        try { return Integer.parseInt(value.toString().trim()); }
+        catch (NumberFormatException error) { return 0; }
     }
 
     private Long resolveCompanyId(Long userId)

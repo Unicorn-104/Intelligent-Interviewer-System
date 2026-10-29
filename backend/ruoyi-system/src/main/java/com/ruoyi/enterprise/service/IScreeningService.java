@@ -47,8 +47,11 @@ public interface IScreeningService
 
     /**
      * HR 复核（UC-06）：确认通过（tal_status→初筛通过，触发器自动写状态日志）/ 调整评分
+     *
+     * @param positionId 岗位ID（可为空；传入时同步回写该岗位投递状态）
      */
-    public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore);
+    public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore,
+            Long positionId);
     Map<String, Object> getTaskStatus(Long userId, Long taskId);
 
     /** 新增全量分析重载；原方法签名保持兼容，默认执行增量分析。 */
@@ -58,10 +61,23 @@ public interface IScreeningService
     Map<String, Object> triggerScreeningAsync(Long userId, Long positionId, Integer topN);
 
     /**
-     * 对某岗位尚未初筛的投递申请执行 AI 初筛：通过者回写评分，淘汰者标记投递状态
+     * 对某岗位尚未初筛的投递申请执行 AI 初筛：已有 AI 分析结果的直接回写投递状态，
+     * 其余增量分析由后台任务完成
      *
+     * @param userId     当前登录用户（用于解析所属企业）
      * @param positionId 岗位ID（调用方已完成企业归属校验）
-     * @return 初筛汇总（候选人数、通过数、淘汰数）
+     * @return 初筛任务视图；无待初筛投递时返回 state=completed 的说明
      */
-    public Map<String, Object> screenPendingApplications(Long positionId);
+    public Map<String, Object> screenPendingApplications(Long userId, Long positionId);
+
+    /**
+     * 对本企业所有仍有待初筛投递的岗位批量发起 AI 初筛
+     */
+    public Map<String, Object> screenAllPendingPositions(Long userId);
+
+    /**
+     * 历史数据补偿：把已有 AI 分析结果回写到仍处于待筛选的投递记录；
+     * 无分析结果（评估失败）的投递保持待筛选，等待 HR 人工评分
+     */
+    public Map<String, Object> syncAllPendingApplications(Long userId);
 }

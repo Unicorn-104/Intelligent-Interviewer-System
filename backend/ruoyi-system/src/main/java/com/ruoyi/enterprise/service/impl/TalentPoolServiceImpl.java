@@ -360,6 +360,50 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     }
 
     @Override
+    public List<Map<String, Object>> listApplications(Long userId, Long positionId, Integer status,
+            Integer pageNum, Integer pageSize)
+    {
+        if (status != null && (status < 0 || status > 8))
+        {
+            throw new ServiceException("投递状态不合法");
+        }
+        if (pageNum == null || pageNum < 1 || pageSize == null || pageSize < 1 || pageSize > 100)
+            throw new ServiceException("分页参数不合法");
+        Long companyId = requireSearchCompany(userId);
+        PageUtils.startPage(pageNum, pageSize);
+        try
+        {
+            return talentPoolMapper.selectApplicationList(companyId, positionId, status);
+        }
+        finally { PageUtils.clearPage(); }
+    }
+
+    @Override
+    public List<Map<String, Object>> listApplicationPositions(Long userId)
+    {
+        return talentPoolMapper.selectApplicationPositions(resolveCompanyId(userId));
+    }
+
+    @Override
+    public Map<String, Object> updateApplicationStatus(Long userId, List<Long> applicationIds, Integer status)
+    {
+        Long companyId = resolveCompanyId(userId);
+        if (status == null || status < 0 || status > 8)
+        {
+            throw new ServiceException("投递状态不合法");
+        }
+        if (applicationIds == null || applicationIds.isEmpty())
+        {
+            throw new ServiceException("请选择要更新的投递");
+        }
+        int updated = talentPoolMapper.updateApplicationStatus(companyId, applicationIds, status);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("updated", updated);
+        result.put("message", "已更新 " + updated + " 条投递的状态");
+        return result;
+    }
+
+    @Override
     public Map<String, Object> getUnscreenedPositions(Long userId)
     {
         Long companyId = resolveCompanyId(userId);
@@ -393,7 +437,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         {
             throw new ServiceException("岗位不存在或无权访问");
         }
-        return screeningService.screenPendingApplications(positionId);
+        return screeningService.screenPendingApplications(userId, positionId);
     }
 
     /** 解析当前用户所属公司（未绑定默认公司1，与 EnterpriseSettingsServiceImpl 一致） */

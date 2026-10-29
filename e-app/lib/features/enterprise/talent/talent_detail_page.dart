@@ -193,6 +193,8 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
             workflowRevision: _interviewRevision,
             name: _name,
             source: widget.source,
+            // 求职者真实 userId，用于「打招呼」直接进入聊天页
+            peerId: talentId(detail?['userId']),
             job: widget.jobContext == null
                 ? null
                 : TalentJobContext(

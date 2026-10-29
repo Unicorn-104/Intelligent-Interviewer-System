@@ -14,6 +14,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.enterprise.mapper.ExamMapper;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IExamService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.service.EmailService;
@@ -45,6 +46,9 @@ public class ExamServiceImpl implements IExamService
 
     @Autowired
     private EmailService emailService;
+
+    @Autowired
+    private ScreeningMapper screeningMapper;
 
     // ==================== 题库 ====================
 
@@ -657,6 +661,19 @@ public class ExamServiceImpl implements IExamService
             item.put("email", target.get("email"));
             item.put("channels", channelsResult);
             results.add(item);
+        }
+        // 笔试通知发出后立即把对应岗位投递状态同步为「待笔试」
+        Long schedulePositionId = asLong(schedule.get("positionId"));
+        if (schedulePositionId != null)
+        {
+            for (Map<String, Object> item : results)
+            {
+                Long talId = asLong(item.get("talId"));
+                if (talId != null)
+                {
+                    screeningMapper.advanceApplicationStatus(schedulePositionId, talId, 4, List.of(0, 1, 2, 3));
+                }
+            }
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("total", targets.size());
