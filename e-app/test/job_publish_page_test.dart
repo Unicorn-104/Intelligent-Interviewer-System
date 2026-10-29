@@ -40,7 +40,14 @@ Future<void> enter(WidgetTester tester, String key, String value) async {
 
 Future<void> fill(WidgetTester tester) async {
   await enter(tester, 'job-title', 'Flutter 开发工程师');
-  await enter(tester, 'job-department', '产品研发部');
+  // 所属部门为弹窗单选：打开、选择、确定。
+  await tester.ensureVisible(find.byKey(const Key('job-department')));
+  await tester.tap(find.byKey(const Key('job-department')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('job-dept-option-产品研发部')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('job-dept-confirm')));
+  await tester.pumpAndSettle();
   await enter(tester, 'job-salary-min', '15000.50');
   await enter(tester, 'job-salary-max', '25000');
   await enter(tester, 'job-responsibilities', '负责移动端开发\n参与代码评审');
@@ -180,6 +187,65 @@ void main() {
     expect(find.text('返回岗位列表'), findsOneWidget);
     expect(find.text('确认发布'), findsNothing);
     expect(find.text('返回修改'), findsNothing);
+  });
+
+  testWidgets('部门弹窗搜索并单选，确定后回填表单', (tester) async {
+    await openPage(
+      tester,
+      load: () async => {
+        'company': {'id': 2, 'name': '测试企业', 'city': '上海'},
+        'departments': ['产品研发部', '技术平台部', '市场部'],
+      },
+    );
+    await tester.ensureVisible(find.byKey(const Key('job-department')));
+    await tester.tap(find.byKey(const Key('job-department')));
+    await tester.pumpAndSettle();
+    expect(find.text('选择所属部门'), findsOneWidget);
+    expect(find.text('技术平台部'), findsOneWidget);
+    await enter(tester, 'job-dept-search', '技术');
+    expect(find.text('产品研发部'), findsNothing);
+    expect(find.text('技术平台部'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('job-dept-option-技术平台部')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('job-dept-confirm')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextFormField>(find.byKey(const Key('job-department'))).controller!.text,
+      '技术平台部',
+    );
+  });
+
+  testWidgets('城市弹窗热门与全部可选，取消不修改原值', (tester) async {
+    await openPage(tester);
+    final cityField = find.byKey(const Key('job-city'));
+    expect(
+      tester.widget<TextFormField>(cityField).controller!.text,
+      '上海',
+    );
+    await tester.ensureVisible(cityField);
+    await tester.tap(cityField);
+    await tester.pumpAndSettle();
+    expect(find.text('选择工作城市'), findsOneWidget);
+    expect(find.text('热门城市'), findsOneWidget);
+    expect(find.text('全部城市'), findsOneWidget);
+    // 取消：原值不变。
+    await tester.tap(find.byKey(const Key('job-city-cancel')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextFormField>(cityField).controller!.text,
+      '上海',
+    );
+    // 搜索定位并选择杭州。
+    await tester.tap(cityField);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('job-city-option-杭州')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('job-city-confirm')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextFormField>(cityField).controller!.text,
+      '杭州',
+    );
   });
 
   testWidgets('窄屏横屏与键盘弹出不溢出', (tester) async {
