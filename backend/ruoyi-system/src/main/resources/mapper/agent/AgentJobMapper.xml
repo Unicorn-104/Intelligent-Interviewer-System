@@ -35,6 +35,46 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="matchScore" column="match_score"/>
     </resultMap>
 
+    <sql id="candidateDirection">
+        COALESCE(NULLIF(TRIM(match_resume.rbs_job_direction), ''), NULLIF(TRIM(match_user.target_direction), ''))
+    </sql>
+
+    <sql id="candidateMatchScore">
+        CASE WHEN <include refid="candidateDirection"/> IS NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM t_res_skill candidate_skill
+                WHERE candidate_skill.skl_resume_id = match_resume.rbs_id
+                  AND NULLIF(TRIM(candidate_skill.skl_name), '') IS NOT NULL
+            )
+        THEN NULL
+        ELSE ROUND(
+            COALESCE(60.0 * (
+                SELECT COUNT(DISTINCT LOWER(TRIM(required_skill.psk_name)))
+                FROM t_pos_skill required_skill
+                WHERE required_skill.psk_position_id = pos.pos_id
+                  AND NULLIF(TRIM(required_skill.psk_name), '') IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM t_res_skill candidate_skill
+                      WHERE candidate_skill.skl_resume_id = match_resume.rbs_id
+                        AND LOWER(TRIM(candidate_skill.skl_name)) = LOWER(TRIM(required_skill.psk_name))
+                  )
+            ) / NULLIF((
+                SELECT COUNT(DISTINCT LOWER(TRIM(required_skill.psk_name)))
+                FROM t_pos_skill required_skill
+                WHERE required_skill.psk_position_id = pos.pos_id
+                  AND NULLIF(TRIM(required_skill.psk_name), '') IS NOT NULL
+            ), 0), 0)
+            + CASE WHEN <include refid="candidateDirection"/> IS NOT NULL AND (
+                LOCATE(LOWER(<include refid="candidateDirection"/>), LOWER(pos.pos_title)) > 0
+                OR LOCATE(LOWER(pos.pos_title), LOWER(<include refid="candidateDirection"/>)) > 0
+            ) THEN 25 ELSE 0 END
+            + CASE WHEN NULLIF(TRIM(pos.pos_work_city), '') = COALESCE(
+                NULLIF(TRIM(match_user.target_city), ''), NULLIF(TRIM(match_user.current_city), '')
+            ) THEN 15 ELSE 0 END,
+            1
+        ) END
+    </sql>
+
     <sql id="jobSelect">
         SELECT
             pos.pos_id AS job_id,
@@ -80,20 +120,20 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 ORDER BY app.app_id DESC
                 LIMIT 1
             ) AS application_id,
-            (
-                SELECT tal.tal_matched_score
-                FROM t_tal tal
-                WHERE tal.tal_user_id = #{userId}
-                  AND tal.tal_company_id = pos.pos_company_id
-                ORDER BY tal.tal_id DESC
-                LIMIT 1
-            ) AS match_score
+            <include refid="candidateMatchScore"/> AS match_score
         FROM t_pos pos
         INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        LEFT JOIN sys_user match_user ON match_user.user_id = #{userId}
+        LEFT JOIN t_res_base match_resume ON match_resume.rbs_id = (
+            SELECT resume.rbs_id
+            FROM t_res_base resume
+            WHERE resume.rbs_user_id = #{userId} AND resume.rbs_status = 1
+            ORDER BY resume.rbs_is_default DESC, resume.rbs_updated_at DESC, resume.rbs_id DESC
+            LIMIT 1
+        )
     </sql>
 
-    <select id="selectJobList" resultMap="AgentJobResult">
-        <include refid="jobSelect"/>
+    <sql id="jobFilters">
         WHERE pos.pos_status = 1
           AND cmp.cmp_status = 1
         <if test="query.companyId != null">
@@ -147,11 +187,23 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <if test="query.companySize != null and query.companySize != ''">
             AND cmp.cmp_size = #{query.companySize}
         </if>
+    </sql>
+
+    <select id="selectJobList" resultMap="AgentJobResult">
+        <include refid="jobSelect"/>
+        <include refid="jobFilters"/>
         <choose>
             <when test="query.sort == 'salary'">ORDER BY pos.pos_salary_max DESC, pos.pos_created_at DESC</when>
-            <when test="query.sort == 'match'">ORDER BY COALESCE(match_score, 0) DESC, pos.pos_created_at DESC</when>
+            <when test="query.sort == 'match'">ORDER BY match_score DESC, pos.pos_created_at DESC, pos.pos_id DESC</when>
             <otherwise>ORDER BY pos.pos_created_at DESC, pos.pos_id DESC</otherwise>
         </choose>
+    </select>
+
+    <select id="selectJobList_COUNT" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM t_pos pos
+        INNER JOIN t_cmp cmp ON cmp.cmp_id = pos.pos_company_id
+        <include refid="jobFilters"/>
     </select>
 
     <select id="selectJobCategories" resultType="java.lang.String">
