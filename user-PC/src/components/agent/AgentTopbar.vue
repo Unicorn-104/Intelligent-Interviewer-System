@@ -9,7 +9,7 @@
 
       <nav class="agent-main-nav" aria-label="主导航">
         <a v-for="item in navItems" :key="item.path" class="agent-nav-link" :class="{ active: active === item.key }" :href="appHref(item.path)">
-          {{ item.label }}<span v-if="item.badge" class="agent-nav-badge" data-unread-badge>{{ item.badge }}</span>
+          {{ item.label }}<span v-if="item.badge" class="agent-nav-badge" :aria-label="`${unreadCount} 条未读消息`">{{ item.badge }}</span>
         </a>
       </nav>
 
@@ -39,6 +39,8 @@ import { clearCandidateSession } from '@/utils/agentSession'
 import { removeToken } from '@/utils/auth'
 import useUserStore from '@/store/modules/user'
 import { getNoticeUnreadCount } from '@/api/system/notice'
+import { getImUnreadCount } from '@/api/system/im'
+import { createUnreadCounter, unreadBadge } from '@/utils/agentUnread'
 
 defineProps({
   active: {
@@ -50,6 +52,11 @@ defineProps({
 const router = useRouter()
 const userStore = useUserStore()
 const unreadCount = ref(0)
+let unreadTimer
+const unreadCounter = createUnreadCounter([
+  async () => (await getNoticeUnreadCount()).data,
+  async () => (await getImUnreadCount()).count
+], count => { unreadCount.value = count })
 const displayName = computed(() => userStore.nickName || userStore.name || '求职者')
 const avatarText = computed(() => displayName.value.slice(0, 1))
 
@@ -61,21 +68,11 @@ const baseNavItems = [
 ]
 const navItems = computed(() => baseNavItems.map(item => ({
   ...item,
-  badge: item.key === 'messages' && unreadCount.value ? String(unreadCount.value) : ''
+  badge: item.key === 'messages' ? unreadBadge(unreadCount.value) : ''
 })))
 
-// 候选人端不调用企业端专属的 /system/im/**（求职者角色会被 403），仅统计系统通知未读
-async function loadUnreadCount() {
-  try {
-    const noticeResponse = await getNoticeUnreadCount()
-    unreadCount.value = Number(noticeResponse.data || 0)
-  } catch {
-    unreadCount.value = 0
-  }
-}
-
 function handleNotificationUpdate() {
-  loadUnreadCount()
+  if (document.visibilityState !== 'hidden') unreadCounter.refresh()
 }
 
 async function clearAuthAndRedirect(target) {
@@ -108,12 +105,17 @@ async function handleLogout() {
 }
 
 onMounted(() => {
-  loadUnreadCount()
+  handleNotificationUpdate()
+  unreadTimer = window.setInterval(handleNotificationUpdate, 5000)
   window.addEventListener('agent-notifications-updated', handleNotificationUpdate)
+  document.addEventListener('visibilitychange', handleNotificationUpdate)
 })
 
 onBeforeUnmount(() => {
+  unreadCounter.stop()
+  window.clearInterval(unreadTimer)
   window.removeEventListener('agent-notifications-updated', handleNotificationUpdate)
+  document.removeEventListener('visibilitychange', handleNotificationUpdate)
 })
 </script>
 

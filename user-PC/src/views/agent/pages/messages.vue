@@ -33,8 +33,8 @@
             </span>
             <span class="conversation-meta">
               <span class="conversation-time">{{ formatShortTime(noticeItems[0]?.createTime) }}</span>
-              <span v-if="systemUnreadCount" class="unread">{{ systemUnreadCount }}</span>
             </span>
+            <span v-if="systemUnreadCount" class="unread conversation-unread" :aria-label="`${systemUnreadCount} 条未读系统通知`">{{ unreadBadge(systemUnreadCount) }}</span>
           </button>
 
           <button
@@ -52,8 +52,8 @@
             </span>
             <span class="conversation-meta">
               <span class="conversation-time">{{ formatShortTime(session.lastMessageAt) }}</span>
-              <span v-if="session.unread" class="unread">{{ session.unread }}</span>
             </span>
+            <span v-if="unreadCount(session.unread)" class="unread conversation-unread" :aria-label="`${unreadCount(session.unread)} 条未读消息`">{{ unreadBadge(session.unread) }}</span>
           </button>
 
           <div v-if="!filteredSessions.length && !showSystemConversation" class="conversation-state">
@@ -294,6 +294,7 @@ import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/a
 import { listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
 import { cancelAiRun, createAiSession, listAiMessages, listAiSessions, startAiRun, streamAiRun } from '@/api/agent/ai'
 import { getToken } from '@/utils/auth'
+import { unreadBadge, unreadCount } from '@/utils/agentUnread'
 import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageLinkParts, resolveMessageAttachment, uploadedMessageAttachmentPath } from '@/utils/agentMessage'
 
 const sessions = ref([])
@@ -428,10 +429,8 @@ async function loadSessions() {
       } else {
         startNewConversation(requestedPeerId, params.get('peerName') || '企业 HR', false)
       }
-    } else if (params.get('view') === 'system' || !sessions.value.length) {
-      selectSystem(false)
     } else {
-      await selectSession(sessions.value[0], false)
+      selectSystem(false)
     }
   } catch (error) {
     sessionsError.value = true
@@ -453,14 +452,14 @@ function startNewConversation(peerId, peerName = '企业 HR', updateUrl = true) 
 }
 
 async function loadMessages(sessionId, { silent = false } = {}) {
-  if (!sessionId) return
+  if (!sessionId) return false
   const shouldFollowLatest = !silent || followLatestMessages.value
   if (!silent) followLatestMessages.value = true
   if (!silent && !messages.value.length) messagesLoading.value = true
   messagesError.value = false
   try {
     const response = await listImMessages(sessionId)
-    if (selectedSessionId.value !== sessionId) return
+    if (selectedSessionId.value !== sessionId) return false
     const previousMessages = new Map(messages.value.map(message => [message.messageId, message]))
     messages.value = Array.isArray(response.data)
       ? response.data.map(message => {
@@ -475,11 +474,13 @@ async function loadMessages(sessionId, { silent = false } = {}) {
         }
       })
       : []
+    return true
   } catch (error) {
     if (!silent) {
       messagesError.value = true
       showToast(error?.message || '聊天记录加载失败')
     }
+    return false
   } finally {
     if (!silent) messagesLoading.value = false
     await nextTick()
@@ -509,11 +510,18 @@ async function selectSession(session, updateUrl = true) {
   newConversation.value = null
   messages.value = []
   if (updateUrl) history.replaceState(history.state, '', appHref(`/messages?conversation=${encodeURIComponent(session.sessionId)}`))
-  await Promise.all([
-    loadMessages(session.sessionId),
-    markImSessionRead(session.sessionId).catch(() => {})
-  ])
-  session.unread = 0
+  const loaded = await loadMessages(session.sessionId)
+  if (loaded) await markConversationRead(session.sessionId)
+}
+
+async function markConversationRead(sessionId) {
+  if (document.visibilityState === 'hidden' || activeView.value !== 'chat' || selectedSessionId.value !== sessionId) return
+  try {
+    await markImSessionRead(sessionId)
+    const session = sessions.value.find(item => item.sessionId === sessionId)
+    if (session) session.unread = 0
+    window.dispatchEvent(new CustomEvent('agent-notifications-updated'))
+  } catch {}
 }
 
 function selectSystem(updateUrl = true) {
@@ -734,17 +742,16 @@ async function markAllNoticesRead() {
 }
 
 async function refreshMessages() {
-  if (refreshInFlight) return
+  if (refreshInFlight || document.visibilityState === 'hidden') return
   refreshInFlight = true
   try {
     const response = await listImSessions()
     sessions.value = Array.isArray(response.data) ? response.data : []
     if (activeView.value === 'chat' && selectedSessionId.value) {
-      const current = sessions.value.find(item => item.sessionId === selectedSessionId.value)
-      const shouldMarkRead = Boolean(current?.unread)
-      if (current) current.unread = 0
-      await loadMessages(selectedSessionId.value, { silent: true })
-      if (shouldMarkRead) await markImSessionRead(selectedSessionId.value)
+      const sessionId = selectedSessionId.value
+      const current = sessions.value.find(item => item.sessionId === sessionId)
+      const loaded = await loadMessages(sessionId, { silent: true })
+      if (loaded && unreadCount(current?.unread)) await markConversationRead(sessionId)
     } else if (activeView.value !== 'chat') {
       await loadNotices({ silent: true })
     }
@@ -909,6 +916,7 @@ async function stopAiMessage() {
 
 onMounted(() => {
   document.addEventListener('pointerdown', closeEmojiPicker)
+  document.addEventListener('visibilitychange', refreshMessages)
   loadNotices()
   loadSessions()
   refreshTimer = window.setInterval(refreshMessages, 5000)
@@ -916,6 +924,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeEmojiPicker)
+  document.removeEventListener('visibilitychange', refreshMessages)
   if (refreshTimer) window.clearInterval(refreshTimer)
   aiAbortController?.abort()
   clearTimeout(toastTimer)
@@ -923,6 +932,10 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
+.message-shell .conversation-sidebar{padding:0}
+.message-shell .conversation-item{position:relative}
+.message-shell .conversation-unread{position:absolute;right:10px;top:33px;max-width:42px;margin:0;background:#D94B55;color:#fff}
+@media(max-width:700px){.message-shell .conversation-unread{top:2px;right:0;max-width:36px;min-width:16px;height:16px;padding:0 4px;font-size:9px}}
 .message-shell .message-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .message-shell .bubble .attachment-image-button{max-width:100%}
 .message-shell .attachment-image,.message-shell .attachment-name{max-width:100%}
