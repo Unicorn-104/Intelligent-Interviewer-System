@@ -12,9 +12,11 @@ import 'job_publish_page.dart';
 import 'models/job_detail_view_data.dart';
 import 'widgets/job_basic_info_tab.dart';
 import 'widgets/job_candidates_tab.dart';
-import 'widgets/job_jd_profile_section.dart';
 import 'widgets/job_workflow_section.dart';
 import 'widgets/job_workflow_timeline.dart';
+
+/// 岗位详情页浅灰蓝背景，参考 BOSS 直聘风格。
+const jobDetailBackground = Color(0xFFF3F7FA);
 
 class JobDetailPage extends StatefulWidget {
   const JobDetailPage({
@@ -41,9 +43,6 @@ class _JobDetailPageState extends State<JobDetailPage>
   final _workflow = JobSectionState<Map<String, dynamic>>();
   final _scores = JobSectionState<List<Map<String, dynamic>>>(loading: false);
   bool _scoresRequested = false;
-  bool _jdExpanded = false;
-  bool _workflowExpanded = false;
-  bool _parsing = false;
   bool _savingWorkflow = false;
   bool _editingWorkflow = false;
   bool _screening = false;
@@ -158,30 +157,6 @@ class _JobDetailPageState extends State<JobDetailPage>
       _scores,
       () async => jobMaps(await widget.source.loadScores(_positionId), '评分'),
     );
-  }
-
-  Future<bool> _parseJd(String text) async {
-    if (_parsing) {
-      return false;
-    }
-    setState(() => _parsing = true);
-    try {
-      await widget.source.parseJd(_positionId, text);
-      if (!mounted) {
-        return false;
-      }
-      await Future.wait([_loadProfile(), _loadDetail()]);
-      return true;
-    } catch (error) {
-      if (mounted) {
-        setState(() => _profile.error = jobDetailError(error));
-      }
-      return false;
-    } finally {
-      if (mounted) {
-        setState(() => _parsing = false);
-      }
-    }
   }
 
   Future<bool> _saveWorkflow(Map<String, Object?> body) async {
@@ -357,7 +332,7 @@ class _JobDetailPageState extends State<JobDetailPage>
   }
 
   Future<void> _editJob() async {
-    if (_editingJob || _parsing || _savingWorkflow || _editingWorkflow) return;
+    if (_editingJob || _savingWorkflow || _editingWorkflow) return;
     setState(() => _editingJob = true);
     try {
       final id = _positionId;
@@ -495,8 +470,9 @@ class _JobDetailPageState extends State<JobDetailPage>
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: jobDetailBackground,
     appBar: AppBar(
+      backgroundColor: jobDetailBackground,
       title: Text(
         jobValue(
           _detail.data?.job['title'] ?? widget.job['title'],
@@ -505,6 +481,18 @@ class _JobDetailPageState extends State<JobDetailPage>
       ),
       bottom: TabBar(
         controller: _tabs,
+        labelColor: AppColors.teal,
+        unselectedLabelColor: AppColors.textMuted,
+        indicatorColor: AppColors.teal,
+        indicatorWeight: 3,
+        labelStyle: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
         tabs: const [
           Tab(text: '基础信息'),
           Tab(text: '求职者'),
@@ -524,7 +512,7 @@ class _JobDetailPageState extends State<JobDetailPage>
             onPreview: _preview,
             onDelete: _deletingJob ? null : _deleteJob,
             onEdit:
-                _editingJob || _parsing || _savingWorkflow || _editingWorkflow
+                _editingJob || _savingWorkflow || _editingWorkflow
                 ? null
                 : _editJob,
             workflowTimeline: JobWorkflowTimeline(
@@ -535,22 +523,6 @@ class _JobDetailPageState extends State<JobDetailPage>
               onEditStage: (index) => _editWorkflowStage(index),
               onAddStage: () => _editWorkflowStage(null),
               onManage: _editWorkflow,
-            ),
-            jdSection: JobJdProfileSection(
-              positionId: jobPositiveId(widget.job['posId']) ?? 0,
-              state: _profile,
-              expanded: _jdExpanded,
-              onExpanded: (value) => setState(() => _jdExpanded = value),
-              parsing: _parsing,
-              onReload: _loadProfile,
-              onParse: _parseJd,
-            ),
-            workflowSection: JobWorkflowSection(
-              positionId: jobPositiveId(widget.job['posId']) ?? 0,
-              state: _workflow,
-              expanded: _workflowExpanded,
-              onExpanded: (value) => setState(() => _workflowExpanded = value),
-              onReload: _loadWorkflow,
             ),
           ),
         ),
