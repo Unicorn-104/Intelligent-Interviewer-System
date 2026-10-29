@@ -95,6 +95,32 @@ export function inviteInterview(data) {
   })
 }
 
+// 候选人列表：按投递记录（一条投递一行）分页查询
+export function listApplications(query) {
+  return request({
+    url: '/enterprise/talent/applications',
+    method: 'get',
+    params: query
+  })
+}
+
+// 候选人列表筛选项：本企业产生过投递的岗位
+export function listApplicationPositions() {
+  return request({
+    url: '/enterprise/talent/applications/positions',
+    method: 'get'
+  })
+}
+
+// 批量更新投递状态（只影响选中的投递，不串岗位）
+export function updateApplicationStatus(applicationIds, status) {
+  return request({
+    url: '/enterprise/talent/applications/status',
+    method: 'put',
+    data: { applicationIds, status }
+  })
+}
+
 // 批量更新候选人流程状态（候选人管理的状态管理）
 export function updateTalentStatus(talIds, status) {
   return request({

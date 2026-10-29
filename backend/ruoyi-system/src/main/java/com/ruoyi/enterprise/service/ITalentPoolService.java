@@ -72,6 +72,22 @@ public interface ITalentPoolService
     public com.ruoyi.system.domain.app.AppResumePdfDocument getTalentResumePdf(Long userId, Long talId);
 
     /**
+     * 候选人列表（按投递 t_app_record 一行，状态按投递 + Offer 展示）
+     */
+    public List<Map<String, Object>> listApplications(Long userId, Long positionId, Integer status,
+            Integer pageNum, Integer pageSize);
+
+    /**
+     * 候选人列表的岗位下拉选项（本企业有过投递的岗位，去重）
+     */
+    public List<Map<String, Object>> listApplicationPositions(Long userId);
+
+    /**
+     * 批量更新投递状态（0待筛选、1初筛通过、2初筛淘汰）
+     */
+    public Map<String, Object> updateApplicationStatus(Long userId, List<Long> applicationIds, Integer status);
+
+    /**
      * 待初筛岗位：各岗位下尚未经过 AI 初筛的投递数量
      */
     public Map<String, Object> getUnscreenedPositions(Long userId);

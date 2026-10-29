@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Search, Tags, Archive, Send, Megaphone, FileText, CalendarPlus, UserRound, BriefcaseBusiness, ChevronRight, AlertTriangle, Bookmark, GraduationCap } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
@@ -16,6 +17,16 @@ const pageNum = ref(1)
 const pageSize = 10
 
 const filters = ref({ keyword: '', direction: '', tag: '', archiveSource: '' })
+// 顶栏全局搜索跳转时通过 ?keyword= 带入关键字
+const route = useRoute()
+if (typeof route.query.keyword === 'string') filters.value.keyword = route.query.keyword
+// 已在人才库时再次使用顶栏搜索，仅查询串变化，这里同步关键词并重新检索
+watch(() => route.query.keyword, kw => {
+  if (typeof kw !== 'string') return
+  filters.value.keyword = kw
+  pageNum.value = 1
+  load()
+})
 const options = ref({ directions: [], tags: [] })
 
 // 归档来源：0-未归档，1-笔试淘汰，2-面试淘汰，3-主动归档，4-初筛淘汰

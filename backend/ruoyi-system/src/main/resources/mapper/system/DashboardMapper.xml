@@ -36,11 +36,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectFunnel" parameterType="Long" resultType="java.util.HashMap">
+        <!-- 阶段按累计口径统计（进入过该阶段即计入），避免阶段性状态互斥导致靠前阶段为 0；
+             pendingInterview/rejected 保留给移动端展示 -->
         select
-            sum(case when tal_status = 0 then 1 else 0 end) as applied,
-            sum(case when tal_status = 2 then 1 else 0 end) as pendingInterview,
-            sum(case when tal_status = 3 then 1 else 0 end) as rejected,
-            sum(case when tal_status = 4 then 1 else 0 end) as hired
+            count(*) as applied,
+            ifnull(sum(case when tal_status != 0 then 1 else 0 end), 0) as screened,
+            ifnull(sum(case when tal_status in (2, 4, 5) then 1 else 0 end), 0) as interviewing,
+            ifnull(sum(case when tal_status = 2 then 1 else 0 end), 0) as pendingInterview,
+            ifnull(sum(case when tal_status = 3 then 1 else 0 end), 0) as rejected,
+            ifnull(sum(case when tal_status in (4, 5) then 1 else 0 end), 0) as hired
         from t_tal
         where tal_company_id = #{companyId}
           and tal_created_at >= date_sub(now(), interval 30 day)

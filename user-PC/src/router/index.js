@@ -263,7 +263,8 @@ export const dynamicRoutes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // 以构建时的部署子路径为路由基址（生产为 /user/），保证深链与拼接出的路径一致
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: constantRoutes,
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) {

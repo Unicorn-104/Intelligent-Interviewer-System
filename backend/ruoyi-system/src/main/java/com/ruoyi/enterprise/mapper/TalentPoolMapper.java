@@ -68,6 +68,17 @@ public interface TalentPoolMapper
     /** 待初筛岗位列表：各岗位下投递状态为待筛选且尚无 AI 匹配评分的候选人数（按人去重） */
     public List<Map<String, Object>> selectUnscreenedPositions(@Param("companyId") Long companyId);
 
+    /** 候选人列表（按投递 t_app_record 一行，状态按投递 + Offer 展示） */
+    public List<Map<String, Object>> selectApplicationList(@Param("companyId") Long companyId,
+            @Param("positionId") Long positionId, @Param("status") Integer status);
+
+    /** 本企业有过投递的岗位下拉选项（去重，按岗位ID倒序） */
+    public List<Map<String, Object>> selectApplicationPositions(@Param("companyId") Long companyId);
+
+    /** 批量更新投递状态（企业隔离） */
+    public int updateApplicationStatus(@Param("companyId") Long companyId,
+            @Param("applicationIds") List<Long> applicationIds, @Param("status") Integer status);
+
     /** 企业下待初筛人选总数（同一人投递多个岗位只算一次） */
     public Integer selectUnscreenedCandidateCount(@Param("companyId") Long companyId);
 

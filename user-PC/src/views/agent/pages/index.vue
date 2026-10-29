@@ -204,6 +204,7 @@ import { listJobs } from '@/api/agent/job'
 import { listApplications } from '@/api/agent/application'
 import { listCandidateSchedule } from '@/api/system/conference'
 import { listNoticeTop, markNoticeRead } from '@/api/system/notice'
+import { userAppUrl } from '@/utils/appLink'
 import useUserStore from '@/store/modules/user'
 
 const userStore = useUserStore()
@@ -409,7 +410,7 @@ function formatScheduleDateTime(startAt, endAt) {
 function getInterviewLink(item) {
   if (item?.interviewLink) return item.interviewLink
   if (!item?.roomToken) return ''
-  return `${window.location.origin}/conference-join?token=${encodeURIComponent(item.roomToken)}`
+  return userAppUrl(`/conference-join?token=${encodeURIComponent(item.roomToken)}`)
 }
 
 function hasInterviewLink(item) {

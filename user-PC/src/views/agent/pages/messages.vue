@@ -481,16 +481,28 @@ async function sendMessage() {
   }
 }
 
-function attachmentUrl(value) {
+// 附件统一存相对路径（/profile/...）：写入消息的地址不能带当前访问域名/端口，否则另一端打开时必然连不上
+function attachmentPath(value) {
   const raw = String(value || '').trim()
   if (!raw || /[\u0000-\u0020\u007f]/.test(raw)) return ''
   try {
     const apiBase = String(import.meta.env.VITE_APP_BASE_API || '').replace(/\/$/, '')
-    const isAbsolute = /^https?:\/\//i.test(raw)
-    const resource = !isAbsolute && raw.startsWith('/') && apiBase && !raw.startsWith(`${apiBase}/`)
-      ? `${apiBase}${raw}`
-      : raw
-    const url = new URL(resource, window.location.origin)
+    let path = /^https?:\/\//i.test(raw) ? new URL(raw).pathname : raw
+    if (apiBase && (path === apiBase || path.startsWith(`${apiBase}/`))) path = path.slice(apiBase.length)
+    if (!path.startsWith('/')) path = `/${path}`
+    return path
+  } catch {
+    return ''
+  }
+}
+
+function attachmentUrl(value) {
+  const path = attachmentPath(value)
+  if (!path) return ''
+  try {
+    // 展示时再按当前部署的接口前缀拼接；历史消息里带别的端域名（如 5180/dev-api）也会被还原成本机地址
+    const apiBase = String(import.meta.env.VITE_APP_BASE_API || '').replace(/\/$/, '')
+    const url = new URL(`${apiBase}${path}`, window.location.origin)
     if (!['http:', 'https:'].includes(url.protocol)) return ''
     return url.toString()
   } catch {
@@ -572,12 +584,12 @@ async function handleAttachmentChange(event, isImage) {
   try {
     const uploadResponse = await uploadImAttachment(file)
     const data = uploadResponse?.fileName || uploadResponse?.url ? uploadResponse : (uploadResponse?.data || {})
-    const url = attachmentUrl(data.fileName || data.url)
-    if (!url) throw new Error('附件上传成功但未返回有效地址')
+    const path = attachmentPath(data.fileName || data.url)
+    if (!path) throw new Error('附件上传成功但未返回有效地址')
     const body = {
       type: isImage ? 2 : 3,
       content: data.originalFilename || file.name,
-      attachmentUrl: url
+      attachmentUrl: path
     }
     if (selectedSession.value) body.sessionId = selectedSession.value.sessionId
     else body.peerId = newConversation.value.peerId

@@ -68,6 +68,8 @@ public class DashboardServiceImpl implements IDashboardService
     private Map<String, Object> buildFunnel(Map<String, Object> row)
     {
         long applied = toLong(row, "applied");
+        long screened = toLong(row, "screened");
+        long interviewing = toLong(row, "interviewing");
         long pendingInterview = toLong(row, "pendingInterview");
         long rejected = toLong(row, "rejected");
         long hired = toLong(row, "hired");
@@ -75,6 +77,8 @@ public class DashboardServiceImpl implements IDashboardService
 
         Map<String, Object> funnel = new LinkedHashMap<>();
         funnel.put("applied", applied);
+        funnel.put("screened", screened);
+        funnel.put("interviewing", interviewing);
         funnel.put("pendingInterview", pendingInterview);
         funnel.put("rejected", rejected);
         funnel.put("hired", hired);

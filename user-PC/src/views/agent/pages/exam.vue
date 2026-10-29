@@ -58,11 +58,12 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getExamEntry, listMyExams } from '@/api/agent/exam'
 
 const route = useRoute()
+const router = useRouter()
 const scheduleId = route.query.scheduleId ? String(route.query.scheduleId) : null
 
 const loading = ref(false)
@@ -130,7 +131,8 @@ function fmt(value) {
 }
 
 function goRoom() {
-  location.href = `/agent/exam-room?scheduleId=${scheduleId}`
+  // 走路由跳转，自动带上部署子路径（/user/），避免硬编码根路径
+  router.push({ path: '/agent/exam-room', query: { scheduleId } })
 }
 
 async function load() {

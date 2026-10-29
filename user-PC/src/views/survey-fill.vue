@@ -2,7 +2,7 @@
   <div class="sf-page">
     <header class="sf-topbar">
       <div class="sf-bar">
-        <a class="sf-brand" href="/agent/index"><span class="sf-mark">智</span>智聘 AI</a>
+        <a class="sf-brand" :href="userAppUrl('/agent/index')"><span class="sf-mark">智</span>智聘 AI</a>
       </div>
     </header>
 
@@ -77,6 +77,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getSurveyFill, submitSurveyFill } from '@/api/system/survey'
+import { userAppUrl } from '@/utils/appLink'
 
 const route = useRoute()
 const router = useRouter()

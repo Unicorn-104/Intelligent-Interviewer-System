@@ -1,14 +1,15 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Search, SlidersHorizontal, ChevronRight, UserRoundCheck, ArrowUpRight, BriefcaseBusiness,
+  SlidersHorizontal, ChevronRight, UserRoundCheck, ArrowUpRight, BriefcaseBusiness,
   FileText, Sparkles, GraduationCap, Bookmark, Clock3, CircleCheckBig
 } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { getTalentResume, listUnscreenedApplicants, listUnscreenedPositions, screenUnscreenedApplicants } from '@/api/talent'
+import { getTalentResume, listApplications, listUnscreenedPositions, screenUnscreenedApplicants } from '@/api/talent'
+import { screenAllPending } from '@/api/screening'
 
 const router = useRouter()
 const toast = ref('')
@@ -16,14 +17,23 @@ const loading = ref(false)
 const positionsLoading = ref(false)
 const screening = ref(false)
 const positions = ref([])
-// 待初筛人选总数由后端按人去重统计，同一人投多个岗位只算一位
+// 待初筛人数由后端按人去重统计，同一人投多个岗位只算一位
 const candidateCount = ref(0)
 const activePosition = ref(null)
-const keyword = ref('')
+const statusFilter = ref('')
 const applicants = ref([])
 const total = ref(0)
 const pageNum = ref(1)
 const pageSize = 10
+
+// 投递状态（t_app_record.app_status）
+const APP_STATUS = {
+  0: ['待筛选', 'gray'], 1: ['初筛通过', 'green'], 2: ['初筛淘汰', 'red'], 3: ['已约面', 'blue'],
+  4: ['待笔试', 'orange'], 5: ['笔试中', 'orange'], 6: ['笔试通过', 'green'], 7: ['笔试未通过', 'red'], 8: ['笔试缺考', 'gray']
+}
+// Offer 状态（t_off_offer.ofr_status），存在 Offer 时覆盖投递状态显示
+const OFFER_STATUS = { 0: ['Offer 已发送', 'purple'], 1: ['已录取', 'green'], 2: ['Offer 已拒绝', 'red'], 3: ['Offer 已过期', 'gray'], 4: ['Offer 草稿', 'gray'], 5: ['Offer 审批中', 'orange'], 6: ['Offer 已撤回', 'gray'] }
+const STATUS_OPTIONS = Object.keys(APP_STATUS).map(k => ({ value: Number(k), label: APP_STATUS[k][0] }))
 
 // 简历解析详情
 const resumeOpen = ref(false)
@@ -32,7 +42,17 @@ const resumeData = ref(null)
 
 const positionCount = computed(() => positions.value.length)
 const activeTitle = computed(() => (activePosition.value ? activePosition.value.positionName : '全部岗位'))
-const canScreen = computed(() => !!activePosition.value && !screening.value)
+const activePending = computed(() => (activePosition.value ? activePosition.value.pendingCount : candidateCount.value))
+const canScreen = computed(() => !screening.value && Number(activePending.value || 0) > 0)
+
+function displayStatus(row) {
+  if (row.offerStatus !== null && row.offerStatus !== undefined && OFFER_STATUS[row.offerStatus]) return OFFER_STATUS[row.offerStatus]
+  return APP_STATUS[row.appStatus] || ['待筛选', 'gray']
+}
+
+function scoreText(row) {
+  return row.matchedScore == null ? '—' : Number(row.matchedScore).toFixed(1)
+}
 
 function notify(v) {
   toast.value = v
@@ -45,6 +65,11 @@ async function loadPositions() {
     const res = await listUnscreenedPositions()
     positions.value = res.data?.rows || []
     candidateCount.value = Number(res.data?.candidateCount || 0)
+    // 刷新后同步选中岗位的最新待初筛人数
+    if (activePosition.value) {
+      const latest = positions.value.find(p => p.positionId === activePosition.value.positionId)
+      activePosition.value = latest || { ...activePosition.value, pendingCount: 0 }
+    }
   } catch (e) {
     positions.value = []
     candidateCount.value = 0
@@ -58,8 +83,8 @@ async function loadApplicants() {
   try {
     const q = { pageNum: pageNum.value, pageSize }
     if (activePosition.value) q.positionId = activePosition.value.positionId
-    if (keyword.value) q.keyword = keyword.value
-    const res = await listUnscreenedApplicants(q)
+    if (statusFilter.value !== '') q.status = statusFilter.value
+    const res = await listApplications(q)
     applicants.value = res.rows || []
     total.value = res.total || 0
   } catch (e) {
@@ -76,9 +101,13 @@ function selectPosition(p) {
   loadApplicants()
 }
 
-function search() {
+function applyFilter() {
   pageNum.value = 1
   loadApplicants()
+}
+
+async function refresh() {
+  await Promise.all([loadPositions(), loadApplicants()])
 }
 
 function step(delta) {
@@ -88,64 +117,62 @@ function step(delta) {
   loadApplicants()
 }
 
-async function triggerScreening() {
-  if (!activePosition.value) {
-    notify('请先在左侧选择要初筛的岗位')
-    return
+// 初筛在后台异步执行，提交后短时轮询，让状态和分数尽快刷新到页面
+let pollingTimer = null
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
   }
+}
+function startPolling() {
+  stopPolling()
+  let times = 0
+  pollingTimer = setInterval(async () => {
+    times++
+    await refresh()
+    if (times >= 20 || Number(activePending.value || 0) === 0) stopPolling()
+  }, 15000)
+}
+
+async function triggerScreening() {
   screening.value = true
   try {
-    const res = await screenUnscreenedApplicants({ positionId: activePosition.value.positionId })
-    const data = res.data || {}
-    notify(`AI 初筛完成：共 ${data.candidateCount || 0} 人，通过 ${data.passedCount || 0} 人，淘汰 ${data.rejectedCount || 0} 人`)
-    await loadPositions()
-    if (!positions.value.some((p) => p.positionId === activePosition.value?.positionId)) {
-      activePosition.value = null
+    if (activePosition.value) {
+      await screenUnscreenedApplicants({ positionId: activePosition.value.positionId })
+      notify('已提交 AI 初筛，正在后台分析，结果见「AI 初筛详情」')
+    } else {
+      const res = await screenAllPending()
+      const data = res.data || {}
+      notify(`已提交 ${data.queuedPositions || 0} 个岗位的 AI 初筛，正在后台分析，结果见「AI 初筛详情」`)
     }
     pageNum.value = 1
-    await loadApplicants()
+    await refresh()
+    startPolling()
   } catch (e) {
-    notify(e?.response?.data?.msg || e?.message || 'AI 初筛失败，请稍后重试')
+    notify(e?.response?.data?.msg || e?.message || 'AI 初筛提交失败，请稍后重试')
   } finally {
     screening.value = false
   }
 }
 
-async function openResume(row) {
+function openResume(row) {
   resumeRow.value = row
   resumeData.value = null
   resumeOpen.value = true
-  try {
-    const res = await getTalentResume(row.talentId)
-    resumeData.value = res.data
-  } catch (e) {
-    resumeData.value = null
-  }
+  getTalentResume(row.talentId).then(res => { resumeData.value = res.data }).catch(() => { resumeData.value = null })
 }
 
 onMounted(() => {
   loadPositions()
   loadApplicants()
 })
+
+onBeforeUnmount(stopPolling)
 </script>
 
 <template>
-  <div class="page unscreened-page">
-    <div class="page-heading">
-      <div>
-        <h1>待初筛投递</h1>
-        <p>各岗位尚未经过 AI 初筛的投递人选 · 共 {{ positionCount }} 个岗位 / {{ candidateCount }} 位人选</p>
-      </div>
-      <div class="heading-actions">
-        <button class="btn ghost-primary" @click="router.push('/enterprise/screening')">
-          <UserRoundCheck :size="15" />AI 初筛看板
-        </button>
-        <button class="btn primary" :disabled="!canScreen" :title="activePosition ? '' : '请先在左侧选择岗位'" @click="triggerScreening">
-          <Sparkles :size="15" />{{ screening ? '初筛中…' : '发起 AI 初筛' }}
-        </button>
-      </div>
-    </div>
-
+  <div class="applications-panel">
     <div class="unscreened-layout">
       <aside class="card pos-panel">
         <div class="pos-head">
@@ -182,29 +209,31 @@ onMounted(() => {
         <div class="toolbar">
           <div class="current">
             <b>{{ activeTitle }}</b>
-            <span v-if="activePosition">待初筛 {{ activePosition.pendingCount }} 位人选 · {{ total }} 条投递</span>
-            <span v-else>待初筛 {{ candidateCount }} 位人选 · {{ total }} 条投递</span>
+            <span>待初筛 {{ activePending }} 位 · 共 {{ total }} 条投递</span>
           </div>
-          <label class="search-box">
-            <Search :size="16" />
-            <input v-model="keyword" placeholder="搜索姓名或手机号" @keyup.enter="search" />
+          <label class="status-filter">
+            <SlidersHorizontal :size="14" />
+            <select v-model="statusFilter" @change="applyFilter">
+              <option value="">全部状态</option>
+              <option v-for="opt in STATUS_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
           </label>
-          <button class="filter-btn" @click="search"><SlidersHorizontal :size="15" />筛选</button>
+          <button class="filter-btn" @click="refresh">刷新</button>
+          <button class="btn primary screen-btn" :disabled="!canScreen" @click="triggerScreening">
+            <Sparkles :size="15" />{{ screening ? '提交中…' : '发起 AI 初筛' }}
+          </button>
         </div>
 
         <div class="table-wrap">
           <div v-if="loading" class="empty">加载中…</div>
           <div v-else-if="!applicants.length" class="empty-state">
             <div class="empty-icon"><UserRoundCheck :size="26" /></div>
-            <b>暂无待初筛人选</b>
-            <p>{{ activePosition ? '该岗位的投递已生成初筛结果，或暂时没有新的投递' : '当前所有岗位都没有待初筛的投递' }}</p>
-            <button v-if="activePosition" class="btn sm primary" :disabled="screening" @click="triggerScreening">
-              <Sparkles :size="13" />对该岗位发起 AI 初筛
-            </button>
+            <b>暂无投递记录</b>
+            <p>{{ activePosition ? '该岗位还没有投递，或与当前状态筛选不符' : '当前还没有任何投递' }}</p>
           </div>
           <div v-else class="applicant-table">
             <div class="table-head">
-              <span>候选人</span><span>联系方式</span><span>投递岗位</span><span>简历方向</span><span>投递时间</span><span>状态</span><span>操作</span>
+              <span>候选人</span><span>联系方式</span><span>投递岗位</span><span>匹配度</span><span>投递时间</span><span>状态</span><span>操作</span>
             </div>
             <article v-for="row in applicants" :key="row.applicationId" class="table-row">
               <div class="person">
@@ -213,9 +242,9 @@ onMounted(() => {
               </div>
               <span>{{ row.phone || '手机号缺失' }}</span>
               <span class="pos-cell">{{ row.positionName || '—' }}</span>
-              <span>{{ row.jobDirection || '—' }}</span>
+              <span class="score-cell" :class="{ 'no-score': row.matchedScore == null }">{{ scoreText(row) }}</span>
               <time><Clock3 :size="12" />{{ row.appliedAt || '—' }}</time>
-              <span class="pill orange">待 AI 初筛</span>
+              <span><span class="pill" :class="displayStatus(row)[1]">{{ displayStatus(row)[0] }}</span></span>
               <div class="ops">
                 <button class="act-btn" @click="openResume(row)"><FileText :size="13" />简历</button>
                 <button class="act-btn" @click="router.push(`/enterprise/candidates/${row.talentId}/process`)"><ArrowUpRight :size="13" />流程</button>
@@ -272,12 +301,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.unscreened-page{padding-bottom:25px}
-.heading-actions{display:flex;gap:9px}
-.heading-actions .btn{display:inline-flex;align-items:center;gap:6px}
-.heading-actions .btn:disabled{opacity:.55;cursor:not-allowed}
-
-.unscreened-layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:14px;height:calc(100vh - 186px);min-height:470px}
+.unscreened-layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:14px;height:calc(100vh - 250px);min-height:470px}
 
 .pos-panel{padding:0;display:flex;flex-direction:column;overflow:hidden}
 .pos-head{padding:14px 15px 11px;border-bottom:1px solid #e8edf4}
@@ -299,13 +323,16 @@ onMounted(() => {
 .current{display:flex;align-items:baseline;gap:8px;margin-right:auto;min-width:0}
 .current b{font-size:13px;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .current span{font-size:10px;color:#7f8ea3;white-space:nowrap}
-.search-box{display:flex;align-items:center;gap:7px;border:1px solid #dce4ee;border-radius:9px;padding:0 11px;height:36px;width:210px;color:#8da0ba}
-.search-box input{width:100%;border:0;outline:0;font-size:12px;color:var(--text)}
+.status-filter{display:flex;align-items:center;gap:6px;border:1px solid #dce4ee;border-radius:9px;padding:0 10px;height:36px;color:#8da0ba}
+.status-filter select{border:0;outline:0;background:transparent;font-size:12px;color:var(--text);cursor:pointer}
 .filter-btn{height:36px;border:1px solid #dce4ee;border-radius:9px;background:#fff;color:#52657f;display:flex;gap:6px;align-items:center;padding:0 13px;cursor:pointer}
+.filter-btn:hover{background:#f4f7fc}
+.screen-btn{height:36px;display:inline-flex;align-items:center;gap:6px}
+.screen-btn:disabled{opacity:.55;cursor:not-allowed}
 
 .table-wrap{flex:1;overflow:auto;padding:0 16px}
 .applicant-table{min-width:760px}
-.table-head,.table-row{display:grid;grid-template-columns:1.5fr 1fr 1.25fr .85fr 1.05fr .8fr 1.1fr;gap:10px;align-items:center}
+.table-head,.table-row{display:grid;grid-template-columns:1.5fr 1fr 1.25fr .7fr 1.05fr .85fr 1.1fr;gap:10px;align-items:center}
 .table-head{position:sticky;top:0;z-index:1;height:36px;padding:0 8px;background:#f6f8fb;color:#8593a7;font-size:9px}
 .table-row{min-height:68px;padding:9px 8px;border-bottom:1px solid #edf1f7;font-size:10px;color:#5e718c;transition:background .15s}
 .table-row:hover{background:#f8faff}
@@ -314,6 +341,8 @@ onMounted(() => {
 .person b{font-size:12px;color:#1e293b}
 .person small{color:#7f8ea3;font-size:9px;margin-top:3px}
 .pos-cell{color:#334155}
+.score-cell{font-variant-numeric:tabular-nums;color:#1d4ed8;font-weight:600}
+.score-cell.no-score{color:#a4b0c2;font-weight:400}
 .table-row time{display:flex;align-items:center;gap:4px;color:#8d9aae;font-size:9px}
 .ops{display:flex;gap:6px}
 .act-btn{display:inline-flex;align-items:center;gap:3px;height:24px;padding:0 8px;border:1px solid #dbe5f5;border-radius:6px;background:#fff;color:#2563eb;font-size:9px;cursor:pointer}
