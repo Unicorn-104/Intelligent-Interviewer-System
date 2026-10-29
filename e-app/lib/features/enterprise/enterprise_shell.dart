@@ -54,8 +54,19 @@ class EnterpriseModuleShell extends StatefulWidget {
 class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
   final _navigatorKeys = List.generate(4, (_) => GlobalKey<NavigatorState>());
   final _accountKey = GlobalKey<AccountPageState>();
+  // 4 个根页面的 key，用于在 Tab 选中时调用各自的 scrollToTop()
+  final _homeKey = GlobalKey<HomePageState>();
+  final _jobsKey = GlobalKey<JobsPageState>();
+  final _messageKey = GlobalKey<MessageCenterPageState>();
   final _visited = <int>{0};
   int _index = 0;
+  // 底部导航栏是否可见：进入子页面（嵌套 Navigator 有子路由）时隐藏、
+  // 回到根页面时恢复，从而实现子页面全屏。
+  bool _barVisible = true;
+  // 各嵌套 Navigator 的路由观察者，用于在 push/pop 时同步底部栏显隐。
+  late final List<_TabBarObserver> _observers = [
+    for (var i = 0; i < 4; i++) _TabBarObserver(_syncBarVisibility),
+  ];
 
   List<List<_FeatureEntry>> get _featureGroups => [
     [
@@ -163,15 +174,47 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
 
   void _selectTab(int index) {
     if (_index == index) {
+      // 重复点当前 Tab：回到该 Tab 嵌套导航的根路由（兜底）
       _navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
-      if (index == 3) _accountKey.currentState?.reload();
-      return;
+    } else {
+      // 切换到目标 Tab
+      setState(() {
+        _index = index;
+        _visited.add(index);
+      });
     }
-    setState(() {
-      _index = index;
-      _visited.add(index);
-    });
     if (index == 3) _accountKey.currentState?.reload();
+    // 同步底部栏显隐（根页面应显示底部栏）
+    _syncBarVisibility();
+    // 下一帧再让目标根页面回到顶部（首次访问时页面本帧才挂载）
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scrollRootToTop(index),
+    );
+  }
+
+  /// 调用目标 Tab 根页面的 scrollToTop()，使其回到页面顶部
+  /// （首页还会把轮播复位到第 1 页）。
+  void _scrollRootToTop(int index) {
+    switch (index) {
+      case 0:
+        _homeKey.currentState?.scrollToTop();
+      case 1:
+        _jobsKey.currentState?.scrollToTop();
+      case 2:
+        _messageKey.currentState?.scrollToTop();
+      case 3:
+        _accountKey.currentState?.scrollToTop();
+    }
+  }
+
+  /// 根据当前 Tab 嵌套 Navigator 是否存在子路由，决定底部栏显隐：
+  /// 有子页面（canPop）时隐藏底部栏实现全屏，回到根路由时恢复。
+  void _syncBarVisibility() {
+    final navigator = _navigatorKeys[_index].currentState;
+    final visible = !(navigator?.canPop() ?? false);
+    if (visible != _barVisible) {
+      setState(() => _barVisible = visible);
+    }
   }
 
   void _navigateTodo(String? go) {
@@ -318,14 +361,15 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
     }
     return switch (index) {
       0 => HomePage(
+        key: _homeKey,
         onNotifications: _openNotifications,
         onOpenNotices: _openHomeNotices,
         onFeatures: _openMore,
         onInterviews: () => _openFeature(_interviews),
         onJobs: () => _selectTab(1),
       ),
-      1 => const JobsPage(),
-      2 => const MessageCenterPage(),
+      1 => JobsPage(key: _jobsKey),
+      2 => MessageCenterPage(key: _messageKey),
       _ => AccountPage(key: _accountKey, onLogout: widget.onLogout),
     };
   }
@@ -354,6 +398,7 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
                 child: _visited.contains(index)
                     ? Navigator(
                         key: _navigatorKeys[index],
+                        observers: [_observers[index]],
                         onGenerateRoute: (_) => MaterialPageRoute<void>(
                           builder: (context) => _root(context, index),
                         ),
@@ -364,33 +409,60 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
         ],
       ),
     ),
-    bottomNavigationBar: NavigationBar(
-      selectedIndex: _index,
-      onDestinationSelected: _selectTab,
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
-          label: '首页',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.work_outline),
-          selectedIcon: Icon(Icons.work),
-          label: '岗位',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.chat_bubble_outline),
-          selectedIcon: Icon(Icons.chat_bubble),
-          label: '消息',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.person_outline),
-          selectedIcon: Icon(Icons.person),
-          label: '我的',
-        ),
-      ],
-    ),
+    bottomNavigationBar: _barVisible
+        ? NavigationBar(
+            selectedIndex: _index,
+            onDestinationSelected: _selectTab,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: '首页',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.work_outline),
+                selectedIcon: Icon(Icons.work),
+                label: '岗位',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.chat_bubble_outline),
+                selectedIcon: Icon(Icons.chat_bubble),
+                label: '消息',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person),
+                label: '我的',
+              ),
+            ],
+          )
+        : null,
   );
+}
+
+/// 嵌套 Navigator 路由观察者：在 push/pop/remove/replace 后，下一帧通知
+/// Shell 重新计算底部导航栏显隐（子页面全屏、根页面恢复）。
+class _TabBarObserver extends NavigatorObserver {
+  _TabBarObserver(this.onChanged);
+  final VoidCallback onChanged;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _schedule();
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _schedule();
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _schedule();
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      _schedule();
+
+  /// 路由变化后下一帧再回调，确保 canPop 等状态已更新。
+  void _schedule() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => onChanged());
+  }
 }
 
 class _DemoBanner extends StatelessWidget {
