@@ -17,9 +17,24 @@ class _PublicAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = _text(profile['name'], '求职者');
+    final raw = _text(profile['avatar'], '');
     final base = Uri.parse(AppConfig.apiBaseUrl);
-    final path = Uri.tryParse(_text(profile['avatar'], ''));
-    final uri = path == null ? null : base.resolveUri(path);
+    final path = Uri.tryParse(raw);
+    // 字符串拼接而非 resolveUri：base 含子路径（如 /prod-api）时，
+    // resolveUri 会丢弃子路径，导致绕过 Nginx 反代返回 404。
+    final Uri? uri;
+    if (path == null) {
+      uri = null;
+    } else if (path.hasScheme) {
+      uri = ['http', 'https'].contains(path.scheme) ? path : null;
+    } else {
+      uri = Uri.parse(
+        '${AppConfig.apiBaseUrl}${raw.startsWith('/') ? raw : '/$raw'}',
+      );
+    }
+    // 去掉 base 尾部斜杠后，头像路径必须位于 /profile/ 目录下
+    final profilePrefix =
+        '${base.path.replaceAll(RegExp(r'/+$'), '')}/profile/';
     final safe =
         uri != null &&
         ['http', 'https'].contains(uri.scheme) &&
@@ -27,7 +42,7 @@ class _PublicAvatar extends StatelessWidget {
         uri.userInfo.isEmpty &&
         uri.query.isEmpty &&
         uri.fragment.isEmpty &&
-        uri.path.startsWith('/profile/');
+        uri.path.startsWith(profilePrefix);
     return SizedBox(
       width: 48,
       height: 48,
