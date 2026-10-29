@@ -170,9 +170,10 @@ class TalentFakeSource extends TalentDetailDataSource {
   @override
   Future<List<Map<String, dynamic>>> loadAvailability(
     int id, {
+    String? from,
     String? to,
   }) async {
-    availabilityQueries.add({'id': id, 'to': to});
+    availabilityQueries.add({'id': id, 'from': from, 'to': to});
     if (availabilityFails) {
       throw StateError('availability');
     }
@@ -326,30 +327,33 @@ Future<void> fillTalentInvite(
   int minute = 30,
   bool save = true,
 }) async {
-  if (find.byKey(const Key('invite-interviewer')).evaluate().isEmpty) {
+  if (find.byKey(const Key('invite-detail-title')).evaluate().isEmpty) {
     await tester.tap(find.byKey(const Key('invite-stage-edit-0')));
     await tester.pumpAndSettle();
   }
-  await tester.tap(find.byKey(const Key('invite-interviewer')));
+  // 选择面试官：打开面试官弹层 → 选中 → 确定。
+  if (find.byKey(const Key('interviewer-search')).evaluate().isEmpty) {
+    await tester.tap(find.byKey(const Key('invite-interviewer')));
+    await tester.pumpAndSettle();
+  }
+  await tester.tap(find.byKey(const ValueKey('interviewer-option-19')));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('合成面试官 · 技术部').last);
+  await tester.tap(find.byKey(const Key('interviewer-confirm')));
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('invite-date')));
+  // 时间轴点选开始时间：先滚动使目标时段可见（目标行位于视口顶部 1 小时处）。
+  final timeline = find.byKey(const Key('invite-timeline'));
+  await tester.ensureVisible(timeline);
   await tester.pumpAndSettle();
-  await tester.tap(find.text('2').last);
-  await tester.tap(find.text('OK'));
+  final scrollable = find
+      .descendant(of: timeline, matching: find.byType(Scrollable))
+      .first;
+  tester
+      .state<ScrollableState>(scrollable)
+      .position
+      .jumpTo((hour * 60 + minute - 60) * 56 / 60);
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('invite-time')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byIcon(Icons.keyboard_outlined));
-  await tester.pumpAndSettle();
-  final fields = find.descendant(
-    of: find.byType(TimePickerDialog),
-    matching: find.byType(TextField),
-  );
-  await tester.enterText(fields.at(0), '$hour');
-  await tester.enterText(fields.at(1), '$minute');
-  await tester.tap(find.text('OK'));
+  final rect = tester.getRect(timeline);
+  await tester.tapAt(Offset(rect.left + 120, rect.top + 58));
   await tester.pumpAndSettle();
   if (save) {
     await tester.tap(find.byKey(const Key('invite-stage-save')));
