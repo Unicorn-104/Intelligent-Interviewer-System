@@ -74,10 +74,10 @@ export function deleteQuickReply(id) {
   })
 }
 
-// 通用文件上传（发送文件/图片消息前先上传）
-export function uploadFile(data) {
+// 上传聊天附件（图片/文件，10MB 内），返回 url、fileName、originalFilename 等
+export function uploadAttachment(data) {
   return request({
-    url: '/common/upload',
+    url: '/system/im/attachments',
     method: 'post',
     data: data,
     headers: { 'Content-Type': 'multipart/form-data' }

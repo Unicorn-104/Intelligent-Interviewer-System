@@ -18,20 +18,20 @@ const menus = reactive([
       { label: '岗位导入与草稿', to: '/enterprise/jobs/import', match: ['EnterpriseJobImport'] }
     ] },
   { label: '候选人与初筛', to: '/enterprise/candidates', icon: markRaw(UsersRound),
-    match: ['EnterpriseCandidates', 'EnterpriseCandidateUnscreened', 'EnterpriseCandidateProcess', 'EnterpriseScreening', 'EnterpriseTalent', 'EnterpriseSurvey'],
+    match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess', 'EnterpriseResumeScreening', 'EnterpriseResumeScreeningAi', 'EnterpriseTalent'],
     children: [
       { label: '候选人列表', to: '/enterprise/candidates', match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
-      { label: '待初筛投递', to: '/enterprise/candidates/unscreened', match: ['EnterpriseCandidateUnscreened'] },
-      { label: 'AI 初筛', to: '/enterprise/screening', match: ['EnterpriseScreening'] },
-      { label: '人才库', to: '/enterprise/talent', match: ['EnterpriseTalent'] },
-      { label: '满意度调研', to: '/enterprise/survey', match: ['EnterpriseSurvey'] }
+      { label: '投递详情', to: '/enterprise/resume-screening', match: ['EnterpriseResumeScreening'] },
+      { label: 'AI 初筛详情', to: '/enterprise/resume-screening/ai', match: ['EnterpriseResumeScreeningAi'] },
+      { label: '人才库', to: '/enterprise/talent', match: ['EnterpriseTalent'] }
     ] },
   { label: '面试与笔试', to: '/enterprise/interviews', icon: markRaw(CalendarDays),
-    match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation', 'EnterpriseExam', 'EnterpriseExamProctor', 'EnterpriseExamProctorRoom'],
+    match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation', 'EnterpriseExam', 'EnterpriseExamProctor', 'EnterpriseExamProctorRoom', 'EnterpriseSurvey'],
     children: [
       { label: '面试安排', to: '/enterprise/interviews', match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation'] },
       { label: '笔试管理', to: '/enterprise/exam', match: ['EnterpriseExam'] },
-      { label: '监考监控', to: '/enterprise/exam/proctor', match: ['EnterpriseExamProctor', 'EnterpriseExamProctorRoom'] }
+      { label: '监考监控', to: '/enterprise/exam/proctor', match: ['EnterpriseExamProctor', 'EnterpriseExamProctorRoom'] },
+      { label: '满意度调研', to: '/enterprise/survey', match: ['EnterpriseSurvey'] }
     ] },
   { label: 'Offer 管理', to: '/enterprise/offer', icon: markRaw(FileText), match: ['EnterpriseOffer'] },
   { label: '视频会议', to: '/enterprise/conference/active', icon: markRaw(Video),
@@ -87,7 +87,7 @@ function toggle(item) {
     <el-dialog v-model="helpOpen" title="使用指南" width="540px">
       <div class="guide">
         <p><b>1. 发布岗位</b>：招聘总览右上角「快速发布岗位」，或进入「岗位管理」新建、导入岗位与草稿。</p>
-        <p><b>2. 候选人初筛</b>：在「候选人与初筛」的待初筛投递、AI 初筛中处理简历，可批量打标签与更新状态。</p>
+        <p><b>2. 简历初筛</b>：在「候选人与初筛」的「投递详情」发起 AI 初筛，再到「AI 初筛详情」复核报告或人工评分。</p>
         <p><b>3. 面试与笔试</b>：在「面试与笔试」安排面试、发起视频会议，并录入面试评价。</p>
         <p><b>4. Offer 管理</b>：候选人通过面试后，在「Offer 管理」发起并跟踪 Offer 流程。</p>
         <p><b>5. 消息与协作</b>：顶栏铃铛与「消息中心」查看候选人消息、面试邀约与系统通知。</p>

@@ -20,6 +20,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.RescheduleMessageService;
 import com.ruoyi.system.mapper.DashboardMapper;
@@ -33,6 +34,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     @Autowired private InterviewScheduleMapper scheduleMapper;
     @Autowired private DashboardMapper dashboardMapper;
     @Autowired private EnterpriseJobMapper jobMapper;
+    @Autowired private ScreeningMapper screeningMapper;
     @Autowired private RescheduleMessageService rescheduleMessages;
 
     private Long company(Long userId)
@@ -148,6 +150,8 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         }
         // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
         scheduleMapper.markCandidateInterviewing(candidateId);
+        // 同时把该岗位投递状态同步为「已约面」，投递详情/候选人列表立即可见
+        screeningMapper.advanceApplicationStatus(positionId, candidateId, 3, List.of(0, 1, 2));
         return prepared;
     }
 

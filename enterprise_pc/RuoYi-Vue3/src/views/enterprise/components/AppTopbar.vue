@@ -15,10 +15,11 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const searchKeyword = ref('')
+// 全局搜索统一进入搜索结果页，聚合展示候选人、岗位、消息
 function doSearch() {
   const kw = searchKeyword.value.trim()
   if (!kw) return
-  router.push({ path: '/enterprise/candidates', query: { keyword: kw } })
+  router.push({ path: '/enterprise/search', query: { keyword: kw } })
   searchKeyword.value = ''
 }
 
@@ -174,8 +175,8 @@ onUnmounted(() => { if (timer) clearInterval(timer); if (bellCloseTimer) clearTi
 .topbar { position: fixed; z-index: 15; left: 220px; right: 0; top: 0; height: 64px; padding: 0 28px; background: rgba(255,255,255,.94); backdrop-filter: blur(10px); border-bottom: 1px solid #e8edf5; display: flex; justify-content: space-between; align-items: center; }
 .crumb { display: flex; align-items: center; gap: 9px; font-size: 14px; }.crumb span,.crumb b{color:#a0acc0;font-weight:400}.crumb strong{font-size:16px}
 .actions { display: flex; align-items: center; gap: 14px; }
-.search { width: 260px; height: 38px; border-radius: 10px; display: flex; gap: 9px; align-items: center; padding: 0 13px; background: #f2f5f9; color: #8fa0b8; }
-.search input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 12px; }
+.search { width: 280px; height: 38px; border-radius: 10px; display: flex; gap: 9px; align-items: center; padding: 0 13px; background: #f2f5f9; color: #8fa0b8; }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 12px; }
 .bell { position: relative; border: 0; background: #f3f6fa; color: #52637e; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; cursor: pointer; }
 .bell i { position: absolute; right: 7px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: #ef4444; border: 1.5px solid white; }
 

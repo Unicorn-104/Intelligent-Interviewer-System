@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Video, Play, Zap, Smile, Paperclip, Send, Settings2, FileText, Bell, Copy, MessageSquareText } from '@/views/enterprise/components/icons'
+import { Search, Video, Play, Zap, Smile, Paperclip, Camera, Send, Settings2, FileText, Bell, Copy, MessageSquareText } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
-import { listSessions, listMessages, sendMessage, readSession, readAll, uploadFile, listQuickReplies, saveQuickReply, deleteQuickReply } from '@/api/system/im'
+import { listSessions, listMessages, sendMessage, readSession, readAll, uploadAttachment, listQuickReplies, saveQuickReply, deleteQuickReply } from '@/api/system/im'
+import { candidateAppBase } from '@/utils/appLink'
 import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice } from '@/api/system/conference'
 import { listSurveyTemplates, sendSurvey } from '@/api/survey'
 import { listPapers, listSchedules, createSchedule } from '@/api/exam'
@@ -14,11 +15,13 @@ import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 
 const route = useRoute()
 const router = useRouter()
-const keyword = ref('')
+// 顶栏全局搜索带 ?keyword= 进入消息页时，直接筛选会话列表
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const input = ref('')
 const scroller = ref()
 const inputEl = ref()
 const fileInput = ref()
+const imageInput = ref()
 const emojiOpen = ref(false)
 const loading = ref(false)
 let refreshTimer
@@ -106,6 +109,20 @@ function resolveUrl(p) {
     return p
   }
   return import.meta.env.VITE_APP_BASE_API + p
+}
+
+// 聊天附件地址：按当前部署的接口前缀拼接；历史消息里若写死了别的端地址
+// （如 http://127.0.0.1:5180/dev-api/profile/...），也还原成当前部署可访问的地址
+function attachmentUrl(p) {
+  if (!p) return ''
+  try {
+    const api = String(import.meta.env.VITE_APP_BASE_API || '')
+    let path = /^https?:\/\//i.test(p) ? new URL(p).pathname : String(p)
+    if (api && (path === api || path.startsWith(api + '/'))) path = path.slice(api.length)
+    return api + (path.startsWith('/') ? path : '/' + path)
+  } catch (e) {
+    return ''
+  }
 }
 
 // yyyy-MM-dd HH:mm:ss -> 今天显示 HH:mm，昨天显示 昨天 HH:mm，其余 MM-DD
@@ -243,7 +260,7 @@ async function loadMessages(sessionId) {
     mine: !!m.isMine,
     type: m.type,
     text: m.content,
-    attachmentUrl: resolveUrl(m.attachmentUrl),
+    attachmentUrl: attachmentUrl(m.attachmentUrl),
     time: fmtTime(m.sendTime)
   }))
 }
@@ -277,16 +294,29 @@ async function send() {
 
 async function pickFile() { fileInput.value?.click() }
 
+function pickImage() { imageInput.value?.click() }
+
 async function onFileChange(e) {
   const file = e.target.files?.[0]
   e.target.value = ''
+  await sendAttachment(file)
+}
+
+async function onImageChange(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  await sendAttachment(file)
+}
+
+// 图片按 type=2 发送（气泡内直接预览），其他文件按 type=3 发送
+async function sendAttachment(file) {
   if (!file || !activeConv.value) return
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const up = await uploadFile(fd)
+    const up = await uploadAttachment(fd)
     const body = {
-      type: 3,
+      type: /^image\//i.test(file.type || '') ? 2 : 3,
       content: up.originalFilename || file.name,
       attachmentUrl: up.fileName
     }
@@ -295,7 +325,7 @@ async function onFileChange(e) {
     await sendMessage(body)
     await afterSend()
   } catch (err) {
-    ElMessage.error(err?.message || '文件发送失败')
+    ElMessage.error(err?.message || '附件发送失败')
   }
 }
 
@@ -494,8 +524,8 @@ const needInterviewers = computed(() => linkForm.value.mode !== 1)
 
 // 当前会话对方用户 ID（新会话态取 newChat）
 const peerUserId = computed(() => activeConv.value?.peerId ?? newChat.value?.peerId ?? null)
-// 候选人端地址：生产环境必须在 .env.production 配置 VITE_CANDIDATE_APP_URL，否则会生成不可点击的相对链接
-const candidateBase = (import.meta.env.VITE_CANDIDATE_APP_URL || '').replace(/\/+$/, '')
+// 候选人端地址：优先用构建配置，未配置时按当前访问地址同源 + /user 运行时拼接
+const candidateBase = candidateAppBase()
 // 链接拼接规则：候选人端统一入口页 + token（权威定义，不带其它参数）
 const linkUrl = computed(() => (linkResult.value ? candidateBase + '/conference-join?token=' + linkResult.value.token : ''))
 // 只有带协议头的绝对地址才能直接点击进入，相对地址一律视为不完整
@@ -739,6 +769,11 @@ onMounted(async () => {
   refreshTimer = window.setInterval(refreshMessages, 5000)
 })
 
+// 已在消息页时再次使用顶栏搜索，同步关键词筛选会话
+watch(() => route.query.keyword, kw => {
+  if (typeof kw === 'string') keyword.value = kw
+})
+
 onBeforeUnmount(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
 })
@@ -797,7 +832,8 @@ onBeforeUnmount(() => {
               <time v-if="msg.time">{{msg.time}}</time>
             </template>
             <template v-else-if="msg.type===2">
-              <a class="bubble img-bubble" :href="msg.attachmentUrl" target="_blank"><img :src="msg.attachmentUrl" :alt="msg.text"/></a>
+              <a v-if="msg.attachmentUrl && !msg.broken" class="bubble img-bubble" :href="msg.attachmentUrl" target="_blank"><img :src="msg.attachmentUrl" :alt="msg.text" @error="msg.broken = true"/></a>
+              <span v-else class="bubble img-bubble img-broken">图片无法加载（{{msg.text}}）</span>
               <time v-if="msg.time">{{msg.time}}</time>
             </template>
             <template v-else>
@@ -813,11 +849,13 @@ onBeforeUnmount(() => {
           </div>
           <div class="composer-tools">
             <button title="表情" @click="emojiOpen=!emojiOpen"><Smile :size="18"/></button>
+            <button title="发送图片" @click="pickImage"><Camera :size="18"/></button>
             <button title="发送文件" @click="pickFile"><Paperclip :size="18"/></button>
             <button title="发送调研文件" @click="openSurveyModal"><MessageSquareText :size="18"/></button>
             <button title="发送笔试" @click="openExamModal"><FileText :size="18"/></button>
             <button title="查看录制" @click="openRecordings"><Play :size="18"/></button>
             <button class="quick" v-if="templates.length" @click="useTemplate(templates[0].content)"><Zap :size="15"/>快捷回复</button>
+            <input ref="imageInput" type="file" accept="image/*" style="display:none" @change="onImageChange" />
             <input ref="fileInput" type="file" style="display:none" @change="onFileChange" />
           </div>
           <div>
@@ -1012,4 +1050,5 @@ onBeforeUnmount(() => {
 .sf-item b{display:block;font-size:12px;color:#26364d}
 .sf-item small{color:#8392a7;font-size:10px}
 .sf-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:4px}
+.img-bubble.img-broken{padding:9px 12px;color:#98a5b7;font-size:10px;background:#eef2f7;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>

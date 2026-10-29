@@ -63,6 +63,51 @@ public class TalentPoolController extends BaseController
     }
 
     /**
+     * 候选人列表：一条投递一行（岗位 + 投递状态 + Offer 状态 + 当前流程阶段）
+     */
+    @GetMapping("/applications")
+    public TableDataInfo applications(@RequestParam(required = false) Long positionId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "20") Integer pageSize)
+    {
+        return getDataTable(talentPoolService.listApplications(getUserId(), positionId, status,
+                pageNum, pageSize));
+    }
+
+    /**
+     * 候选人列表的岗位下拉选项（本企业有过投递的岗位，去重）
+     */
+    @GetMapping("/applications/positions")
+    public AjaxResult applicationPositions()
+    {
+        return success(talentPoolService.listApplicationPositions(getUserId()));
+    }
+
+    /**
+     * 批量更新投递状态（按投递维度，不再影响同一候选人的其他岗位）
+     */
+    @PutMapping("/applications/status")
+    public AjaxResult updateApplicationStatus(@RequestBody Map<String, Object> body)
+    {
+        List<Long> applicationIds = new ArrayList<>();
+        Object raw = body.get("applicationIds");
+        if (raw instanceof List)
+        {
+            for (Object item : (List<?>) raw)
+            {
+                if (item != null)
+                {
+                    applicationIds.add(Long.valueOf(String.valueOf(item)));
+                }
+            }
+        }
+        Integer status = body.get("status") == null ? null
+                : Integer.valueOf(String.valueOf(body.get("status")));
+        return success(talentPoolService.updateApplicationStatus(getUserId(), applicationIds, status));
+    }
+
+    /**
      * UC-03：人才库筛选项（岗位方向 + 标签）
      */
     @GetMapping("/options")

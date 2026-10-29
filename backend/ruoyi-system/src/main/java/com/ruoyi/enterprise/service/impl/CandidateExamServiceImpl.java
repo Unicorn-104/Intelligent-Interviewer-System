@@ -15,6 +15,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.enterprise.mapper.CandidateExamMapper;
 import com.ruoyi.enterprise.mapper.ExamMapper;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.ICandidateExamService;
 import com.ruoyi.enterprise.service.IExamGradeService;
 
@@ -42,6 +43,9 @@ public class CandidateExamServiceImpl implements ICandidateExamService
 
     @Autowired
     private IExamGradeService examGradeService;
+
+    @Autowired
+    private ScreeningMapper screeningMapper;
 
     @Override
     public List<Map<String, Object>> listMyExams(Long userId)
@@ -144,6 +148,8 @@ public class CandidateExamServiceImpl implements ICandidateExamService
         candidateExamMapper.insertRecord(scheduleId, talId, deviceInfo);
         recordId = (long) candidateExamMapper.selectLastRecordId();
         snapshotQuestions(asLong(schedule.get("paperId")), parseJson(schedule.get("ruleJson")), recordId);
+        // 首次开考即把该岗位投递状态同步为「笔试中」
+        screeningMapper.advanceApplicationStatus(asLong(schedule.get("positionId")), talId, 5, List.of(4));
 
         Map<String, Object> record = candidateExamMapper.selectRecordForCandidate(userId, recordId);
         LocalDateTime deadline = deadline(now, asInt(record.get("durationMin"), 0), endAt);

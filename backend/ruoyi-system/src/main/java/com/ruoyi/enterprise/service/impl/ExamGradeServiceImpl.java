@@ -17,6 +17,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.enterprise.mapper.ExamGradeMapper;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IExamGradeService;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.system.mapper.DashboardMapper;
@@ -54,6 +55,9 @@ public class ExamGradeServiceImpl implements IExamGradeService
 
     @Autowired
     private IInterviewScheduleService scheduleService;
+
+    @Autowired
+    private ScreeningMapper screeningMapper;
 
     // ==================== 交卷自动判分 ====================
 
@@ -225,6 +229,12 @@ public class ExamGradeServiceImpl implements IExamGradeService
             recordStatus = 4;
         }
         gradeMapper.updateRecordScored(recordId, total, passStatus, recordStatus);
+        // 笔试终判后立即同步该岗位投递状态：通过→笔试通过，未通过→笔试未通过
+        if (passStatus != 2 && ctx.get("positionId") != null)
+        {
+            screeningMapper.advanceApplicationStatus(asLong(ctx.get("positionId")), asLong(ctx.get("talId")),
+                    passStatus == 1 ? 6 : 7, List.of(4, 5, 6, 7));
+        }
 
         String comment = buildComment(ctx, commentOverride, objective, subjective,
                 total, threshold, passStatus, operatorUserId);
