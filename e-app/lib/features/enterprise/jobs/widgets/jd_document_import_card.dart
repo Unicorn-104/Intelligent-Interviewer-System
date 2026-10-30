@@ -45,17 +45,32 @@ class JdDocumentImportCard extends StatelessWidget {
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: AppColors.canvas,
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: AppColors.hairline),
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x12152B49),
+          blurRadius: 16,
+          offset: Offset(0, 4),
+        ),
+      ],
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
-            const Icon(
-              Icons.auto_awesome_outlined,
-              color: AppColors.accentPurple,
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.tealSoft,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.auto_awesome_outlined,
+                color: AppColors.teal,
+                size: 22,
+              ),
             ),
             const SizedBox(width: 10),
             const Expanded(
@@ -71,12 +86,15 @@ class JdDocumentImportCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: AppColors.accentPurple.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(4),
+                color: AppColors.tealSoft,
+                borderRadius: BorderRadius.circular(6),
               ),
               child: const Text(
                 'AI',
-                style: TextStyle(color: AppColors.accentPurple),
+                style: TextStyle(
+                  color: AppColors.tealDeep,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -141,13 +159,23 @@ class JdDocumentImportCard extends StatelessWidget {
             OutlinedButton.icon(
               key: const Key('jd-document-import-select'),
               onPressed: enabled && !_busy ? onImport : null,
-              icon: const Icon(Icons.upload_file_outlined, size: 20),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.tealDeep,
+                backgroundColor: AppColors.tealSoft,
+                side: const BorderSide(color: AppColors.teal, width: 1.2),
+                minimumSize: const Size(0, 44),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.upload_file_outlined, size: 18),
               label: Text(
                 _busy
                     ? '处理中'
                     : hasDraft || error != null
                     ? '重新选择文档'
                     : '选择文档',
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
             if (error != null && onRetry != null)

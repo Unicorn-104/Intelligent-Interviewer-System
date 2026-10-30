@@ -23,4 +23,21 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.3.20" apply false
 }
 
+// These media plugins support AGP 9 but declare an older buildscript toolchain.
+// Reuse this project's versions instead of resolving a second AGP/Kotlin graph.
+gradle.beforeProject {
+    if (name == "livekit_client" || name == "flutter_webrtc") {
+        buildscript.configurations.configureEach {
+            resolutionStrategy.eachDependency {
+                if (requested.group == "com.android.tools.build" && requested.name == "gradle") {
+                    useVersion("9.0.1")
+                }
+                if (requested.group == "org.jetbrains.kotlin" && requested.name == "kotlin-gradle-plugin") {
+                    useVersion("2.3.20")
+                }
+            }
+        }
+    }
+}
+
 include(":app")

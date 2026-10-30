@@ -365,7 +365,9 @@ async function init() {
     }, 1000)
     autosaveTimer = setInterval(() => { if (dirty.value) flushSave() }, Math.max(5, interval) * 1000)
     window.addEventListener('online', onlineHandler)
-    loadMonitor()
+    await loadMonitor()
+    // 设备检测阶段已授权摄像头，进入答题后自动恢复主机位，避免监控中断
+    startMainCamera()
   } catch (e) {
     loadError.value = e?.message || '进入考试失败'
     stage.value = 'error'

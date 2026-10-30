@@ -60,6 +60,7 @@ public class EnterpriseJobDeleteTest
         jdbc.execute("create table t_app_record (app_id bigint auto_increment primary key, app_position_id bigint)");
         jdbc.execute("create table t_process_instance (pin_id bigint auto_increment primary key, pin_position_id bigint)");
         jdbc.execute("create table t_sch_appointment (apt_id bigint auto_increment primary key, apt_position_id bigint)");
+        jdbc.execute("create table t_sch_slot (slt_id bigint auto_increment primary key, slt_position_id bigint, slt_status int)");
         jdbc.execute("create table t_ai_candidate_analysis (asr_position_id bigint)");
         jdbc.execute("create table t_ai_screening_result (asr_position_id bigint)");
         jdbc.execute("create table t_ai_screening_task (ast_position_id bigint)");
@@ -156,6 +157,24 @@ public class EnterpriseJobDeleteTest
         assertEquals(1, jdbc.queryForObject("select count(*) from t_tal", Integer.class));
         assertNull(jdbc.queryForObject("select tal_process_instance_id from t_tal where tal_id = (select max(tal_id) from t_tal)", Long.class));
         assertNull(jdbc.queryForObject("select tal_exam_record_id from t_tal where tal_id = (select max(tal_id) from t_tal)", Long.class));
+    }
+
+    /** 岗位删除显式清理面试官时段：不残留孤儿占用时段，也不影响其他岗位的时段。 */
+    @Test
+    void deletesJobClearsItsSlotsAndKeepsOtherPositionSlots()
+    {
+        long positionId = position(1);
+        long otherPositionId = position(1);
+        jdbc.update("insert into t_sch_slot (slt_position_id, slt_status) values (?, 0)", positionId);
+        jdbc.update("insert into t_sch_slot (slt_position_id, slt_status) values (?, 1)", positionId);
+        jdbc.update("insert into t_sch_slot (slt_position_id, slt_status) values (?, 0)", otherPositionId);
+
+        assertEquals(positionId, ((Number) service.deleteDraftJob(100L, positionId).get("posId")).longValue());
+
+        assertEquals(0, jdbc.queryForObject("select count(*) from t_sch_slot where slt_position_id = ?",
+                Integer.class, positionId));
+        assertEquals(1, jdbc.queryForObject("select count(*) from t_sch_slot where slt_position_id = ?",
+                Integer.class, otherPositionId));
     }
 
     @Test

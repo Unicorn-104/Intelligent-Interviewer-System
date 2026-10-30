@@ -66,6 +66,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         values (#{scheduleId}, #{talId}, now(), 1, #{deviceInfo})
     </insert>
 
+    <insert id="insertPrepRecord">
+        insert into t_exam_record (erc_schedule_id, erc_candidate_id, erc_status)
+        values (#{scheduleId}, #{talId}, 0)
+    </insert>
+
+    <update id="beginRecord">
+        update t_exam_record
+        set erc_status = 1, erc_start_at = now(), erc_updated_at = now()
+        where erc_id = #{recordId} and erc_status = 0
+    </update>
+
     <select id="selectLastRecordId" resultType="int">
         select coalesce(max(erc_id), 0) from t_exam_record
     </select>

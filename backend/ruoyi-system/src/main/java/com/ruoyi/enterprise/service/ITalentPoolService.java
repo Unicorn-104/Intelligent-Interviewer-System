@@ -75,7 +75,7 @@ public interface ITalentPoolService
      * 候选人列表（按投递 t_app_record 一行，状态按投递 + Offer 展示）
      */
     public List<Map<String, Object>> listApplications(Long userId, Long positionId, Integer status,
-            Integer pageNum, Integer pageSize);
+            Long talentId, Integer pageNum, Integer pageSize);
 
     /**
      * 候选人列表的岗位下拉选项（本企业有过投递的岗位，去重）

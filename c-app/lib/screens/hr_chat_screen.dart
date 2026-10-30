@@ -8,6 +8,8 @@ import '../features/auth/domain/auth_session.dart';
 import '../features/messages/data/message_api.dart';
 import '../features/messages/domain/app_message.dart';
 import '../features/messages/presentation/reschedule_message_card.dart';
+import '../features/messages/presentation/interview_invitation_card.dart';
+import '../features/interviews/presentation/conference_screen.dart';
 import '../features/messages/presentation/shared_job_card_view.dart';
 import '../features/messages/presentation/shared_job_detail_screen.dart';
 import '../features/jobs/data/job_api.dart';
@@ -325,7 +327,19 @@ class _ChatBubble extends StatelessWidget {
                       ? null
                       : Border.all(color: AppColors.hairline),
                 ),
-                child: message.jobCard != null
+                child: message.interviewInvitation != null
+                    ? InterviewInvitationCard(
+                        invitation: message.interviewInvitation!,
+                        onTap: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) => ConferenceScreen(
+                              session: session,
+                              roomToken: message.interviewInvitation!.token,
+                            ),
+                          ),
+                        ),
+                      )
+                    : message.jobCard != null
                     ? SharedJobCardView(
                         card: message.jobCard!,
                         candidate: true,

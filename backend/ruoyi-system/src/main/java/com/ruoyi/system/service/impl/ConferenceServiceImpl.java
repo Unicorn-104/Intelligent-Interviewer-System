@@ -20,7 +20,10 @@ import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.config.AsrProperties;
 import com.ruoyi.system.mapper.ConferenceMapper;
 import com.ruoyi.system.service.IConferenceService;
@@ -82,6 +85,9 @@ public class ConferenceServiceImpl implements IConferenceService
     private ITalentPoolService talentPoolService;
 
     @Autowired
+    private TalStatusService talStatusService;
+
+    @Autowired
     private RedisCache redisCache;
 
     @Autowired
@@ -89,6 +95,14 @@ public class ConferenceServiceImpl implements IConferenceService
 
     @Autowired
     private AsrProperties asrProperties;
+
+    /** 面试预约统一取消入口：重新发起面试时释放旧预约时段并恢复候选人/投递状态 */
+    @Autowired
+    private IInterviewScheduleService scheduleService;
+
+    /** 面试预约口径的投递状态推进（重新发起后同步「已约面」） */
+    @Autowired
+    private ScreeningMapper screeningMapper;
 
     @Override
     public Map<String, Object> getCurrentSession(Long userId)
@@ -206,6 +220,11 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("岗位不存在或无权访问");
         }
+        // 初筛淘汰/已撤回的投递不允许再发起面试
+        if (conferenceMapper.countSchedulableApplication(candidateId, positionId) == 0)
+        {
+            throw new ServiceException("该投递已初筛淘汰或已撤回，无法发起面试");
+        }
         // 面试阶段可空；传了就必须属于该岗位的流程模板
         Map<String, Object> stage = findStage(positionId, companyId, stageId);
 
@@ -226,9 +245,14 @@ public class ConferenceServiceImpl implements IConferenceService
         validateInterviewerScope(userId, selected);
 
         // 每次发起都新建场次并签发新的随机链接：先把该候选人此前尚未结束的场次与待面试预约清理掉，
-        // 保证同一候选人同一时间只有一个活跃场次，且日历上不残留重复的「待面试」
+        // 保证同一候选人同一时间只有一个活跃场次，且日历上不残留重复的「待面试」。
+        // 旧预约逐个经面试调度服务的统一取消逻辑处理：释放关联时段、恢复候选人/投递状态；
+        // 已取消/已完成的历史预约由该入口静默跳过，不阻断会议创建。
         conferenceMapper.abortActiveSessionsByCandidate(candidateId, companyId);
-        conferenceMapper.cancelPendingAppointments(candidateId, companyId);
+        for (Long oldAppointmentId : conferenceMapper.selectPendingAppointmentIds(candidateId, companyId))
+        {
+            scheduleService.cancelForRelaunch(userId, oldAppointmentId);
+        }
 
         // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
         // 纯AI 无面试官时，面试官字段回落到发起人，仅用于满足非空约束与发起人权限
@@ -251,8 +275,14 @@ public class ConferenceServiceImpl implements IConferenceService
         session.put("cascadeRound", stage == null || stage.get("sortOrder") == null ? 1 : toInt(stage.get("sortOrder")));
         conferenceMapper.insertSession(session);
 
-        // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
-        conferenceMapper.markCandidateInterviewing(candidateId, companyId);
+        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退
+        if (!talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
+                List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
+                        TalStatusService.TAL_EXAM_PASSED),
+                positionId, null, "发起视频面试", userId))
+        {
+            throw new ServiceException("候选人已淘汰或已录用，无法发起面试");
+        }
 
         Long sessionId = toLong(session.get("sessionId"));
         String roomId = "INTERVIEW-" + sessionId;

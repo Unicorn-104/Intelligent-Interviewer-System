@@ -28,6 +28,12 @@ public interface CandidateExamMapper
     public int insertRecord(@Param("scheduleId") Long scheduleId, @Param("talId") Long talId,
             @Param("deviceInfo") String deviceInfo);
 
+    /** 设备检测阶段新建记录（状态0-未开始，开始时间留空，不计入考试时长） */
+    public int insertPrepRecord(@Param("scheduleId") Long scheduleId, @Param("talId") Long talId);
+
+    /** 检测通过后开考：未开始→进行中，开始时间=now */
+    public int beginRecord(@Param("recordId") Long recordId);
+
     public int selectLastRecordId();
 
     /** 考试记录（限本人），含安排的时长/截止/交卷规则，用于续考与判卷时间线 */

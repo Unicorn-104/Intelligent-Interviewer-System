@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
@@ -49,6 +51,9 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
 
     @Autowired
     private DashboardMapper dashboardMapper;
+
+    @Autowired
+    private TalStatusService talStatusService;
 
     @Override
     public List<Map<String, Object>> listReviews(Long userId, Integer status, Integer pageNum, Integer pageSize)
@@ -125,12 +130,15 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> reject(Long userId, Long sessionId, String reason)
     {
         Map<String, Object> session = requireSession(userId, sessionId);
-        // UC-12 步骤10：驳回淘汰——候选人状态"已淘汰"（触发器自动写状态日志）+ 感谢信
+        // UC-12 步骤10：驳回淘汰——候选人状态"已淘汰"，归档来源记为面试淘汰(2)，状态日志由状态机统一写入
         reviewMapper.updateHrStatus(sessionId, HR_CONFIRMED, 0, reason);
-        reviewMapper.updateTalStatus(Long.valueOf(String.valueOf(session.get("candidateId"))), TAL_REJECTED);
+        if (!talStatusService.change(asLong(session.get("candidateId")), TalStatusService.TAL_REJECTED, List.of(2),
+                asLong(session.get("positionId")), 2, "面试未通过", userId))
+            throw new ServiceException("候选人已淘汰或已录用，无法重复驳回");
         reviewMapper.insertMessage(Long.valueOf(String.valueOf(session.get("candidateUserId"))),
                 "感谢参与",
                 "感谢您参与「" + session.get("positionTitle") + "」的面试。很遗憾本次未能与您携手，"
@@ -142,6 +150,7 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> cascade(Long userId, Long sessionId)
     {
         return cascadeInternal(requireSession(userId, sessionId));
@@ -174,8 +183,13 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         double threshold = Double.parseDouble(String.valueOf(rule.get("passThreshold")));
         if (overall < threshold)
         {
-            // UC-12 E2：级联模式评分未达阈值，直接走淘汰流程
-            reviewMapper.updateTalStatus(Long.valueOf(String.valueOf(session.get("candidateId"))), TAL_REJECTED);
+            // UC-12 E2：级联模式评分未达阈值，直接走淘汰流程；候选人已处于终态时不再改写
+            if (!talStatusService.change(asLong(session.get("candidateId")), TalStatusService.TAL_REJECTED,
+                    List.of(2), asLong(session.get("positionId")), 2, "面试级联未达标", 0L))
+            {
+                result.put("message", "候选人已淘汰或已录用，本次不再重复流转状态");
+                return result;
+            }
             reviewMapper.insertMessage(Long.valueOf(String.valueOf(session.get("candidateUserId"))),
                     "感谢参与",
                     "感谢您参与「" + session.get("positionTitle") + "」的面试。很遗憾本次未能与您携手，期待未来再会。");

@@ -13,6 +13,7 @@ import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.TalentPoolMapper;
 import com.ruoyi.enterprise.service.IScreeningService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.domain.app.AppResume;
 import com.ruoyi.system.domain.app.AppResumePdfDocument;
 import com.ruoyi.system.mapper.DashboardMapper;
@@ -39,6 +40,9 @@ public class TalentPoolServiceImpl implements ITalentPoolService
 
     @Autowired
     private IScreeningService screeningService;
+
+    @Autowired
+    private TalStatusService talStatusService;
 
     @Autowired
     private IEnterpriseJobService enterpriseJobService;
@@ -110,6 +114,13 @@ public class TalentPoolServiceImpl implements ITalentPoolService
             throw new ServiceException("候选人不存在");
         }
         int source = Boolean.TRUE.equals(archived) ? 3 : 0;
+        // 系统归档来源（初筛/笔试/面试淘汰）由状态机写入，手动归档/取消归档都不得覆盖
+        int currentSource = talent.get("archiveSource") == null ? 0
+                : Integer.parseInt(String.valueOf(talent.get("archiveSource")));
+        if (currentSource == 1 || currentSource == 2 || currentSource == 4)
+        {
+            throw new ServiceException("该候选人已按淘汰流程自动归档，不能手动修改归档状态");
+        }
         talentPoolMapper.updateArchiveSource(talId, source);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("talentId", talId);
@@ -189,10 +200,18 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         talentPoolMapper.insertApplication(talId, positionId, resumeId);
         // 与求职者自主投递一致，同步创建流程实例供企业端岗位详情/漏斗/筛选使用
         enterpriseJobService.ensureProcessInstance(companyId, talId, positionId);
+        // 转投递是显式重建投递流程：允许从任意状态（含已淘汰/已录用终态）重置为待筛选，并清空旧归档来源
+        if (!talStatusService.change(talId, TalStatusService.TAL_NEW,
+                List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
+                        TalStatusService.TAL_REJECTED, TalStatusService.TAL_OFFERED, TalStatusService.TAL_PENDING_EXAM,
+                        TalStatusService.TAL_EXAM_TAKING, TalStatusService.TAL_EXAM_PASSED,
+                        TalStatusService.TAL_EXAM_FAILED, TalStatusService.TAL_EXAM_ABSENT),
+                positionId, 0, "转投递重置状态", userId))
+            throw new ServiceException("候选人状态重置失败，请重试");
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("talentId", talId);
         result.put("positionId", positionId);
-        result.put("message", "已为候选人创建投递记录");
+        result.put("message", "已为候选人创建投递记录，并重置为待筛选");
         return result;
     }
 
@@ -361,7 +380,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
 
     @Override
     public List<Map<String, Object>> listApplications(Long userId, Long positionId, Integer status,
-            Integer pageNum, Integer pageSize)
+            Long talentId, Integer pageNum, Integer pageSize)
     {
         if (status != null && (status < 0 || status > 8))
         {
@@ -373,7 +392,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         PageUtils.startPage(pageNum, pageSize);
         try
         {
-            return talentPoolMapper.selectApplicationList(companyId, positionId, status);
+            return talentPoolMapper.selectApplicationList(companyId, positionId, status, talentId);
         }
         finally { PageUtils.clearPage(); }
     }

@@ -161,6 +161,48 @@ function linkParts(text) {
   return parts
 }
 
+// ---------- 岗位卡片消息（type=6，内容为 kind=job_card 的 JSON） ----------
+// 求职者端/企业端 App 已按卡片渲染，PC 端此前直接把 JSON 当文本气泡展示，这里补上卡片样式
+const EDU_LABEL = { 1: '中专', 2: '大专', 3: '本科', 4: '硕士', 5: '博士' }
+
+function fmtSalary(min, max) {
+  const a = Number(min)
+  const b = Number(max)
+  const valid = v => Number.isFinite(v) && v > 0
+  const val = n => (n % 1 === 0 ? n.toFixed(0) : String(n))
+  if (!valid(a) && !valid(b)) return '薪资面议'
+  if (valid(a) && valid(b)) return `${val(a)}–${val(b)} 元/月`
+  return valid(a) ? `${val(a)} 元/月起` : `最高 ${val(b)} 元/月`
+}
+
+function parseJobCard(content) {
+  if (!content || content.charAt(0) !== '{') return null
+  try {
+    const raw = JSON.parse(content)
+    if (!raw || raw.kind !== 'job_card' || raw.version !== 1) return null
+    const positionId = Number(raw.positionId)
+    const title = String(raw.title || '').trim()
+    if (!(positionId > 0) || !title) return null
+    return {
+      positionId,
+      title,
+      salary: fmtSalary(raw.salaryMin, raw.salaryMax),
+      meta: [
+        String(raw.city || '').trim() || '城市不限',
+        String(raw.experience || '').trim() || '经验不限',
+        EDU_LABEL[Number(raw.education)] || '学历不限'
+      ].join(' · '),
+      company: String(raw.company || '').trim() || '企业信息待完善'
+    }
+  } catch (e) {
+    return null
+  }
+}
+
+function openJob(job) {
+  if (job && job.positionId) router.push('/enterprise/jobs/' + job.positionId)
+}
+
 // ---------- 面试预约通知（固定在消息中心顶部的系统会话） ----------
 const SYSTEM_NOTICE_ID = '__notices__'
 const NOTICE_MODE_LABEL = { 1: '纯AI', 2: 'AI + 单面试官', 3: 'AI + 多面试官', 4: '无AI纯人工' }
@@ -260,6 +302,8 @@ async function loadMessages(sessionId) {
     mine: !!m.isMine,
     type: m.type,
     text: m.content,
+    // 岗位卡片解析失败时保留原文气泡，避免消息丢失
+    job: m.type === 6 ? parseJobCard(m.content) : null,
     attachmentUrl: attachmentUrl(m.attachmentUrl),
     time: fmtTime(m.sendTime)
   }))
@@ -836,6 +880,16 @@ onBeforeUnmount(() => {
               <span v-else class="bubble img-bubble img-broken">图片无法加载（{{msg.text}}）</span>
               <time v-if="msg.time">{{msg.time}}</time>
             </template>
+            <template v-else-if="msg.job">
+              <article class="job-bubble" :title="'查看岗位：' + msg.job.title" @click="openJob(msg.job)">
+                <h4>{{ msg.job.title }}</h4>
+                <p class="jb-salary">{{ msg.job.salary }}</p>
+                <p class="jb-meta">{{ msg.job.meta }}</p>
+                <p class="jb-meta">{{ msg.job.company }}</p>
+                <div class="jb-foot">已分享岗位 · 求职者可查看并投递</div>
+              </article>
+              <time v-if="msg.time">{{msg.time}}</time>
+            </template>
             <template v-else>
               <span class="bubble"><template v-for="(p, i) in linkParts(msg.text)" :key="i"><a v-if="p.href" class="bubble-link" :href="p.href" target="_blank" rel="noopener noreferrer">{{ p.text }}</a><template v-else>{{ p.text }}</template></template></span>
               <time v-if="msg.time">{{msg.time}}</time>
@@ -1051,4 +1105,10 @@ onBeforeUnmount(() => {
 .sf-item small{color:#8392a7;font-size:10px}
 .sf-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:4px}
 .img-bubble.img-broken{padding:9px 12px;color:#98a5b7;font-size:10px;background:#eef2f7;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job-bubble{width:264px;max-width:76%;background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px;padding:12px 13px;cursor:pointer;transition:.18s ease}
+.job-bubble:hover{border-color:#8eb2fa;box-shadow:0 6px 18px rgba(37,99,235,.1)}
+.job-bubble h4{font-size:13px;font-weight:600;color:#26364d;line-height:1.4}
+.jb-salary{margin-top:5px;font-size:12px;font-weight:600;color:#2563eb}
+.jb-meta{margin-top:4px;font-size:11px;color:#7d8ca1;line-height:1.5}
+.jb-foot{margin-top:9px;padding-top:9px;border-top:1px solid #eef2f7;font-size:11px;color:#07865e}
 </style>

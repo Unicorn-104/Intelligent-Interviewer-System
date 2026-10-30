@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import com.alibaba.fastjson2.JSON;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,7 @@ import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.RescheduleMessageService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 
@@ -36,6 +38,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     @Autowired private EnterpriseJobMapper jobMapper;
     @Autowired private ScreeningMapper screeningMapper;
     @Autowired private RescheduleMessageService rescheduleMessages;
+    @Autowired private TalStatusService talStatusService;
 
     private Long company(Long userId)
     {
@@ -101,6 +104,9 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         if (candidateId == null || scheduleMapper.lockCandidate(candidateId) == null
                 || scheduleMapper.countApplication(candidateId, positionId) == 0)
             throw new ServiceException("候选人未投递当前岗位");
+        // 初筛淘汰/已撤回的投递不允许再安排面试
+        if (scheduleMapper.countSchedulableApplication(candidateId, positionId) == 0)
+            throw new ServiceException("该投递已初筛淘汰或已撤回，无法安排面试");
         Set<Long> interviewerIds = new TreeSet<>();
         for (Map<String, Object> row : stages) interviewerIds.add(requiredId(row.get("interviewerId")));
         for (Long id : interviewerIds) lockInterviewer(userId, companyId, id);
@@ -125,7 +131,11 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
                 values.put("stageOrder", null);
             }
             LocalDateTime start = parseTime(row.get("startTime"));
-            int duration = duration(row.get("durationMin"));
+            // 阶段时长以岗位招聘流程配置为准，客户端传入的 durationMin 不作为阶段时长的最终依据；
+            // 未绑定阶段的历史单阶段邀约仍沿用客户端时长，保持旧接口兼容。
+            int duration = stageId == null
+                    ? duration(row.get("durationMin"))
+                    : stageConfiguredDuration(values);
             requireFuture(start);
             values.put("candidateId", candidateId);
             values.put("positionId", positionId);
@@ -148,8 +158,12 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             row.put("status", 0);
             row.put("message", "邀约已创建，等待候选人确认");
         }
-        // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
-        scheduleMapper.markCandidateInterviewing(candidateId);
+        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退
+        if (!talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
+                List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
+                        TalStatusService.TAL_EXAM_PASSED),
+                positionId, null, "安排面试", userId))
+            throw new ServiceException("候选人已淘汰或已录用，无法安排面试");
         // 同时把该岗位投递状态同步为「已约面」，投递详情/候选人列表立即可见
         screeningMapper.advanceApplicationStatus(positionId, candidateId, 3, List.of(0, 1, 2));
         return prepared;
@@ -291,15 +305,198 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         Map<String, Object> row = scheduleMapper.selectAppointmentById(appointmentId);
         if (row == null) throw new ServiceException("预约记录不存在");
         requireJob(userId, requiredId(row.get("positionId")));
+        // 与创建/改期/改期申请审批一致，先锁候选人再锁预约行，串行化取消与并发排期。
+        lockCandidateAndAppointment(row);
         int current = integer(row.get("status"), -1);
-        if (current == 2 || current == 3)
-            throw new ServiceException("该面试安排已取消或已完成，无法变更状态");
-        scheduleMapper.updateAppointmentStatus(appointmentId, status);
+        if (current == 3) throw new ServiceException("该面试安排已完成，无法变更状态");
+        if (status == 1)
+        {
+            if (current == 2) throw new ServiceException("该面试安排已取消，无法确认");
+            confirmOrThrow(appointmentId);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("appointmentId", appointmentId);
+            result.put("status", status);
+            result.put("message", "已确认该面试安排");
+            return result;
+        }
+        // 取消：重复取消幂等返回，不重复释放时段、不重复回退状态。
+        return cancelAppointment(requiredId(row.get("candidateId")), requiredId(row.get("positionId")),
+                appointmentId, row, true);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
+    public Map<String, Object> cancelForRelaunch(Long userId, Long appointmentId)
+    {
+        Map<String, Object> row = scheduleMapper.selectAppointmentById(appointmentId);
+        if (row == null) return skippedCancel(appointmentId, "预约记录不存在，已跳过");
+        requireJob(userId, requiredId(row.get("positionId")));
+        lockCandidateAndAppointment(row);
+        // 会议重新发起前的清理：已取消、已完成的预约静默跳过，不阻断会议创建。
+        return cancelAppointment(requiredId(row.get("candidateId")), requiredId(row.get("positionId")),
+                appointmentId, row, false);
+    }
+
+    @Override
+    public Map<String, Object> resetRemindStatus(Long userId, Long appointmentId)
+    {
+        Map<String, Object> row = scheduleMapper.selectAppointmentById(appointmentId);
+        if (row == null) throw new ServiceException("预约记录不存在");
+        requireJob(userId, requiredId(row.get("positionId")));
+        int status = integer(row.get("status"), -1);
+        if (status != 0 && status != 1)
+            throw new ServiceException("仅未取消且未完成的面试可以重置提醒");
+        if (!parseTime(row.get("startTime")).isAfter(LocalDateTime.now(ZoneOffset.ofHours(8))))
+            throw new ServiceException("仅未开始的面试可以重置提醒");
+        // 只重置已处理(1)的标记，不触碰发送中(2)的认领，也不触发自动发送；
+        // 下一次提醒扫描按窗口规则决定是否发送。
+        scheduleMapper.resetAppointmentRemindFlag(appointmentId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("appointmentId", appointmentId);
-        result.put("status", status);
-        result.put("message", status == 1 ? "已确认该面试安排" : "已取消该面试安排");
+        result.put("message", "提醒状态已重置，将在下次提醒扫描时按窗口规则处理");
         return result;
+    }
+
+    /** 候选人行锁 → 预约行锁，与创建/改期/改期申请审批保持同一锁顺序。 */
+    private void lockCandidateAndAppointment(Map<String, Object> row)
+    {
+        if (scheduleMapper.lockCandidate(requiredId(row.get("candidateId"))) == null)
+            throw new ServiceException("候选人不存在，无法变更状态");
+        scheduleMapper.lockAppointment(requiredId(row.get("appointmentId")));
+        Map<String, Object> latest = scheduleMapper.selectAppointmentById(requiredId(row.get("appointmentId")));
+        row.putAll(latest);
+    }
+
+    /**
+     * 取消预约核心业务：状态更新、时段释放、候选人/投递状态恢复，供 HR 取消与会议重新发起共用。
+     *
+     * @param strict true 时已完成预约抛错（HR 取消入口）；false 时已取消/已完成返回跳过结果（会议清理入口）
+     */
+    private Map<String, Object> cancelAppointment(Long candidateId, Long positionId,
+            Long appointmentId, Map<String, Object> row, boolean strict)
+    {
+        int current = integer(row.get("status"), -1);
+        if (current == 2)
+            return strict ? idempotentCancel(candidateId, positionId, appointmentId)
+                    : skippedCancel(appointmentId, "该面试安排已取消，已跳过");
+        if (current == 3)
+        {
+            if (strict) throw new ServiceException("该面试安排已完成，无法变更状态");
+            return skippedCancel(appointmentId, "该面试安排已完成，已跳过");
+        }
+        Long interviewerId = nullableId(row.get("interviewerId"));
+        if (interviewerId != null) scheduleMapper.lockInterviewer(interviewerId);
+        if (scheduleMapper.updateAppointmentStatus(appointmentId, 2) != 1)
+        {
+            Map<String, Object> latest = scheduleMapper.selectAppointmentById(appointmentId);
+            int latestStatus = latest == null ? -1 : integer(latest.get("status"), -1);
+            // 并发下已被取消：HR 取消按幂等成功处理，会议清理按跳过处理。
+            if (latestStatus == 2)
+                return strict ? idempotentCancel(candidateId, positionId, appointmentId)
+                        : skippedCancel(appointmentId, "该面试安排已取消，已跳过");
+            throw new ServiceException("该面试安排状态已变化，请刷新后重试");
+        }
+        Long slotId = nullableId(row.get("slotId"));
+        boolean slotReleased = false;
+        if (slotId != null)
+        {
+            // 只释放该预约实际关联的时段；改期已换时段时旧时段早已由改期释放。
+            scheduleMapper.updateSlotStatus(slotId, 1);
+            slotReleased = true;
+        }
+        int remaining = scheduleMapper.countOtherValidAppointments(candidateId, positionId, appointmentId);
+        int[] restored = restoreCandidateAndApplication(candidateId, positionId, appointmentId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("appointmentId", appointmentId);
+        result.put("status", 2);
+        result.put("message", "已取消该面试安排" + (slotReleased ? "，面试官时段已释放" : ""));
+        result.put("slotReleased", slotReleased);
+        result.put("remainingAppointments", remaining);
+        result.put("candidateStatusRestored", restored[0] == 1);
+        result.put("applicationStatusRestored", restored[1] == 1);
+        return result;
+    }
+
+    /** 重复取消的幂等结果：不重复释放时段、不重复回退状态。 */
+    private Map<String, Object> idempotentCancel(Long candidateId, Long positionId, Long appointmentId)
+    {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("appointmentId", appointmentId);
+        result.put("status", 2);
+        result.put("message", "该面试安排此前已取消，无需重复操作");
+        result.put("slotReleased", false);
+        result.put("candidateStatusRestored", false);
+        result.put("applicationStatusRestored", false);
+        result.put("remainingAppointments",
+                scheduleMapper.countOtherValidAppointments(candidateId, positionId, appointmentId));
+        return result;
+    }
+
+    /** 会议重新发起清理的跳过结果：历史预约状态已收敛，无需处理。 */
+    private Map<String, Object> skippedCancel(Long appointmentId, String reason)
+    {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("appointmentId", appointmentId);
+        result.put("status", 2);
+        result.put("message", reason);
+        result.put("slotReleased", false);
+        result.put("candidateStatusRestored", false);
+        result.put("applicationStatusRestored", false);
+        return result;
+    }
+
+    /** 条件更新确认状态；影响行数为 0 且并非同值幂等时抛错，避免并发取消后仍返回成功。 */
+    private void confirmOrThrow(Long appointmentId)
+    {
+        if (scheduleMapper.updateAppointmentStatus(appointmentId, 1) != 1
+                && integer(scheduleMapper.selectAppointmentById(appointmentId).get("status"), -1) != 1)
+            throw new ServiceException("该面试安排状态已变化，请刷新后重试");
+    }
+
+    /**
+     * 取消预约后按需把候选人/投递状态回退到进入「面试中」之前。
+     *
+     * <p>投递状态按岗位判定（该岗位无其他有效预约），候选人状态按全岗位判定（跨岗位无有效预约），
+     * 防止回退影响其他岗位正在进行的面试。仅当其余条件全部满足才回退，防止把已完成其他阶段
+     * 或笔试通过的候选人错误回退：招聘流程实例进行中、该岗位无已完成面试场次、候选人当前为
+     * 面试中(2)且投递为已约面(3)、状态日志中最近一次进入 2 的来源为 0/1（笔试态 5/6 等不回退）。
+     * 条件更新限定当前状态，不覆盖并发变更；日志缺失时保持现状不猜测。</p>
+     */
+    private int[] restoreCandidateAndApplication(Long candidateId, Long positionId, Long cancelledAppointmentId)
+    {
+        int[] restored = {0, 0};
+        Integer talStatus = scheduleMapper.selectTalStatus(candidateId);
+        if (talStatus == null || talStatus != 2) return restored;
+        Integer pinStatus = scheduleMapper.selectProcessInstanceStatus(candidateId, positionId);
+        if (pinStatus == null || pinStatus != 0) return restored;
+        if (scheduleMapper.countCompletedSessions(candidateId, positionId) > 0) return restored;
+        Integer appStatus = scheduleMapper.selectApplicationStatus(candidateId, positionId);
+        if (appStatus == null || appStatus != 3) return restored;
+        Integer prior = scheduleMapper.selectPriorTalStatus(candidateId);
+        if (prior == null || (prior != 0 && prior != 1)) return restored;
+        if (scheduleMapper.countValidAppointmentsExcluding(candidateId, cancelledAppointmentId) == 0
+                && scheduleMapper.restoreTalStatus(candidateId, prior) == 1)
+            restored[0] = 1;
+        if (scheduleMapper.countOtherValidAppointments(candidateId, positionId, cancelledAppointmentId) == 0
+                && scheduleMapper.restoreApplicationStatus(candidateId, positionId, prior) == 1)
+            restored[1] = 1;
+        return restored;
+    }
+
+    /** 从阶段配置 JSON（psg_interviewer_config_json）读取面试时长，缺失或越界时拒绝排期。 */
+    private int stageConfiguredDuration(Map<String, Object> values)
+    {
+        try
+        {
+            Object raw = values.get("configJson");
+            Map<String, Object> config = raw instanceof Map
+                    ? (Map<String, Object>) raw
+                    : JSON.parseObject(String.valueOf(raw));
+            int minutes = Integer.parseInt(String.valueOf(config.get("duration")));
+            if (minutes >= 1 && minutes <= 1440) return minutes;
+        }
+        catch (Exception ignored) { }
+        throw new ServiceException("该阶段未配置面试时长，请先在岗位招聘流程中完善");
     }
 
     /** 解析时间字符串（兼容秒/分两种格式） */

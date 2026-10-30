@@ -60,6 +60,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- 定时提醒等使用真实 SQL 的集成测试内存库 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <build>

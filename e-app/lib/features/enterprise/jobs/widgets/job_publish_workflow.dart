@@ -121,7 +121,7 @@ class JobPublishStageEditor extends StatelessWidget {
     constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
     visualDensity: VisualDensity.compact,
     onPressed: onPressed,
-    icon: Icon(icon, size: 18, color: AppColors.textMuted),
+    icon: Icon(icon, size: 18, color: AppColors.tealDeep),
   );
 
   @override
@@ -132,10 +132,48 @@ class JobPublishStageEditor extends StatelessWidget {
         key: ValueKey('job-publish-stage-type-${stage.id}'),
         initialValue: stage.type,
         isExpanded: true,
-        decoration: const InputDecoration(labelText: '面试方式 *'),
+        borderRadius: BorderRadius.circular(10),
+        dropdownColor: AppColors.canvas,
+        decoration: InputDecoration(
+          labelText: '面试方式 *',
+          filled: true,
+          fillColor: AppColors.fieldBackground,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.teal, width: 1.5),
+          ),
+        ),
         items: [
           for (final entry in jobPublishStageTypes.entries)
             DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+        ],
+        selectedItemBuilder: (context) => [
+          for (final entry in jobPublishStageTypes.entries)
+            Row(
+              children: [
+                const Icon(
+                  Icons.check_circle,
+                  color: AppColors.teal,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  entry.value,
+                  style: const TextStyle(
+                    color: AppColors.tealDeep,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
         ],
         onChanged: enabled
             ? (value) {
@@ -162,6 +200,23 @@ class JobPublishStageEditor extends StatelessWidget {
                 min: 1,
                 max: 1440,
               ),
+              filled: true,
+              fillColor: AppColors.fieldBackground,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                  color: AppColors.teal,
+                  width: 1.5,
+                ),
+              ),
             ),
             validator: (value) => _integer(value, 1, 1440),
           );
@@ -178,6 +233,23 @@ class JobPublishStageEditor extends StatelessWidget {
                 controller: stage.threshold,
                 min: 0,
                 max: 100,
+              ),
+              filled: true,
+              fillColor: AppColors.fieldBackground,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                  color: AppColors.teal,
+                  width: 1.5,
+                ),
               ),
             ),
             validator: (value) => _integer(value, 0, 100),
@@ -205,7 +277,24 @@ class JobPublishStageEditor extends StatelessWidget {
         enabled: enabled,
         maxLines: 2,
         maxLength: 1000,
-        decoration: const InputDecoration(labelText: '重点考察项', counterText: ''),
+        decoration: InputDecoration(
+          labelText: '重点考察项',
+          hintText: '例如：高并发场景设计、系统架构能力',
+          filled: true,
+          fillColor: AppColors.fieldBackground,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.teal, width: 1.5),
+          ),
+        ),
       ),
       const SizedBox(height: 8),
       CheckboxListTile(
@@ -214,6 +303,7 @@ class JobPublishStageEditor extends StatelessWidget {
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         contentPadding: EdgeInsets.zero,
         controlAffinity: ListTileControlAffinity.leading,
+        activeColor: AppColors.teal,
         title: const Text('必选阶段', style: TextStyle(fontSize: 14)),
         value: stage.required,
         onChanged: enabled
@@ -230,6 +320,7 @@ class JobPublishStageEditor extends StatelessWidget {
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         contentPadding: EdgeInsets.zero,
         controlAffinity: ListTileControlAffinity.leading,
+        activeColor: AppColors.teal,
         title: const Text('允许跳过', style: TextStyle(fontSize: 14)),
         value: stage.skip,
         onChanged: enabled
@@ -246,6 +337,7 @@ class JobPublishStageEditor extends StatelessWidget {
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         contentPadding: EdgeInsets.zero,
         controlAffinity: ListTileControlAffinity.leading,
+        activeColor: AppColors.teal,
         title: const Text('未通过可终止流程', style: TextStyle(fontSize: 14)),
         value: stage.terminate,
         onChanged: enabled
@@ -318,7 +410,7 @@ class _JobPublishStageDialogState extends State<JobPublishStageDialog> {
       backgroundColor: AppColors.canvas,
       surfaceTintColor: AppColors.canvas,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: Padding(
@@ -391,9 +483,10 @@ class _JobPublishStageDialogState extends State<JobPublishStageDialog> {
                     child: TextButton(
                       key: const Key('job-publish-stage-cancel'),
                       style: TextButton.styleFrom(
+                        foregroundColor: AppColors.textSecondary,
                         minimumSize: const Size(0, 46),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                       ),
                       onPressed: _saving
@@ -407,10 +500,10 @@ class _JobPublishStageDialogState extends State<JobPublishStageDialog> {
                     child: FilledButton(
                       key: const Key('job-publish-stage-save'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.interactive,
+                        backgroundColor: AppColors.teal,
                         minimumSize: const Size(0, 46),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                       ),
                       onPressed: _saving ? null : () => _submit(),
@@ -451,7 +544,7 @@ class JobPublishStageCard extends StatelessWidget {
     elevation: 0,
     color: AppColors.canvas,
     shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       side: const BorderSide(color: AppColors.hairline),
     ),
     clipBehavior: Clip.antiAlias,
@@ -469,13 +562,13 @@ class JobPublishStageCard extends StatelessWidget {
                   height: 28,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: AppColors.interactiveSoft,
-                    borderRadius: BorderRadius.circular(4),
+                    color: AppColors.tealSoft,
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   child: Text(
                     '${index + 1}',
                     style: const TextStyle(
-                      color: AppColors.interactive,
+                      color: AppColors.tealDeep,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -504,7 +597,7 @@ class JobPublishStageCard extends StatelessWidget {
                   icon: const Icon(
                     Icons.edit_outlined,
                     size: 20,
-                    color: AppColors.interactive,
+                    color: AppColors.tealDeep,
                   ),
                 ),
                 IconButton(
@@ -531,7 +624,7 @@ class JobPublishStageCard extends StatelessWidget {
                 Text(
                   jobPublishStageTypes[stage.type]!,
                   style: const TextStyle(
-                    color: AppColors.interactive,
+                    color: AppColors.tealDeep,
                     fontSize: 13,
                   ),
                 ),

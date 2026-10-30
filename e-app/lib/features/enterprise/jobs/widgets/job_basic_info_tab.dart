@@ -5,6 +5,7 @@ import '../../../../widgets/page_states.dart';
 import '../../../../widgets/skeleton_list.dart';
 import '../models/job_detail_view_data.dart';
 
+/// 岗位「基础信息」页：面试流程与操作、岗位信息、职责要求、技能四个卡片。
 class JobBasicInfoTab extends StatelessWidget {
   const JobBasicInfoTab({
     super.key,
@@ -16,8 +17,6 @@ class JobBasicInfoTab extends StatelessWidget {
     this.onEdit,
     this.onPreview,
     this.onDelete,
-    required this.jdSection,
-    required this.workflowSection,
     required this.workflowTimeline,
   });
   final JobSectionState<JobDetailViewData> detail;
@@ -28,8 +27,6 @@ class JobBasicInfoTab extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback? onPreview;
   final VoidCallback? onDelete;
-  final Widget jdSection;
-  final Widget workflowSection;
   final Widget workflowTimeline;
 
   @override
@@ -62,77 +59,13 @@ class JobBasicInfoTab extends StatelessWidget {
       onRefresh: onReload,
       child: ListView(
         key: const PageStorageKey('job-basic-scroll'),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           _section(null, [
             workflowTimeline,
-            const SizedBox(height: 16),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final narrow =
-                    constraints.maxWidth < 300 ||
-                    MediaQuery.textScalerOf(context).scale(1) > 1.3;
-                return Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    SizedBox(
-                      width: narrow ? constraints.maxWidth : null,
-                      child: OutlinedButton.icon(
-                        key: const Key('job-interviews-entry'),
-                        onPressed: onInterviews,
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(0, 46),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        icon: const Icon(Icons.event_outlined, size: 18),
-                        label: const Text('查看面试安排'),
-                      ),
-                    ),
-                    if (onPreview != null)
-                      SizedBox(
-                        width: narrow ? constraints.maxWidth : null,
-                        child: OutlinedButton.icon(
-                          key: const Key('job-preview-entry'),
-                          onPressed: onPreview,
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(0, 46),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          icon: const Icon(Icons.visibility_outlined, size: 18),
-                          label: const Text('预览'),
-                        ),
-                      ),
-                    if (onDelete != null)
-                      SizedBox(
-                        width: narrow ? constraints.maxWidth : null,
-                        child: OutlinedButton.icon(
-                          key: const Key('job-delete-entry'),
-                          onPressed: onDelete,
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(0, 46),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            foregroundColor: AppColors.error,
-                            side: const BorderSide(color: AppColors.error),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          label: const Text('删除岗位'),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
+            const SizedBox(height: 20),
+            _actionRow(context),
           ]),
           _section(null, [
             Row(
@@ -141,7 +74,11 @@ class JobBasicInfoTab extends StatelessWidget {
                 Expanded(
                   child: Text(
                     jobValue(job['title']),
-                    style: Theme.of(context).textTheme.titleLarge,
+                    style: const TextStyle(
+                      color: AppColors.brand,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -149,37 +86,83 @@ class JobBasicInfoTab extends StatelessWidget {
                   key: const Key('job-edit-entry'),
                   onPressed: onEdit,
                   style: TextButton.styleFrom(
-                    minimumSize: const Size(44, 46),
+                    foregroundColor: AppColors.teal,
+                    minimumSize: const Size(44, 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('编辑'),
+                  icon: const Icon(Icons.edit_outlined, size: 16),
+                  label: const Text(
+                    '编辑',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Text(
               jobSalary(job),
               style: const TextStyle(
                 color: AppColors.accentOrange,
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 12),
-            Text('所属部门：${jobValue(job['dept'])}'),
-            Text('工作城市：${jobValue(job['city'])}'),
-            Text('经验要求：${jobValue(job['experience'])}'),
-            Text(
-              '学历要求：${education[int.tryParse('${job['education']}')] ?? '未提供'}',
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
+                      _infoField(
+                        Icons.business_outlined,
+                        '所属部门',
+                        jobValue(job['dept']),
+                      ),
+                      _infoField(
+                        Icons.location_on_outlined,
+                        '工作城市',
+                        jobValue(job['city']),
+                      ),
+                      _infoField(
+                        Icons.work_history_outlined,
+                        '经验要求',
+                        jobValue(job['experience']),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    children: [
+                      _infoField(
+                        Icons.school_outlined,
+                        '学历要求',
+                        education[int.tryParse('${job['education']}')] ??
+                            '未提供',
+                      ),
+                      _infoField(
+                        Icons.work_outline,
+                        '工作性质',
+                        jobTypes[int.tryParse('${job['jobType']}')] ??
+                            '未提供',
+                      ),
+                      _infoField(
+                        Icons.campaign_outlined,
+                        '岗位状态',
+                        statuses[int.tryParse('${job['status']}')] ??
+                            '未提供',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            Text(
-              '工作性质：${jobTypes[int.tryParse('${job['jobType']}')] ?? '未提供'}',
-            ),
-            Text('岗位状态：${statuses[int.tryParse('${job['status']}')] ?? '未提供'}'),
-            const SizedBox(height: 10),
+            const SizedBox(height: 2),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -188,73 +171,214 @@ class JobBasicInfoTab extends StatelessWidget {
                   key: const Key('job-basic-published'),
                   icon: Icons.calendar_today_outlined,
                   label: '发布日期：${jobValue(job['date'], fallback: '未提供')}',
-                  background: AppColors.primarySoft,
-                  foreground: AppColors.brand,
                 ),
                 _highlightChip(
                   key: const Key('job-basic-applicants'),
                   icon: Icons.group_outlined,
                   label: '投递人数：${jobValue(data.funnel['total'], fallback: '未提供')}',
-                  background: AppColors.interactiveSoft,
-                  foreground: AppColors.interactive,
                 ),
               ],
             ),
           ]),
-          _section('职责要求', [_description(data)]),
-          _section('技能', [_skills()]),
-          jdSection,
-          const SizedBox(height: 16),
-          workflowSection,
+          _section(
+            '职责要求',
+            [_description(data)],
+            icon: Icons.description_outlined,
+          ),
+          _section('技能', [_skills()], icon: Icons.view_in_ar_outlined),
         ],
       ),
     );
   }
 
-  /// 资料卡高亮项：投递人数、发布日期等关键信息以彩色胶囊突出展示。
-  Widget _highlightChip({
+  /// 面试安排 / 预览 / 删除岗位三个操作按钮；窄屏自动改为纵向全宽。
+  Widget _actionRow(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final narrow =
+          constraints.maxWidth < 300 ||
+          MediaQuery.textScalerOf(context).scale(1) > 1.3;
+      final buttons = [
+        _actionButton(
+          key: const Key('job-interviews-entry'),
+          icon: Icons.event_outlined,
+          label: '面试安排',
+          onPressed: onInterviews,
+          background: AppColors.teal,
+          foreground: Colors.white,
+        ),
+        if (onPreview != null)
+          _actionButton(
+            key: const Key('job-preview-entry'),
+            icon: Icons.visibility_outlined,
+            label: '预览',
+            onPressed: onPreview,
+            background: AppColors.tealSoft,
+            foreground: AppColors.tealDeep,
+          ),
+        if (onDelete != null)
+          _actionButton(
+            key: const Key('job-delete-entry'),
+            icon: Icons.delete_outline,
+            label: '删除岗位',
+            onPressed: onDelete,
+            background: AppColors.dangerSoft,
+            foreground: AppColors.error,
+          ),
+      ];
+      if (narrow) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (index, button) in buttons.indexed) ...[
+              if (index > 0) const SizedBox(height: 10),
+              button,
+            ],
+          ],
+        );
+      }
+      return Row(
+        children: [
+          for (final (index, button) in buttons.indexed) ...[
+            if (index > 0) const SizedBox(width: 10),
+            Expanded(child: button),
+          ],
+        ],
+      );
+    },
+  );
+
+  Widget _actionButton({
     required Key key,
     required IconData icon,
     required String label,
+    required VoidCallback? onPressed,
     required Color background,
     required Color foreground,
-  }) => Container(
+  }) => FilledButton.icon(
     key: key,
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: background,
-      borderRadius: BorderRadius.circular(6),
+    onPressed: onPressed,
+    style: FilledButton.styleFrom(
+      minimumSize: const Size(0, 44),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      backgroundColor: background,
+      foregroundColor: foreground,
+      elevation: 0,
+      disabledBackgroundColor: background.withValues(alpha: .55),
+      disabledForegroundColor: foreground.withValues(alpha: .55),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),
+    icon: Icon(icon, size: 18),
+    label: Text(
+      label,
+      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+    ),
+  );
+
+  /// 两列信息字段：线性图标 + 浅灰标签 + 深灰取值，长文本自动换行。
+  Widget _infoField(IconData icon, String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 14),
     child: Row(
-      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 14, color: foreground),
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: foreground,
+        Icon(icon, size: 16, color: AppColors.textMuted),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  color: AppColors.body,
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                ),
+              ),
+            ],
           ),
         ),
       ],
     ),
   );
 
-  Widget _section(String? title, List<Widget> children) => Container(
-    margin: const EdgeInsets.only(bottom: 16),
-    padding: const EdgeInsets.all(16),
+  /// 资料卡高亮项：发布日期、投递人数以浅青绿标签突出展示。
+  Widget _highlightChip({
+    required Key key,
+    required IconData icon,
+    required String label,
+  }) => Container(
+    key: key,
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: AppColors.canvas,
+      color: AppColors.tealSoft,
       borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: AppColors.hairline),
     ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [if (title != null) SectionTitle(title), ...children],
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: AppColors.tealDeep),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.tealDeep,
+          ),
+        ),
+      ],
     ),
   );
+
+  /// 白色圆角卡片：14-18px 圆角 + 轻微阴影，卡片间统一间距。
+  Widget _section(String? title, List<Widget> children, {IconData? icon}) =>
+      Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.canvas,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x121A3C6E),
+              blurRadius: 16,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (title != null) ...[
+              Row(
+                children: [
+                  Icon(icon ?? Icons.circle_outlined, size: 20, color: AppColors.teal),
+                  const SizedBox(width: 8),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppColors.brand,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            ...children,
+          ],
+        ),
+      );
 
   Widget _description(JobDetailViewData data) {
     try {
@@ -273,25 +397,9 @@ class JobBasicInfoTab extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('工作职责', style: TextStyle(fontWeight: FontWeight.w600)),
-          if (duties.isEmpty)
-            const Text('未提供')
-          else
-            for (final line in duties)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text('• $line'),
-              ),
-          const SizedBox(height: 16),
-          const Text('任职要求', style: TextStyle(fontWeight: FontWeight.w600)),
-          if (requirements.isEmpty)
-            const Text('未提供')
-          else
-            for (final line in requirements)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text('• $line'),
-              ),
+          _bulletGroup('工作职责', duties),
+          const SizedBox(height: 12),
+          _bulletGroup('任职要求', requirements),
         ],
       );
     } on FormatException {
@@ -303,6 +411,75 @@ class JobBasicInfoTab extends StatelessWidget {
       );
     }
   }
+
+  /// 浅色背景子区域：青绿强调线标题 + 项目符号正文，长文本自动换行。
+  Widget _bulletGroup(String title, List<String> lines) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF7FAFB),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: const Color(0xFFEAF0F4)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 3,
+              height: 14,
+              decoration: BoxDecoration(
+                color: AppColors.teal,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 7),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.body,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (lines.isEmpty)
+          const Text(
+            '未提供',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          )
+        else
+          for (final line in lines)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '•  ',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      line,
+                      style: const TextStyle(
+                        color: AppColors.body,
+                        fontSize: 14,
+                        height: 1.55,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ],
+    ),
+  );
 
   Widget _skills() {
     if (profile.loading) {
@@ -321,7 +498,7 @@ class JobBasicInfoTab extends StatelessWidget {
       return PageMessage(
         icon: Icons.label_outline,
         title: '暂无技能标签',
-        message: '可在JD画像区解析或重新读取',
+        message: '发布岗位时配置技能后，刷新即可展示',
         actionLabel: '刷新',
         onAction: onReloadProfile,
       );
@@ -331,12 +508,20 @@ class JobBasicInfoTab extends StatelessWidget {
       runSpacing: 8,
       children: skills
           .map(
-            (skill) => Chip(
-              label: Text(
-                '${skill['name']} · ${jobSkillLabel(skill['required'])}',
+            (skill) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: AppColors.tealSoft,
+                borderRadius: BorderRadius.circular(8),
               ),
-              side: BorderSide.none,
-              backgroundColor: AppColors.interactiveSoft,
+              child: Text(
+                '${skill['name']} · ${jobSkillLabel(skill['required'])}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.tealDeep,
+                ),
+              ),
             ),
           )
           .toList(),

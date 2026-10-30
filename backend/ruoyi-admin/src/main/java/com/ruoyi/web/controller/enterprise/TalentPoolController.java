@@ -68,10 +68,11 @@ public class TalentPoolController extends BaseController
     @GetMapping("/applications")
     public TableDataInfo applications(@RequestParam(required = false) Long positionId,
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) Long talentId,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize)
     {
-        return getDataTable(talentPoolService.listApplications(getUserId(), positionId, status,
+        return getDataTable(talentPoolService.listApplications(getUserId(), positionId, status, talentId,
                 pageNum, pageSize));
     }
 

@@ -308,6 +308,8 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         jobMapper.deleteInterviewMeetingStatesByPosition(posId);
         jobMapper.deleteInterviewParticipantStatesByPosition(posId);
         jobMapper.deleteInterviewCopilotsByPosition(posId);
+        // 面试官时段外键为 SET NULL，须显式删除；只影响本岗位时段，不影响其他岗位预约
+        jobMapper.deleteSlotsByPosition(posId);
         // 人才档案属于公司人才池，仅解除与本岗位流程实例/笔试记录的关联，不删除档案本身
         jobMapper.detachTalentFromPosition(posId);
         try
