@@ -215,10 +215,49 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </update>
 
     <!-- 岗位已产生的业务数据量（投递/流程实例/面试），删除前校验 -->
-    <select id="countJobBusinessData" resultType="int">
-        select (select count(*) from t_app_record ar where ar.app_position_id = #{posId})
-             + (select count(*) from t_process_instance pi where pi.pin_position_id = #{posId})
-             + (select count(*) from t_sch_appointment a where a.apt_position_id = #{posId})
-    </select>
+    <!-- 删除岗位前置清理：以下表未建外键，数据库级联覆盖不到，需显式删除避免残留孤儿数据；
+         其余业务数据（投递、流程实例、预约、面试、笔试、Offer 等）由 t_pos 外键级联删除。 -->
+    <delete id="deleteAiAnalysisByPosition">
+        delete from t_ai_candidate_analysis where asr_position_id = #{posId}
+    </delete>
+
+    <delete id="deleteScreeningResultByPosition">
+        delete from t_ai_screening_result where asr_position_id = #{posId}
+    </delete>
+
+    <delete id="deleteScreeningTaskByPosition">
+        delete from t_ai_screening_task where ast_position_id = #{posId}
+    </delete>
+
+    <delete id="deleteRescheduleRequestsByPosition">
+        delete from t_sch_reschedule_request
+        where rsr_appointment_id in (select apt_id from t_sch_appointment where apt_position_id = #{posId})
+           or rsr_pending_appointment_id in (select apt_id from t_sch_appointment where apt_position_id = #{posId})
+    </delete>
+
+    <delete id="deleteInterviewMeetingStatesByPosition">
+        delete from t_int_meeting_state
+        where mst_session_id in (select ses_id from t_int_session where ses_position_id = #{posId})
+    </delete>
+
+    <delete id="deleteInterviewParticipantStatesByPosition">
+        delete from t_int_participant_state
+        where pst_session_id in (select ses_id from t_int_session where ses_position_id = #{posId})
+    </delete>
+
+    <delete id="deleteInterviewCopilotsByPosition">
+        delete from t_int_copilot
+        where cpt_session_id in (select ses_id from t_int_session where ses_position_id = #{posId})
+    </delete>
+
+    <!-- 人才档案属于公司人才池，仅解除与本岗位流程实例/笔试记录的关联，不删除档案本身 -->
+    <update id="detachTalentFromPosition">
+        update t_tal
+        set tal_process_instance_id = null, tal_exam_record_id = null
+        where tal_process_instance_id in (select pin_id from t_process_instance where pin_position_id = #{posId})
+           or tal_exam_record_id in (select erc_id from t_exam_record erc
+                                     join t_exam_schedule esd on erc.erc_schedule_id = esd.esd_id
+                                     where esd.esd_position_id = #{posId})
+    </update>
 
 </mapper>
