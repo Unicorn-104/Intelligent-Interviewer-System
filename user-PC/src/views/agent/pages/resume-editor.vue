@@ -145,7 +145,7 @@
               <div class="field"><label>职位</label><input v-model.trim="work.position" maxlength="50"></div>
               <div class="field"><label>开始时间</label><input v-model="work.startDate" type="date"></div>
               <div class="field"><label>结束时间</label><input v-model="work.endDate" type="date" :disabled="work.current"></div>
-              <label class="check-field"><input v-model="work.current" type="checkbox">目前在职</label>
+              <label class="check-field"><input v-model="work.current" type="checkbox"><span>目前在职</span></label>
               <div class="field full"><label>工作描述</label><textarea v-model.trim="work.description" maxlength="2000" placeholder="描述职责与量化成果"></textarea></div>
             </div>
           </div>
@@ -566,6 +566,9 @@ onMounted(loadResume)
 </script>
 
 <style scoped>
+.main .check-field{grid-column:1/-1;display:inline-flex;align-items:center;justify-self:start;align-self:start;gap:8px;width:max-content;max-width:100%;min-height:24px;margin:0;padding:0;font-size:12px;line-height:20px;white-space:nowrap;cursor:pointer}
+.main .check-field > input[type="checkbox"]{flex:0 0 16px;width:16px;min-width:16px;max-width:16px;height:16px;min-height:16px;max-height:16px;margin:0;padding:0;appearance:auto;accent-color:#2B7FFF;cursor:pointer}
+.main .check-field > span{flex:0 0 auto}
 .savebar{align-items:center}
 .savebar .resume-savebar-action{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:auto;min-width:88px;height:40px;margin:0;padding:0 20px;border:1px solid #CBD9EA;border-radius:6px;color:#1A3C6E;background:#fff;font:700 13px/1.4 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer}
 .savebar .resume-savebar-submit{min-width:112px;border-color:#2B7FFF;color:#fff;background:#2B7FFF}
