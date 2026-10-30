@@ -165,9 +165,9 @@
                 <option value="salary">薪资优先</option>
               </select>
             </label>
-            <button class="saved-filter" type="button" :class="{ active: savedOnly }" :aria-pressed="savedOnly" @click="savedOnly = !savedOnly">
+            <button class="saved-filter" type="button" :class="{ active: savedOnly }" :aria-pressed="savedOnly" title="当前搜索及筛选条件下可查看的收藏岗位数量" @click="savedOnly = !savedOnly">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg>
-              <span>收藏</span><span class="saved-count">{{ savedJobs.size }}</span>
+              <span>收藏</span><span class="saved-count">{{ savedJobCount ?? '—' }}</span>
             </button>
             <div class="view-toggle">
               <button :class="{ active: !gridMode }" type="button" aria-label="列表视图" @click="gridMode = false"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
@@ -229,6 +229,7 @@ import { appHref } from '@/utils/agentNavigation'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { listJobFilterOptions, listJobs } from '@/api/agent/job'
+import { loadSavedJobItems, normalizeSavedJobIds, sortSavedJobItems } from '@/utils/agentSavedJobs'
 
 const jobs = ref([])
 const keyword = ref('')
@@ -241,6 +242,7 @@ const activePanel = ref('')
 const positionSearch = ref('')
 const selectedPositionGroup = ref('all')
 const savedJobs = ref(new Set(readSavedJobs()))
+const savedJobItems = ref(null)
 const toastVisible = ref(false)
 const toastMessage = ref('')
 const filters = reactive({
@@ -266,6 +268,7 @@ const filterOptions = reactive({
   companySizes: []
 })
 let toastTimer
+let jobsRevision = 0
 
 const hotTags = ['AI 产品经理', 'React', '大模型应用', '用户增长', '杭州']
 const salaryOptions = [
@@ -480,7 +483,9 @@ const displayIndustryGroups = computed(() => {
   const published = filterOptions.industries.filter(item => item && !catalogValues.has(item))
   return published.length ? [{ title: '已发布企业行业', items: published }, ...industryCatalog] : industryCatalog
 })
-const visibleJobs = computed(() => savedOnly.value ? jobs.value.filter(job => savedJobs.value.has(String(job.id))) : jobs.value)
+const matchingSavedJobs = computed(() => (savedJobItems.value || []).filter(job => savedJobs.value.has(String(job.id))))
+const savedJobCount = computed(() => savedJobItems.value === null ? null : matchingSavedJobs.value.length)
+const visibleJobs = computed(() => savedOnly.value ? matchingSavedJobs.value : jobs.value)
 const hasFilters = computed(() => Boolean(
   filters.city
   || filters.category
@@ -533,10 +538,12 @@ function roleSectionsForSelectedGroup() {
 }
 
 async function loadJobs() {
+  const revision = ++jobsRevision
   loading.value = true
   errorMessage.value = ''
+  savedJobItems.value = null
   try {
-    const response = await listJobs({
+    const query = {
       keyword: keyword.value || undefined,
       category: filters.category || undefined,
       city: filters.city || undefined,
@@ -547,15 +554,21 @@ async function loadJobs() {
       education: educationQueryValue.value || undefined,
       industry: filters.industry || undefined,
       companySize: filters.companySize || undefined,
-      sort: sort.value,
-      page: 1,
-      size: 50
-    })
+      sort: sort.value
+    }
+    const [response, savedItems] = await Promise.all([
+      listJobs({ ...query, page: 1, size: 50 }),
+      loadSavedJobItems(listJobs, [...savedJobs.value], query)
+    ])
+    if (revision !== jobsRevision) return
     jobs.value = response.data?.items || []
+    savedJobItems.value = savedItems
   } catch (error) {
+    if (revision !== jobsRevision) return
+    jobs.value = []
     errorMessage.value = error?.message || '岗位数据暂时无法读取，请稍后重试'
   } finally {
-    loading.value = false
+    if (revision === jobsRevision) loading.value = false
   }
 }
 
@@ -632,7 +645,7 @@ function clearAllFilters() {
 function readSavedJobs() {
   try {
     const saved = JSON.parse(localStorage.getItem('zhipin-ai-saved-jobs') || '[]')
-    return Array.isArray(saved) ? saved.map(String) : []
+    return normalizeSavedJobIds(saved)
   } catch {
     return []
   }
@@ -658,6 +671,8 @@ function toggleSaved(id) {
     showToast('已取消收藏')
   } else {
     next.add(key)
+    const job = jobs.value.find(item => String(item.id) === key)
+    if (job) savedJobItems.value = sortSavedJobItems([...(savedJobItems.value || []).filter(item => String(item.id) !== key), job], sort.value)
     showToast('已收藏该岗位')
   }
   savedJobs.value = next
@@ -705,14 +720,30 @@ function closePanelOnEscape(event) {
   if (event.key === 'Escape') activePanel.value = ''
 }
 
+function syncSavedJobs() {
+  const latest = new Set(readSavedJobs())
+  if (latest.size === savedJobs.value.size && [...latest].every(id => savedJobs.value.has(id))) return
+  savedJobs.value = latest
+  loadJobs()
+}
+
+function handleSavedJobsStorage(event) {
+  if (event.key === 'zhipin-ai-saved-jobs' || event.key === null) syncSavedJobs()
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', closePanelOnEscape)
+  window.addEventListener('storage', handleSavedJobsStorage)
+  window.addEventListener('focus', syncSavedJobs)
   await loadFilterOptions()
   await loadJobs()
 })
 
 onBeforeUnmount(() => {
+  jobsRevision++
   window.removeEventListener('keydown', closePanelOnEscape)
+  window.removeEventListener('storage', handleSavedJobsStorage)
+  window.removeEventListener('focus', syncSavedJobs)
   clearTimeout(toastTimer)
 })
 </script>
