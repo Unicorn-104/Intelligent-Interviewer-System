@@ -9,6 +9,7 @@ import '../../auth/domain/auth_session.dart';
 import '../data/interview_api.dart';
 import '../domain/interview_schedule.dart';
 import 'reschedule_request_action.dart';
+import 'conference_screen.dart';
 
 class InterviewDetailScreen extends StatefulWidget {
   const InterviewDetailScreen({
@@ -115,6 +116,27 @@ class _InterviewDetailScreenState extends State<InterviewDetailScreen> {
                 ),
               ],
               const SizedBox(height: AppSpacing.lg),
+              if ((appointment.roomToken?.isNotEmpty == true ||
+                      appointment.sessionId != null) &&
+                  (appointment.sessionStatus == null ||
+                      appointment.sessionStatus! < 2) &&
+                  (appointment.appointmentStatus == null ||
+                      [0, 1].contains(appointment.appointmentStatus)))
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => ConferenceScreen(
+                        session: widget.session,
+                        roomToken: appointment.roomToken?.isNotEmpty == true
+                            ? appointment.roomToken
+                            : null,
+                        sessionId: appointment.sessionId,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.videocam_outlined),
+                  label: const Text('进入面试准备'),
+                ),
               if (snapshot.connectionState == ConnectionState.waiting)
                 const Center(child: CircularProgressIndicator())
               else if (snapshot.hasError)
