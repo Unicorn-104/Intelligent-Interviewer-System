@@ -136,6 +136,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <sql id="jobFilters">
         WHERE pos.pos_status = 1
           AND cmp.cmp_status = 1
+        <if test="query.jobIds != null">
+            <choose>
+                <when test="query.jobIds.size() > 0">
+                    AND pos.pos_id IN
+                    <foreach collection="query.jobIds" item="jobId" open="(" separator="," close=")">
+                        #{jobId}
+                    </foreach>
+                </when>
+                <otherwise>AND 1 = 0</otherwise>
+            </choose>
+        </if>
         <if test="query.companyId != null">
             AND pos.pos_company_id = #{query.companyId}
         </if>

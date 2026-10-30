@@ -80,6 +80,43 @@ class AgentJobMatchScoreTest
     }
 
     @Test
+    void savedJobIdsRestrictBothListAndPaginationCount()
+    {
+        AgentJobQuery query = matchQuery();
+        query.setJobIds(List.of(1L, 3L, 999L));
+        Page<AgentJob> page = PageHelper.startPage(1, 1);
+        List<AgentJob> jobs = mapper.selectJobList(query, 100L);
+        assertEquals(2, page.getTotal());
+        assertEquals(List.of(1L), jobs.stream().map(AgentJob::getId).toList());
+        PageHelper.startPage(2, 1);
+        assertEquals(List.of(3L), mapper.selectJobList(query, 100L).stream().map(AgentJob::getId).toList());
+    }
+
+    @Test
+    void savedJobsKeepAvailabilityAndCurrentFiltersWithoutDeletingSavedIds() throws Exception
+    {
+        execute("update t_pos set pos_status = 0 where pos_id = 2");
+        AgentJobQuery query = matchQuery();
+        query.setJobIds(List.of(1L, 2L, 3L, 999L));
+        query.setKeyword("前端");
+        query.setCity("杭州");
+        assertEquals(List.of(3L), mapper.selectJobList(query, 100L).stream().map(AgentJob::getId).toList());
+        query.setKeyword(null);
+        assertEquals(2, mapper.selectJobList(query, 100L).size());
+        execute("update t_cmp set cmp_status = 0 where cmp_id = 1");
+        assertTrue(mapper.selectJobList(query, 100L).isEmpty());
+        assertEquals(4, query.getJobIds().size());
+    }
+
+    @Test
+    void explicitEmptySavedIdsNeverReturnAllJobs()
+    {
+        AgentJobQuery query = matchQuery();
+        query.setJobIds(List.of());
+        assertTrue(mapper.selectJobList(query, 100L).isEmpty());
+    }
+
+    @Test
     void sameCompanyJobsUseTheirOwnRequirementsInsteadOfCompanyTalentScore()
     {
         List<AgentJob> jobs = mapper.selectJobList(matchQuery(), 100L);
