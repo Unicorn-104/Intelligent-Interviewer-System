@@ -83,12 +83,6 @@
             ers_updated_at = now()
     </insert>
 
-    <update id="updateTalStatus">
-        update t_tal
-        set tal_status = #{status}, tal_exam_record_id = #{recordId}, tal_updated_at = now()
-        where tal_id = #{talId}
-    </update>
-
     <!-- ============ 成绩报告 ============ -->
 
     <select id="selectResultList" resultType="java.util.LinkedHashMap">

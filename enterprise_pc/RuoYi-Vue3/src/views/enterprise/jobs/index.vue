@@ -1,9 +1,10 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, Plus, Sparkles, GraduationCap, CalendarClock, Users, WandSparkles, ChevronRight, Pencil, Copy } from '@/views/enterprise/components/icons'
+import { Search, Plus, Sparkles, GraduationCap, CalendarClock, Users, WandSparkles, ChevronRight, Pencil, Copy, Share2 } from '@/views/enterprise/components/icons'
 import JobCard from '@/views/enterprise/components/JobCard.vue'
 import PublishJobModal from '@/views/enterprise/components/PublishJobModal.vue'
+import ShareJobModal from '@/views/enterprise/components/ShareJobModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listJobs, jobDepartments, changeJobStatus, jobDetail, duplicateJob } from '@/api/system/job'
 
@@ -158,9 +159,21 @@ async function copyJob() {
   } catch (e) { /* 拦截器已提示 */ }
 }
 
+// 分享当前查看的岗位：从消息中心已有会话的联系人里选择后发送岗位卡片
+const shareOpen = ref(false)
+
+function openShare() {
+  if (!selected.value.id) return notify('请先选择需要分享的岗位')
+  shareOpen.value = true
+}
+
+function onShared(name) {
+  shareOpen.value = false
+  notify(`岗位卡片已分享给 ${name}`)
+}
+
 onMounted(async () => {
   const res = await jobDepartments()
-  departments.value = res.data || []
   await fetchJobs()
   await nextTick()
   updatePageSize()
@@ -193,7 +206,7 @@ onUnmounted(() => resizeObserver?.disconnect())
         <div class="profile-section"><h3>职责关键词</h3><ul><li v-for="r in selected.responsibilities" :key="r">{{ r }}</li></ul></div>
         <div class="match-box"><div><span>胜任力模型匹配度</span><b>92%</b></div><div class="meter"><i /></div><p><span>专业技能 96%</span><span>项目交付 90%</span><span>沟通协作 88%</span></p></div>
         </div>
-        <div class="analysis-actions"><div class="row-actions"><button class="btn sm" @click="openEdit"><Pencil :size="13"/>编辑</button><button class="btn sm" @click="copyJob"><Copy :size="13"/>复制</button></div><button class="btn ghost-primary" @click="router.push(`/enterprise/jobs/${selected.id}`)">查看完整岗位详情<ChevronRight :size="14"/></button><button class="process-btn" @click="router.push(`/enterprise/jobs/${selected.id}/workflow`)">招聘流程配置 <ChevronRight :size="14"/></button></div>
+        <div class="analysis-actions"><div class="row-actions"><button class="btn sm" @click="openEdit"><Pencil :size="13"/>编辑</button><button class="btn sm" @click="copyJob"><Copy :size="13"/>复制</button><button class="btn sm" :disabled="selected.statusCode !== 1" :title="selected.statusCode === 1 ? '分享该岗位给消息中心联系人' : '仅招聘中的岗位可分享'" @click="openShare"><Share2 :size="13"/>分享</button></div><button class="btn ghost-primary" @click="router.push(`/enterprise/jobs/${selected.id}`)">查看完整岗位详情<ChevronRight :size="14"/></button><button class="process-btn" @click="router.push(`/enterprise/jobs/${selected.id}/workflow`)">招聘流程配置 <ChevronRight :size="14"/></button></div>
       </aside>
 
       <section class="card list-card">
@@ -209,6 +222,7 @@ onUnmounted(() => resizeObserver?.disconnect())
     </div>
     <PublishJobModal v-if="publishOpen" @close="publishOpen = false" @submitted="(s) => { publishOpen = false; fetchJobs(); notify(s === 0 ? '草稿已保存' : '岗位发布成功') }" />
     <PublishJobModal v-if="editOpen" :edit="true" :job="editJob" @close="editOpen = false" @submitted="onEdited" />
+    <ShareJobModal v-if="shareOpen" :job="selected" @close="shareOpen = false" @sent="onShared" />
     <ToastMessage :message="toast" />
   </div>
 </template>

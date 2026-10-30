@@ -329,6 +329,8 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         if (!Boolean.TRUE.equals(application.getCanWithdraw())
                 || applicationMapper.withdrawApplication(userId, applicationId) != 1)
             throw new ServiceException("投递已进入招聘流程或状态已更新，无法撤回，请刷新后查看", 409);
+        // 同步终止流程实例，避免撤回后实例仍显示进行中
+        applicationMapper.terminateProcessInstance(applicationId);
         return selectApplication(userId, applicationId);
     }
 

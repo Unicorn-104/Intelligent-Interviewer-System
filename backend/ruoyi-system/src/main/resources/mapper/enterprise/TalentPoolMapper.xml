@@ -10,11 +10,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select t.tal_id as talentId, t.tal_status as status, t.tal_matched_score as matchedScore,
                t.tal_current_round as currentRound, t.tal_resume_id as resumeId,
                date_format(t.tal_updated_at, '%Y-%m-%d %H:%i') as updateTime,
-               case when t.tal_status in (8, 9) then 1
-                    when t.tal_status = 3 and exists (select 1 from t_tal_status_log sl where sl.tsl_candidate_id = t.tal_id and sl.tsl_to_status = 2) then 2
-                    when t.tal_status = 3 then 4
-                    when t.tal_archive_source = 3 then 3
-                    else 0 end as archiveSource,
+               ifnull(t.tal_archive_source, 0) as archiveSource,
                u.user_id as userId, u.nick_name as name, u.phonenumber as phone, u.email as email,
                r.rbs_job_direction as jobDirection,
                (select group_concat(tg_name separator ',') from t_tal_tag where tg_candidate_id = t.tal_id) as tags
@@ -36,11 +32,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             and r.rbs_job_direction = #{direction}
         </if>
         <if test="archiveSource != null">
-            and (case when t.tal_status in (8, 9) then 1
-                      when t.tal_status = 3 and exists (select 1 from t_tal_status_log sl where sl.tsl_candidate_id = t.tal_id and sl.tsl_to_status = 2) then 2
-                      when t.tal_status = 3 then 4
-                      when t.tal_archive_source = 3 then 3
-                      else 0 end) = #{archiveSource}
+            and ifnull(t.tal_archive_source, 0) = #{archiveSource}
         </if>
         order by t.tal_id desc
     </select>
@@ -65,14 +57,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select t.tal_id as talentId, t.tal_status as status, t.tal_matched_score as matchedScore,
                t.tal_current_round as currentRound, t.tal_resume_id as resumeId,
                date_format(t.tal_updated_at, '%Y-%m-%d %H:%i') as updateTime,
-               case when t.tal_status in (8, 9) then 1
-                    when t.tal_status = 3 and exists (select 1 from t_tal_status_log sl where sl.tsl_candidate_id = t.tal_id and sl.tsl_to_status = 2) then 2
-                    when t.tal_status = 3 then 4
-                    when t.tal_archive_source = 3 then 3
-                    else 0 end as archiveSource,
+               ifnull(t.tal_archive_source, 0) as archiveSource,
                u.user_id as userId, u.nick_name as name, u.phonenumber as phone, u.email as email,
                r.rbs_job_direction as jobDirection, 2 as searchFilterVersion,
                education.highestEducation as highestEducation, experience.workMonths as workMonths,
+               (select e.edu_school from t_res_education e
+                   where e.edu_resume_id = t.tal_resume_id and e.edu_school is not null
+                   order by e.edu_end_date desc, e.edu_id desc limit 1) as school,
                nullif(trim(u.current_city), '') as currentCity, nullif(trim(u.target_city), '') as targetCity,
                date_format(u.login_date, '%Y-%m-%d %H:%i:%s') as lastLoginTime,
                (select group_concat(tg_name separator ',') from t_tal_tag where tg_candidate_id = t.tal_id) as tags
@@ -115,11 +106,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             and r.rbs_job_direction = #{direction}
         </if>
         <if test="archiveSource != null">
-            and (case when t.tal_status in (8, 9) then 1
-                      when t.tal_status = 3 and exists (select 1 from t_tal_status_log sl where sl.tsl_candidate_id = t.tal_id and sl.tsl_to_status = 2) then 2
-                      when t.tal_status = 3 then 4
-                      when t.tal_archive_source = 3 then 3
-                      else 0 end) = #{archiveSource}
+            and ifnull(t.tal_archive_source, 0) = #{archiveSource}
+        </if>
+        <if test="criteria.positionId != null">
+            and exists (select 1 from t_app_record ar
+                where ar.app_candidate_id = t.tal_id and ar.app_position_id = #{criteria.positionId})
         </if>
         <if test="criteria.minimumEducation != null">
             and education.highestEducation &gt;= #{criteria.minimumEducation}
@@ -205,6 +196,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                date_format(a.app_created_at, '%Y-%m-%d %H:%i') as appliedAt,
                date_format(a.app_updated_at, '%Y-%m-%d %H:%i') as updateTime,
                p.pos_id as positionId, p.pos_title as positionName, p.pos_work_city as city,
+               c.cmp_name as companyName,
                u.user_id as userId, u.nick_name as name, u.phonenumber as phone,
                r.rbs_job_direction as jobDirection,
                (select o.ofr_status from t_off_offer o where o.ofr_candidate_id = t.tal_id
@@ -216,9 +208,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from t_app_record a
         join t_pos p on p.pos_id = a.app_position_id and p.pos_company_id = #{companyId}
         join t_tal t on t.tal_id = a.app_candidate_id and t.tal_company_id = #{companyId}
+        left join t_cmp c on c.cmp_id = p.pos_company_id
         left join sys_user u on u.user_id = t.tal_user_id
         left join t_res_base r on r.rbs_id = a.app_resume_id
         where 1 = 1
+        <if test="talentId != null">
+            and t.tal_id = #{talentId}
+        </if>
         <if test="positionId != null">
             and a.app_position_id = #{positionId}
         </if>
@@ -286,10 +282,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select pos_id from t_pos where pos_id = #{positionId} and pos_company_id = #{companyId}
     </select>
 
-    <!-- 批量更新候选人流程状态（状态变更由触发器 trg_tal_status_log_after_update 自动写入日志） -->
+    <!-- 批量更新候选人流程状态：已淘汰/已录用为终态，只允许保持原状态，禁止翻案 -->
     <update id="updateTalentStatus">
         update t_tal set tal_status = #{status}, tal_updated_at = now()
         where tal_company_id = #{companyId}
+          and (tal_status not in (3, 4) or tal_status = #{status})
           and tal_id in
         <foreach collection="talIds" item="talId" open="(" separator="," close=")">
             #{talId}
@@ -329,6 +326,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <select id="selectTalentById" resultType="java.util.LinkedHashMap">
         select t.tal_id as talentId, t.tal_status as status, t.tal_matched_score as matchedScore,
                t.tal_current_round as currentRound, t.tal_resume_id as resumeId,
+               ifnull(t.tal_archive_source, 0) as archiveSource,
                u.user_id as userId, u.nick_name as name, u.phonenumber as phone, u.email as email,
                r.rbs_resume_name as resumeName, r.rbs_job_direction as jobDirection
         from t_tal t

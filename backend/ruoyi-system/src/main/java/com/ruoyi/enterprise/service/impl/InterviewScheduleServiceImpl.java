@@ -24,6 +24,7 @@ import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.RescheduleMessageService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 
@@ -37,6 +38,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     @Autowired private EnterpriseJobMapper jobMapper;
     @Autowired private ScreeningMapper screeningMapper;
     @Autowired private RescheduleMessageService rescheduleMessages;
+    @Autowired private TalStatusService talStatusService;
 
     private Long company(Long userId)
     {
@@ -102,6 +104,9 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         if (candidateId == null || scheduleMapper.lockCandidate(candidateId) == null
                 || scheduleMapper.countApplication(candidateId, positionId) == 0)
             throw new ServiceException("候选人未投递当前岗位");
+        // 初筛淘汰/已撤回的投递不允许再安排面试
+        if (scheduleMapper.countSchedulableApplication(candidateId, positionId) == 0)
+            throw new ServiceException("该投递已初筛淘汰或已撤回，无法安排面试");
         Set<Long> interviewerIds = new TreeSet<>();
         for (Map<String, Object> row : stages) interviewerIds.add(requiredId(row.get("interviewerId")));
         for (Long id : interviewerIds) lockInterviewer(userId, companyId, id);
@@ -153,8 +158,12 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             row.put("status", 0);
             row.put("message", "邀约已创建，等待候选人确认");
         }
-        // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
-        scheduleMapper.markCandidateInterviewing(candidateId);
+        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退
+        if (!talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
+                List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
+                        TalStatusService.TAL_EXAM_PASSED),
+                positionId, null, "安排面试", userId))
+            throw new ServiceException("候选人已淘汰或已录用，无法安排面试");
         // 同时把该岗位投递状态同步为「已约面」，投递详情/候选人列表立即可见
         screeningMapper.advanceApplicationStatus(positionId, candidateId, 3, List.of(0, 1, 2));
         return prepared;

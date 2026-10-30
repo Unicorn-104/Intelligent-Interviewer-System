@@ -166,13 +166,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           and a.apt_status in (0, 1)
     </select>
 
-    <!-- 发起面试后把候选人流程状态推进为「面试中」(2)；已面试中/已淘汰/已录用保持不变 -->
-    <update id="markCandidateInterviewing">
-        update t_tal
-        set tal_status = 2,
-            tal_updated_at = sysdate()
-        where tal_id = #{candidateId} and tal_company_id = #{companyId} and tal_status not in (2, 3, 4)
-    </update>
+    <!-- 可发起面试的投递：初筛淘汰(2)与已撤回(9)的投递不允许再发起面试 -->
+    <select id="countSchedulableApplication" resultType="int">
+        select count(*) from t_app_record
+        where app_candidate_id = #{candidateId} and app_position_id = #{positionId}
+          and app_status not in (2, 9)
+    </select>
+
+
 
     <insert id="insertAppointment" parameterType="java.util.Map" useGeneratedKeys="true" keyProperty="appointmentId">
         insert into t_sch_appointment

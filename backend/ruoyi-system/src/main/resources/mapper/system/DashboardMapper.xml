@@ -37,14 +37,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <select id="selectFunnel" parameterType="Long" resultType="java.util.HashMap">
         <!-- 阶段按累计口径统计（进入过该阶段即计入），避免阶段性状态互斥导致靠前阶段为 0；
-             pendingInterview/rejected 保留给移动端展示 -->
+             pendingInterview 为已通过初筛、待安排面试；hired 仅统计已录用(4)。
+             状态口径：0新入库 1初筛通过 2面试中 3已淘汰 4已录用 5待笔试 6笔试中 7笔试通过 8笔试未通过 9笔试缺考 -->
         select
             count(*) as applied,
             ifnull(sum(case when tal_status != 0 then 1 else 0 end), 0) as screened,
-            ifnull(sum(case when tal_status in (2, 4, 5) then 1 else 0 end), 0) as interviewing,
-            ifnull(sum(case when tal_status = 2 then 1 else 0 end), 0) as pendingInterview,
+            ifnull(sum(case when tal_status in (2, 4) then 1 else 0 end), 0) as interviewing,
+            ifnull(sum(case when tal_status = 1 then 1 else 0 end), 0) as pendingInterview,
             ifnull(sum(case when tal_status = 3 then 1 else 0 end), 0) as rejected,
-            ifnull(sum(case when tal_status in (4, 5) then 1 else 0 end), 0) as hired
+            ifnull(sum(case when tal_status = 4 then 1 else 0 end), 0) as hired
         from t_tal
         where tal_company_id = #{companyId}
           and tal_created_at >= date_sub(now(), interval 30 day)
@@ -64,12 +65,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <select id="selectTodoFinalReview" parameterType="Long" resultType="java.util.HashMap">
         select t.tal_id as talId, u.nick_name as candidateName, p.pos_title as positionTitle
-        from t_tal t
+        from t_int_session s
+        join t_int_evaluation e on e.evl_session_id = s.ses_id
+        join t_tal t on t.tal_id = s.ses_candidate_id
         join sys_user u on u.user_id = t.tal_user_id
-        join t_process_instance i on i.pin_id = t.tal_process_instance_id
-        join t_pos p on p.pos_id = i.pin_position_id
-        where t.tal_company_id = #{companyId} and t.tal_status = 7
-        order by t.tal_updated_at desc
+        join t_pos p on p.pos_id = s.ses_position_id
+        where p.pos_company_id = #{companyId} and e.evl_hr_status = 0 and s.ses_status = 2
+        order by e.evl_created_at desc
         limit 1
     </select>
 

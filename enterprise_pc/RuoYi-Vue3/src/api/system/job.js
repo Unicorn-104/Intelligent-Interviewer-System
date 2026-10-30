@@ -55,6 +55,15 @@ export function duplicateJob(posId) {
   })
 }
 
+// 分享岗位卡片到已有聊天会话（消息中心联系人），requestId 为 24 位十六进制幂等标识
+export function shareJobCard(data) {
+  return request({
+    url: '/enterprise/chat/job-cards',
+    method: 'post',
+    data
+  })
+}
+
 // AI 解析 JD 文本（仅解析回填表单，不写库）
 export function parseJdText(jdText) {
   return request({

@@ -11,6 +11,7 @@ import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.ConferenceMapper;
 
 /**
@@ -24,6 +25,7 @@ public class ConferenceServiceImplTest
     private ConferenceMapper conferenceMapper;
     private IInterviewScheduleService scheduleService;
     private ScreeningMapper screeningMapper;
+    private TalStatusService talStatusService;
 
     @BeforeEach
     void setUp()
@@ -35,6 +37,9 @@ public class ConferenceServiceImplTest
         ReflectionTestUtils.setField(service, "conferenceMapper", conferenceMapper);
         ReflectionTestUtils.setField(service, "scheduleService", scheduleService);
         ReflectionTestUtils.setField(service, "screeningMapper", screeningMapper);
+        talStatusService = mock(TalStatusService.class);
+        when(talStatusService.change(anyLong(), anyInt(), anyList(), anyLong(), any(), any(), anyLong())).thenReturn(true);
+        ReflectionTestUtils.setField(service, "talStatusService", talStatusService);
     }
 
     /** 发起基础桩：HR(5) 发起、候选人(11)、岗位(7)、公司(2)、面试官(19)。 */
@@ -43,6 +48,7 @@ public class ConferenceServiceImplTest
         when(conferenceMapper.selectCompanyIdByUser(5L)).thenReturn(2L);
         when(conferenceMapper.selectTalentByUserId(11L, 2L)).thenReturn(Map.of("candidateId", 11L));
         when(conferenceMapper.selectPositionCompanyId(7L)).thenReturn(2L);
+        when(conferenceMapper.countSchedulableApplication(11L, 7L)).thenReturn(1);
         when(conferenceMapper.selectCompanyEmployees(anyMap())).thenReturn(List.of(Map.of("userId", 19L)));
         when(conferenceMapper.insertAppointment(anyMap())).thenAnswer(invocation ->
         {
@@ -77,8 +83,9 @@ public class ConferenceServiceImplTest
         order.verify(scheduleService).cancelForRelaunch(5L, 101L);
         order.verify(scheduleService).cancelForRelaunch(5L, 102L);
         order.verify(conferenceMapper).insertAppointment(anyMap());
-        order.verify(screeningMapper).advanceApplicationStatus(7L, 11L, 3, List.of(0, 1, 2));
-        verify(conferenceMapper).markCandidateInterviewing(11L, 2L);
+        verify(talStatusService).change(11L, TalStatusService.TAL_INTERVIEWING,
+                List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
+                        TalStatusService.TAL_EXAM_PASSED), 7L, null, "发起视频面试", 5L);
         assertEquals(301L, ((Number) result.get("sessionId")).longValue());
         assertEquals("合成候选人", result.get("candidateName"));
     }
@@ -92,7 +99,6 @@ public class ConferenceServiceImplTest
         var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L));
 
         verify(scheduleService, never()).cancelForRelaunch(anyLong(), anyLong());
-        verify(screeningMapper).advanceApplicationStatus(7L, 11L, 3, List.of(0, 1, 2));
         assertEquals(301L, ((Number) result.get("sessionId")).longValue());
     }
 

@@ -66,6 +66,8 @@ public interface AgentApplicationMapper
 
     int withdrawApplication(@Param("userId") Long userId, @Param("applicationId") Long applicationId);
 
+    int terminateProcessInstance(@Param("applicationId") Long applicationId);
+
     AgentApplication selectExistingApplication(@Param("userId") Long userId, @Param("jobId") Long jobId);
 
     Long selectCandidateId(@Param("userId") Long userId, @Param("companyId") Long companyId);

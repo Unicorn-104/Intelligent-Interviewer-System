@@ -23,6 +23,7 @@ import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.config.AsrProperties;
 import com.ruoyi.system.mapper.ConferenceMapper;
 import com.ruoyi.system.service.IConferenceService;
@@ -82,6 +83,9 @@ public class ConferenceServiceImpl implements IConferenceService
     /** 查看候选人简历/生成面试参考提示时复用人才库既有简历查询能力 */
     @Autowired
     private ITalentPoolService talentPoolService;
+
+    @Autowired
+    private TalStatusService talStatusService;
 
     @Autowired
     private RedisCache redisCache;
@@ -216,6 +220,11 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("岗位不存在或无权访问");
         }
+        // 初筛淘汰/已撤回的投递不允许再发起面试
+        if (conferenceMapper.countSchedulableApplication(candidateId, positionId) == 0)
+        {
+            throw new ServiceException("该投递已初筛淘汰或已撤回，无法发起面试");
+        }
         // 面试阶段可空；传了就必须属于该岗位的流程模板
         Map<String, Object> stage = findStage(positionId, companyId, stageId);
 
@@ -266,11 +275,14 @@ public class ConferenceServiceImpl implements IConferenceService
         session.put("cascadeRound", stage == null || stage.get("sortOrder") == null ? 1 : toInt(stage.get("sortOrder")));
         conferenceMapper.insertSession(session);
 
-        // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
-        conferenceMapper.markCandidateInterviewing(candidateId, companyId);
-        // 与面试调度服务邀约口径一致，把该岗位投递状态同步为「已约面」；
-        // 取消旧预约时的状态恢复（已约面→初筛通过）由本步对称补齐，笔试态(4-8)不受影响
-        screeningMapper.advanceApplicationStatus(positionId, candidateId, 3, List.of(0, 1, 2));
+        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退
+        if (!talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
+                List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
+                        TalStatusService.TAL_EXAM_PASSED),
+                positionId, null, "发起视频面试", userId))
+        {
+            throw new ServiceException("候选人已淘汰或已录用，无法发起面试");
+        }
 
         Long sessionId = toLong(session.get("sessionId"));
         String roomId = "INTERVIEW-" + sessionId;
