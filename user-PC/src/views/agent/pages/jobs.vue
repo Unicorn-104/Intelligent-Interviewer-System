@@ -765,7 +765,9 @@ onBeforeUnmount(() => {
 .position-section:last-of-type{border-bottom:0}
 .position-section h3,.industry-section h3{margin:0;padding:4px 9px 7px;color:#6c7b90;font-size:12px;font-weight:700}
 .position-section-list{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:6px 10px}
-.industry-grid{display:block;max-height:430px}
+.industry-panel{display:flex;flex-direction:column}
+.industry-panel > .panel-heading{flex-shrink:0}
+.industry-panel > .industry-grid{display:block;flex:1 1 auto;min-height:0;max-height:none;padding-bottom:24px;overscroll-behavior:contain}
 .contact-button{min-height:32px;padding:0 12px;border:1px solid #bfd5f2;border-radius:6px;color:#2b7fff;background:#f5f9ff;font-size:11px;font-weight:800;cursor:pointer}
 .all-industry{display:block;width:100%;margin-bottom:8px;color:#0aa3a6;background:#f3fbfb;font-weight:800}
 .industry-section{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:5px 12px;padding:8px 0;border-top:1px solid #edf1f6}
