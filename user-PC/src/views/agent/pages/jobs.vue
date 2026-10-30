@@ -146,7 +146,7 @@
         </div>
         <div class="hot-tags">
           <span class="hot-label">试试：</span>
-          <button v-for="tag in hotTags" :key="tag" class="hot-tag" type="button" @click="keyword = tag; loadJobs()">{{ tag }}</button>
+          <button v-for="tag in hotTags" :key="tag.label" class="hot-tag" type="button" @click="selectHotTag(tag)">{{ tag.label }}</button>
         </div>
       </section>
 
@@ -270,7 +270,13 @@ const filterOptions = reactive({
 let toastTimer
 let jobsRevision = 0
 
-const hotTags = ['AI 产品经理', 'React', '大模型应用', '用户增长', '杭州']
+const hotTags = [
+  { label: 'AI 产品经理', keyword: 'AI 产品经理' },
+  { label: 'React', keyword: 'React' },
+  { label: '大模型应用', keyword: '大模型应用' },
+  { label: '用户增长', keyword: '用户增长' },
+  { label: '杭州', city: '杭州' }
+]
 const salaryOptions = [
   { value: 'under-5', label: '5K以下', min: '', max: 5000 },
   { value: '5-10', label: '5-10K', min: 5000, max: 10000 },
@@ -590,6 +596,13 @@ function togglePanel(panel) {
     positionSearch.value = ''
     selectedPositionGroup.value = filters.category ? 'published' : 'all'
   }
+}
+
+function selectHotTag(tag) {
+  keyword.value = tag.keyword || ''
+  if (tag.city) filters.city = tag.city
+  activePanel.value = ''
+  return loadJobs()
 }
 
 function selectSimpleFilter(key, value) {

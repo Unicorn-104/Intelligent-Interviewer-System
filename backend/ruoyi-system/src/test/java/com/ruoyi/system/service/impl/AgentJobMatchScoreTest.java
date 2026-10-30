@@ -80,6 +80,26 @@ class AgentJobMatchScoreTest
     }
 
     @Test
+    void cityFilterExcludesOtherWorkCitiesEvenWhenCompanyNameContainsCity() throws Exception
+    {
+        execute("update t_cmp set cmp_name = '杭州示例公司' where cmp_id = 1");
+        AgentJobQuery query = matchQuery();
+        query.setKeyword("杭州");
+        assertEquals(3, mapper.selectJobList(query, 100L).size());
+        query.setKeyword(null);
+        query.setCity("杭州");
+        Page<AgentJob> page = PageHelper.startPage(1, 10);
+        List<AgentJob> jobs = mapper.selectJobList(query, 100L);
+        assertEquals(2, page.getTotal());
+        assertTrue(jobs.stream().allMatch(job -> "杭州".equals(job.getWorkCity())));
+        query.setJobIds(List.of(1L, 2L, 3L));
+        Page<AgentJob> savedPage = PageHelper.startPage(1, 10);
+        List<AgentJob> savedJobs = mapper.selectJobList(query, 100L);
+        assertEquals(2, savedPage.getTotal());
+        assertTrue(savedJobs.stream().allMatch(job -> "杭州".equals(job.getWorkCity())));
+    }
+
+    @Test
     void savedJobIdsRestrictBothListAndPaginationCount()
     {
         AgentJobQuery query = matchQuery();
