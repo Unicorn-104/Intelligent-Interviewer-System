@@ -14,6 +14,15 @@ abstract final class AppColors {
   static const primarySoft = Color(0xFFEAF2FF);
   static const purple = Color(0xFF7A3DFF);
   static const orange = Color(0xFFFF6B00);
+  /// 岗位详情/发布页主强调色（青绿色），参考 BOSS 直聘风格。
+  static const teal = Color(0xFF00BFA5);
+  static const tealDeep = Color(0xFF009688);
+  static const tealSoft = Color(0xFFE0F5F2);
+  /// 危险操作的浅红底。
+  static const dangerSoft = Color(0xFFFDECEC);
+  /// 表单页浅灰蓝背景与浅色输入框底。
+  static const pageBackground = Color(0xFFF4F7FB);
+  static const fieldBackground = Color(0xFFF6F8FC);
   static const green = Color(0xFF1B9A72);
   static const warningSoft = Color(0xFFFFF4E5);
   static const red = Color(0xFFEE1D36);

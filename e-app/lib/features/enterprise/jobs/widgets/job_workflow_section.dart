@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../../theme/app_theme.dart';
-import '../../../../widgets/page_states.dart';
-import '../../../../widgets/skeleton_list.dart';
 import '../models/job_detail_view_data.dart';
 import 'job_publish_workflow.dart';
 
@@ -87,92 +85,6 @@ Future<void> showJobWorkflowStageEditor({
     await route.completed;
   } finally {
     draft.dispose();
-  }
-}
-
-class JobWorkflowSection extends StatelessWidget {
-  const JobWorkflowSection({
-    super.key,
-    required this.positionId,
-    required this.state,
-    required this.expanded,
-    required this.onExpanded,
-    required this.onReload,
-  });
-  final int positionId;
-  final JobSectionState<Map<String, dynamic>> state;
-  final bool expanded;
-  final ValueChanged<bool> onExpanded;
-  final VoidCallback onReload;
-
-  @override
-  Widget build(BuildContext context) {
-    final raw = state.data?['stages'];
-    final stages = raw is List ? raw.whereType<Map>().toList() : const <Map>[];
-    final subtitle = state.loading
-        ? '加载中'
-        : state.error != null
-        ? '加载失败，展开重试'
-        : stages.isEmpty
-        ? '未配置，点击展开'
-        : '已配置${stages.length}个阶段，点击展开';
-    return ExpansionTile(
-      key: PageStorageKey('job-workflow-expansion-$positionId'),
-      title: const Text('招聘流程'),
-      subtitle: Text(subtitle),
-      initiallyExpanded: expanded,
-      onExpansionChanged: onExpanded,
-      maintainState: true,
-      leading: const Icon(Icons.route_outlined, color: AppColors.interactive),
-      backgroundColor: AppColors.canvas,
-      collapsedBackgroundColor: AppColors.canvas,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppColors.hairline),
-      ),
-      collapsedShape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppColors.hairline),
-      ),
-      children: [
-        Padding(padding: const EdgeInsets.all(16), child: _body(stages)),
-      ],
-    );
-  }
-
-  Widget _body(List<Map> stages) {
-    if (state.loading) {
-      return const SkeletonList(rows: 1);
-    }
-    if (state.error != null) {
-      return PageMessage(
-        icon: Icons.cloud_off_outlined,
-        title: '招聘流程加载失败',
-        message: state.error!,
-        onAction: onReload,
-      );
-    }
-    if (state.data == null) {
-      return PageMessage(
-        icon: Icons.route_outlined,
-        title: '暂无招聘流程数据',
-        message: '请刷新后再配置',
-        onAction: onReload,
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (stages.isEmpty)
-          const Text('尚未配置招聘流程')
-        else
-          for (var index = 0; index < stages.length; index++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text('${index + 1}. ${jobValue(stages[index]['name'])}'),
-            ),
-      ],
-    );
   }
 }
 

@@ -97,7 +97,8 @@ void main() {
     final interviews = find.byKey(const Key('job-interviews-entry'));
     final edit = find.byKey(const Key('job-workflow-node-0'));
     expect(edit, findsOneWidget);
-    expect(find.text('面试安排'), findsNothing);
+    // 未打开面试安排页，页面内仅按钮标签一处「面试安排」。
+    expect(find.text('面试安排'), findsOneWidget);
     expect(find.text('查看本岗位的面试记录，支持日期范围筛选。'), findsNothing);
     expect(find.byKey(const Key('job-workflow-node-0')), findsOneWidget);
     expect(find.text('可继续添加'), findsOneWidget);
@@ -123,7 +124,7 @@ void main() {
     expect(find.text('编辑招聘流程'), findsNothing);
   });
 
-  testWidgets('取消编辑不保存，原流程展开后不再出现重复编辑入口', (tester) async {
+  testWidgets('取消编辑不保存，招聘流程折叠模块已移除', (tester) async {
     final source = DetailFakeSource();
     await pumpDetail(tester, source);
     final edit = find.byKey(const Key('job-workflow-node-0'));
@@ -132,29 +133,9 @@ void main() {
     await tester.tap(find.text('取消').last);
     await tester.pumpAndSettle();
     expect(source.savedWorkflows, isEmpty);
-    final flow = find.byKey(const PageStorageKey('job-workflow-expansion-1'));
-    await tester.scrollUntilVisible(
-      flow,
-      350,
-      scrollable: find
-          .descendant(
-            of: find.byType(JobBasicInfoTab),
-            matching: find.byType(Scrollable),
-          )
-          .first,
-    );
-    await tester.ensureVisible(flow);
-    await tester.pumpAndSettle();
-    await tester.tap(flow);
-    await tester.pumpAndSettle();
-    expect(find.text('1. 初筛'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: flow,
-        matching: find.byKey(const Key('job-workflow-edit')),
-      ),
-      findsNothing,
-    );
+    expect(find.byKey(const PageStorageKey('job-workflow-expansion-1')), findsNothing);
+    expect(find.text('招聘流程'), findsNothing);
+    expect(find.byKey(const Key('job-workflow-node-0')), findsOneWidget);
   });
 
   testWidgets('320dp窄屏流程节点和面试安排入口可见且不溢出', (tester) async {
@@ -328,57 +309,34 @@ void main() {
     expect(find.text('模型暂不可用，原有结果未变更'), findsOneWidget);
   });
 
-  testWidgets('JD 与招聘流程折叠状态跨 Tab 保持', (tester) async {
+  testWidgets('JD画像与招聘流程模块已彻底移除，页面以技能模块结束', (tester) async {
     final source = DetailFakeSource();
     await pumpDetail(tester, source);
-    final jd = find.byKey(const PageStorageKey('job-jd-expansion-1'));
-    final flow = find.byKey(const PageStorageKey('job-workflow-expansion-1'));
     final basicScrollable = find
         .descendant(
           of: find.byType(JobBasicInfoTab),
           matching: find.byType(Scrollable),
         )
         .first;
+    expect(find.byKey(const PageStorageKey('job-jd-expansion-1')), findsNothing);
+    expect(find.byKey(const PageStorageKey('job-workflow-expansion-1')), findsNothing);
+    expect(find.text('JD画像'), findsNothing);
     await tester.scrollUntilVisible(
-      jd,
-      300,
+      find.text('技能'),
+      400,
       scrollable: basicScrollable,
       maxScrolls: 20,
     );
-    expect(jd, findsOneWidget);
-    await tester.ensureVisible(jd);
-    await tester.pumpAndSettle();
-    await tester.tap(jd);
-    await tester.pumpAndSettle();
-    expect(find.text('重新解析'), findsOneWidget);
+    expect(find.text('技能'), findsOneWidget);
+    expect(find.text('JD画像'), findsNothing);
+    expect(find.text('招聘流程'), findsNothing);
+    expect(find.text('Java · 必备'), findsOneWidget);
     await tester.scrollUntilVisible(
-      flow,
-      400,
-      scrollable: find
-          .descendant(
-            of: find.byType(JobBasicInfoTab),
-            matching: find.byType(Scrollable),
-          )
-          .first,
-      maxScrolls: 20,
-    );
-    expect(flow, findsOneWidget);
-    await tester.tap(find.text('求职者'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('基础信息'));
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('重新解析'),
+      find.byKey(const Key('job-basic-published')),
       -400,
-      scrollable: find
-          .descendant(
-            of: find.byType(JobBasicInfoTab),
-            matching: find.byType(Scrollable),
-          )
-          .first,
+      scrollable: basicScrollable,
       maxScrolls: 20,
     );
-    expect(find.text('重新解析'), findsOneWidget);
   });
 
   testWidgets('面试入口保持独立，旧 initialTab 2 兼容进入合并后的求职者页', (tester) async {

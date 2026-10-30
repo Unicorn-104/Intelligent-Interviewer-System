@@ -79,7 +79,7 @@ class JobWorkflowTimeline extends StatelessWidget {
               children: [
                 if (count > 1)
                   Positioned(
-                    top: 11,
+                    top: 18,
                     left: cellWidth / 2,
                     right: cellWidth / 2,
                     child: Container(
@@ -87,7 +87,7 @@ class JobWorkflowTimeline extends StatelessWidget {
                       height: 2,
                       color: hasPlaceholder
                           ? AppColors.hairline
-                          : AppColors.interactive.withValues(alpha: .3),
+                          : AppColors.teal.withValues(alpha: .25),
                     ),
                   ),
                 Row(
@@ -111,11 +111,14 @@ class JobWorkflowTimeline extends StatelessWidget {
     );
   }
 
+  /// 圆形图标节点：已配置阶段为青绿实心圆，占位节点为浅灰。
   Widget _node(int index, bool placeholder, List<Map> stages) {
     final name = placeholder
         ? '可继续添加'
         : jobValue(stages[index]['name'], fallback: '未命名阶段');
-    final color = placeholder ? AppColors.textMuted : AppColors.interactive;
+    final type = placeholder
+        ? null
+        : int.tryParse('${stages[index]['type']}');
     return Semantics(
       label: placeholder ? '可继续添加招聘阶段' : '第${index + 1}阶段：$name',
       button:
@@ -146,33 +149,20 @@ class JobWorkflowTimeline extends StatelessWidget {
                   key: placeholder
                       ? const Key('job-workflow-placeholder')
                       : ValueKey('job-workflow-node-$index'),
-                  width: 24,
-                  height: 24,
+                  width: 36,
+                  height: 36,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: AppColors.canvas,
-                    border: Border.all(
-                      color: placeholder
-                          ? AppColors.hairline
-                          : AppColors.interactiveSoft,
-                      width: 4,
-                    ),
+                    color: placeholder
+                        ? const Color(0xFFEEF2F6)
+                        : AppColors.teal,
                   ),
-                  child: placeholder
-                      ? const Icon(
-                          Icons.add,
-                          size: 12,
-                          color: AppColors.textMuted,
-                        )
-                      : Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
+                  child: Icon(
+                    placeholder ? Icons.add : _stageIcon(type),
+                    size: 18,
+                    color: placeholder ? AppColors.textMuted : Colors.white,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Tooltip(
@@ -185,11 +175,11 @@ class JobWorkflowTimeline extends StatelessWidget {
                     style: TextStyle(
                       color: placeholder
                           ? AppColors.textMuted
-                          : AppColors.brand,
+                          : AppColors.body,
                       fontSize: 13,
                       fontWeight: placeholder
                           ? FontWeight.w400
-                          : FontWeight.w600,
+                          : FontWeight.w500,
                     ),
                   ),
                 ),
@@ -200,4 +190,12 @@ class JobWorkflowTimeline extends StatelessWidget {
       ),
     );
   }
+
+  IconData _stageIcon(int? type) => switch (type) {
+    1 => Icons.edit_note,
+    2 => Icons.smart_toy_outlined,
+    3 => Icons.people_alt_outlined,
+    4 => Icons.code,
+    _ => Icons.flag_outlined,
+  };
 }

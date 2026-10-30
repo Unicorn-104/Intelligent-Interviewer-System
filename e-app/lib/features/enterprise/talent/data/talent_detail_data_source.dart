@@ -88,8 +88,11 @@ class TalentDetailDataSource {
       rooms.getSessionContext(sessionId);
   Future<Map<String, dynamic>> loadWorkflow(int positionId) =>
       jobs.getJobWorkflow(positionId);
-  Future<List<Map<String, dynamic>>> loadAvailability(int id, {String? to}) =>
-      schedule.getInterviewerAvailability(id, to: to);
+  Future<List<Map<String, dynamic>>> loadAvailability(
+    int id, {
+    String? from,
+    String? to,
+  }) => schedule.getInterviewerAvailability(id, from: from, to: to);
   Future<Map<String, dynamic>> reschedule(
     int appointmentId, {
     required String newStartTime,

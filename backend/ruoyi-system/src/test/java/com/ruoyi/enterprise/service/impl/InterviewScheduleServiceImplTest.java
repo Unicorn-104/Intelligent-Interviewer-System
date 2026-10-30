@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.AnnotationTransactionAttribute
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 
@@ -48,8 +49,9 @@ public class InterviewScheduleServiceImplTest
             "create table t_pos(pos_id bigint primary key, pos_company_id bigint, pos_title varchar(100), pos_process_template_id bigint)",
             "create table t_process_instance(pin_candidate_id bigint, pin_position_id bigint)",
             "create table t_cmp_binding(bnd_company_id bigint, bnd_user_id bigint, bnd_status int)",
-            "create table t_process_stage(psg_id bigint primary key, psg_template_id bigint, psg_name varchar(100), psg_type int, psg_sort_order int)",
+            "create table t_process_stage(psg_id bigint primary key, psg_template_id bigint, psg_name varchar(100), psg_type int, psg_sort_order int, psg_interviewer_config_json varchar(2000))",
             "create table t_int_session(ses_id bigint, ses_appointment_id bigint)",
+            "create table t_int_evaluation(evl_session_id bigint, evl_hr_status int)",
             "create table t_sch_slot(slt_id bigint auto_increment primary key, slt_interviewer_id bigint, slt_position_id bigint, slt_start_time timestamp, slt_end_time timestamp, slt_status int, slt_updated_at timestamp)",
             "create table t_sch_appointment(apt_id bigint auto_increment primary key, apt_candidate_id bigint, apt_position_id bigint, apt_stage_id bigint, apt_stage_name varchar(100), apt_stage_type int, apt_stage_order int, apt_interviewer_id bigint, apt_slot_id bigint, apt_start_time timestamp, apt_end_time timestamp, apt_status int, apt_meeting_url varchar(255), apt_room_id varchar(100), apt_updated_at timestamp)",
             "insert into sys_user values(19,'0','面试官'),(20,'0','面试官二'),(11,'0','候选人'),(12,'0','候选人二')",
@@ -57,7 +59,7 @@ public class InterviewScheduleServiceImplTest
             "insert into t_pos values(7,1,'合成岗位',1)",
             "insert into t_process_instance values(11,7),(12,7)",
             "insert into t_cmp_binding values(1,19,1),(1,20,1)",
-            "insert into t_process_stage values(31,1,'在线笔试',1,1),(32,1,'技术面试',2,2)")) jdbc.execute(sql);
+            "insert into t_process_stage values(31,1,'在线笔试',1,1,'{\"duration\":30}'),(32,1,'技术面试',2,2,'{\"duration\":60}')")) jdbc.execute(sql);
         var factory = new SqlSessionFactoryBean();
         factory.setDataSource(ds);
         factory.setMapperLocations(new ClassPathResource("mapper/enterprise/InterviewScheduleMapper.xml"));
@@ -70,6 +72,7 @@ public class InterviewScheduleServiceImplTest
         ReflectionTestUtils.setField(target,"scheduleMapper",mapper);
         ReflectionTestUtils.setField(target,"dashboardMapper",companyMapper);
         ReflectionTestUtils.setField(target,"jobMapper",jobs);
+        ReflectionTestUtils.setField(target,"screeningMapper",mock(ScreeningMapper.class));
         var proxy = new ProxyFactory(target);
         proxy.setProxyTargetClass(true);
         proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(ds), new AnnotationTransactionAttributeSource()));
@@ -103,10 +106,12 @@ public class InterviewScheduleServiceImplTest
     @Test
     void rescheduleExcludesItselfPreservesDurationAndSupportsResize()
     {
+        // 阶段31配置时长为30分钟：客户端传入60也被忽略，以阶段配置为准。
         var appointment = service.invite(1L,11L,7L,31L,19L,"2099-01-02 09:00",60);
         long id = ((Number)appointment.get("appointmentId")).longValue();
+        assertEquals("2099-01-02 09:30",mapper.selectAppointmentById(id).get("endTime"));
         var moved = service.reschedule(1L,id,"2099-01-02 09:15",null,null);
-        assertEquals("2099-01-02 10:15:00",moved.get("endTime"));
+        assertEquals("2099-01-02 09:45:00",moved.get("endTime"));
         var resized = service.reschedule(1L,id,"2099-01-02 09:15",90,20L);
         assertEquals("2099-01-02 10:45:00",resized.get("endTime"));
         assertEquals(20L,resized.get("interviewerId"));
@@ -116,10 +121,12 @@ public class InterviewScheduleServiceImplTest
     @Test
     void conflictOnMoveKeepsOriginalAppointmentAndOccupiedSlot()
     {
+        // 阶段31配置时长30分钟：预约09:00-09:30；候选人12占用10:00-11:00。
         var appointment = service.invite(1L,11L,7L,31L,19L,"2099-01-02 09:00",60);
         service.invite(1L,12L,7L,null,19L,"2099-01-02 10:00",60);
         long id = ((Number)appointment.get("appointmentId")).longValue();
-        assertThrows(ServiceException.class,() -> service.reschedule(1L,id,"2099-01-02 09:30",null,null));
+        // 改期到09:45（09:45-10:15）与10:00-11:00重叠，应被拒绝且原预约不变。
+        assertThrows(ServiceException.class,() -> service.reschedule(1L,id,"2099-01-02 09:45",null,null));
         assertEquals("2099-01-02 09:00",mapper.selectAppointmentById(id).get("startTime"));
         assertEquals(2,jdbc.queryForObject("select count(*) from t_sch_slot where slt_status=0",Integer.class));
     }
@@ -132,6 +139,21 @@ public class InterviewScheduleServiceImplTest
         assertThrows(ServiceException.class,() -> service.invite(1L,11L,7L,31L,19L,"2020-01-02 09:00",45));
         service.invite(1L,11L,7L,31L,19L,"2099-01-02 09:00",45);
         assertThrows(ServiceException.class,() -> service.invite(1L,11L,7L,31L,19L,"2099-01-02 11:00",45));
+        assertEquals(1,count("t_sch_appointment"));
+    }
+    @Test
+    void stagedInviteUsesStageConfiguredDurationAndRejectsMissingConfig()
+    {
+        // 跨天排期：23:40 + 阶段配置30分钟 → 次日00:10；客户端伪造999分钟被忽略。
+        var appointment = service.invite(1L,11L,7L,31L,19L,"2099-01-03 23:40",999);
+        long id = ((Number)appointment.get("appointmentId")).longValue();
+        assertEquals("2099-01-04 00:10",mapper.selectAppointmentById(id).get("endTime"));
+        assertEquals("2099-01-03 23:40",mapper.selectAppointmentById(id).get("startTime"));
+        // 未配置时长的阶段拒绝排期，客户端时长不作为依据。
+        jdbc.update("insert into t_process_stage values(33,1,'未配置时长阶段',3,3,null)");
+        ServiceException error = assertThrows(ServiceException.class,
+                () -> service.invite(1L,12L,7L,33L,19L,"2099-01-04 09:00",45));
+        assertTrue(error.getMessage().contains("未配置面试时长"));
         assertEquals(1,count("t_sch_appointment"));
     }
     @Test

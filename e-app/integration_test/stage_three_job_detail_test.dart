@@ -28,7 +28,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('基础信息'), findsOneWidget);
-    expect(find.text('查看面试安排'), findsOneWidget);
+    expect(find.text('面试安排'), findsOneWidget);
     await tester.tap(find.text('求职者'));
     await tester.pumpAndSettle();
     expect(find.byType(JobCandidatesTab), findsOneWidget);

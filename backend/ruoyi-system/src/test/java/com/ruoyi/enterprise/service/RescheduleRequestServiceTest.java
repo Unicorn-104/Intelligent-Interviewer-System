@@ -22,11 +22,11 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
-import org.springframework.transaction.interceptor.TransactionInterceptor;
-import com.github.pagehelper.PageHelper;
+import org.springframework.transaction.interceptor.TransactionInterceptor;import com.github.pagehelper.PageHelper;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.mapper.RescheduleRequestMapper;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.impl.InterviewScheduleServiceImpl;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
@@ -109,8 +109,9 @@ public class RescheduleRequestServiceTest
             "create table t_pos(pos_id bigint primary key, pos_company_id bigint, pos_title varchar(100), pos_process_template_id bigint)",
             "create table t_process_instance(pin_candidate_id bigint, pin_position_id bigint)",
             "create table t_cmp_binding(bnd_company_id bigint, bnd_user_id bigint, bnd_status int)",
-            "create table t_process_stage(psg_id bigint primary key, psg_template_id bigint, psg_name varchar(100), psg_type int, psg_sort_order int)",
+            "create table t_process_stage(psg_id bigint primary key, psg_template_id bigint, psg_name varchar(100), psg_type int, psg_sort_order int, psg_interviewer_config_json varchar(2000))",
             "create table t_int_session(ses_id bigint, ses_appointment_id bigint)",
+            "create table t_int_evaluation(evl_session_id bigint, evl_hr_status int)",
             "create table t_sch_slot(slt_id bigint auto_increment primary key, slt_interviewer_id bigint, slt_position_id bigint, slt_start_time timestamp, slt_end_time timestamp, slt_status int, slt_updated_at timestamp)",
             "create table t_sch_appointment(apt_id bigint auto_increment primary key, apt_candidate_id bigint, apt_position_id bigint, apt_stage_id bigint, apt_stage_name varchar(100), apt_stage_type int, apt_stage_order int, apt_interviewer_id bigint, apt_slot_id bigint, apt_start_time timestamp, apt_end_time timestamp, apt_status int, apt_meeting_url varchar(255), apt_room_id varchar(100), apt_updated_at timestamp)",
             "insert into sys_user values(19,'0','合成面试官'),(20,'0','合成面试官二'),(101,'0','合成候选人'),(102,'0','合成候选人二'),(9,'0','合成HR')",
@@ -118,7 +119,7 @@ public class RescheduleRequestServiceTest
             "insert into t_pos values(7,1,'合成岗位',1),(8,2,'另一企业岗位',2)",
             "insert into t_process_instance values(11,7),(12,7)",
             "insert into t_cmp_binding values(1,9,1),(1,19,1),(1,20,1)",
-            "insert into t_process_stage values(31,1,'在线笔试',1,1),(32,1,'技术面试',2,2)")) jdbc.execute(sql);
+            "insert into t_process_stage values(31,1,'在线笔试',1,1,'{\"duration\":30}'),(32,1,'技术面试',2,2,'{\"duration\":30}')")) jdbc.execute(sql);
         Path directory = Path.of("").toAbsolutePath();
         while (directory != null && !Files.exists(directory.resolve("e-app/new.sql"))) directory = directory.getParent();
         assertNotNull(directory);
@@ -159,6 +160,7 @@ public class RescheduleRequestServiceTest
         ReflectionTestUtils.setField(scheduleTarget,"scheduleMapper",scheduleMapper);
         ReflectionTestUtils.setField(scheduleTarget,"dashboardMapper",companies);
         ReflectionTestUtils.setField(scheduleTarget,"jobMapper",jobs);
+        ReflectionTestUtils.setField(scheduleTarget,"screeningMapper",mock(ScreeningMapper.class));
         ReflectionTestUtils.setField(scheduleTarget,"rescheduleMessages",notifications);
         schedules = transactional(scheduleTarget, InterviewScheduleServiceImpl.class);
         service = buildService(requests, scheduleMapper);

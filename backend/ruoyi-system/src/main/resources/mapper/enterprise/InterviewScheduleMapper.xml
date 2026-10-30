@@ -49,7 +49,8 @@
     </select>
     <select id="selectStageByIdForPosition" resultType="java.util.LinkedHashMap">
         select s.psg_id as stageId, s.psg_name as stageName,
-               s.psg_type as stageType, s.psg_sort_order as stageOrder
+               s.psg_type as stageType, s.psg_sort_order as stageOrder,
+               s.psg_interviewer_config_json as configJson
         from t_process_stage s join t_pos p on p.pos_process_template_id = s.psg_template_id
         where s.psg_id = #{stageId} and p.pos_id = #{positionId}
     </select>
