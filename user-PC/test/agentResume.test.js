@@ -98,6 +98,29 @@ test('PDF 各栏目字段和日期保存时保持对应，原 PDF 暂存供保�
   assert.deepEqual(page.pendingPdf.value, file)
 })
 
+test('教育、实习工作和项目起止日期回填后保存不丢失，目前在职保留开始日期', async () => {
+  const page = editor()
+  await page.loadResume()
+  page.applyParsedDraft({
+    educations: [{ school: '示例大学', startDate: '2018-09-01', endDate: '2022-06-01' }],
+    works: [
+      { company: '实习公司', position: '实习生', startDate: '2021-07-01', endDate: '2021-09-01' },
+      { company: '示例公司', position: '工程师', startDate: '2022-07-01', endDate: null, current: true }
+    ],
+    projects: [{ name: '示例项目', startDate: '2023-01-01', endDate: '2023-06-01' }]
+  }, { name: 'synthetic.pdf', size: 100 })
+  const payload = page.buildPayload()
+  assert.equal(page.resume.educations[0].startDate, '2018-09-01')
+  assert.equal(payload.educations[0].endDate, '2022-06-01')
+  assert.equal(payload.works[0].startDate, '2021-07-01')
+  assert.equal(payload.works[0].endDate, '2021-09-01')
+  assert.equal(payload.works[1].startDate, '2022-07-01')
+  assert.equal(payload.works[1].endDate, '')
+  assert.equal(payload.works[1].current, true)
+  assert.equal(payload.projects[0].startDate, '2023-01-01')
+  assert.equal(payload.projects[0].endDate, '2023-06-01')
+})
+
 test('已有经历被 PDF 替换前可取消，取消后不改变内容和原 PDF', async () => {
   const page = editor({ parseResumePdf: async () => ({ data: { projects: [{ name: 'PDF项目' }] } }), window: { location: { search: '?id=new' }, confirm: () => false } })
   page.resume.projects = [{ name: '手填项目' }]

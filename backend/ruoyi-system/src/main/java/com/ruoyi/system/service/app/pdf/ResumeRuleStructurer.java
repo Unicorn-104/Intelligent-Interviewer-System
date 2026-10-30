@@ -26,6 +26,7 @@ public class ResumeRuleStructurer
         List<String> unclassified = new ArrayList<>();
         String section = "";
         String pendingDates = "";
+        boolean datesBeforeRecord = false;
         AppResume.Education education = null;
         AppResume.Work work = null;
         AppResume.Project project = null;
@@ -36,6 +37,7 @@ public class ResumeRuleStructurer
             Matcher heading = HEADING.matcher(line.replaceAll("(?<=\\p{IsHan})[ \\t]+(?=\\p{IsHan})", ""));
             if (heading.matches())
             {
+                preservePendingDates(pendingDates, unclassified, warnings);
                 String label = heading.group(1);
                 section = label.matches("教育背景|教育经历|学习经历") ? "education"
                         : label.matches("工作经历|工作经验|实习经历|实习经验") ? "work"
@@ -46,6 +48,7 @@ public class ResumeRuleStructurer
                 work = null;
                 project = null;
                 pendingDates = "";
+                datesBeforeRecord = false;
                 if (line.indexOf('：') < 0 && line.indexOf(':') < 0) continue;
                 line = value(line);
                 if (line.isEmpty()) continue;
@@ -59,15 +62,21 @@ public class ResumeRuleStructurer
                     continue;
                 }
             }
-            Matcher range = RANGE.matcher(line);
+            String dateLine = normalizeDateLine(line);
+            Matcher range = RANGE.matcher(dateLine);
             String withoutDates = range.replaceAll("").replaceFirst("^[\\s|｜,，;；]+", "").trim();
             if (withoutDates.isEmpty() && range.reset().find())
             {
-                if (education == null && work == null && project == null) pendingDates = line;
+                Object current = education != null ? education : work != null ? work : project;
+                if (!datesBeforeRecord && hasNoDates(current))
+                {
+                    applyDates(dateLine, current, warnings);
+                }
                 else
                 {
-                    warnings.add("独立日期行归属不明确，已保留到未归类原文，请核对");
-                    unclassified.add(line);
+                    preservePendingDates(pendingDates, unclassified, warnings);
+                    pendingDates = dateLine;
+                    if (current == null) datesBeforeRecord = true;
                 }
                 continue;
             }
@@ -76,6 +85,7 @@ public class ResumeRuleStructurer
                 Matcher school = SCHOOL.matcher(withoutDates);
                 if (school.find())
                 {
+                    if (range.reset().find()) preservePendingDates(pendingDates, unclassified, warnings);
                     education = new AppResume.Education();
                     education.setSchool(limit(school.group(1), 100));
                     education.setDegree(degreeOf(withoutDates));
@@ -83,7 +93,7 @@ public class ResumeRuleStructurer
                     String major = remaining.split("[|｜,，;；]|\\s{2,}", 2)[0];
                     major = DEGREE.matcher(major).replaceAll("").replaceFirst("^专业\\s*[:：]\\s*", "").trim();
                     if (!major.isEmpty()) education.setMajor(limit(major, 50));
-                    applyDates(range.reset().find() ? line : pendingDates, education, warnings);
+                    applyDates(range.reset().find() ? dateLine : pendingDates, education, warnings);
                     pendingDates = "";
                     resume.getEducations().add(education);
                     continue;
@@ -101,12 +111,13 @@ public class ResumeRuleStructurer
                 Matcher company = COMPANY.matcher(withoutDates);
                 if (company.find())
                 {
+                    if (range.reset().find()) preservePendingDates(pendingDates, unclassified, warnings);
                     work = new AppResume.Work();
                     work.setCompany(limit(company.group(1), 100));
                     String position = withoutDates.substring(company.end()).replaceFirst("^[\\s|｜,，;；]+", "");
                     position = position.split("[|｜,，;；]|\\s{2,}", 2)[0].replaceFirst("^(?:职位|岗位)\\s*[:：]\\s*", "");
                     if (!position.isBlank()) work.setPosition(limit(position, 50));
-                    applyDates(range.reset().find() ? line : pendingDates, work, warnings);
+                    applyDates(range.reset().find() ? dateLine : pendingDates, work, warnings);
                     pendingDates = "";
                     resume.getWorks().add(work);
                     continue;
@@ -126,9 +137,10 @@ public class ResumeRuleStructurer
                         && !withoutDates.matches("^(?:项目描述|项目职责|职责|成果|技术栈|担任角色)\\s*[:：].*");
                 if (labeled || datedTitle || project == null && !withoutDates.contains("：") && !withoutDates.contains(":") && withoutDates.length() <= 80)
                 {
+                    if (range.reset().find()) preservePendingDates(pendingDates, unclassified, warnings);
                     project = new AppResume.Project();
                     project.setName(limit(labeled ? value(withoutDates) : withoutDates.replaceAll("[|｜\\s]+$", ""), 100));
-                    applyDates(range.reset().find() ? line : pendingDates, project, warnings);
+                    applyDates(range.reset().find() ? dateLine : pendingDates, project, warnings);
                     pendingDates = "";
                     resume.getProjects().add(project);
                     continue;
@@ -163,10 +175,31 @@ public class ResumeRuleStructurer
             }
             unclassified.add(line);
         }
+        preservePendingDates(pendingDates, unclassified, warnings);
         warnings.add("规则识别按栏目匹配；未明确的学历、职位和技能熟练度不作猜测，请核对原 PDF");
         resume.setUnmappedText(unclassified.isEmpty() ? null : String.join("\n", unclassified));
         resume.setParseWarnings(new ArrayList<>(warnings));
         return resume;
+    }
+
+    private String normalizeDateLine(String line)
+    {
+        return line.replaceFirst("^(?:起止时间|时间|日期|入学时间|毕业时间|开始时间|结束时间|任职时间|项目时间)\\s*[:：]\\s*", "").trim();
+    }
+
+    private void preservePendingDates(String pendingDates, List<String> unclassified, Set<String> warnings)
+    {
+        if (pendingDates == null || pendingDates.isBlank()) return;
+        unclassified.add(pendingDates);
+        warnings.add("独立日期行没有明确对应的经历，已保留到未归类原文，请核对");
+    }
+
+    private boolean hasNoDates(Object target)
+    {
+        if (target instanceof AppResume.Education item) return item.getStartDate() == null && item.getEndDate() == null;
+        if (target instanceof AppResume.Work item) return item.getStartDate() == null && item.getEndDate() == null && !Boolean.TRUE.equals(item.getCurrent());
+        if (target instanceof AppResume.Project item) return item.getStartDate() == null && item.getEndDate() == null;
+        return false;
     }
 
     private Integer degreeOf(String line)
