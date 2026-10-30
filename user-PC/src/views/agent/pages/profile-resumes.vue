@@ -90,6 +90,8 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { deleteResume, getResumes, getResumeFile, importResumePdf, parseResumePdf } from '@/api/agent/resume'
 import { validateResumeFile } from '@/utils/agentValidation'
+import { getAppProfile } from '@/api/system/user'
+import { mergeParsedResume, profileResumeDefaults } from '@/utils/agentResume'
 
 const resumes = ref([])
 const loading = ref(false)
@@ -133,8 +135,15 @@ async function handleFileChange(event) {
   }
   uploading.value = true
   try {
+    let defaults = {}
+    try {
+      const profile = await getAppProfile()
+      defaults = profileResumeDefaults(profile.data || {})
+    } catch {
+      showToast('基础资料读取失败，将使用 PDF 识别信息，请上传后核对')
+    }
     const parsed = await parseResumePdf(file)
-    const data = parsed.data || {}
+    const data = mergeParsedResume(defaults, parsed.data || {})
     const response = await importResumePdf(null, buildImportedResume(data, file), file)
     if (!response.data?.id) throw new Error('简历上传成功，但没有返回简历编号')
     showToast('PDF 简历上传成功')

@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test:unit": "node --test test/agentValidation.test.js test/agentMessage.test.js test/agentNavigation.test.js test/agentUnread.test.js",
+    "test:unit": "node --test test/agentValidation.test.js test/agentMessage.test.js test/agentNavigation.test.js test/agentUnread.test.js test/agentResume.test.js",
     "check": "npm run test:unit && npm run build:prod",
     "build:prod": "vite build",
     "build:stage": "vite build --mode staging",

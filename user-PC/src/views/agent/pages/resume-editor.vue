@@ -95,9 +95,9 @@
         <pre>{{ resume.unmappedText }}</pre>
       </section>
 
-      <form novalidate @submit.prevent="saveResume">
+      <form novalidate :inert="parsing || saving" @submit.prevent="saveResume">
         <section class="section">
-          <div class="section-head"><h2>基本信息</h2><span>以下信息将同步至投递简历</span></div>
+          <div class="section-head"><h2>基本信息</h2><span>新建时优先带入基础资料，可手动修改</span></div>
           <div class="section-body grid">
             <div class="field"><label>姓名</label><input v-model.trim="resume.realName" maxlength="50"></div>
             <div class="field"><label>性别</label><select v-model="resume.gender"><option value="">不公开</option><option value="女">女</option><option value="男">男</option></select></div>
@@ -127,7 +127,7 @@
             <div class="grid four">
               <div class="field"><label>学校</label><input v-model.trim="education.school" maxlength="100"></div>
               <div class="field"><label>专业</label><input v-model.trim="education.major" maxlength="50"></div>
-              <div class="field"><label>学历</label><select v-model.number="education.degree"><option :value="3">本科</option><option :value="4">硕士</option><option :value="5">博士</option></select></div><div class="field"><label>绩点</label><input v-model.number="education.gpa" type="number" min="0" max="5" step="0.01" placeholder="可选"></div>
+              <div class="field"><label>学历</label><select v-model="education.degree"><option :value="null">请选择</option><option :value="1">中专</option><option :value="2">大专</option><option :value="3">本科</option><option :value="4">硕士</option><option :value="5">博士</option></select></div><div class="field"><label>绩点</label><input v-model.number="education.gpa" type="number" min="0" max="5" step="0.01" placeholder="可选"></div>
               <div class="field"><label>开始时间</label><input v-model="education.startDate" type="date"></div>
               <div class="field"><label>结束时间</label><input v-model="education.endDate" type="date"></div>
               <div class="field full"><label>补充说明</label><textarea v-model.trim="education.description" maxlength="500"></textarea></div>
@@ -195,10 +195,12 @@ import { onMounted, reactive, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { createResume, deleteResumeAttachment, getResume, getResumeAttachmentFile, getResumeAttachments, getResumeFile, importResumePdf, parseResumePdf, updateResume, uploadResumeAttachments } from '@/api/agent/resume'
 import { validateResumeAttachment, validateResumeFile } from '@/utils/agentValidation'
+import { getAppProfile } from '@/api/system/user'
+import { mergeParsedResume, profileResumeDefaults, resumeDate, resumeDegree, resumeSections } from '@/utils/agentResume'
 
 const queryId = new URLSearchParams(window.location.search).get('id')
 const resumeId = ref(queryId && queryId !== 'new' ? Number(queryId) : null)
-const loading = ref(Boolean(resumeId.value))
+const loading = ref(true)
 const saving = ref(false)
 const parsing = ref(false)
 const previewingPdf = ref(false)
@@ -222,8 +224,9 @@ function toText(value) {
 function normalizeEntry(item, fields, idPrefix) {
   const normalized = { ...(item || {}), localId: `${idPrefix}-${++localId}` }
   fields.forEach(field => {
-    normalized[field] = toText(normalized[field])
+    normalized[field] = field.endsWith('Date') ? resumeDate(normalized[field]) : toText(normalized[field])
   })
+  if (idPrefix === 'education') normalized.degree = resumeDegree(normalized.degree)
   return normalized
 }
 
@@ -265,7 +268,15 @@ const resume = reactive(blankResume())
 
 async function loadResume() {
   if (!resumeId.value) {
-    loading.value = false
+    loading.value = true
+    try {
+      const response = await getAppProfile()
+      applyResume({ ...blankResume(), ...profileResumeDefaults(response.data || {}) })
+    } catch {
+      showToast('基础资料读取失败，可手动填写简历信息')
+    } finally {
+      loading.value = false
+    }
     return
   }
   loading.value = true
@@ -420,6 +431,8 @@ async function handlePdfChange(event) {
   parsing.value = true
   try {
     const response = await parseResumePdf(file)
+    const replacedSections = resumeSections.filter(field => resume[field]?.length && response.data?.[field]?.length)
+    if (replacedSections.length && !window.confirm('PDF 识别结果将替换已有的对应经历和技能，基本资料及求职意向仍优先保留当前填写内容。是否继续？')) return
     applyParsedDraft(response.data, file)
     showToast('PDF 已解析，请核对内容后保存')
   } catch (error) {
@@ -431,31 +444,13 @@ async function handlePdfChange(event) {
 
 function applyParsedDraft(data, file) {
   const fallbackName = file.name.replace(/\.pdf$/i, '').trim() || '我的简历'
-  const preserved = {
-    id: resume.id,
-    resumeName: toText(resume.resumeName).trim() || toText(data?.resumeName).trim() || fallbackName,
-    realName: resume.realName,
-    gender: resume.gender,
-    workStatus: resume.workStatus,
-    currentCity: resume.currentCity,
-    phone: resume.phone,
-    email: resume.email,
-    targetRole: resume.targetRole,
-    salaryExpectation: resume.salaryExpectation,
-    targetCity: resume.targetCity,
-    arrivalTime: resume.arrivalTime,
-    isDefault: resume.isDefault,
-    usedApplicationCount: resume.usedApplicationCount,
-    updatedAt: resume.updatedAt,
-    fileUrl: resume.fileUrl,
-    attachments: resume.attachments
-  }
-  applyResume({ ...data, ...preserved, fileName: file.name, fileSize: file.size })
+  const merged = mergeParsedResume(resume, data)
+  applyResume({ ...merged, resumeName: merged.resumeName || fallbackName, fileName: file.name, fileSize: file.size })
   pendingPdf.value = file
 }
 
 function addEducation() {
-  resume.educations.push({ localId: `education-${++localId}`, school: '', major: '', degree: 3, gpa: null, startDate: '', endDate: '', description: '' })
+  resume.educations.push({ localId: `education-${++localId}`, school: '', major: '', degree: null, gpa: null, startDate: '', endDate: '', description: '' })
 }
 
 function addWork() {
