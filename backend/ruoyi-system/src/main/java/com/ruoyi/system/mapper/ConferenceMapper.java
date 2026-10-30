@@ -185,9 +185,10 @@ public interface ConferenceMapper
     public List<Long> selectPendingAppointmentIds(@Param("candidateId") Long candidateId, @Param("companyId") Long companyId);
 
     /**
-     * 发起面试后把候选人流程状态推进为「面试中」(2)
+     * 可发起面试的投递：初筛淘汰(2)与已撤回(9)的投递不允许再发起面试
      */
-    public int markCandidateInterviewing(@Param("candidateId") Long candidateId, @Param("companyId") Long companyId);
+    public int countSchedulableApplication(@Param("candidateId") Long candidateId, @Param("positionId") Long positionId);
+
 
     /**
      * 候选人准备就绪，进入面试

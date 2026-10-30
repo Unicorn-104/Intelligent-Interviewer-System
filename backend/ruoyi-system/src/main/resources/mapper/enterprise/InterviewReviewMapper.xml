@@ -97,12 +97,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
              #{startTime}, #{endTime}, 0)
     </insert>
 
-    <update id="updateTalStatus">
-        update t_tal
-        set tal_status = #{status}, tal_updated_at = now()
-        where tal_id = #{talId}
-    </update>
-
     <insert id="insertMessage">
         insert into t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content, msg_is_read)
         values (#{receiverId}, 0, 1, #{title}, #{content}, 0)

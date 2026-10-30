@@ -43,9 +43,6 @@ public interface InterviewReviewMapper
             @Param("positionId") Long positionId, @Param("interviewerId") Long interviewerId,
             @Param("startTime") String startTime, @Param("endTime") String endTime);
 
-    /** 更新候选人状态（触发器自动写状态日志） */
-    public int updateTalStatus(@Param("talId") Long talId, @Param("status") Integer status);
-
     /** 向候选人写入通知消息 */
     public int insertMessage(@Param("receiverId") Long receiverId, @Param("title") String title,
             @Param("content") String content);

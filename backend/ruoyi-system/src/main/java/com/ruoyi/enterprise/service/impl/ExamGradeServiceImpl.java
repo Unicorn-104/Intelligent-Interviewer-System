@@ -20,6 +20,7 @@ import com.ruoyi.enterprise.mapper.ExamGradeMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IExamGradeService;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 
 /**
@@ -41,14 +42,14 @@ import com.ruoyi.system.mapper.DashboardMapper;
 public class ExamGradeServiceImpl implements IExamGradeService
 {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    /** 人才库状态：7-笔试通过，8-笔试未通过 */
-    /** 求职者状态四态收敛后：笔试通过推进为待面试(2)、未通过淘汰(3) */
-    private static final int TAL_EXAM_PASSED = 2;
-    private static final int TAL_EXAM_FAILED = 3;
+    /** 笔试终判允许的当前状态：已淘汰(3)/已录用(4)为终态不可被改写 */
+    private static final List<Integer> EXAM_ALLOWED_FROM = List.of(0, 1, 2, 5, 6, 7, 8, 9);
 
     @Autowired
     private ExamGradeMapper gradeMapper;
+
+    @Autowired
+    private TalStatusService talStatusService;
 
     @Autowired
     private DashboardMapper dashboardMapper;
@@ -228,16 +229,18 @@ public class ExamGradeServiceImpl implements IExamGradeService
             passStatus = pass ? 1 : 0;
             recordStatus = 4;
         }
+        // 已是终判（erc_status=4）时再次判分只更新成绩，不重复流转候选人/投递状态，防止状态被反复翻转
+        boolean firstFinalize = finalize && asInt(ctx.get("status"), 4) != 4;
         gradeMapper.updateRecordScored(recordId, total, passStatus, recordStatus);
         // 笔试终判后立即同步该岗位投递状态：通过→笔试通过，未通过→笔试未通过
-        if (passStatus != 2 && ctx.get("positionId") != null)
+        if (passStatus != 2 && firstFinalize && ctx.get("positionId") != null)
         {
             screeningMapper.advanceApplicationStatus(asLong(ctx.get("positionId")), asLong(ctx.get("talId")),
                     passStatus == 1 ? 6 : 7, List.of(4, 5, 6, 7));
         }
 
         String comment = buildComment(ctx, commentOverride, objective, subjective,
-                total, threshold, passStatus, operatorUserId);
+                total, threshold, passStatus, operatorUserId, firstFinalize);
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("recordId", recordId);
         params.put("objectiveScore", objective.setScale(2, RoundingMode.HALF_UP));
@@ -262,7 +265,7 @@ public class ExamGradeServiceImpl implements IExamGradeService
     /** 终判时执行人才库流转并组装报告评语 */
     private String buildComment(Map<String, Object> ctx, String commentOverride,
             BigDecimal objective, BigDecimal subjective, BigDecimal total,
-            BigDecimal threshold, int passStatus, Long operatorUserId)
+            BigDecimal threshold, int passStatus, Long operatorUserId, boolean advanceTalent)
     {
         StringBuilder sb = new StringBuilder();
         if (StringUtils.isNotEmpty(commentOverride))
@@ -276,20 +279,31 @@ public class ExamGradeServiceImpl implements IExamGradeService
             return sb.toString();
         }
         Long talId = asLong(ctx.get("talId"));
+        if (!advanceTalent)
+        {
+            sb.append("该考试已终判，本次仅更新成绩，不重复流转候选人状态");
+            return sb.toString();
+        }
         if (passStatus == 1)
         {
-            gradeMapper.updateTalStatus(talId, TAL_EXAM_PASSED, asLong(ctx.get("recordId")));
+            // 已淘汰/已录用的候选人不会被笔试结果改写状态
+            boolean advanced = talStatusService.change(talId, TalStatusService.TAL_EXAM_PASSED,
+                    EXAM_ALLOWED_FROM, asLong(ctx.get("positionId")), null, asLong(ctx.get("recordId")),
+                    "笔试通过", operatorUserId);
             sb.append("总分 ").append(total.stripTrailingZeros().toPlainString())
               .append(" ≥ 阈值 ").append(threshold == null ? "-" : threshold.stripTrailingZeros().toPlainString())
-              .append("，笔试通过；");
-            sb.append(autoInvite(ctx, operatorUserId));
+              .append(advanced ? "，笔试通过；" : "，笔试通过（候选人已淘汰或已录用，状态未变更）");
+            if (advanced) sb.append(autoInvite(ctx, operatorUserId));
         }
         else
         {
-            gradeMapper.updateTalStatus(talId, TAL_EXAM_FAILED, asLong(ctx.get("recordId")));
+            // 未通过淘汰：归档来源记为笔试淘汰(1)
+            boolean advanced = talStatusService.change(talId, TalStatusService.TAL_EXAM_FAILED,
+                    EXAM_ALLOWED_FROM, asLong(ctx.get("positionId")), 1, asLong(ctx.get("recordId")),
+                    "笔试未通过", operatorUserId);
             sb.append("总分 ").append(total.stripTrailingZeros().toPlainString())
               .append(" < 阈值 ").append(threshold == null ? "-" : threshold.stripTrailingZeros().toPlainString())
-              .append("，未通过，已归档人才库");
+              .append(advanced ? "，未通过，已归档人才库" : "，未通过（候选人已淘汰或已录用，状态未变更）");
         }
         return sb.toString();
     }

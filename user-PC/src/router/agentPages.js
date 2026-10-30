@@ -22,6 +22,7 @@ export const agentPageDefinitions = [
   ['contact-profile', 'AgentContactProfile', '联系人主页'],
   ['exam', 'AgentExam', '在线笔试'],
   ['exam-room', 'AgentExamRoom', '笔试答题'],
+  ['exam-prep', 'AgentExamPrep', '笔试设备检测'],
   ['conference-entry', 'AgentConferenceEntry', '面试链接校验'],
   ['conference-prep', 'AgentConferencePrep', '会议准备'],
   ['conference-waiting', 'AgentConferenceWaiting', '等候室'],

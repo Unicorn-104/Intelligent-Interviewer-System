@@ -80,6 +80,12 @@
         select count(*) from t_process_instance
         where pin_candidate_id = #{candidateId} and pin_position_id = #{positionId}
     </select>
+    <!-- 可排期的投递：初筛淘汰(2)与已撤回(9)的投递不允许安排面试 -->
+    <select id="countSchedulableApplication" resultType="int">
+        select count(*) from t_app_record
+        where app_candidate_id = #{candidateId} and app_position_id = #{positionId}
+          and app_status not in (2, 9)
+    </select>
     <select id="selectConflicts" resultType="java.util.LinkedHashMap">
         select slt_id as conflictId from t_sch_slot
         where slt_interviewer_id = #{interviewerId} and slt_status = 0

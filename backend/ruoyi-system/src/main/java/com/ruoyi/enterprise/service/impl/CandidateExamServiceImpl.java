@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
@@ -18,6 +19,7 @@ import com.ruoyi.enterprise.mapper.ExamMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.ICandidateExamService;
 import com.ruoyi.enterprise.service.IExamGradeService;
+import com.ruoyi.enterprise.service.TalStatusService;
 
 /**
  * 候选人端 - 在线笔试服务实现
@@ -46,6 +48,9 @@ public class CandidateExamServiceImpl implements ICandidateExamService
 
     @Autowired
     private ScreeningMapper screeningMapper;
+
+    @Autowired
+    private TalStatusService talStatusService;
 
     @Override
     public List<Map<String, Object>> listMyExams(Long userId)
@@ -94,6 +99,58 @@ public class CandidateExamServiceImpl implements ICandidateExamService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> prepareExam(Long userId, Long scheduleId)
+    {
+        Map<String, Object> schedule = requireSchedule(userId, scheduleId);
+        int status = asInt(schedule.get("status"), 0);
+        if (status == 3)
+        {
+            throw new ServiceException("该考试已取消");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime startAt = asTime(schedule.get("startAt"));
+        LocalDateTime endAt = asTime(schedule.get("endAt"));
+        if (startAt != null && now.isBefore(startAt))
+        {
+            throw new ServiceException("考试尚未开始，开考时间 " + schedule.get("startAt"));
+        }
+        if (endAt != null && now.isAfter(endAt))
+        {
+            throw new ServiceException("考试已结束");
+        }
+        Long recordId = asLong(schedule.get("recordId"));
+        if (recordId == null)
+        {
+            // 设备检测阶段只建未开始记录，开考时间留空，不占用答题时长
+            Long talId = asLong(requireTalent(userId).get("talId"));
+            candidateExamMapper.insertPrepRecord(scheduleId, talId);
+            recordId = (long) candidateExamMapper.selectLastRecordId();
+        }
+        else
+        {
+            Map<String, Object> record = candidateExamMapper.selectRecordForCandidate(userId, recordId);
+            int recordStatus = asInt(record.get("status"), 0);
+            if (recordStatus == 2 || recordStatus == 4)
+            {
+                throw new ServiceException("本场考试已交卷");
+            }
+            if (recordStatus == 3)
+            {
+                throw new ServiceException("本次考试已作废（超时未交卷）");
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("recordId", recordId);
+        result.put("forceDualCamera", schedule.get("forceDualCamera"));
+        result.put("durationMin", schedule.get("durationMin"));
+        result.put("startAt", schedule.get("startAt"));
+        result.put("endAt", schedule.get("endAt"));
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> startOrResume(Long userId, Long scheduleId, String deviceInfo)
     {
         Map<String, Object> schedule = requireSchedule(userId, scheduleId);
@@ -129,6 +186,27 @@ public class CandidateExamServiceImpl implements ICandidateExamService
             {
                 throw new ServiceException("本次考试已作废（超时未交卷）");
             }
+            if (recordStatus == 0)
+            {
+                // 设备检测通过后正式开考：此时才开始计时并写入题目快照
+                if (endAt != null && now.isAfter(endAt))
+                {
+                    throw new ServiceException("考试已结束");
+                }
+                candidateExamMapper.beginRecord(recordId);
+                if (candidateExamMapper.selectRecordQuestions(recordId).isEmpty())
+                {
+                    snapshotQuestions(asLong(schedule.get("paperId")), parseJson(schedule.get("ruleJson")), recordId);
+                }
+                Long talId = asLong(requireTalent(userId).get("talId"));
+                screeningMapper.advanceApplicationStatus(asLong(schedule.get("positionId")), talId, 5, List.of(4));
+                talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
+                        List.of(0, 1, 2, 5, 6, 7, 8, 9), asLong(schedule.get("positionId")), null, "开始笔试", userId);
+                record = candidateExamMapper.selectRecordForCandidate(userId, recordId);
+                LocalDateTime startedDeadline = deadline(asTime(record.get("startAt")),
+                        asInt(record.get("durationMin"), 0), endAt);
+                return resumeResult(record, startedDeadline, now);
+            }
             // 进行中：先判超时
             LocalDateTime deadline = deadline(asTime(record.get("startAt")),
                     asInt(record.get("durationMin"), 0), asTime(record.get("endAt")));
@@ -148,8 +226,10 @@ public class CandidateExamServiceImpl implements ICandidateExamService
         candidateExamMapper.insertRecord(scheduleId, talId, deviceInfo);
         recordId = (long) candidateExamMapper.selectLastRecordId();
         snapshotQuestions(asLong(schedule.get("paperId")), parseJson(schedule.get("ruleJson")), recordId);
-        // 首次开考即把该岗位投递状态同步为「笔试中」
+        // 首次开考即把该岗位投递状态同步为「笔试中」，候选人状态同步为「笔试中」
         screeningMapper.advanceApplicationStatus(asLong(schedule.get("positionId")), talId, 5, List.of(4));
+        talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
+                List.of(0, 1, 2, 5, 6, 7, 8, 9), asLong(schedule.get("positionId")), null, "开始笔试", userId);
 
         Map<String, Object> record = candidateExamMapper.selectRecordForCandidate(userId, recordId);
         LocalDateTime deadline = deadline(now, asInt(record.get("durationMin"), 0), endAt);
@@ -424,6 +504,11 @@ public class CandidateExamServiceImpl implements ICandidateExamService
             return result;
         }
         candidateExamMapper.updateRecordAbandoned(recordId);
+        // 超时未交卷且未自动交卷：候选人记为笔试缺考，同步该岗位投递状态
+        talStatusService.change(asLong(record.get("talId")), TalStatusService.TAL_EXAM_ABSENT,
+                List.of(5, 6), asLong(record.get("positionId")), null, "笔试超时未交卷", userId);
+        screeningMapper.advanceApplicationStatus(asLong(record.get("positionId")), asLong(record.get("talId")),
+                8, List.of(4, 5));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("recordId", recordId);
         result.put("status", 3);

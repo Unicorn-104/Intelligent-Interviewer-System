@@ -21,6 +21,7 @@ public interface InterviewScheduleMapper
     Long lockInterviewer(@Param("interviewerId") Long interviewerId);
     int countInterviewerInCompany(@Param("interviewerId") Long interviewerId, @Param("companyId") Long companyId);
     int countApplication(@Param("candidateId") Long candidateId, @Param("positionId") Long positionId);
+    int countSchedulableApplication(@Param("candidateId") Long candidateId, @Param("positionId") Long positionId);
     List<Map<String, Object>> selectConflicts(@Param("candidateId") Long candidateId,
             @Param("interviewerId") Long interviewerId, @Param("startTime") String startTime,
             @Param("endTime") String endTime, @Param("excludeAppointmentId") Long excludeAppointmentId,

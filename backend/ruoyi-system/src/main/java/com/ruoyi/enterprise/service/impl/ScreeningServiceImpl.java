@@ -16,12 +16,14 @@ import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IScreeningService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.enterprise.service.screening.ScreeningAiEvaluator;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.service.app.pdf.ResumePdfParser;
@@ -35,6 +37,7 @@ public class ScreeningServiceImpl implements IScreeningService
     public static final double PASS_THRESHOLD = 60.0;
 
     @Autowired private ScreeningMapper screeningMapper;
+    @Autowired private TalStatusService talStatusService;
     @Autowired private DashboardMapper dashboardMapper;
     @Autowired private ScreeningAiEvaluator evaluator;
     @Autowired private ResumePdfStorage pdfStorage;
@@ -80,8 +83,13 @@ public class ScreeningServiceImpl implements IScreeningService
         Long companyId = resolveCompanyId(userId);
         Map<String, Object> job = requirePosition(companyId, positionId);
         if (topN != null && (topN < 1 || topN > 200)) throw new ServiceException("短名单人数须为1至200");
-        List<Map<String, Object>> candidates = screeningMapper.selectCandidatesByPosition(positionId);
-        if (candidates.isEmpty()) throw new ServiceException("该岗位暂无可筛选的求职者");
+        // 只筛选仍停留在待筛选(0)的投递，避免重筛改写已约面/笔试/录用/撤回的投递状态
+        List<Map<String, Object>> candidates = screeningMapper.selectScreenableCandidates(positionId);
+        if (candidates.isEmpty())
+            return Map.of("taskId", positionId, "state", "completed", "processing", false,
+                    "candidateCount", 0, "completedCount", 0, "skippedCount", 0,
+                    "results", listResults(userId, positionId),
+                    "message", "该岗位暂无待初筛的投递");
         Map<String, Object> current = screeningMapper.selectTaskStatus(companyId, positionId);
         // A processing task is shared; claimTask below recovers a stale lease.
         if (current != null && "processing".equals(current.get("state")))
@@ -176,8 +184,9 @@ public class ScreeningServiceImpl implements IScreeningService
                     Double totalScore = asDouble(analysis.get("totalScore"));
                     if (totalScore != null)
                     {
+                        // 仅回写仍处于待筛选(0)的投递；若 HR 已复核或已进入后续环节则不覆盖
                         screeningMapper.updateApplicationByCandidate(positionId, id, totalScore,
-                                totalScore >= PASS_THRESHOLD ? 1 : 2);
+                                totalScore >= PASS_THRESHOLD ? 1 : 2, List.of(0));
                     }
                     // Result and progress commit together. No HTTP/model call inside this transaction.
                     String state = nextCompleted == candidates.size() ? "completed" : "processing";
@@ -541,6 +550,7 @@ public class ScreeningServiceImpl implements IScreeningService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore,
             Long positionId)
     {
@@ -550,7 +560,13 @@ public class ScreeningServiceImpl implements IScreeningService
         if (approved == null && adjustScore == null) throw new ServiceException("请选择复核结论或填写人工评分");
         if (adjustScore != null && (!Double.isFinite(adjustScore) || adjustScore < 0 || adjustScore > 100))
             throw new ServiceException("调整评分须为0至100");
-        if (positionId != null) requirePosition(companyId, positionId);
+        if (positionId != null)
+        {
+            requirePosition(companyId, positionId);
+            // 复核必须落在该候选人真实投递过的岗位上，避免跨岗位改写投递记录
+            if (screeningMapper.countOwnedApplication(companyId, positionId, resultId) == 0)
+                throw new ServiceException("该候选人未投递当前岗位，无法复核");
+        }
         if (approved == null && positionId == null) throw new ServiceException("人工评分须指定岗位");
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("resultId", resultId);
@@ -563,7 +579,12 @@ public class ScreeningServiceImpl implements IScreeningService
             result.put("adjustScore", rounded);
             currentScore = rounded;
             // HR 调整后的分数写回 AI 分析报告，列表与报告统一按调整后总分展示
-            if (positionId != null) writeAdjustedReport(companyId, positionId, resultId, rounded);
+            if (positionId != null)
+            {
+                writeAdjustedReport(companyId, positionId, resultId, rounded);
+                // 同步投递记录的匹配度，人才库/投递列表与报告展示同一分数
+                screeningMapper.updateApplicationScore(positionId, resultId, rounded, List.of(0, 1));
+            }
         }
         else if (positionId != null)
         {
@@ -572,9 +593,12 @@ public class ScreeningServiceImpl implements IScreeningService
         }
         if (approved == null)
         {
-            // 人工评分：按分数阈值更新该岗位投递状态，不推进候选人状态（供 AI 评估失败的投递使用）
+            // 人工评分：按分数阈值更新该岗位投递状态，不推进候选人状态（供 AI 评估失败的投递使用）；
+            // 仅允许处于初筛段(0待筛选/1初筛通过)的投递被评分，淘汰(2)及后续环节不可被改回
             int status = currentScore >= PASS_THRESHOLD ? 1 : 2;
-            screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, status);
+            if (screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, status,
+                    List.of(0, 1)) == 0)
+                throw new ServiceException("该岗位投递已淘汰或已进入后续环节，无法修改初筛评分");
             result.put("applicationStatus", status);
             result.put("message", "已保存人工评分 " + currentScore + " 分，该岗位投递状态更新为"
                     + (status == 1 ? "通过初筛" : "初筛淘汰") + "；候选人状态保持不变，可在人才库继续跟进");
@@ -582,13 +606,19 @@ public class ScreeningServiceImpl implements IScreeningService
         }
         if (Boolean.TRUE.equals(approved))
         {
-            if (screeningMapper.updateTalStatus(resultId, 2) == 0) throw new ServiceException("候选人不存在");
+            // 先校验投递仍处于初筛段，再推进候选人状态，避免出现“投递未变、候选人却已推进”的割裂
             if (positionId != null)
             {
-                if (currentScore == null) screeningMapper.updateApplicationStatusByCandidate(positionId, resultId, 1);
-                else screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, 1);
+                int rows = currentScore == null
+                        ? screeningMapper.updateApplicationStatusByCandidate(positionId, resultId, 1, List.of(0, 1))
+                        : screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, 1, List.of(0, 1));
+                if (rows == 0) throw new ServiceException("该岗位投递已淘汰或已进入后续环节，无法重复复核");
                 result.put("applicationStatus", 1);
             }
+            // 复核通过推进为「初筛通过」(1)，是否进入面试由约面环节写 2；已淘汰/已录用不可回退
+            if (!talStatusService.change(resultId, TalStatusService.TAL_SCREENED, List.of(0, 1), positionId,
+                    null, "HR复核通过", userId))
+                throw new ServiceException("候选人已淘汰或已录用，状态不可回退");
             result.put("message", positionId == null
                     ? "已确认通过，候选人状态推进为待面试，等待流入面试邀约"
                     : "已确认通过，该岗位投递状态更新为通过初筛，候选人状态推进为待面试，等待流入面试邀约");
@@ -597,13 +627,20 @@ public class ScreeningServiceImpl implements IScreeningService
         {
             if (positionId != null)
             {
-                // 驳回时同步当前总分，避免投递匹配度与 AI 报告分数不一致
-                if (currentScore == null) screeningMapper.updateApplicationStatusByCandidate(positionId, resultId, 2);
-                else screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, 2);
+                // 驳回时同步当前总分，避免投递匹配度与 AI 报告分数不一致；已进入后续环节的投递不可再被驳回
+                int rows = currentScore == null
+                        ? screeningMapper.updateApplicationStatusByCandidate(positionId, resultId, 2, List.of(0, 1, 2))
+                        : screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, 2, List.of(0, 1, 2));
+                if (rows == 0) throw new ServiceException("该岗位投递已进入后续环节，无法驳回");
                 result.put("applicationStatus", 2);
-                result.put("message", "已驳回，该岗位投递状态更新为初筛淘汰，候选人保持在人才库待观察");
             }
-            else result.put("message", "已驳回，候选人保持在人才库待观察");
+            // 初筛驳回即进入淘汰终态，归档来源记为初筛淘汰(4)，日志与流程实例终止由状态机统一处理
+            if (!talStatusService.change(resultId, TalStatusService.TAL_REJECTED, List.of(0, 1), positionId,
+                    4, "初筛未通过", userId))
+                throw new ServiceException("候选人已淘汰或已录用，状态不可变更");
+            result.put("message", positionId == null
+                    ? "已驳回，候选人状态更新为已淘汰并归档人才库"
+                    : "已驳回，该岗位投递状态更新为初筛淘汰，候选人状态更新为已淘汰并归档人才库");
         }
         return result;
     }

@@ -53,9 +53,10 @@ async function join() {
       camera: { facingMode: { ideal: 'environment' } }
     })
     const track = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track
+    // 先切到 live 让 video 节点渲染出来，再挂载画面，否则画面框为空
+    state.value = 'live'
     await nextTick()
     if (track && video.value) track.attach(video.value)
-    state.value = 'live'
     pingTimer = setInterval(() => {
       subPing({ recordId, code }).catch(() => { /* 心跳失败下次重试 */ })
     }, 15000)
@@ -107,7 +108,7 @@ onBeforeUnmount(() => {
 .sub-head strong{font-size:14px}
 .sub-head span{color:#8FA1B8;font-size:11px}
 .sub-body{flex:1;display:grid;place-items:center;padding:16px}
-.sub-video{width:100%;max-height:70vh;border-radius:14px;background:#000;object-fit:cover}
+.sub-video{width:min(92vw,520px);aspect-ratio:1/1;border-radius:14px;background:#000;object-fit:cover}
 .sub-card{max-width:340px;padding:28px 22px;border:1px solid #223047;border-radius:14px;text-align:center;color:#8FA1B8;font-size:13px}
 .sub-card.err h2{margin:0 0 8px;color:#FF6B74;font-size:16px}
 .sub-card.err p{margin:0 0 16px}
