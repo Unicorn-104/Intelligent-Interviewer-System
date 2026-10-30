@@ -55,7 +55,7 @@ public class InterviewScheduleServiceImplTest
             "create table t_tal_status_log(tsl_id bigint auto_increment primary key, tsl_candidate_id bigint, tsl_from_status int, tsl_to_status int, tsl_created_at timestamp)",
             "create table t_app_record(app_id bigint auto_increment primary key, app_candidate_id bigint, app_position_id bigint, app_status int, app_updated_at timestamp)",
             "create table t_sch_slot(slt_id bigint auto_increment primary key, slt_interviewer_id bigint, slt_position_id bigint, slt_start_time timestamp, slt_end_time timestamp, slt_status int, slt_updated_at timestamp)",
-            "create table t_sch_appointment(apt_id bigint auto_increment primary key, apt_candidate_id bigint, apt_position_id bigint, apt_stage_id bigint, apt_stage_name varchar(100), apt_stage_type int, apt_stage_order int, apt_interviewer_id bigint, apt_slot_id bigint, apt_start_time timestamp, apt_end_time timestamp, apt_status int, apt_meeting_url varchar(255), apt_room_id varchar(100), apt_updated_at timestamp)",
+            "create table t_sch_appointment(apt_id bigint auto_increment primary key, apt_candidate_id bigint, apt_position_id bigint, apt_stage_id bigint, apt_stage_name varchar(100), apt_stage_type int, apt_stage_order int, apt_interviewer_id bigint, apt_slot_id bigint, apt_start_time timestamp, apt_end_time timestamp, apt_status int, apt_notified int default 0, apt_meeting_url varchar(255), apt_room_id varchar(100), apt_updated_at timestamp)",
             "insert into sys_user values(19,'0','面试官'),(20,'0','面试官二'),(11,'0','候选人'),(12,'0','候选人二')",
             "insert into t_tal(tal_id,tal_user_id) values(11,11),(12,12)",
             "insert into t_pos values(7,1,'合成岗位',1)",
@@ -419,6 +419,50 @@ public class InterviewScheduleServiceImplTest
                     "select count(*) from t_sch_appointment where apt_status in (0,1)", Integer.class));
             assertEquals(2, talStatus(11));
         } finally { executor.shutdownNow(); }
+    }
+
+    // ==================== 提醒状态：改期重置与显式重置 ====================
+
+    @Test
+    void rescheduleResetsRemindFlagForNewTime()
+    {
+        var appointment = service.invite(1L,11L,7L,31L,19L,"2099-01-02 09:00",45);
+        long id = ((Number)appointment.get("appointmentId")).longValue();
+        jdbc.update("update t_sch_appointment set apt_notified=1 where apt_id=" + id);
+        service.reschedule(1L, id, "2099-01-02 09:15", null, null);
+        assertEquals(0, jdbc.queryForObject("select apt_notified from t_sch_appointment where apt_id=" + id, Integer.class));
+    }
+
+    @Test
+    void resetRemindStatusResetsProcessedFlagOnly()
+    {
+        var appointment = service.invite(1L,11L,7L,31L,19L,"2099-01-02 09:00",45);
+        long id = ((Number)appointment.get("appointmentId")).longValue();
+        jdbc.update("update t_sch_appointment set apt_notified=1 where apt_id=" + id);
+        var result = service.resetRemindStatus(1L, id);
+        assertEquals(0, jdbc.queryForObject("select apt_notified from t_sch_appointment where apt_id=" + id, Integer.class));
+        assertTrue(String.valueOf(result.get("message")).contains("已重置"));
+        // 发送中(2)的认领不受重置影响
+        jdbc.update("update t_sch_appointment set apt_notified=2 where apt_id=" + id);
+        service.resetRemindStatus(1L, id);
+        assertEquals(2, jdbc.queryForObject("select apt_notified from t_sch_appointment where apt_id=" + id, Integer.class));
+    }
+
+    @Test
+    void resetRemindStatusRejectsCancelledCompletedAndStarted()
+    {
+        var appointment = service.invite(1L,11L,7L,31L,19L,"2099-01-02 09:00",45);
+        long id = ((Number)appointment.get("appointmentId")).longValue();
+        cancel(id);
+        assertThrows(ServiceException.class, () -> service.resetRemindStatus(1L, id));
+        jdbc.update("update t_sch_appointment set apt_status=3 where apt_id=" + id);
+        assertThrows(ServiceException.class, () -> service.resetRemindStatus(1L, id));
+        // 已开始的面试不可重置（邀约接口强制未来时间，直接插入历史有效预约）
+        jdbc.update("insert into t_sch_appointment(apt_candidate_id,apt_position_id,apt_stage_id,"
+                + "apt_interviewer_id,apt_start_time,apt_end_time,apt_status) values"
+                + "(12,7,32,20,'2020-01-02 09:00','2020-01-02 10:00',1)");
+        long startedId = jdbc.queryForObject("select max(apt_id) from t_sch_appointment", Long.class);
+        assertThrows(ServiceException.class, () -> service.resetRemindStatus(1L, startedId));
     }
 
     // ==================== 会议重新发起前的统一取消入口（cancelForRelaunch） ====================

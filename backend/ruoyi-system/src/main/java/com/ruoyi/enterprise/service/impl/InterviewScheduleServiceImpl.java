@@ -328,6 +328,26 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
                 appointmentId, row, false);
     }
 
+    @Override
+    public Map<String, Object> resetRemindStatus(Long userId, Long appointmentId)
+    {
+        Map<String, Object> row = scheduleMapper.selectAppointmentById(appointmentId);
+        if (row == null) throw new ServiceException("预约记录不存在");
+        requireJob(userId, requiredId(row.get("positionId")));
+        int status = integer(row.get("status"), -1);
+        if (status != 0 && status != 1)
+            throw new ServiceException("仅未取消且未完成的面试可以重置提醒");
+        if (!parseTime(row.get("startTime")).isAfter(LocalDateTime.now(ZoneOffset.ofHours(8))))
+            throw new ServiceException("仅未开始的面试可以重置提醒");
+        // 只重置已处理(1)的标记，不触碰发送中(2)的认领，也不触发自动发送；
+        // 下一次提醒扫描按窗口规则决定是否发送。
+        scheduleMapper.resetAppointmentRemindFlag(appointmentId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("appointmentId", appointmentId);
+        result.put("message", "提醒状态已重置，将在下次提醒扫描时按窗口规则处理");
+        return result;
+    }
+
     /** 候选人行锁 → 预约行锁，与创建/改期/改期申请审批保持同一锁顺序。 */
     private void lockCandidateAndAppointment(Map<String, Object> row)
     {

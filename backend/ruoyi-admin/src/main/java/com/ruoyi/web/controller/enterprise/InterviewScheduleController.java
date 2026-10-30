@@ -94,6 +94,16 @@ public class InterviewScheduleController extends BaseController
         return success(scheduleService.remind(getUserId(), appointmentId));
     }
 
+    /**
+     * 显式重置提醒状态（候选人补充邮箱后由 HR 操作）：
+     * 仅重置「已处理」标记，不触发自动发送，由提醒任务按窗口规则重新判断。
+     */
+    @PutMapping("/{appointmentId}/remind-reset")
+    public AjaxResult resetRemind(@PathVariable("appointmentId") Long appointmentId)
+    {
+        return success(scheduleService.resetRemindStatus(getUserId(), appointmentId));
+    }
+
     @PostMapping("/invite/stages")
     public AjaxResult inviteStages(@RequestBody Map<String, Object> body)
     {

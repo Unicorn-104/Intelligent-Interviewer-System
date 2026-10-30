@@ -61,4 +61,11 @@ public interface IInterviewScheduleService
      * 已取消、已完成或不存在的预约静默跳过，不抛错，保证会议创建不被历史数据阻断。
      */
     Map<String, Object> cancelForRelaunch(Long userId, Long appointmentId);
+
+    /**
+     * 显式重置提醒状态（候选人补充邮箱后由 HR 操作）：
+     * 仅未取消、未完成且未开始的预约可重置；只重置「已处理」标记，
+     * 不触发自动发送，下一次提醒扫描按窗口规则决定是否提醒。
+     */
+    Map<String, Object> resetRemindStatus(Long userId, Long appointmentId);
 }

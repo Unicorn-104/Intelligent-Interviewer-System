@@ -110,7 +110,8 @@
     <update id="updateAppointmentTime">
         update t_sch_appointment
         set apt_interviewer_id = #{interviewerId}, apt_slot_id = #{slotId},
-            apt_start_time = #{startTime}, apt_end_time = #{endTime}, apt_status = 0, apt_updated_at = now()
+            apt_start_time = #{startTime}, apt_end_time = #{endTime}, apt_status = 0,
+            apt_notified = 0, apt_updated_at = now()
         where apt_id = #{appointmentId}
     </update>
     <!-- 确认/取消面试安排：仅未取消(2)、未完成(3)的预约可变更 -->
@@ -118,6 +119,13 @@
         update t_sch_appointment
         set apt_status = #{status}, apt_updated_at = now()
         where apt_id = #{appointmentId} and apt_status not in (2, 3)
+    </update>
+    <!-- 显式重置提醒状态（候选人补邮箱等业务操作）：只重置已处理(1)的标记，
+         不影响发送中(2)的认领，避免与并发发送互相覆盖 -->
+    <update id="resetAppointmentRemindFlag">
+        update t_sch_appointment
+        set apt_notified = 0, apt_updated_at = now()
+        where apt_id = #{appointmentId} and apt_notified = 1
     </update>
     <!-- 取消预约前锁定预约行：与改期申请审批（候选人→预约）保持同一锁顺序。 -->
     <select id="lockAppointment" resultType="long">

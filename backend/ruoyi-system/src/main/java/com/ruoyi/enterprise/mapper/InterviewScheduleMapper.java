@@ -30,6 +30,8 @@ public interface InterviewScheduleMapper
     int insertAppointment(Map<String, Object> values);
     int updateAppointmentTime(Map<String, Object> values);
     int updateAppointmentStatus(@Param("appointmentId") Long appointmentId, @Param("status") Integer status);
+    /** 显式重置提醒状态：只重置已处理(1)的标记，不影响发送中(2)的认领 */
+    int resetAppointmentRemindFlag(@Param("appointmentId") Long appointmentId);
     int markCandidateInterviewing(@Param("candidateId") Long candidateId);
     int insertReminderMessage(@Param("receiverId") Long receiverId, @Param("title") String title,
             @Param("content") String content);
