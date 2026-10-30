@@ -54,4 +54,11 @@ public interface IInterviewScheduleService
      * 确认/取消面试安排（UC-07）：1-已确认，2-已取消
      */
     public Map<String, Object> updateStatus(Long userId, Long appointmentId, Integer status);
+
+    /**
+     * 重新发起面试前的待面试预约清理（会议模块统一入口）：
+     * 与取消共用同一业务逻辑（释放时段、恢复候选人/投递状态）；
+     * 已取消、已完成或不存在的预约静默跳过，不抛错，保证会议创建不被历史数据阻断。
+     */
+    Map<String, Object> cancelForRelaunch(Long userId, Long appointmentId);
 }

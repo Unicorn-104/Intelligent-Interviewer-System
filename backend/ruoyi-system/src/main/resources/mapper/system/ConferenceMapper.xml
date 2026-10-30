@@ -155,17 +155,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                        and p.pos_company_id = #{companyId})
     </update>
 
-    <!-- 重新发起面试前取消本企业下仍待面试的旧预约，避免日历残留多条待面试 -->
-    <update id="cancelPendingAppointments">
-        update t_sch_appointment a
+    <!-- 重新发起面试前查询本企业下仍待面试的旧预约ID，由面试调度服务统一取消
+         （释放时段 + 恢复候选人/投递状态），避免日历残留多条待面试 -->
+    <select id="selectPendingAppointmentIds" resultType="long">
+        select a.apt_id
+        from t_sch_appointment a
         join t_pos p on p.pos_id = a.apt_position_id
-        set a.apt_status = 2,
-            a.apt_cancel_reason = '重新发起面试',
-            a.apt_updated_at = sysdate()
         where a.apt_candidate_id = #{candidateId}
           and p.pos_company_id = #{companyId}
           and a.apt_status in (0, 1)
-    </update>
+    </select>
 
     <!-- 发起面试后把候选人流程状态推进为「面试中」(2)；已面试中/已淘汰/已录用保持不变 -->
     <update id="markCandidateInterviewing">

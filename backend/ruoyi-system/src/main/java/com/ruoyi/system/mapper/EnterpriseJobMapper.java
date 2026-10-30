@@ -175,6 +175,12 @@ public interface EnterpriseJobMapper
     public int deleteInterviewCopilotsByPosition(@Param("posId") Long posId);
 
     /**
+     * 删除岗位前清理该岗位的面试官时段（t_sch_slot.slt_position_id 为 ON DELETE SET NULL，
+     * 数据库级联不会删除时段，直接删除否则会残留永久占用的孤儿时段）
+     */
+    public int deleteSlotsByPosition(@Param("posId") Long posId);
+
+    /**
      * 人才档案保留在公司人才池，仅解除与本岗位流程实例/笔试记录的关联
      */
     public int detachTalentFromPosition(@Param("posId") Long posId);
