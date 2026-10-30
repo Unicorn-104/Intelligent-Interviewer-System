@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'shared_job_card.dart';
+import 'interview_invitation.dart';
 
 enum AppMessageCategory { hr, system, company }
 
@@ -19,6 +20,8 @@ class ChatMessage {
   final bool mine;
   final DateTime createdAt;
   SharedJobCard? get jobCard => SharedJobCard.parse(type, content);
+  InterviewInvitation? get interviewInvitation =>
+      type == 1 ? InterviewInvitation.parse(content) : null;
 
   Map<String, dynamic>? get reschedule {
     if (type != 5) return null;
