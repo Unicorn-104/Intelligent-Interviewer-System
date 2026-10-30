@@ -452,6 +452,7 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         AgentResumeDetail target = new AgentResumeDetail();
         target.setResumeName(source.getResumeName());
         target.setJobDirection(source.getJobDirection());
+        target.setTargetRole(source.getJobDirection());
         target.setStructureMethod(source.getStructureMethod());
         target.setParseMethod(source.getParseMethod());
         target.setUnmappedText(source.getUnmappedText());

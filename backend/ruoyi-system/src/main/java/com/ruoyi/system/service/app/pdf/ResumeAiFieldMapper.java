@@ -59,7 +59,7 @@ final class ResumeAiFieldMapper
             checkDates(item.getStartDate(), item.getEndDate());
             resume.getEducations().add(item);
         }
-        for (JsonNode node : list(pick(root, "works", "t_res_work", "work_history", "work", "workExperience", "workExperiences", "work_experience", "employment", "工作经历", "实习经历")))
+        for (JsonNode node : workEntries(root))
         {
             AppResume.Work item = new AppResume.Work();
             item.setCompany(text(pick(node, "company", "companyName", "employer", "wrk_company", "公司", "公司名称"), 100, "公司"));
@@ -111,6 +111,16 @@ final class ResumeAiFieldMapper
         resume.setUnmappedText(extra.isEmpty() ? null : String.join("\n", extra));
         // 用户、简历和附件标识不从 AI 结果读取，即使模型额外输出这些字段也不会被采用。
         return resume;
+    }
+
+    private List<JsonNode> workEntries(JsonNode root)
+    {
+        List<JsonNode> entries = list(pick(root, "works", "t_res_work", "work_history", "work", "workExperience", "workExperiences", "work_experience", "employment", "工作经历"));
+        for (JsonNode internship : list(pick(root, "internships", "internshipExperience", "internshipExperiences", "internship_experience", "实习经历", "实习经验")))
+        {
+            if (!entries.contains(internship)) entries.add(internship);
+        }
+        return entries;
     }
 
     private JsonNode pick(JsonNode node, String... keys)

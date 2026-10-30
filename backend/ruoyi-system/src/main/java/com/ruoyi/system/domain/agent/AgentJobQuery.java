@@ -1,8 +1,12 @@
 package com.ruoyi.system.domain.agent;
 
 import java.math.BigDecimal;
+import java.util.List;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 
 /**
  * 求职者端岗位查询参数。
@@ -23,6 +27,9 @@ public class AgentJobQuery
     private String industry;
     private String companySize;
     private String sort = "latest";
+
+    @Size(max = 200)
+    private List<@NotNull @Positive Long> jobIds;
 
     @Min(1)
     private Integer page = 1;
@@ -57,6 +64,8 @@ public class AgentJobQuery
     public void setCompanySize(String companySize) { this.companySize = companySize; }
     public String getSort() { return sort; }
     public void setSort(String sort) { this.sort = sort; }
+    public List<Long> getJobIds() { return jobIds; }
+    public void setJobIds(List<Long> jobIds) { this.jobIds = jobIds; }
     public Integer getPage() { return page; }
     public void setPage(Integer page) { this.page = page; }
     public Integer getSize() { return size; }

@@ -183,7 +183,7 @@ HTTP 状态表达协议错误；响应体 `code` 表达可展示的业务错误�
 
 | 方法 | 路径 | 用途 | 请求参数 | `data` |
 | --- | --- | --- | --- | --- |
-| `GET` | `/jobs` | 岗位浏览、首页推荐 | `keyword,category,city,district,employmentType,experienceMin,education,industry,companySize,salaryMin,salaryMax,sort,page,size` | 分页 `Job` 摘要 |
+| `GET` | `/jobs` | 岗位浏览、首页推荐 | `keyword,category,city,district,employmentType,experienceMin,education,industry,companySize,salaryMin,salaryMax,sort,page,size,jobIds` | 分页 `Job` 摘要 |
 | `GET` | `/jobs/categories` | 岗位分类选项 | 无 | 当前在招岗位的分类名称数组 |
 | `GET` | `/jobs/filter-options` | 岗位筛选选项 | 无 | 城市、类型、经验、学历、行业和公司规模 |
 | `GET` | `/jobs/{jobId}` | 岗位详情 | 无 | `Job` 全量 |
