@@ -12,12 +12,31 @@
         order by slt_start_time
     </select>
 
-    <delete id="deleteSlots">
+    <!-- 整周覆盖保存只删除未被有效预约（apt_status 0/1）引用的时段；
+         被预约引用的占用时段保留，避免破坏预约与时段关联 -->
+    <delete id="deleteUnreferencedSlots">
         delete from t_sch_slot
         where slt_interviewer_id = #{interviewerId}
           and slt_start_time &gt;= #{from}
           and slt_start_time &lt; #{to}
+          and not exists (select 1 from t_sch_appointment a
+                          where a.apt_slot_id = t_sch_slot.slt_id and a.apt_status in (0, 1))
     </delete>
+
+    <!-- 保存的可用时段与待确认/已确认面试重叠时拒绝保存，保留已有预约并明确提示 -->
+    <select id="selectConflictingAppointments" resultType="java.util.LinkedHashMap">
+        select apt_id as appointmentId,
+               date_format(apt_start_time, '%Y-%m-%d %H:%i') as startTime,
+               date_format(apt_end_time, '%Y-%m-%d %H:%i') as endTime
+        from t_sch_appointment
+        where apt_interviewer_id = #{interviewerId} and apt_status in (0, 1)
+          and apt_start_time &lt; #{endTime} and apt_end_time &gt; #{startTime}
+        order by apt_start_time limit 5
+    </select>
+
+    <select id="lockInterviewer" resultType="long">
+        select user_id from sys_user where user_id = #{interviewerId} and status = '0' for update
+    </select>
 
     <insert id="insertSlots">
         insert into t_sch_slot (slt_interviewer_id, slt_start_time, slt_end_time, slt_status)

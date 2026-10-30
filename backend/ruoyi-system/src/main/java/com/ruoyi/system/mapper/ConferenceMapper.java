@@ -179,9 +179,10 @@ public interface ConferenceMapper
     public int abortActiveSessionsByCandidate(@Param("candidateId") Long candidateId, @Param("companyId") Long companyId);
 
     /**
-     * 取消候选人本企业下仍处于待面试的预约（重新发起面试时清理旧预约，避免日历残留）
+     * 查询候选人本企业下仍处于待面试的预约ID（重新发起面试前清理旧预约，
+     * 逐个经面试调度服务的统一取消逻辑处理，释放时段并恢复候选人/投递状态）
      */
-    public int cancelPendingAppointments(@Param("candidateId") Long candidateId, @Param("companyId") Long companyId);
+    public List<Long> selectPendingAppointmentIds(@Param("candidateId") Long candidateId, @Param("companyId") Long companyId);
 
     /**
      * 发起面试后把候选人流程状态推进为「面试中」(2)

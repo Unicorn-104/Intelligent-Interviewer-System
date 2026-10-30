@@ -250,6 +250,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where cpt_session_id in (select ses_id from t_int_session where ses_position_id = #{posId})
     </delete>
 
+    <!-- 面试官时段：slt_position_id 外键为 SET NULL，需显式删除，否则岗位删除后残留永久占用时段 -->
+    <delete id="deleteSlotsByPosition">
+        delete from t_sch_slot where slt_position_id = #{posId}
+    </delete>
+
     <!-- 人才档案属于公司人才池，仅解除与本岗位流程实例/笔试记录的关联，不删除档案本身 -->
     <update id="detachTalentFromPosition">
         update t_tal

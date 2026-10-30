@@ -72,9 +72,32 @@ public class InterviewerSlotServiceImpl implements IInterviewerSlotService
                 cleaned.add(row);
             }
         }
+        // 与预约创建/改期共用面试官行锁：串行化并发保存时段与并发预约，
+        // 避免保存期间的删除操作与并发创建的预约时段互相破坏。
+        if (slotMapper.lockInterviewer(userId) == null)
+            throw new ServiceException("面试官不存在或已停用");
+        // 保存的可用时段与待确认/已确认面试冲突时整笔拒绝：保留已有预约，不静默取消、不自动改期。
+        for (Map<String, Object> row : cleaned)
+        {
+            List<Map<String, Object>> conflicts = slotMapper.selectConflictingAppointments(
+                    userId, String.valueOf(row.get("startTime")), String.valueOf(row.get("endTime")));
+            if (!conflicts.isEmpty())
+            {
+                StringBuilder detail = new StringBuilder();
+                for (Map<String, Object> conflict : conflicts)
+                {
+                    if (detail.length() > 0) detail.append("；");
+                    detail.append(conflict.get("startTime")).append(" 至 ").append(conflict.get("endTime"));
+                }
+                throw new ServiceException("时段 " + row.get("startTime") + " 至 " + row.get("endTime")
+                        + " 与已安排的面试冲突（" + detail + "），请先调整面试或换用其他空闲时段");
+            }
+        }
         String from = monday + " 00:00:00";
         String to = monday.plusDays(7) + " 00:00:00";
-        slotMapper.deleteSlots(userId, from, to);
+        // 只删除未被有效预约引用的时段；被待确认/已确认预约引用的占用时段保留，
+        // 已取消预约引用的遗留时段与孤立占用时段随本次保存一并清理。
+        slotMapper.deleteUnreferencedSlots(userId, from, to);
         if (!cleaned.isEmpty())
         {
             slotMapper.insertSlots(userId, cleaned);

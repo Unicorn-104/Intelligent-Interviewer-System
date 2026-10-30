@@ -20,6 +20,8 @@ import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
 import com.ruoyi.system.config.AsrProperties;
 import com.ruoyi.system.mapper.ConferenceMapper;
@@ -89,6 +91,14 @@ public class ConferenceServiceImpl implements IConferenceService
 
     @Autowired
     private AsrProperties asrProperties;
+
+    /** 面试预约统一取消入口：重新发起面试时释放旧预约时段并恢复候选人/投递状态 */
+    @Autowired
+    private IInterviewScheduleService scheduleService;
+
+    /** 面试预约口径的投递状态推进（重新发起后同步「已约面」） */
+    @Autowired
+    private ScreeningMapper screeningMapper;
 
     @Override
     public Map<String, Object> getCurrentSession(Long userId)
@@ -226,9 +236,14 @@ public class ConferenceServiceImpl implements IConferenceService
         validateInterviewerScope(userId, selected);
 
         // 每次发起都新建场次并签发新的随机链接：先把该候选人此前尚未结束的场次与待面试预约清理掉，
-        // 保证同一候选人同一时间只有一个活跃场次，且日历上不残留重复的「待面试」
+        // 保证同一候选人同一时间只有一个活跃场次，且日历上不残留重复的「待面试」。
+        // 旧预约逐个经面试调度服务的统一取消逻辑处理：释放关联时段、恢复候选人/投递状态；
+        // 已取消/已完成的历史预约由该入口静默跳过，不阻断会议创建。
         conferenceMapper.abortActiveSessionsByCandidate(candidateId, companyId);
-        conferenceMapper.cancelPendingAppointments(candidateId, companyId);
+        for (Long oldAppointmentId : conferenceMapper.selectPendingAppointmentIds(candidateId, companyId))
+        {
+            scheduleService.cancelForRelaunch(userId, oldAppointmentId);
+        }
 
         // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
         // 纯AI 无面试官时，面试官字段回落到发起人，仅用于满足非空约束与发起人权限
@@ -253,6 +268,9 @@ public class ConferenceServiceImpl implements IConferenceService
 
         // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
         conferenceMapper.markCandidateInterviewing(candidateId, companyId);
+        // 与面试调度服务邀约口径一致，把该岗位投递状态同步为「已约面」；
+        // 取消旧预约时的状态恢复（已约面→初筛通过）由本步对称补齐，笔试态(4-8)不受影响
+        screeningMapper.advanceApplicationStatus(positionId, candidateId, 3, List.of(0, 1, 2));
 
         Long sessionId = toLong(session.get("sessionId"));
         String roomId = "INTERVIEW-" + sessionId;

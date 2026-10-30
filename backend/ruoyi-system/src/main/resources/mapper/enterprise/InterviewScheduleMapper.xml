@@ -110,7 +110,8 @@
     <update id="updateAppointmentTime">
         update t_sch_appointment
         set apt_interviewer_id = #{interviewerId}, apt_slot_id = #{slotId},
-            apt_start_time = #{startTime}, apt_end_time = #{endTime}, apt_status = 0, apt_updated_at = now()
+            apt_start_time = #{startTime}, apt_end_time = #{endTime}, apt_status = 0,
+            apt_notified = 0, apt_updated_at = now()
         where apt_id = #{appointmentId}
     </update>
     <!-- 确认/取消面试安排：仅未取消(2)、未完成(3)的预约可变更 -->
@@ -118,6 +119,59 @@
         update t_sch_appointment
         set apt_status = #{status}, apt_updated_at = now()
         where apt_id = #{appointmentId} and apt_status not in (2, 3)
+    </update>
+    <!-- 显式重置提醒状态（候选人补邮箱等业务操作）：只重置已处理(1)的标记，
+         不影响发送中(2)的认领，避免与并发发送互相覆盖 -->
+    <update id="resetAppointmentRemindFlag">
+        update t_sch_appointment
+        set apt_notified = 0, apt_updated_at = now()
+        where apt_id = #{appointmentId} and apt_notified = 1
+    </update>
+    <!-- 取消预约前锁定预约行：与改期申请审批（候选人→预约）保持同一锁顺序。 -->
+    <select id="lockAppointment" resultType="long">
+        select apt_id from t_sch_appointment where apt_id = #{appointmentId} for update
+    </select>
+    <select id="countOtherValidAppointments" resultType="int">
+        select count(*) from t_sch_appointment
+        where apt_candidate_id = #{candidateId} and apt_position_id = #{positionId}
+          and apt_status in (0, 1) and apt_id != #{excludeAppointmentId}
+    </select>
+    <!-- 候选人状态为候选人级：仅当跨所有岗位都不再有有效预约时才回退，避免影响其他岗位的面试。 -->
+    <select id="countValidAppointmentsExcluding" resultType="int">
+        select count(*) from t_sch_appointment
+        where apt_candidate_id = #{candidateId}
+          and apt_status in (0, 1) and apt_id != #{excludeAppointmentId}
+    </select>
+    <select id="countCompletedSessions" resultType="int">
+        select count(*) from t_int_session
+        where ses_candidate_id = #{candidateId} and ses_position_id = #{positionId} and ses_status = 2
+    </select>
+    <select id="selectProcessInstanceStatus" resultType="java.lang.Integer">
+        select pin_status from t_process_instance
+        where pin_candidate_id = #{candidateId} and pin_position_id = #{positionId} limit 1
+    </select>
+    <select id="selectTalStatus" resultType="java.lang.Integer">
+        select tal_status from t_tal where tal_id = #{candidateId}
+    </select>
+    <select id="selectApplicationStatus" resultType="java.lang.Integer">
+        select app_status from t_app_record
+        where app_candidate_id = #{candidateId} and app_position_id = #{positionId} limit 1
+    </select>
+    <!-- 最近一次进入「面试中(2)」前的流程状态；触发器缺失或历史缺失时保持现状不猜测。 -->
+    <select id="selectPriorTalStatus" resultType="java.lang.Integer">
+        select tsl_from_status from t_tal_status_log
+        where tsl_candidate_id = #{candidateId} and tsl_to_status = 2
+        order by tsl_id desc limit 1
+    </select>
+    <update id="restoreTalStatus">
+        update t_tal
+        set tal_status = #{status}, tal_updated_at = now()
+        where tal_id = #{candidateId} and tal_status = 2
+    </update>
+    <update id="restoreApplicationStatus">
+        update t_app_record
+        set app_status = #{status}, app_updated_at = now()
+        where app_candidate_id = #{candidateId} and app_position_id = #{positionId} and app_status = 3
     </update>
     <!-- 发起面试后把候选人流程状态推进为「面试中」(2)；已面试中/已淘汰/已录用保持不变 -->
     <update id="markCandidateInterviewing">
