@@ -33,3 +33,19 @@ npm run dev
 ## 质量检查与部署
 
 运行 `npm run check` 可执行候选人端基础校验测试和生产构建；发布前请参阅 [部署与发布检查](docs/deployment.md)。
+
+## 简历回填与 PDF 识别
+
+- 新建简历通过 `GET /app/profile` 读取本人基础资料，映射姓名、性别、求职状态、城市、手机号、邮箱及求职方向；编辑已有简历不自动覆盖已保存信息。基础资料读取失败时仍可手动填写。
+- 编辑页扫描和简历列表直接上传 PDF 均优先保留已填基本信息及求职意向，PDF 只补充空白字段。编辑页替换已有经历或技能前需确认；PDF 中缺失的栏目不清空原内容。
+- AI 编排区分学习、任职与项目客户等语义，合并工作和实习经历；未配置 AI 时规则识别严格按栏目处理，不再全篇匹配公司/学校或逐两行创建项目。
+- 大专、中专及未知学历均可正确显示；日期适配日期输入框。不能确定的日期归属、非法日期和未归类原文保留提示供人工核对，不能保证所有扫描版式均准确识别。原 PDF 仍通过原有导入接口作为附件保存。
+- 前端回归：`node --test test/agentResume.test.js`；后端回归：在 `backend/` 执行 `mvn -pl ruoyi-system -am -Dtest=ResumeRuleStructurerTest,ResumeAiFieldMapperTest,LocalResumePdfParserTest,ResumePdfPersistenceTest -Dsurefire.failIfNoSpecifiedTests=false test`。使用合成数据及内存数据库，不写真实用户简历。
+
+## 收藏岗位计数
+
+- 收藏仍保存在浏览器本地；本次不迁移收藏、不修改服务端收藏数据。
+- 岗位列表接口新增可选 `jobIds` 参数，格式为逗号分隔的正整数 ID，每次最多 200 个；不传时保持原查询行为，显式空集合不返回全部岗位。岗位和企业可用性、搜索及筛选条件对列表和分页总数一致生效。
+- 岗位浏览页按收藏 ID 向真实岗位接口查询，分批、分页加载全部匹配的收藏，不再仅从普通列表前 50 条中筛选。收藏数字表示当前条件下可查看的收藏岗位数量，与收藏列表共用结果；失效岗位不计数，但不删除本地记录，清除筛选不会丢失其他收藏。
+- 收藏/取消、窗口重新聚焦和其他标签页修改会同步更新；加载失败显示未知数量及错误提示，不伪报零收藏。
+- 验证：`node --test test/agentSavedJobs.test.js`；后端执行 `mvn -pl ruoyi-system -am -Dtest=AgentJobMatchScoreTest,AgentJobQueryTest,AgentJobPresentationTest -Dsurefire.failIfNoSpecifiedTests=false test`，使用合成数据和 H2 内存数据库。
