@@ -89,12 +89,19 @@ class TalentFakeSource extends TalentDetailDataSource {
   List<Map<String, dynamic>> slots = [];
   Map<String, dynamic> workflow = {
     'template': {'name': '合成流程'},
-    'stages': <Map<String, dynamic>>[],
+    'stages': [
+      {
+        'stageId': 31,
+        'name': '在线笔试',
+        'type': 1,
+        'configJson': '{"duration":45}',
+      },
+    ],
   };
   List<List<Map<String, dynamic>>> interviewPages = [[]];
   Map<String, dynamic> inviteResult = {'appointmentId': 101};
   Completer<Map<String, dynamic>>? resumePending, invitePending;
-  Completer<List<Map<String, dynamic>>>? availabilityPending;
+  Completer<List<Map<String, dynamic>>>? availabilityPending, stageInvitePending;
   int detailCalls = 0,
       resumeCalls = 0,
       matchCalls = 0,
@@ -229,6 +236,9 @@ class TalentFakeSource extends TalentDetailDataSource {
     required List<Map<String, Object?>> stages,
   }) async {
     stageInvites.add(stages);
+    if (stageInvitePending != null) {
+      return stageInvitePending!.future;
+    }
     final results = [
       for (final (index, stage) in stages.indexed)
         <String, dynamic>{
@@ -292,7 +302,11 @@ class TalentFakeSource extends TalentDetailDataSource {
   }
 }
 
-Future<void> pumpTalentWidget(WidgetTester tester, Widget child) async {
+Future<void> pumpTalentWidget(
+  WidgetTester tester,
+  Widget child, {
+  bool use24HourFormat = false,
+}) async {
   tester.view.physicalSize = const Size(480, 1400);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
@@ -300,6 +314,12 @@ Future<void> pumpTalentWidget(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.light,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          alwaysUse24HourFormat: use24HourFormat || MediaQuery.of(context).alwaysUse24HourFormat,
+        ),
+        child: child!,
+      ),
       home: Scaffold(body: child),
     ),
   );
@@ -321,26 +341,29 @@ Future<void> scrollTalentTo(
   await tester.pumpAndSettle();
 }
 
+/// 通过时间轴点选开始时间（目标行位于视口顶部 1 小时处），
+/// 单页模式下无需额外保存步骤，时间直接写入当前阶段。
 Future<void> fillTalentInvite(
   WidgetTester tester, {
   int hour = 9,
   int minute = 30,
-  bool save = true,
+  bool selectInterviewer = true,
 }) async {
-  if (find.byKey(const Key('invite-detail-title')).evaluate().isEmpty) {
-    await tester.tap(find.byKey(const Key('invite-stage-edit-0')));
-    await tester.pumpAndSettle();
-  }
   // 选择面试官：打开面试官弹层 → 选中 → 确定。
-  if (find.byKey(const Key('interviewer-search')).evaluate().isEmpty) {
-    await tester.tap(find.byKey(const Key('invite-interviewer')));
+  if (selectInterviewer) {
+    if (find.byKey(const Key('interviewer-search')).evaluate().isEmpty) {
+      final interviewerRow = find.byKey(const Key('invite-interviewer'));
+      await tester.ensureVisible(interviewerRow);
+      await tester.pumpAndSettle();
+      await tester.tap(interviewerRow);
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.byKey(const ValueKey('interviewer-option-19')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('interviewer-confirm')));
     await tester.pumpAndSettle();
   }
-  await tester.tap(find.byKey(const ValueKey('interviewer-option-19')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('interviewer-confirm')));
-  await tester.pumpAndSettle();
-  // 时间轴点选开始时间：先滚动使目标时段可见（目标行位于视口顶部 1 小时处）。
+  // 时间轴点选开始时间。
   final timeline = find.byKey(const Key('invite-timeline'));
   await tester.ensureVisible(timeline);
   await tester.pumpAndSettle();
@@ -355,8 +378,40 @@ Future<void> fillTalentInvite(
   final rect = tester.getRect(timeline);
   await tester.tapAt(Offset(rect.left + 120, rect.top + 58));
   await tester.pumpAndSettle();
-  if (save) {
-    await tester.tap(find.byKey(const Key('invite-stage-save')));
-    await tester.pumpAndSettle();
-  }
+}
+
+/// 通过「面试时间设置」的手动开始时间入口，用时间选择器的文本输入模式设置时间
+/// （时间轴点击难以覆盖深夜时段，跨天用例使用此入口）。
+Future<void> pickInviteTimeField(
+  WidgetTester tester,
+  int hour,
+  int minute,
+) async {
+  final field = find.byKey(const Key('invite-time-field'));
+  await tester.ensureVisible(field);
+  await tester.tap(field);
+  await tester.pumpAndSettle();
+  await tester.tap(find.byTooltip('Switch to text input mode'));
+  await tester.pumpAndSettle();
+  final fields = find.descendant(
+    of: find.byType(TimePickerDialog),
+    matching: find.byType(TextField),
+  );
+  await tester.enterText(fields.at(0), '$hour');
+  await tester.enterText(fields.at(1), '$minute');
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('OK'));
+  await tester.pumpAndSettle();
+}
+
+/// 通过「面试时间设置」的面试日期入口选择日期（日历同步由该入口验证）。
+Future<void> pickInviteDateField(WidgetTester tester, String dayLabel) async {
+  final field = find.byKey(const Key('invite-date-field'));
+  await tester.ensureVisible(field);
+  await tester.tap(field);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(dayLabel).last);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('OK'));
+  await tester.pumpAndSettle();
 }

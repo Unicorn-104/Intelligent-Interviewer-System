@@ -8,8 +8,19 @@ import '../../../../theme/app_theme.dart';
 import '../data/talent_detail_data_source.dart';
 import '../models/talent_detail_view_data.dart';
 
-/// 邀请面试弹窗：步骤一「设置面试时间」（阶段概览 + 时间轴排期）、
-/// 步骤二「确认邀请」，最终确认后才调用原邀请接口。
+/// 阶段面试方式文案，与发布岗位时的招聘流程配置一致。
+const _stageTypeLabels = <int, String>{
+  1: '在线笔试',
+  2: 'AI 技术面试',
+  3: 'HR 综合面试',
+  4: '编程实操',
+};
+
+/// 邀请面试弹窗：阶段列表、周历、时间轴与「面试时间设置」整合在同一个可滚动页面，
+/// 步骤二「确认邀请」最终确认后才调用邀请接口。
+///
+/// 开始时间只有一份状态（当前阶段的日期 + 时间），点击时间轴与手动选择
+/// 日期/时间都会写入同一份状态并互相同步；时长只读，来自岗位招聘流程配置。
 class TalentInterviewInviteSheet extends StatefulWidget {
   const TalentInterviewInviteSheet({
     super.key,
@@ -34,22 +45,40 @@ class _StageDraft {
     required this.name,
     required this.duration,
     this.stageId,
+    this.stageType,
     this.requiredFlag = false,
     this.skip = false,
+    this.durationConfigured = true,
   });
   final String name;
   final int? stageId;
+  final int? stageType;
   final bool requiredFlag;
   final bool skip;
-  int duration;
+  final int duration;
+  final bool durationConfigured;
   int? interviewerId;
   DateTime? date;
   TimeOfDay? time;
   Map<String, dynamic>? appointment;
+
   DateTime? get start => date == null || time == null
       ? null
       : TalentUtc8.fromSelection(date!, time!.hour, time!.minute);
-  bool get ready => interviewerId != null && start != null;
+  DateTime? get end => start?.add(Duration(minutes: duration));
+  bool get ready => interviewerId != null && start != null && durationConfigured;
+
+  /// 结束时间超出开始日期当天 24:00 视为跨天面试。
+  bool get crossDay {
+    final start = this.start;
+    final end = this.end;
+    if (start == null || end == null || !durationConfigured) return false;
+    final dayEnd = TalentUtc8.fromSelection(date!, 0, 0).add(
+      const Duration(days: 1),
+    );
+    return end.isAfter(dayEnd);
+  }
+
   Map<String, Object?> get payload => {
     'stageId': stageId,
     'interviewerId': interviewerId,
@@ -58,7 +87,7 @@ class _StageDraft {
   };
 }
 
-enum _InviteView { overview, detail, confirm }
+enum _InviteView { setup, confirm }
 
 class _TalentInterviewInviteSheetState
     extends State<TalentInterviewInviteSheet> {
@@ -86,13 +115,7 @@ class _TalentInterviewInviteSheetState
   bool? _busy;
   late DateTime _week;
   late DateTime _day;
-  _InviteView _view = _InviteView.overview;
-
-  // 时间轴排期的临时选择。
-  int? _slotInterviewer;
-  DateTime? _slotStart;
-  late int _slotDuration;
-  bool _availabilityLoaded = false;
+  _InviteView _view = _InviteView.setup;
 
   _StageDraft? get _current => _stages.isEmpty ? null : _stages[_selected];
   bool get _locked => _saving || _uncertain;
@@ -103,12 +126,15 @@ class _TalentInterviewInviteSheetState
     day.day,
   ).subtract(Duration(days: day.weekday - 1));
   DateTime _wallNow() => TalentUtc8.wallTime(_now());
+  DateTime _wallToday() {
+    final wall = _wallNow();
+    return DateTime(wall.year, wall.month, wall.day);
+  }
 
   @override
   void initState() {
     super.initState();
-    final today = _wallNow();
-    _day = DateTime(today.year, today.month, today.day);
+    _day = _wallToday();
     _week = _monday(_day);
     _positionId = widget.job?.positionId;
     _loadPeople();
@@ -192,7 +218,7 @@ class _TalentInterviewInviteSheetState
       _workflowError = null;
       _stages = [];
       _selected = 0;
-      _view = _InviteView.overview;
+      _view = _InviteView.setup;
       _busy = null;
       _submitError = null;
     });
@@ -209,17 +235,18 @@ class _TalentInterviewInviteSheetState
         if (id == null) throw const FormatException('招聘阶段缺少ID，请刷新流程');
         final raw = row['configJson'];
         final config = raw is String && raw.isNotEmpty ? jsonDecode(raw) : raw;
-        final duration = config is Map
-            ? int.tryParse('${config['duration']}') ?? 45
-            : 45;
-        if (duration < 1 || duration > 1440) {
-          throw const FormatException('招聘阶段时长无效');
-        }
+        final parsed = config is Map
+            ? int.tryParse('${config['duration']}')
+            : null;
+        final configured =
+            parsed != null && parsed >= 1 && parsed <= 1440;
         stages.add(
           _StageDraft(
             stageId: id,
             name: talentText(row['name']),
-            duration: duration,
+            stageType: talentId(row['type']),
+            duration: configured ? parsed : 0,
+            durationConfigured: configured,
             requiredFlag:
                 row['required'] == true || '${row['required']}' == '1',
             skip: row['skip'] == true || '${row['skip']}' == '1',
@@ -227,19 +254,34 @@ class _TalentInterviewInviteSheetState
         );
       }
       if (stages.isEmpty) {
-        stages.add(
-          _StageDraft(name: widget.job?.currentStage ?? '面试阶段', duration: 45),
-        );
+        throw const FormatException('该岗位尚未配置招聘流程阶段，请先在岗位详情完善招聘流程');
       }
       for (final stage in stages) {
+        // 未安排阶段默认落在当前查看日期，手动只选开始时间时也有日期基准。
+        stage.date = _day;
         final matches = existing
             .where((row) => talentId(row['stageId']) == stage.stageId)
             .toList();
-        if (matches.isNotEmpty) stage.appointment = matches.last;
+        if (matches.isEmpty) continue;
+        final row = matches.last;
+        stage.appointment = row;
+        final start = TalentUtc8.parseServer(row['startTime']);
+        if (start != null) {
+          final wall = TalentUtc8.wallTime(start);
+          stage.date = DateTime(wall.year, wall.month, wall.day);
+          stage.time = TimeOfDay(hour: wall.hour, minute: wall.minute);
+        }
+        stage.interviewerId = talentId(row['interviewerId']);
       }
       if (!mounted || request != _workflowRequest) return;
-      setState(() => _stages = stages);
+      setState(() {
+        _stages = stages;
+        final first = stages.isNotEmpty ? stages.first : null;
+        if (first != null && first.date != null) _day = first.date!;
+        _week = _monday(_day);
+      });
       await _loadCalendar();
+      await _loadAvailability();
     } catch (error) {
       if (mounted && request == _workflowRequest) {
         setState(() => _workflowError = talentError(error));
@@ -304,39 +346,40 @@ class _TalentInterviewInviteSheetState
     }
   }
 
-  /// 加载选中面试官在所选日期的忙闲，用于时间轴展示与冲突提示。
+  /// 加载所选面试官在查看日期（以及跨天选择覆盖到的时间段）的忙闲，
+  /// 用于时间轴展示与冲突提示。保存与提交时仍会再次检查。
   Future<void> _loadAvailability() async {
-    final interviewer = _slotInterviewer;
-    if (interviewer == null || _view != _InviteView.detail) return;
+    final interviewer = _current?.interviewerId;
     final dayStart = TalentUtc8.fromSelection(_day, 0, 0);
+    final dayEnd = dayStart.add(const Duration(days: 1));
+    final selectionEnd = _current?.end;
+    final to = selectionEnd != null && selectionEnd.isAfter(dayEnd)
+        ? selectionEnd
+        : dayEnd;
+    if (interviewer == null) {
+      setState(() {
+        _availability = [];
+        _loadingAvailability = false;
+      });
+      return;
+    }
     setState(() {
       _loadingAvailability = true;
-      _availabilityLoaded = false;
     });
     try {
       final rows = await widget.source.loadAvailability(
         interviewer,
         from: TalentUtc8.serverTime(dayStart),
-        to: TalentUtc8.serverTime(dayStart.add(const Duration(days: 1))),
+        to: TalentUtc8.serverTime(to),
       );
-      if (!mounted ||
-          interviewer != _slotInterviewer ||
-          _view != _InviteView.detail) {
-        return;
-      }
-      setState(() {
-        _availability = rows;
-        _availabilityLoaded = true;
-      });
+      if (!mounted || interviewer != _current?.interviewerId) return;
+      setState(() => _availability = rows);
     } catch (_) {
-      if (!mounted || interviewer != _slotInterviewer) return;
+      if (!mounted || interviewer != _current?.interviewerId) return;
       // 忙闲加载失败不得视为空闲；保存时仍会再次检查。
-      setState(() {
-        _availability = [];
-        _availabilityLoaded = false;
-      });
+      setState(() => _availability = []);
     } finally {
-      if (mounted && interviewer == _slotInterviewer) {
+      if (mounted && interviewer == _current?.interviewerId) {
         setState(() => _loadingAvailability = false);
       }
     }
@@ -350,62 +393,93 @@ class _TalentInterviewInviteSheetState
         start.isAfter(_now());
   }
 
-  Future<void> _enterDetail(int index) async {
-    if (_locked || _loadingWorkflow || _loadingPeople || _people.isEmpty) {
-      return;
-    }
+  /// 切换当前编辑阶段：各阶段的临时排期保存在各自的 _StageDraft 中，
+  /// 切换只改变当前选中项，不会丢失已设置的时间。
+  void _selectStage(int index) {
+    if (_locked || _loadingWorkflow || _people.isEmpty) return;
     final stage = _stages[index];
     setState(() {
       _selected = index;
-      _view = _InviteView.detail;
+      _view = _InviteView.setup;
       _submitError = null;
+      _busy = null;
       _availability = [];
-      _availabilityLoaded = false;
-    });
-    final row = stage.appointment;
-    final start = row == null
-        ? stage.start
-        : TalentUtc8.parseServer(row['startTime']);
-    final wall = start == null ? _wallNow() : TalentUtc8.wallTime(start);
-    final targetDay = DateTime(wall.year, wall.month, wall.day);
-    _slotStart = row == null ? stage.start : start;
-    _slotDuration = row == null
-        ? stage.duration
-        : TalentUtc8.parseServer(row['endTime'])!.difference(start!).inMinutes;
-    _slotInterviewer = row == null
-        ? stage.interviewerId
-        : talentId(row['interviewerId']);
-    setState(() {
-      _day = targetDay;
-      if (_monday(targetDay) != _week) {
-        _week = _monday(targetDay);
+      if (stage.date != null) _day = stage.date!;
+      if (_monday(_day) != _week) {
+        _week = _monday(_day);
         _loadCalendar();
       }
     });
-    await _loadAvailability();
+    _loadAvailability();
   }
 
+  /// 时间轴点击：写入当前阶段的日期与时间（唯一的开始时间状态源）。
   void _selectSlot(DateTime day, int hour, int minute) {
     final stage = _current;
     if (stage == null || _locked) return;
-    // 已安排且可编辑的阶段允许改选时间；只读安排不允许。
+    // 已安排且只读的阶段不允许改选时间；可编辑安排允许调整。
     if (stage.appointment != null && !_editable(stage.appointment!)) return;
-    final start = TalentUtc8.fromSelection(day, hour, minute);
     setState(() {
-      _slotStart = start;
+      stage.date = DateTime(day.year, day.month, day.day);
+      stage.time = TimeOfDay(hour: hour, minute: minute);
       _day = DateTime(day.year, day.month, day.day);
+      _busy = null;
       _submitError = null;
     });
+    _loadAvailability();
   }
 
-  /// 当前选择时段与已有安排/面试官忙闲/时间范围的冲突提示。
+  /// 手动选择面试日期：与时间轴共用同一份 stage.date/time 状态。
+  Future<void> _pickDate() async {
+    final stage = _current;
+    if (stage == null || _locked) return;
+    if (stage.appointment != null && !_editable(stage.appointment!)) return;
+    final today = _wallToday();
+    final value = await showDatePicker(
+      context: context,
+      initialDate: stage.date == null || stage.date!.isBefore(today)
+          ? today
+          : stage.date!,
+      firstDate: today,
+      lastDate: DateTime(today.year + 3),
+    );
+    if (!mounted || value == null) return;
+    setState(() {
+      stage.date = value;
+      _day = value;
+      if (_monday(value) != _week) {
+        _week = _monday(value);
+        _loadCalendar();
+      }
+      _busy = null;
+      _submitError = null;
+    });
+    _loadAvailability();
+  }
+
+  /// 手动选择开始时间：同样写入当前阶段的唯一开始时间状态。
+  Future<void> _pickTime() async {
+    final stage = _current;
+    if (stage == null || _locked) return;
+    if (stage.appointment != null && !_editable(stage.appointment!)) return;
+    final wall = TalentUtc8.wallTime(_now().add(const Duration(hours: 1)));
+    final value = await showTimePicker(
+      context: context,
+      initialTime: stage.time ?? TimeOfDay(hour: wall.hour, minute: wall.minute),
+    );
+    if (!mounted || value == null) return;
+    setState(() {
+      stage.time = value;
+      _busy = null;
+      _submitError = null;
+    });
+    _loadAvailability();
+  }
+
+  /// 当前选择时段与已有安排/面试官忙闲的冲突提示（覆盖完整的开始至结束区间）。
   String? _slotConflict(DateTime? start, int duration) {
     if (start == null) return null;
     final end = start.add(Duration(minutes: duration));
-    final dayEnd = TalentUtc8.fromSelection(_day, 0, 0).add(
-      const Duration(days: 1),
-    );
-    if (end.isAfter(dayEnd)) return '所选时段超出当日范围，请提前开始时间';
     if (!start.isAfter(_now())) return '面试时间须晚于当前时间（UTC+8）';
     for (final row in _calendar) {
       if (int.tryParse('${row['status']}') == 2) continue;
@@ -420,7 +494,7 @@ class _TalentInterviewInviteSheetState
         return '该时间段已有面试安排，请选择其他时间';
       }
     }
-    if (_availabilityLoaded) {
+    if (_availability.isNotEmpty) {
       try {
         if (TalentUtc8.isBusy(_availability, start, end)) {
           return '所选时段面试官已被占用';
@@ -433,7 +507,9 @@ class _TalentInterviewInviteSheetState
   }
 
   Future<void> _openInterviewerSheet() async {
-    if (_locked || _loadingPeople || _people.isEmpty) return;
+    final stage = _current;
+    if (_locked || _loadingPeople || _people.isEmpty || stage == null) return;
+    if (stage.appointment != null && !_editable(stage.appointment!)) return;
     final selected = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -444,96 +520,51 @@ class _TalentInterviewInviteSheetState
       ),
       builder: (_) => _InterviewerSheet(
         people: _people,
-        current: _slotInterviewer,
+        current: stage.interviewerId,
       ),
     );
     if (!mounted || selected == null) return;
     setState(() {
-      _slotInterviewer = selected;
-      _availabilityLoaded = false;
+      stage.interviewerId = selected;
       _availability = [];
+      _busy = null;
       _submitError = null;
     });
     await _loadAvailability();
   }
 
-  Future<void> _saveDetail() async {
+  /// 已安排且可编辑的阶段：保存调整走原改期接口。
+  Future<void> _saveArranged() async {
     final stage = _current;
     if (_locked || stage == null) return;
-    if (stage.appointment == null) {
-      final conflict = _slotConflict(_slotStart, _slotDuration);
-      if (_slotStart == null) {
-        setState(() => _submitError = '请点击时间轴选择开始时间');
-        return;
-      }
-      if (_slotInterviewer == null) {
-        setState(() => _submitError = '请选择面试官');
-        return;
-      }
-      if (conflict != null) {
-        setState(() => _submitError = conflict);
-        return;
-      }
-      final start = _slotStart!;
-      final end = start.add(Duration(minutes: _slotDuration));
-      setState(() => _saving = true);
-      try {
-        final rows = await widget.source.loadAvailability(
-          _slotInterviewer!,
-          to: TalentUtc8.serverTime(end),
-        );
-        if (!mounted) return;
-        if (TalentUtc8.isBusy(rows, start, end)) {
-          setState(() {
-            _busy = true;
-            _submitError = '所选时段面试官已被占用';
-          });
-          return;
-        }
-        final wall = TalentUtc8.wallTime(start);
-        setState(() {
-          stage.interviewerId = _slotInterviewer;
-          stage.date = DateTime(wall.year, wall.month, wall.day);
-          stage.time = TimeOfDay(hour: wall.hour, minute: wall.minute);
-          stage.duration = _slotDuration;
-          _busy = false;
-          _submitError = null;
-          _view = _InviteView.overview;
-        });
-        await _loadCalendar();
-      } catch (error) {
-        if (!mounted) return;
-        setState(() => _submitError = talentError(error));
-      } finally {
-        if (mounted) setState(() => _saving = false);
-      }
-      return;
-    }
-    // 已安排：可编辑则走改期，否则只读。
-    final row = stage.appointment!;
-    if (!_editable(row)) return;
-    final start = _slotStart;
+    final row = stage.appointment;
+    if (row == null || !_editable(row)) return;
+    final start = stage.start;
     if (start == null || !start.isAfter(_now())) {
       setState(() => _submitError = '面试时间须晚于当前时间（UTC+8）');
       return;
     }
-    final conflict = _slotConflict(start, _slotDuration);
+    if (!stage.durationConfigured) {
+      setState(() => _submitError = '该阶段未配置面试时长，请先完善岗位招聘流程');
+      return;
+    }
+    final conflict = _slotConflict(start, stage.duration);
     if (conflict != null) {
       setState(() => _submitError = conflict);
       return;
     }
     final id = talentId(row['appointmentId']);
-    if (id == null || _slotInterviewer == null) return;
+    if (id == null || stage.interviewerId == null) return;
     setState(() {
       _saving = true;
       _submitError = null;
     });
     try {
+      // 时长保持阶段配置/原预约时长，不随改期调整。
       final result = await widget.source.reschedule(
         id,
         newStartTime: TalentUtc8.serverTime(start),
-        durationMin: _slotDuration,
-        interviewerId: _slotInterviewer,
+        interviewerId: stage.interviewerId,
       );
       if (!mounted) return;
       if (talentId(result['appointmentId']) != id) {
@@ -545,7 +576,7 @@ class _TalentInterviewInviteSheetState
           item.appointment = {...row, ...result};
         }
       }
-      setState(() => _view = _InviteView.overview);
+      setState(() => _busy = null);
       await _loadCalendar();
       if (mounted) {
         ScaffoldMessenger.of(
@@ -560,19 +591,16 @@ class _TalentInterviewInviteSheetState
     }
   }
 
-  void _cancelDetail() {
-    if (_locked) return;
-    final stage = _current;
-    // 未保存的临时选择直接丢弃，保留阶段原设置。
-    if (stage != null && stage.appointment == null) {
-      _slotStart = stage.start;
-      _slotInterviewer = stage.interviewerId;
-      _slotDuration = stage.duration;
-    }
-    setState(() {
-      _view = _InviteView.overview;
-      _submitError = null;
-    });
+  /// 已安排阶段是否被修改过（时间或面试官与预约不一致）。
+  bool _arrangedModified(_StageDraft stage) {
+    final row = stage.appointment;
+    if (row == null || !_editable(row)) return false;
+    final start = TalentUtc8.parseServer(row['startTime']);
+    final changedTime = stage.start != null &&
+        (start == null || !stage.start!.isAtSameMomentAs(start));
+    final changedInterviewer =
+        stage.interviewerId != talentId(row['interviewerId']);
+    return changedTime || changedInterviewer;
   }
 
   Future<void> _enterConfirm() async {
@@ -583,6 +611,10 @@ class _TalentInterviewInviteSheetState
     if (pending.isEmpty) {
       // 全部已安排，无需再发邀约。
       Navigator.pop(context, _changed);
+      return;
+    }
+    if (_stages.any((stage) => !stage.durationConfigured)) {
+      setState(() => _submitError = '部分阶段未配置面试时长，请先在岗位详情完善招聘流程');
       return;
     }
     if (pending.any((stage) => !stage.ready)) {
@@ -602,7 +634,7 @@ class _TalentInterviewInviteSheetState
             ? stage.start
             : TalentUtc8.parseServer(stage.appointment!['startTime']);
         final end = stage.appointment == null
-            ? start?.add(Duration(minutes: stage.duration))
+            ? stage.end
             : TalentUtc8.parseServer(stage.appointment!['endTime']);
         if (start == null || end == null) continue;
         if (stage.appointment == null && !start.isAfter(_now())) {
@@ -617,7 +649,7 @@ class _TalentInterviewInviteSheetState
       }
       if (conflict == null) {
         for (final item in pending) {
-          final end = item.start!.add(Duration(minutes: item.duration));
+          final end = item.end!;
           final rows = await widget.source.loadAvailability(
             item.interviewerId!,
             to: TalentUtc8.serverTime(end),
@@ -650,7 +682,7 @@ class _TalentInterviewInviteSheetState
       Navigator.pop(context, _changed);
       return;
     }
-    if (pending.any((stage) => !stage.ready)) {
+    if (pending.any((stage) => !stage.ready || !stage.durationConfigured)) {
       setState(() => _submitError = '请分别设置每个阶段的面试官、日期和时间');
       return;
     }
@@ -662,7 +694,7 @@ class _TalentInterviewInviteSheetState
     try {
       // 最终提交前再次复核面试官忙闲，防止多人同时预约造成冲突。
       for (final item in pending) {
-        final end = item.start!.add(Duration(minutes: item.duration));
+        final end = item.end!;
         final rows = await widget.source.loadAvailability(
           item.interviewerId!,
           to: TalentUtc8.serverTime(end),
@@ -763,7 +795,7 @@ class _TalentInterviewInviteSheetState
     if (_locked) return;
     setState(
       () => _week = delta == 0
-          ? _monday(_wallNow())
+          ? _monday(_wallToday())
           : _week.add(Duration(days: delta * 7)),
     );
     _loadCalendar();
@@ -772,6 +804,7 @@ class _TalentInterviewInviteSheetState
   void _pickDay(DateTime day) {
     if (_locked) return;
     setState(() => _day = DateTime(day.year, day.month, day.day));
+    _loadAvailability();
   }
 
   String _scheduleLabel(_StageDraft stage) {
@@ -781,7 +814,7 @@ class _TalentInterviewInviteSheetState
       final end = talentText(row['endTime'], '');
       final time = start.isEmpty
           ? '已安排'
-          : '${start.substring(0, 16)} — ${end.length >= 16 ? end.substring(11, 16) : ''}';
+          : '${start.substring(0, 16)} — ${end.length >= 16 ? end.substring(0, 16) : ''}';
       return '$time\n${talentText(row['interviewerName'], '面试官待定')}';
     }
     if (!stage.ready) return '待安排面试时间';
@@ -791,7 +824,8 @@ class _TalentInterviewInviteSheetState
     final person = people.isEmpty
         ? '面试官未填写'
         : talentText(people.first['userName']);
-    return '${TalentUtc8.serverTime(stage.start!).substring(0, 16)}\n$person · ${stage.duration}分钟';
+    final end = TalentUtc8.serverTime(stage.end!);
+    return '${TalentUtc8.serverTime(stage.start!).substring(0, 16)} — ${end.substring(0, 16)}\n$person · ${stage.duration}分钟';
   }
 
   String get _positionTitle => widget.job?.title ??
@@ -803,6 +837,20 @@ class _TalentInterviewInviteSheetState
             )['title'],
       );
 
+  String? get _currentConflict =>
+      _current == null ? null : _slotConflict(_current!.start, _current!.duration);
+
+  /// 任一待安排阶段存在冲突时禁止进入确认页。
+  bool get _hasPendingConflict {
+    for (final stage in _stages) {
+      if (stage.appointment == null &&
+          _slotConflict(stage.start, stage.duration) != null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool get _canSubmit =>
       !_locked &&
       !_loadingWorkflow &&
@@ -812,7 +860,19 @@ class _TalentInterviewInviteSheetState
       _people.isNotEmpty &&
       _stages.isNotEmpty &&
       _busy != true &&
+      !_hasPendingConflict &&
+      _stages.every((item) => item.durationConfigured) &&
       _stages.every((item) => item.appointment != null || item.ready);
+
+  bool get _canSaveArranged {
+    final stage = _current;
+    if (stage == null || !_arrangedModified(stage)) return false;
+    return stage.interviewerId != null &&
+        stage.start != null &&
+        stage.start!.isAfter(_now()) &&
+        _currentConflict == null &&
+        !_loadingAvailability;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -836,14 +896,13 @@ class _TalentInterviewInviteSheetState
               ),
             ),
             _header(),
-            if (_view != _InviteView.detail) _stepIndicator(),
+            _stepIndicator(),
             Expanded(
               child: SingleChildScrollView(
                 key: const Key('invite-content-scroll'),
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: switch (_view) {
-                  _InviteView.overview => _overviewContent(),
-                  _InviteView.detail => _detailContent(),
+                  _InviteView.setup => _setupContent(),
                   _InviteView.confirm => _confirmContent(),
                 },
               ),
@@ -914,7 +973,8 @@ class _TalentInterviewInviteSheetState
     );
   }
 
-  Widget _overviewContent() => Column(
+  /// 步骤一：阶段列表、周历、时间轴、推荐时段与面试时间设置整合在同一页面。
+  Widget _setupContent() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _candidateCard(),
@@ -980,6 +1040,14 @@ class _TalentInterviewInviteSheetState
         _stageList(),
         const SizedBox(height: 14),
         _weekStrip(),
+        const SizedBox(height: 14),
+        _timeline(),
+        const SizedBox(height: 10),
+        _recommendations(),
+        const SizedBox(height: 14),
+        _timeEditorCard(),
+        const SizedBox(height: 12),
+        _interviewerRow(),
       ],
       if (_loadingPeople)
         const Padding(
@@ -999,7 +1067,7 @@ class _TalentInterviewInviteSheetState
           child: const Text('刷新面试官'),
         ),
       ],
-      if (_submitError != null && _view == _InviteView.overview)
+      if (_submitError != null && _view == _InviteView.setup)
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Text(
@@ -1110,7 +1178,7 @@ class _TalentInterviewInviteSheetState
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Text(
-        '面试阶段（${_stages.length}）',
+        '招聘流程阶段（${_stages.length}）',
         style: const TextStyle(
           color: AppColors.brand,
           fontSize: 16,
@@ -1135,13 +1203,13 @@ class _TalentInterviewInviteSheetState
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
-          color: selected ? AppColors.interactive : AppColors.hairline,
+          color: selected ? AppColors.teal : AppColors.hairline,
           width: selected ? 1.6 : 1,
         ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: _locked ? null : () => _enterDetail(index),
+        onTap: _locked ? null : () => _selectStage(index),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -1189,7 +1257,19 @@ class _TalentInterviewInviteSheetState
                           const SizedBox(width: 6),
                           _miniBadge('可跳过', AppColors.textMuted),
                         ],
+                        if (!item.durationConfigured) ...[
+                          const SizedBox(width: 6),
+                          _miniBadge('未配置时长', AppColors.error),
+                        ],
                       ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${_stageTypeLabels[item.stageType] ?? '面试'} · ${item.durationConfigured ? '${item.duration}分钟' : '时长缺失'}',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -1218,13 +1298,17 @@ class _TalentInterviewInviteSheetState
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.primarySoft,
+                    color: selected
+                        ? AppColors.tealSoft
+                        : AppColors.primarySoft,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: const Text(
-                    '设置时间',
+                  child: Text(
+                    selected ? '编辑中' : '设置时间',
                     style: TextStyle(
-                      color: AppColors.interactive,
+                      color: selected
+                          ? AppColors.tealDeep
+                          : AppColors.interactive,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1249,7 +1333,7 @@ class _TalentInterviewInviteSheetState
     ),
   );
 
-  /// 简洁周历：周导航、日期格（含当日面试数量）、当天面试列表、查看完整日程。
+  /// 简洁周历：周导航、日期格（含当日面试数量）、当天面试列表。
   Widget _weekStrip() => Container(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
@@ -1277,17 +1361,6 @@ class _TalentInterviewInviteSheetState
                   fontWeight: FontWeight.w600,
                 ),
               ),
-            ),
-            TextButton(
-              key: const Key('invite-open-calendar'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.tealDeep,
-                visualDensity: VisualDensity.compact,
-              ),
-              onPressed: _locked || _stages.isEmpty
-                  ? null
-                  : () => _enterDetail(_selected),
-              child: const Text('查看完整日程'),
             ),
           ],
         ),
@@ -1396,7 +1469,7 @@ class _TalentInterviewInviteSheetState
         ? -1
         : _rowsOnDay(date).length;
     final selected = DateUtils.isSameDay(date, _day);
-    final isToday = DateUtils.isSameDay(date, _wallNow());
+    final isToday = DateUtils.isSameDay(date, _wallToday());
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 1.5),
       child: Material(
@@ -1466,13 +1539,22 @@ class _TalentInterviewInviteSheetState
 
   Widget _dayList() {
     final rows = _rowsOnDay(_day);
+    final stage = _current;
+    final draftStart = stage?.appointment == null ? stage?.start : null;
+    final draftEnd = stage?.appointment == null ? stage?.end : null;
+    final dayStart = TalentUtc8.fromSelection(_day, 0, 0);
+    final dayEnd = dayStart.add(const Duration(days: 1));
+    final draftOnDay = draftStart != null &&
+        draftEnd != null &&
+        TalentUtc8.overlaps(dayStart, dayEnd, draftStart, draftEnd);
+    final total = rows.length + (draftOnDay ? 1 : 0);
     return Column(
       key: const Key('invite-day-list'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 8),
         Text(
-          '${_day.month}月${_day.day}日 · ${rows.length}场面试',
+          '${_day.month}月${_day.day}日 · $total场面试',
           style: const TextStyle(
             color: AppColors.brand,
             fontSize: 13,
@@ -1480,49 +1562,85 @@ class _TalentInterviewInviteSheetState
           ),
         ),
         const SizedBox(height: 4),
-        if (rows.isEmpty)
+        if (rows.isEmpty && !draftOnDay)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Text(
               '当天暂无面试安排',
               style: TextStyle(color: AppColors.textMuted, fontSize: 12),
             ),
-          )
-        else
-          for (final row in rows)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                children: [
-                  Container(width: 3, height: 30, color: AppColors.interactive),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _rangeLabel(row),
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
+          ),
+        if (draftOnDay)
+          Padding(
+            key: const Key('invite-draft-row'),
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Container(width: 3, height: 30, color: AppColors.teal),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${_rangeLabelFor(draftStart, draftEnd)}（当前所选）',
+                        style: const TextStyle(
+                          color: AppColors.tealDeep,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
-                        Text(
-                          '${talentText(row['candidateName'], '候选人')} · ${talentText(row['stageName'], '面试')}${row['interviewerName'] == null ? '' : ' · ${row['interviewerName']}'}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 11,
-                          ),
+                      ),
+                      Text(
+                        draftStart.isBefore(dayStart)
+                            ? '延续自前一日 · ${stage!.name}'
+                            : '${stage!.name}${draftEnd.isAfter(dayEnd) ? ' · 延续至次日' : ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 11,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
+        for (final row in rows)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Container(width: 3, height: 30, color: AppColors.interactive),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _rangeLabel(row),
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '${talentText(row['candidateName'], '候选人')} · ${talentText(row['stageName'], '面试')}${row['interviewerName'] == null ? '' : ' · ${row['interviewerName']}'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -1531,6 +1649,10 @@ class _TalentInterviewInviteSheetState
     final start = TalentUtc8.parseServer(row['startTime']);
     final end = TalentUtc8.parseServer(row['endTime']);
     if (start == null || end == null) return talentText(row['startTime']);
+    return _rangeLabelFor(start, end);
+  }
+
+  String _rangeLabelFor(DateTime start, DateTime end) {
     final a = TalentUtc8.wallTime(start);
     final b = TalentUtc8.wallTime(end);
     String hhmm(DateTime t) =>
@@ -1538,208 +1660,13 @@ class _TalentInterviewInviteSheetState
     return '${hhmm(a)}–${hhmm(b)}';
   }
 
-  // ---------------- 详细日历排期视图 ----------------
-
-  Widget _detailContent() {
+  /// 空闲时段推荐：基于当日已有面试与面试官忙闲的真实空档生成。
+  /// 时长超过当日营业窗口（09:00–19:00）时不产生推荐，避免虚假时段。
+  Widget _recommendations() {
     final stage = _current;
-    if (stage == null) {
+    if (stage == null || !stage.durationConfigured) {
       return const SizedBox.shrink();
     }
-    final readOnly = stage.appointment != null && !_editable(stage.appointment!);
-    final conflict = _slotConflict(_slotStart, _slotDuration);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          '为 ${stage.name} 选择时间',
-          key: const Key('invite-detail-title'),
-          style: const TextStyle(
-            color: AppColors.brand,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '第 ${_selected + 1} / ${_stages.length} 阶段',
-          style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-        ),
-        if (readOnly)
-          Container(
-            margin: const EdgeInsets.only(top: 10),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.warningSoft,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text(
-              '该面试已开始、已完成或已取消，仅可查看',
-              style: TextStyle(color: AppColors.warning, fontSize: 12),
-            ),
-          ),
-        const SizedBox(height: 12),
-        _detailWeekNav(),
-        const SizedBox(height: 10),
-        _recommendations(stage),
-        const SizedBox(height: 10),
-        _timeline(stage, readOnly),
-        const SizedBox(height: 10),
-        _selectedSlotInfo(conflict, readOnly),
-        if (!readOnly) ...[
-          const SizedBox(height: 14),
-          _durationRow(),
-          const SizedBox(height: 12),
-          _interviewerRow(),
-        ],
-        if (_submitError != null && _view == _InviteView.detail)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              _submitError!,
-              key: const Key('invite-detail-error'),
-              style: const TextStyle(color: AppColors.error),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _detailWeekNav() => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-    decoration: BoxDecoration(
-      color: AppColors.canvas,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: AppColors.hairline),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            IconButton(
-              key: const Key('invite-detail-week-prev'),
-              tooltip: '上一周',
-              visualDensity: VisualDensity.compact,
-              onPressed: _locked || _loadingCalendar
-                  ? null
-                  : () => _switchWeek(-1),
-              icon: const Icon(Icons.chevron_left, color: AppColors.textMuted),
-            ),
-            Expanded(
-              child: Text(
-                '${_week.year}年${_week.month}月',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.brand,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            IconButton(
-              key: const Key('invite-detail-week-next'),
-              tooltip: '下一周',
-              visualDensity: VisualDensity.compact,
-              onPressed: _locked || _loadingCalendar
-                  ? null
-                  : () => _switchWeek(1),
-              icon: const Icon(Icons.chevron_right, color: AppColors.textMuted),
-            ),
-            TextButton(
-              key: const Key('invite-detail-week-today'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.tealDeep,
-                visualDensity: VisualDensity.compact,
-              ),
-              onPressed: _locked || _loadingCalendar ? null : () {
-                _switchWeek(0);
-                _pickDay(DateTime(
-                  _wallNow().year,
-                  _wallNow().month,
-                  _wallNow().day,
-                ));
-              },
-              child: const Text('今天'),
-            ),
-          ],
-        ),
-        Row(
-          children: [
-            for (var index = 0; index < 7; index++)
-              Expanded(child: _detailDayTile(index)),
-          ],
-        ),
-      ],
-    ),
-  );
-
-  Widget _detailDayTile(int index) {
-    final date = _week.add(Duration(days: index));
-    final count = _loadingCalendar || _calendarError != null
-        ? -1
-        : _rowsOnDay(date).length;
-    final selected = DateUtils.isSameDay(date, _day);
-    return InkWell(
-      key: ValueKey('invite-detail-day-$index'),
-      borderRadius: BorderRadius.circular(10),
-      onTap: _locked
-          ? null
-          : () {
-              _pickDay(date);
-              _loadAvailability();
-            },
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 1.5),
-        height: 52,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.teal : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _weekdayLabels[index],
-                style: TextStyle(
-                  color: selected
-                      ? Colors.white.withValues(alpha: .9)
-                      : AppColors.textMuted,
-                  fontSize: 11,
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '${date.day}',
-                style: TextStyle(
-                  color: selected ? Colors.white : AppColors.textPrimary,
-                  fontSize: 14,
-                  height: 1.2,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                count < 0 ? '—' : count > 0 ? '$count场' : '',
-                style: TextStyle(
-                  color: selected
-                      ? Colors.white.withValues(alpha: .85)
-                      : AppColors.warning,
-                  fontSize: 10,
-                  height: 1.2,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 空闲时段推荐：基于当日已有面试与面试官忙闲的真实空档生成。
-  Widget _recommendations(_StageDraft stage) {
     final gaps = _freeGaps(stage.duration);
     if (gaps.isEmpty) {
       return const SizedBox.shrink();
@@ -1762,19 +1689,26 @@ class _TalentInterviewInviteSheetState
                 borderRadius: BorderRadius.circular(8),
                 onTap: _locked
                     ? null
-                    : () => setState(() => _slotStart = gap),
+                    : () {
+                        final wall = TalentUtc8.wallTime(gap);
+                        _selectSlot(
+                          DateTime(wall.year, wall.month, wall.day),
+                          wall.hour,
+                          wall.minute,
+                        );
+                      },
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: _slotStart == gap
+                    color: stage.start == gap
                         ? AppColors.tealSoft
                         : AppColors.fieldBackground,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: _slotStart == gap
+                      color: stage.start == gap
                           ? AppColors.teal
                           : Colors.transparent,
                     ),
@@ -1782,7 +1716,7 @@ class _TalentInterviewInviteSheetState
                   child: Text(
                     '${_hhmm(gap)}–${_hhmm(gap.add(Duration(minutes: stage.duration)))}',
                     style: TextStyle(
-                      color: _slotStart == gap
+                      color: stage.start == gap
                           ? AppColors.tealDeep
                           : AppColors.textSecondary,
                       fontSize: 12,
@@ -1804,7 +1738,7 @@ class _TalentInterviewInviteSheetState
       final b = TalentUtc8.parseServer(row['endTime']);
       if (a != null && b != null) busy.add((a, b));
     }
-    if (_availabilityLoaded) {
+    if (_availability.isNotEmpty) {
       for (final slot in _availability) {
         if (int.tryParse('${slot['status']}') != 0) continue;
         final a = TalentUtc8.parseServer(slot['startTime']);
@@ -1844,8 +1778,11 @@ class _TalentInterviewInviteSheetState
 
   static const _pxPerHour = 56.0;
 
-  Widget _timeline(_StageDraft stage, bool readOnly) {
-    final rows = _rowsOnDay(_day);
+  /// 24 小时时间轴：点击选择开始时间（15 分钟粒度，允许跨天），
+  /// 与下方「面试时间设置」卡片共用同一份开始时间状态。
+  Widget _timeline() {
+    final stage = _current;
+    final rows = stage == null ? const <Map<String, dynamic>>[] : _rowsOnDay(_day);
     final lanes = <int, int>{};
     final laneEnds = <DateTime>[];
     for (final row in rows) {
@@ -1860,7 +1797,7 @@ class _TalentInterviewInviteSheetState
       lanes[talentId(row['appointmentId'])!] = lane;
     }
     final busySlots = <Map<String, dynamic>>[];
-    if (_availabilityLoaded) {
+    if (_availability.isNotEmpty) {
       for (final slot in _availability) {
         if (int.tryParse('${slot['status']}') != 0) continue;
         final a = TalentUtc8.parseServer(slot['startTime']);
@@ -1877,13 +1814,30 @@ class _TalentInterviewInviteSheetState
     final laneCount = math.max(1, laneEnds.length);
     final dayStart = TalentUtc8.fromSelection(_day, 0, 0);
     final dayEnd = dayStart.add(const Duration(days: 1));
-    final slotStart = _slotStart;
-    final conflict = _slotConflict(slotStart, _slotDuration);
-    final slotTop = slotStart == null
+    final slotStart = stage?.start;
+    final slotEnd = stage?.end;
+    final conflict = _currentConflict;
+    final visibleStart = slotStart == null
         ? null
-        : slotStart.difference(dayStart).inMinutes * _pxPerHour / 60;
-    final slotHeight =
-        _slotDuration * _pxPerHour / 60;
+        : slotStart.isBefore(dayStart)
+        ? dayStart
+        : slotStart;
+    final visibleEnd = slotEnd == null
+        ? null
+        : slotEnd.isAfter(dayEnd)
+        ? dayEnd
+        : slotEnd;
+    final selectionVisible = visibleStart != null &&
+        visibleEnd != null &&
+        visibleStart.isBefore(visibleEnd);
+    final slotTop = !selectionVisible
+        ? null
+        : visibleStart.difference(dayStart).inMinutes * _pxPerHour / 60;
+    final slotHeight = !selectionVisible
+        ? 0.0
+        : visibleEnd.difference(visibleStart).inMinutes * _pxPerHour / 60;
+    final readOnly =
+        stage?.appointment != null && !_editable(stage!.appointment!);
     return Container(
       key: const Key('invite-timeline'),
       height: 420,
@@ -1929,15 +1883,13 @@ class _TalentInterviewInviteSheetState
                                                 15)
                                             .floor() *
                                         15;
-                                if (minutes < 0 ||
-                                    minutes + stage.duration > 1440) {
-                                  setState(
-                                    () => _submitError =
-                                        '所选时段超出当日范围，请提前开始时间',
-                                  );
-                                  return;
-                                }
-                                _selectSlot(_day, minutes ~/ 60, minutes % 60);
+                                if (minutes < 0) return;
+                                final clamped = math.min(minutes, 24 * 60 - 15);
+                                _selectSlot(
+                                  _day,
+                                  clamped ~/ 60,
+                                  clamped % 60,
+                                );
                               },
                               child: const ColoredBox(
                                 color: Colors.transparent,
@@ -1982,11 +1934,15 @@ class _TalentInterviewInviteSheetState
                             dayStart,
                             dayEnd,
                           ),
-                        if (slotTop != null && slotStart != null)
+                        if (slotTop != null &&
+                            slotStart != null &&
+                            selectionVisible)
                           _selectionBlock(
                             slotTop,
                             slotHeight,
                             conflict != null,
+                            slotStart.isBefore(dayStart),
+                            slotEnd!.isAfter(dayEnd),
                             TalentUtc8.serverTime(slotStart).substring(11, 16),
                           ),
                       ],
@@ -2127,10 +2083,13 @@ class _TalentInterviewInviteSheetState
     );
   }
 
+  /// 当前所选时段的可见部分：跨天选择在次日显示延续块。
   Widget _selectionBlock(
     double top,
     double height,
     bool conflict,
+    bool continuesFromYesterday,
+    bool continuesToTomorrow,
     String startLabel,
   ) => Positioned(
     top: top,
@@ -2151,7 +2110,13 @@ class _TalentInterviewInviteSheetState
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              height >= 24 ? '已选 $startLabel 开始' : '',
+              height >= 24
+                  ? continuesFromYesterday
+                      ? '跨日延续（已选 $startLabel 开始）'
+                      : '已选 $startLabel 开始${continuesToTomorrow ? ' · 延续至次日' : ''}'
+                  : '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: conflict ? AppColors.error : AppColors.tealDeep,
                 fontSize: 11,
@@ -2164,112 +2129,190 @@ class _TalentInterviewInviteSheetState
     ),
   );
 
-  Widget _selectedSlotInfo(String? conflict, bool readOnly) {
-    final start = _slotStart;
-    if (start == null && !readOnly) {
-      return const Text(
-        '点击时间轴空白区域选择开始时间（15分钟粒度）',
-        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-      );
-    }
-    final end = start?.add(Duration(minutes: _slotDuration));
-    return Column(
-      key: const Key('invite-slot-info'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (start != null)
-          Text(
-            '${TalentUtc8.serverTime(start).substring(0, 16)} – ${_hhmm(end!)}（UTC+8）',
-            style: const TextStyle(
-              color: AppColors.brand,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        if (conflict != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            conflict,
-            key: const Key('invite-conflict'),
-            style: const TextStyle(color: AppColors.error, fontSize: 12),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _durationRow() {
-    final duration = _slotDuration;
+  /// 「面试时间设置」卡片：手动选择日期与开始时间，时长只读，
+  /// 结束时间按开始时间 + 阶段配置时长自动计算。
+  Widget _timeEditorCard() {
+    final stage = _current;
+    if (stage == null) return const SizedBox.shrink();
+    final readOnly = stage.appointment != null && !_editable(stage.appointment!);
+    final start = stage.start;
+    final end = stage.end;
+    final conflict = _currentConflict;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      key: const Key('invite-time-editor'),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.canvas,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.hairline),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Expanded(
-            child: Text(
-              '面试时长',
-              style: TextStyle(
-                color: AppColors.brand,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          IconButton(
-            key: const Key('invite-duration-decrement'),
-            tooltip: '减少5分钟',
-            visualDensity: VisualDensity.compact,
-            onPressed: _locked || duration <= 15
-                ? null
-                : () => setState(() {
-                    _slotDuration = (duration - 5).clamp(15, 240);
-                    _submitError = null;
-                  }),
-            icon: Icon(
-              Icons.remove_circle_outline,
-              color: duration <= 15 ? AppColors.hairline : AppColors.tealDeep,
-            ),
-          ),
-          Text(
-            '$duration 分钟',
-            key: const Key('invite-duration'),
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 14,
+          const Text(
+            '面试时间设置',
+            style: TextStyle(
+              color: AppColors.brand,
+              fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
           ),
-          IconButton(
-            key: const Key('invite-duration-increment'),
-            tooltip: '增加5分钟',
-            visualDensity: VisualDensity.compact,
-            onPressed: _locked || duration >= 240
-                ? null
-                : () => setState(() {
-                    _slotDuration = (duration + 5).clamp(15, 240);
-                    _submitError = null;
-                  }),
-            icon: Icon(
-              Icons.add_circle_outline,
-              color: duration >= 240 ? AppColors.hairline : AppColors.tealDeep,
+          if (readOnly) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.warningSoft,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                '该面试已开始、已完成或已取消，仅可查看',
+                style: TextStyle(color: AppColors.warning, fontSize: 12),
+              ),
             ),
+          ],
+          const SizedBox(height: 10),
+          _editorRow(
+            fieldKey: const Key('invite-date-field'),
+            label: '面试日期',
+            value: stage.date == null
+                ? '请选择日期'
+                : TalentUtc8.dateLabel(stage.date!),
+            onTap: readOnly || _locked ? null : _pickDate,
           ),
+          _editorRow(
+            fieldKey: const Key('invite-time-field'),
+            label: '开始时间',
+            value: stage.time == null
+                ? '请选择时间'
+                : '${stage.time!.hour.toString().padLeft(2, '0')}:${stage.time!.minute.toString().padLeft(2, '0')}',
+            onTap: readOnly || _locked ? null : _pickTime,
+          ),
+          _editorRow(
+            fieldKey: const Key('invite-duration-info'),
+            label: '面试时长',
+            value: stage.durationConfigured
+                ? '${stage.duration}分钟 · 来自岗位招聘流程配置'
+                : '未配置时长',
+            valueColor: stage.durationConfigured
+                ? AppColors.textPrimary
+                : AppColors.error,
+            readOnly: true,
+          ),
+          _editorRow(
+            fieldKey: const Key('invite-end-info'),
+            label: '结束时间',
+            value: end == null
+                ? '待选择开始时间'
+                : TalentUtc8.serverTime(end).substring(0, 16),
+            readOnly: true,
+          ),
+          if (!stage.durationConfigured) ...[
+            const SizedBox(height: 8),
+            const Text(
+              '该阶段未配置面试时长，请先在岗位详情完善招聘流程',
+              key: Key('invite-duration-missing'),
+              style: TextStyle(color: AppColors.error, fontSize: 12),
+            ),
+          ],
+          if (start != null && end != null && stage.durationConfigured) ...[
+            if (stage.crossDay)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    Container(
+                      key: const Key('invite-cross-day'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.warningSoft,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        '跨天面试',
+                        style: TextStyle(
+                          color: AppColors.warning,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          if (conflict != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              conflict,
+              key: const Key('invite-conflict'),
+              style: const TextStyle(color: AppColors.error, fontSize: 12),
+            ),
+          ],
         ],
       ),
     );
   }
 
+  Widget _editorRow({
+    required Key fieldKey,
+    required String label,
+    required String value,
+    VoidCallback? onTap,
+    Color? valueColor,
+    bool readOnly = false,
+  }) => InkWell(
+    key: fieldKey,
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(8),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 84,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: valueColor ?? AppColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          if (onTap != null)
+            const Icon(
+              Icons.chevron_right,
+              color: AppColors.textMuted,
+              size: 20,
+            ),
+        ],
+      ),
+    ),
+  );
+
   Widget _interviewerRow() {
-    final name = _slotInterviewer == null
+    final stage = _current;
+    if (stage == null) return const SizedBox.shrink();
+    final readOnly = stage.appointment != null && !_editable(stage.appointment!);
+    final name = stage.interviewerId == null
         ? null
         : talentText(
             _people
                 .firstWhere(
-                  (row) => talentId(row['userId']) == _slotInterviewer,
+                  (row) => talentId(row['userId']) == stage.interviewerId,
                   orElse: () => const {'userName': '未填写'},
                 )['userName'],
           );
@@ -2282,7 +2325,7 @@ class _TalentInterviewInviteSheetState
       child: InkWell(
         key: const Key('invite-interviewer'),
         borderRadius: BorderRadius.circular(14),
-        onTap: _locked ? null : _openInterviewerSheet,
+        onTap: readOnly || _locked ? null : _openInterviewerSheet,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
           child: Row(
@@ -2311,11 +2354,12 @@ class _TalentInterviewInviteSheetState
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-              const Icon(
-                Icons.chevron_right,
-                color: AppColors.textMuted,
-                size: 20,
-              ),
+              if (!readOnly)
+                const Icon(
+                  Icons.chevron_right,
+                  color: AppColors.textMuted,
+                  size: 20,
+                ),
             ],
           ),
         ),
@@ -2392,8 +2436,18 @@ class _TalentInterviewInviteSheetState
         ? stage.start
         : TalentUtc8.parseServer(row['startTime']);
     final end = row == null
-        ? start?.add(Duration(minutes: stage.duration))
+        ? stage.end
         : TalentUtc8.parseServer(row['endTime']);
+    final crossDay = row == null ? stage.crossDay : (() {
+      if (start == null || end == null) return false;
+      final wallStart = TalentUtc8.wallTime(start);
+      final dayEnd = TalentUtc8.fromSelection(
+        DateTime(wallStart.year, wallStart.month, wallStart.day),
+        0,
+        0,
+      ).add(const Duration(days: 1));
+      return end.isAfter(dayEnd);
+    })();
     return Container(
       key: ValueKey('invite-confirm-stage-$index'),
       margin: const EdgeInsets.only(bottom: 8),
@@ -2462,9 +2516,14 @@ class _TalentInterviewInviteSheetState
             ],
           ),
           const SizedBox(height: 8),
+          Text(
+            '面试方式：${_stageTypeLabels[stage.stageType] ?? '面试'}',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
           if (start != null && end != null)
             Text(
-              '${TalentUtc8.serverTime(start).substring(0, 16)} – ${_hhmm(end)}（UTC+8）',
+              '${TalentUtc8.serverTime(start).substring(0, 16)} – ${TalentUtc8.serverTime(end).substring(0, 16)}（UTC+8）',
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 13,
@@ -2478,7 +2537,7 @@ class _TalentInterviewInviteSheetState
             ),
           const SizedBox(height: 4),
           Text(
-            '面试官：${row == null ? _interviewerName(stage.interviewerId) : talentText(row['interviewerName'], '面试官待定')} · 时长 ${row == null ? stage.duration : end!.difference(start!).inMinutes} 分钟',
+            '面试官：${row == null ? _interviewerName(stage.interviewerId) : talentText(row['interviewerName'], '面试官待定')} · 时长 ${row == null ? stage.duration : (start != null && end != null ? end.difference(start).inMinutes : '—')} 分钟${crossDay ? ' · 跨天面试' : ''}',
             style: const TextStyle(
               color: AppColors.textMuted,
               fontSize: 12,
@@ -2502,13 +2561,9 @@ class _TalentInterviewInviteSheetState
   // ---------------- 底部操作区 ----------------
 
   Widget _bottomBar() {
-    final canSaveDetail =
-        _slotStart != null &&
-        _slotInterviewer != null &&
-        _slotConflict(_slotStart, _slotDuration) == null &&
-        !_loadingAvailability &&
-        _current != null &&
-        (_current!.appointment == null || _editable(_current!.appointment!));
+    final stage = _current;
+    final showSaveArranged =
+        stage != null && _arrangedModified(stage) && _canSaveArranged;
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.canvas,
@@ -2519,7 +2574,7 @@ class _TalentInterviewInviteSheetState
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: switch (_view) {
-            _InviteView.overview => Row(
+            _InviteView.setup => Row(
               children: [
                 Expanded(
                   child: TextButton(
@@ -2542,63 +2597,37 @@ class _TalentInterviewInviteSheetState
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: FilledButton(
-                    key: const Key('invite-submit'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.teal,
-                      disabledBackgroundColor: AppColors.teal.withValues(
-                        alpha: .45,
-                      ),
-                      minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: _canSubmit ? _enterConfirm : null,
-                    child: const Text('下一步'),
-                  ),
-                ),
-              ],
-            ),
-            _InviteView.detail => Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    key: const Key('invite-stage-cancel'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.textSecondary,
-                      minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: _saving ? null : _cancelDetail,
-                    child: Text(_current?.appointment != null ? '关闭' : '取消'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    key: const Key('invite-stage-save'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.teal,
-                      disabledBackgroundColor: AppColors.teal.withValues(
-                        alpha: .45,
-                      ),
-                      minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: _saving || !canSaveDetail ? null : _saveDetail,
-                    child: Text(
-                      _saving
-                          ? '保存中…'
-                          : _current?.appointment == null
-                          ? '保存设置'
-                          : '保存调整',
-                    ),
-                  ),
+                  child: showSaveArranged
+                      ? FilledButton(
+                          key: const Key('invite-stage-save'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.teal,
+                            disabledBackgroundColor: AppColors.teal.withValues(
+                              alpha: .45,
+                            ),
+                            minimumSize: const Size(0, 48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          onPressed: _saving ? null : _saveArranged,
+                          child: const Text('保存调整'),
+                        )
+                      : FilledButton(
+                          key: const Key('invite-submit'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.teal,
+                            disabledBackgroundColor: AppColors.teal.withValues(
+                              alpha: .45,
+                            ),
+                            minimumSize: const Size(0, 48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          onPressed: _canSubmit ? _enterConfirm : null,
+                          child: const Text('下一步'),
+                        ),
                 ),
               ],
             ),
@@ -2618,7 +2647,7 @@ class _TalentInterviewInviteSheetState
                     onPressed: _saving
                         ? null
                         : () => setState(() {
-                            _view = _InviteView.overview;
+                            _view = _InviteView.setup;
                             _submitError = null;
                           }),
                     child: const Text('返回修改'),

@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import com.alibaba.fastjson2.JSON;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -125,7 +126,11 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
                 values.put("stageOrder", null);
             }
             LocalDateTime start = parseTime(row.get("startTime"));
-            int duration = duration(row.get("durationMin"));
+            // 阶段时长以岗位招聘流程配置为准，客户端传入的 durationMin 不作为阶段时长的最终依据；
+            // 未绑定阶段的历史单阶段邀约仍沿用客户端时长，保持旧接口兼容。
+            int duration = stageId == null
+                    ? duration(row.get("durationMin"))
+                    : stageConfiguredDuration(values);
             requireFuture(start);
             values.put("candidateId", candidateId);
             values.put("positionId", positionId);
@@ -300,6 +305,22 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         result.put("status", status);
         result.put("message", status == 1 ? "已确认该面试安排" : "已取消该面试安排");
         return result;
+    }
+
+    /** 从阶段配置 JSON（psg_interviewer_config_json）读取面试时长，缺失或越界时拒绝排期。 */
+    private int stageConfiguredDuration(Map<String, Object> values)
+    {
+        try
+        {
+            Object raw = values.get("configJson");
+            Map<String, Object> config = raw instanceof Map
+                    ? (Map<String, Object>) raw
+                    : JSON.parseObject(String.valueOf(raw));
+            int minutes = Integer.parseInt(String.valueOf(config.get("duration")));
+            if (minutes >= 1 && minutes <= 1440) return minutes;
+        }
+        catch (Exception ignored) { }
+        throw new ServiceException("该阶段未配置面试时长，请先在岗位招聘流程中完善");
     }
 
     /** 解析时间字符串（兼容秒/分两种格式） */
