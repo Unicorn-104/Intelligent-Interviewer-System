@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/app_config.dart';
+import '../../../core/network/resource_url.dart';
 
 class ProfileAvatar extends StatelessWidget {
   const ProfileAvatar({
@@ -41,11 +42,7 @@ class ProfileAvatar extends StatelessWidget {
   }
 
   String? _resolveImageUrl(String? value) {
-    final path = value?.trim();
-    if (path == null || path.isEmpty) return null;
-    final uri = Uri.tryParse(path);
-    if (uri?.hasScheme == true) return path;
-    return '${AppConfig.apiBaseUrl}${path.startsWith('/') ? '' : '/'}$path';
+    return resolveResourceUrl(value, apiBaseUrl: AppConfig.apiBaseUrl);
   }
 }
 

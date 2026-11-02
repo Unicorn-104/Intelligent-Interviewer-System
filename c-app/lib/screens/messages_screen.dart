@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../config/app_config.dart';
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
+import '../core/network/resource_url.dart';
 import '../features/auth/domain/auth_session.dart';
 import '../features/ai/presentation/ai_chat_screen.dart';
 import '../features/messages/data/message_api.dart';
@@ -573,8 +574,7 @@ IconData _categoryIcon(AppMessageCategory category) {
 }
 
 String _resolveUrl(String path) {
-  if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  return '${AppConfig.apiBaseUrl}${path.startsWith('/') ? path : '/$path'}';
+  return resolveResourceUrl(path, apiBaseUrl: AppConfig.apiBaseUrl) ?? '';
 }
 
 String _formatListTime(DateTime date) {
