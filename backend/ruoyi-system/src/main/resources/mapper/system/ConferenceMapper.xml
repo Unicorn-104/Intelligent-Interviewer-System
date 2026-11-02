@@ -144,6 +144,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by tsl_created_at asc, tsl_id asc
     </select>
 
+    <!-- 锁候选人记录，串行化同一候选人的并发发起面试，避免产生多个活跃场次 -->
+    <select id="lockCandidateForUpdate" parameterType="Long" resultType="long">
+        select tal_id from t_tal where tal_id = #{candidateId} for update
+    </select>
+
     <!-- 只终止本企业岗位上的活跃场次，避免影响其他企业正在进行的面试 -->
     <update id="abortActiveSessionsByCandidate">
         update t_int_session
@@ -155,8 +160,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                        and p.pos_company_id = #{companyId})
     </update>
 
-    <!-- 重新发起面试前查询本企业下仍待面试的旧预约ID，由面试调度服务统一取消
-         （释放时段 + 恢复候选人/投递状态），避免日历残留多条待面试 -->
+    <!-- 查询本企业下仍待面试的旧预约，逐个走调度服务统一取消，释放时段并恢复候选人/投递状态 -->
     <select id="selectPendingAppointmentIds" resultType="long">
         select a.apt_id
         from t_sch_appointment a
@@ -497,7 +501,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         set ses_status = #{status},
             ses_end_at = sysdate(),
             ses_updated_at = sysdate()
-        where ses_id = #{sessionId}
+        where ses_id = #{sessionId} and ses_status in (0, 1)
     </update>
 
     <update id="abortSession">
@@ -505,7 +509,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         set ses_status = 3,
             ses_end_at = sysdate(),
             ses_updated_at = sysdate()
-        where ses_id = #{sessionId}
+        where ses_id = #{sessionId} and ses_status in (0, 1)
     </update>
 
     <select id="selectSessionResult" parameterType="Long" resultType="java.util.LinkedHashMap">
@@ -586,6 +590,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                r.rcd_code as code,
                r.rcd_seq  as seq,
                r.rcd_status as status,
+               r.rcd_egress_id as egressId,
                date_format(r.rcd_start_at, '%Y-%m-%d %H:%i:%s') as startedAt
         from t_int_recording r
         where r.rcd_session_id = #{sessionId} and r.rcd_status = 0
@@ -623,7 +628,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <update id="finishRecordingByEgressId">
         update t_int_recording
-        set rcd_status = #{status},
+        set rcd_status = if(rcd_status = 0, #{status}, rcd_status),
             rcd_end_at = ifnull(rcd_end_at, sysdate()),
             rcd_duration_sec = ifnull(#{durationSec,jdbcType=INTEGER}, rcd_duration_sec),
             rcd_size_bytes = ifnull(#{sizeBytes,jdbcType=BIGINT}, rcd_size_bytes),
