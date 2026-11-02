@@ -1,18 +1,7 @@
+import { resolveResourceUrl } from './resourceUrl.js'
+
 export function resolveMessageAttachment(value, apiBase, origin) {
-  const raw = String(value || '').trim()
-  if (!raw || /[\u0000-\u001f\u007f]/.test(raw)) return ''
-  try {
-    const url = new URL(raw, origin)
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return ''
-    const profilePath = url.pathname.match(/^\/(?:dev-api\/|prod-api\/)?(profile\/.+)$/)
-    if (profilePath) {
-      const base = String(apiBase || '').replace(/\/$/, '')
-      return new URL(`${base}/${profilePath[1]}${url.search}`, origin).href
-    }
-    return url.href
-  } catch {
-    return ''
-  }
+  return resolveResourceUrl(value, apiBase, origin)
 }
 
 export function messageAttachmentPath(value) {
