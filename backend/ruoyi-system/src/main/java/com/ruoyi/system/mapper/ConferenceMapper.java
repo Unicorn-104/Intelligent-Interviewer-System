@@ -179,6 +179,11 @@ public interface ConferenceMapper
     public int abortActiveSessionsByCandidate(@Param("candidateId") Long candidateId, @Param("companyId") Long companyId);
 
     /**
+     * 锁候选人记录，串行化同一候选人的并发发起面试，避免产生多个活跃场次
+     */
+    public Long lockCandidateForUpdate(@Param("candidateId") Long candidateId);
+
+    /**
      * 查询候选人本企业下仍处于待面试的预约ID（重新发起面试前清理旧预约，
      * 逐个经面试调度服务的统一取消逻辑处理，释放时段并恢复候选人/投递状态）
      */
