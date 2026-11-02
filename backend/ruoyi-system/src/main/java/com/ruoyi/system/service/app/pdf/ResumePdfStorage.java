@@ -9,10 +9,14 @@ import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 import com.ruoyi.common.config.RuoYiConfig;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.config.ResumePdfProperties;
+import com.ruoyi.system.service.storage.S3FileStorage;
 
 /** 原 PDF 以随机文件名保存，仅返回业务接口，不公开本机目录。 */
 @Component
@@ -21,16 +25,29 @@ public class ResumePdfStorage
     private static final Logger log = LoggerFactory.getLogger(ResumePdfStorage.class);
     private static final String PREFIX = "private-resume/";
     private final ResumePdfProperties properties;
+    private final S3FileStorage objectStorage;
 
     public record StoredPdf(String reference, String name, long size) { }
 
-    public ResumePdfStorage(ResumePdfProperties properties) { this.properties = properties; }
+    public ResumePdfStorage(ResumePdfProperties properties) { this(properties, null); }
+
+    @Autowired
+    public ResumePdfStorage(ResumePdfProperties properties, S3FileStorage objectStorage)
+    {
+        this.properties = properties;
+        this.objectStorage = objectStorage;
+    }
 
     public StoredPdf store(Long userId, byte[] bytes, String originalName)
     {
         requireUser(userId);
         String reference = PREFIX + userId + "/" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
                 + "/" + UUID.randomUUID().toString().replace("-", "") + ".pdf";
+        if (objectStorage != null && objectStorage.enabled())
+        {
+            String stored = objectStorage.store(reference, bytes, "application/pdf");
+            return new StoredPdf(stored, safeName(originalName), bytes.length);
+        }
         Path target = resolve(userId, reference);
         try
         {
@@ -46,6 +63,18 @@ public class ResumePdfStorage
         }
     }
 
+    public Resource readResource(Long userId, String reference)
+    {
+        if (S3FileStorage.isReference(reference))
+        {
+            validateReference(userId, S3FileStorage.key(reference));
+            if (objectStorage == null) throw new ServiceException("对象存储未配置");
+            return objectStorage.read(reference, properties.getMaxSizeMb() * 1024 * 1024);
+        }
+        return new FileSystemResource(read(userId, reference));
+    }
+
+    /** 兼容已有本地文件调用；对象文件使用 readResource，不落公开目录或持久缓存。 */
     public Path read(Long userId, String reference)
     {
         // 兼容其他客户端已保存的旧资源；仍先由简历服务校验所有权。
@@ -72,6 +101,17 @@ public class ResumePdfStorage
 
     public void delete(Long userId, String reference)
     {
+        if (S3FileStorage.isReference(reference))
+        {
+            try
+            {
+                validateReference(userId, S3FileStorage.key(reference));
+                if (objectStorage == null) throw new ServiceException("对象存储未配置");
+                objectStorage.delete(reference);
+            }
+            catch (RuntimeException error) { log.warn("简历 PDF 对象清理失败，请检查存储服务和归属"); }
+            return;
+        }
         if (reference == null || !reference.startsWith(PREFIX + userId + "/")) return;
         try
         {
@@ -87,10 +127,15 @@ public class ResumePdfStorage
 
     private Path resolve(Long userId, String reference)
     {
+        validateReference(userId, reference);
+        return root().resolve(reference.substring(PREFIX.length())).normalize();
+    }
+
+    private void validateReference(Long userId, String reference)
+    {
         requireUser(userId);
         if (reference == null || !reference.matches("private-resume/" + userId + "/[0-9]{4}/[0-9]{2}/[0-9]{2}/[a-f0-9]{32}\\.pdf"))
             throw new ServiceException("原始 PDF 不存在或无权访问");
-        return root().resolve(reference.substring(PREFIX.length())).normalize();
     }
 
     private Path root()

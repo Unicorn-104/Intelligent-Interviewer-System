@@ -11,11 +11,15 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 import com.ruoyi.common.config.RuoYiConfig;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.config.ResumePdfProperties;
+import com.ruoyi.system.service.storage.S3FileStorage;
 
 /** 私有简历附件存储，不向客户端暴露本机路径。 */
 @Component
@@ -26,12 +30,20 @@ public class ResumeAttachmentStorage
     private static final long MAX_SIZE = 20 * 1024 * 1024L;
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "doc", "docx", "jpg", "jpeg", "png");
     private final ResumePdfProperties properties;
+    private final S3FileStorage objectStorage;
 
     public record StoredAttachment(String reference, String name, long size, String contentType) { }
 
     public ResumeAttachmentStorage(ResumePdfProperties properties)
     {
+        this(properties, null);
+    }
+
+    @Autowired
+    public ResumeAttachmentStorage(ResumePdfProperties properties, S3FileStorage objectStorage)
+    {
         this.properties = properties;
+        this.objectStorage = objectStorage;
     }
 
     public StoredAttachment store(Long userId, MultipartFile file)
@@ -45,14 +57,25 @@ public class ResumeAttachmentStorage
             throw new ServiceException("附件仅支持 PDF、Word、JPG 或 PNG 格式");
         String reference = PREFIX + userId + "/" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
                 + "/" + UUID.randomUUID().toString().replace("-", "") + "." + extension;
-        Path target = resolve(userId, reference);
+        String contentType = switch (extension)
+        {
+            case "pdf" -> "application/pdf";
+            case "doc" -> "application/msword";
+            case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case "jpg", "jpeg" -> "image/jpeg";
+            default -> "image/png";
+        };
         try
         {
+            if (objectStorage != null && objectStorage.enabled())
+            {
+                String stored = objectStorage.store(reference, file.getBytes(), contentType);
+                return new StoredAttachment(stored, name, file.getSize(), contentType);
+            }
+            Path target = resolve(userId, reference);
             Files.createDirectories(target.getParent());
             ensureContained(target);
             Files.write(target, file.getBytes(), java.nio.file.StandardOpenOption.CREATE_NEW);
-            String contentType = file.getContentType() == null || file.getContentType().isBlank()
-                    ? "application/octet-stream" : file.getContentType();
             return new StoredAttachment(reference, name, file.getSize(), contentType);
         }
         catch (IOException error)
@@ -60,6 +83,17 @@ public class ResumeAttachmentStorage
             delete(userId, reference);
             throw new ServiceException("附件保存失败，请检查简历存储目录权限");
         }
+    }
+
+    public Resource readResource(Long userId, String reference)
+    {
+        if (S3FileStorage.isReference(reference))
+        {
+            validateReference(userId, S3FileStorage.key(reference));
+            if (objectStorage == null) throw new ServiceException("对象存储未配置");
+            return objectStorage.read(reference, (int) MAX_SIZE);
+        }
+        return new FileSystemResource(read(userId, reference));
     }
 
     public Path read(Long userId, String reference)
@@ -72,6 +106,17 @@ public class ResumeAttachmentStorage
 
     public void delete(Long userId, String reference)
     {
+        if (S3FileStorage.isReference(reference))
+        {
+            try
+            {
+                validateReference(userId, S3FileStorage.key(reference));
+                if (objectStorage == null) throw new ServiceException("对象存储未配置");
+                objectStorage.delete(reference);
+            }
+            catch (RuntimeException error) { log.warn("简历附件对象清理失败，请检查存储服务和归属"); }
+            return;
+        }
         if (reference == null || !reference.startsWith(PREFIX + userId + "/")) return;
         try
         {
@@ -87,11 +132,16 @@ public class ResumeAttachmentStorage
 
     private Path resolve(Long userId, String reference)
     {
+        validateReference(userId, reference);
+        return root().resolve(reference.substring(PREFIX.length())).normalize();
+    }
+
+    private void validateReference(Long userId, String reference)
+    {
         requireUser(userId);
         if (reference == null || !reference.matches("private-resume-attachment/" + userId
                 + "/[0-9]{4}/[0-9]{2}/[0-9]{2}/[a-f0-9]{32}\\.(pdf|doc|docx|jpg|jpeg|png)"))
             throw new ServiceException("附件不存在或无权访问");
-        return root().resolve(reference.substring(PREFIX.length())).normalize();
     }
 
     private Path root()
