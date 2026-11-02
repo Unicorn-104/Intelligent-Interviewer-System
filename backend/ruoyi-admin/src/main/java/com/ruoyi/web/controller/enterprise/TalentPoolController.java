@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -272,6 +271,6 @@ public class TalentPoolController extends BaseController
                                 StandardCharsets.UTF_8).build().toString())
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                 .header("X-Content-Type-Options", "nosniff")
-                .body(new FileSystemResource(document.path()));
+                .body(document.resource());
     }
 }
