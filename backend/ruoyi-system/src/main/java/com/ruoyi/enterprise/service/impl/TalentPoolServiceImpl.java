@@ -361,7 +361,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         {
             throw new ServiceException("该简历未保存原始 PDF");
         }
-        return new AppResumePdfDocument(resumePdfStorage.read(candidateUserId, resume.getFilePath()),
+        return new AppResumePdfDocument(resumePdfStorage.readResource(candidateUserId, resume.getFilePath()),
                 resume.getFileName());
     }
 

@@ -1,7 +1,6 @@
 package com.ruoyi.web.controller.agent;
 
 import java.nio.charset.StandardCharsets;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -102,10 +101,12 @@ public class AgentApplicationController extends BaseController
     public ResponseEntity<Resource> resumeFile(@PathVariable("resumeId") Long resumeId)
     {
         AppResumePdfDocument document = applicationService.selectResumePdf(getUserId(), resumeId);
-        Resource resource = new FileSystemResource(document.path());
+        Resource resource = document.resource();
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
                         .filename(document.name(), StandardCharsets.UTF_8).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .header("X-Content-Type-Options", "nosniff")
                 .body(resource);
     }
     @PostMapping("/resumes/{resumeId}/file")
@@ -145,7 +146,9 @@ public class AgentApplicationController extends BaseController
         return ResponseEntity.ok().contentType(mediaType)
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
                         .filename(document.name(), StandardCharsets.UTF_8).build().toString())
-                .body(new FileSystemResource(document.path()));
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(document.resource());
     }
 
     @DeleteMapping("/resumes/{resumeId}/attachments/{attachmentId}")

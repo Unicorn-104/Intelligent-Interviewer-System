@@ -1,6 +1,7 @@
 import { login, logout, getInfo } from '@/api/login'
 import { getToken, setToken, removeToken, setRefreshToken, removeRefreshToken } from '@/utils/auth'
 import defAva from '@/assets/images/profile.jpg'
+import { resolveResourceUrl } from '@/utils/resourceUrl'
 
 const useUserStore = defineStore(
   'user',
@@ -39,7 +40,7 @@ const useUserStore = defineStore(
         return new Promise((resolve, reject) => {
           getInfo().then(res => {
             const user = res.user
-            const avatar = (user.avatar == "" || user.avatar == null) ? defAva : import.meta.env.VITE_APP_BASE_API + user.avatar;
+            const avatar = resolveResourceUrl(user.avatar, import.meta.env.VITE_APP_BASE_API) || defAva;
 
             if (res.roles && res.roles.length > 0) { // 验证返回的roles是否是一个非空数组
               this.roles = res.roles

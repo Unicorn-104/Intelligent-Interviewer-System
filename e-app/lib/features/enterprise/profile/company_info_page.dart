@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../api/enterprise_settings_api.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/network/resource_url.dart';
+import '../../../config/app_config.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/page_states.dart';
 import '../../../widgets/skeleton_list.dart';
@@ -114,8 +116,9 @@ class _CompanyInfoPageState extends State<CompanyInfoPage> {
   Future<void> _save() async {
     if (_saving) return;
     if (_name.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('企业名称不能为空')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('企业名称不能为空')));
       return;
     }
     setState(() => _saving = true);
@@ -133,13 +136,15 @@ class _CompanyInfoPageState extends State<CompanyInfoPage> {
       await (widget.save ?? updateCompanyInfo)(body);
       if (!mounted) return;
       setState(() => _editing = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('企业信息已更新')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('企业信息已更新')));
       await reload();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyError(error))));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -178,7 +183,12 @@ class _CompanyInfoPageState extends State<CompanyInfoPage> {
     }
     final info = _info!;
     final name = _text(info['name'], fallback: '未命名企业');
-    final logo = _text(info['logoUrl'], fallback: '');
+    final logo =
+        resolveResourceUrl(
+          _text(info['logoUrl'], fallback: ''),
+          apiBaseUrl: AppConfig.apiBaseUrl,
+        ) ??
+        '';
     return RefreshIndicator(
       onRefresh: reload,
       child: ListView(

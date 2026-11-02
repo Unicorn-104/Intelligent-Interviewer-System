@@ -77,3 +77,13 @@ mvn spring-boot:run -pl ruoyi-admin
 
 前端构建产物由 Nginx 托管，API 统一反代到本后端实例，参考
 `deploy/nginx/recruit.conf`。管理员端 base 为 `/admin/`，需对应 location 回退。
+
+## 7. 图片与简历文件存储
+
+用户/企业的 PC 和 App 四端共享的头像、通用图片/Logo、聊天附件、简历原 PDF 与简历附件，
+可通过 `app.storage.provider=s3` 接入已部署的 RustFS；接口路径与原响应字段保持兼容。
+默认继续使用本地磁盘；MySQL 继续存储业务字段及文件引用。
+RustFS 在容器、后端为宿主机 JAR 时，endpoint 应填写实际宿主机映射的 S3 API 端口；
+后端也在同一 Docker 网络时才使用 RustFS 服务名。客户端继续通过后端读取文件。
+配置、旧文件兼容和验收步骤见 [文件存储说明](../../backend/doc/capp_file_storage.md)，
+外部 Spring 配置参考 [file-storage.example.yml](file-storage.example.yml)。

@@ -124,7 +124,7 @@ public class AppResumeServiceImpl implements IAppResumeService
     public AppResumePdfDocument selectPdf(Long userId, Long resumeId)
     {
         AppResume resume = requireResume(userId, resumeId);
-        return new AppResumePdfDocument(pdfStorage.read(userId, resume.getFilePath()), resume.getFileName());
+        return new AppResumePdfDocument(pdfStorage.readResource(userId, resume.getFilePath()), resume.getFileName());
     }
 
     private AppResume requireResume(Long userId, Long resumeId)

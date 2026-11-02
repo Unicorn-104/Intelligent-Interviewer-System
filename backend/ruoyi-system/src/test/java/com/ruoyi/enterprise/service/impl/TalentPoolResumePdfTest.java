@@ -9,6 +9,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.core.io.FileSystemResource;
 import com.github.pagehelper.PageHelper;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.mapper.TalentPoolMapper;
@@ -112,11 +113,12 @@ class TalentPoolResumePdfTest
         Path file = Path.of("synthetic", "resume.pdf");
         when(mapper.selectTalentById(2L, 11L)).thenReturn(talent(5L, 7L));
         when(resumeMapper.selectResumeById(5L)).thenReturn(resume(7L, "private-resume/7/2026/10/27/a.pdf"));
-        when(storage.read(7L, "private-resume/7/2026/10/27/a.pdf")).thenReturn(file);
+        when(storage.readResource(7L, "private-resume/7/2026/10/27/a.pdf"))
+                .thenReturn(new FileSystemResource(file));
         AppResumePdfDocument document = service.getTalentResumePdf(9L, 11L);
-        assertEquals(file, document.path());
+        assertEquals(new FileSystemResource(file), document.resource());
         assertEquals("个人简历.pdf", document.name());
-        verify(storage).read(7L, "private-resume/7/2026/10/27/a.pdf");
+        verify(storage).readResource(7L, "private-resume/7/2026/10/27/a.pdf");
     }
 
     @Test void parsedResumeExposesFileNameOnlyWhenAttachmentExists()
