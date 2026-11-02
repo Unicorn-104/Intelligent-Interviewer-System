@@ -1,4 +1,5 @@
 <script setup>
+import { resolveResourceUrl } from "@/utils/resourceUrl"
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -114,15 +115,7 @@ function resolveUrl(p) {
 // 聊天附件地址：按当前部署的接口前缀拼接；历史消息里若写死了别的端地址
 // （如 http://127.0.0.1:5180/dev-api/profile/...），也还原成当前部署可访问的地址
 function attachmentUrl(p) {
-  if (!p) return ''
-  try {
-    const api = String(import.meta.env.VITE_APP_BASE_API || '')
-    let path = /^https?:\/\//i.test(p) ? new URL(p).pathname : String(p)
-    if (api && (path === api || path.startsWith(api + '/'))) path = path.slice(api.length)
-    return api + (path.startsWith('/') ? path : '/' + path)
-  } catch (e) {
-    return ''
-  }
+  return resolveResourceUrl(p, import.meta.env.VITE_APP_BASE_API)
 }
 
 // yyyy-MM-dd HH:mm:ss -> 今天显示 HH:mm，昨天显示 昨天 HH:mm，其余 MM-DD
