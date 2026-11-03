@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration;
 /**
  * 实时语音识别配置。
  *
- * 通过 app.asr.provider 切换实现，密钥只允许放在本地私有配置或环境变量中。
+ * 通过 app.asr.provider 切换实现，密钥优先从数据库加密凭据表读取，缺失时回退到本地私有配置或环境变量。
  */
 @Configuration
 @ConfigurationProperties(prefix = "app.asr")

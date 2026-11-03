@@ -79,21 +79,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where d.dept_id = #{id} and b.bnd_company_id = #{companyId} and b.bnd_status = 1
     </select>
 
-    <!-- ============ 面试集成 ============ -->
-
-    <select id="selectIntegrations" resultType="java.util.LinkedHashMap">
-        select provider_code as provider, status as status, config_json as configJson,
-               date_format(updated_at, '%Y-%m-%d %H:%i') as updatedAt
-        from t_cmp_integration
-        where company_id = #{companyId}
-    </select>
-
-    <update id="updateIntegration">
-        update t_cmp_integration
-        set status = #{status}, config_json = #{configJson}
-        where company_id = #{companyId} and provider_code = #{provider}
-    </update>
-
     <!-- ============ 用户权限 ============ -->
 
     <select id="selectMembers" resultType="java.util.LinkedHashMap">

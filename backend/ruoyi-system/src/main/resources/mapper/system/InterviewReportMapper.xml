@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.InterviewReportMapper">
+
+    <!-- 报告状态：0未触发 1生成中 2成功 3失败；生成中超过 staleMinutes 视为超时可重新抢占 -->
+    <update id="claimReport">
+        update t_int_session
+        set ses_report_status = 1,
+            ses_report_error = null,
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId}
+          and ses_status = 2
+          and (ses_report_status in (0, 3)
+               or (ses_report_status = 1
+                   and ses_updated_at &lt; date_sub(sysdate(), interval #{staleMinutes} minute)))
+    </update>
+
+    <update id="markReportSuccess">
+        update t_int_session
+        set ses_report_status = 2,
+            ses_report_error = null,
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId} and ses_report_status = 1
+    </update>
+
+    <update id="markReportFailed">
+        update t_int_session
+        set ses_report_status = 3,
+            ses_report_error = #{error},
+            ses_report_retry = ses_report_retry + 1,
+            ses_updated_at = sysdate()
+        where ses_id = #{sessionId} and ses_report_status = 1
+    </update>
+
+    <update id="resetReportRetry">
+        update t_int_session
+        set ses_report_retry = 0
+        where ses_id = #{sessionId} and ses_report_status = 3
+    </update>
+
+    <select id="selectReportSource" resultType="java.util.LinkedHashMap">
+        select s.ses_id              as sessionId,
+               s.ses_status          as status,
+               s.ses_mode            as mode,
+               s.ses_position_id     as positionId,
+               p.pos_company_id      as companyId,
+               p.pos_title           as positionTitle,
+               cast(p.pos_jd_json as char) as positionJd,
+               ifnull(m.mst_current_question, 0) as answeredCount,
+               ifnull(m.mst_total_question, 0)   as totalQuestionNo,
+               s.ses_report_status   as reportStatus,
+               s.ses_report_retry    as reportRetry
+        from t_int_session s
+        left join t_pos p on p.pos_id = s.ses_position_id
+        left join t_int_meeting_state m on m.mst_session_id = s.ses_id
+        where s.ses_id = #{sessionId}
+    </select>
+
+    <!-- dlg_type=3 为系统消息，不属于面试原文，生成报告时剔除 -->
+    <select id="selectTranscript" resultType="java.util.LinkedHashMap">
+        select dlg_role    as role,
+               dlg_type    as type,
+               dlg_content as content,
+               dlg_order   as orderNo
+        from t_int_dialogue
+        where dlg_session_id = #{sessionId} and dlg_type &lt;&gt; 3
+        order by dlg_order asc, dlg_id asc
+    </select>
+
+    <select id="selectQuestions" resultType="java.util.LinkedHashMap">
+        select oln_id          as questionId,
+               oln_topic       as topic,
+               oln_description as description,
+               oln_dimension   as dimension
+        from t_int_outline
+        where oln_session_id = #{sessionId}
+        order by oln_order asc, oln_id asc
+    </select>
+
+    <insert id="insertEvaluation" parameterType="java.util.Map">
+        insert into t_int_evaluation
+            (evl_session_id, evl_overall_score, evl_dimension_scores, evl_summary,
+             evl_advantages, evl_risks, evl_gaps, evl_recommendation, evl_created_at)
+        values
+            (#{sessionId}, #{overallScore}, #{dimensionScores}, #{summary},
+             #{advantages}, #{risks}, #{gaps}, #{recommendation}, sysdate())
+    </insert>
+
+    <select id="selectCandidateReport" resultType="java.util.LinkedHashMap">
+        select s.ses_id            as sessionId,
+               e.evl_overall_score as overallScore,
+               cast(e.evl_dimension_scores as char) as dimensionScores,
+               e.evl_summary       as summary,
+               e.evl_recommendation as recommendation,
+               date_format(e.evl_created_at, '%Y-%m-%d %H:%i:%s') as readyAt
+        from t_int_session s
+        join t_int_evaluation e on e.evl_session_id = s.ses_id
+        where s.ses_id = #{sessionId}
+        limit 1
+    </select>
+
+    <select id="selectRetryCandidates" resultType="java.lang.Long">
+        select s.ses_id
+        from t_int_session s
+        where s.ses_status = 2
+          and s.ses_end_at &gt;= date_sub(sysdate(), interval #{scanDays} day)
+          and (s.ses_report_status = 0
+               or (s.ses_report_status = 1
+                   and s.ses_updated_at &lt; date_sub(sysdate(), interval #{staleMinutes} minute))
+               or (s.ses_report_status = 3 and s.ses_report_retry &lt; #{maxRetry}))
+        order by s.ses_end_at asc
+        limit 5
+    </select>
+
+</mapper>

@@ -19,7 +19,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * 人岗匹配独立评分：通过 {@link AgentModelClient} 调用数据库（t_model_provider）中
- * 配置的模型服务，密钥只存在于数据库与模型客户端边界内；规则评分兜底，从不被替换。
+ * 配置的模型服务，优先解析 scene=screening 的专用 Provider，未配置时回退通用 Provider；
+ * 密钥只存在于数据库与模型客户端边界内；规则评分兜底，从不被替换。
  */
 @Component
 public class ScreeningAiEvaluator
@@ -76,7 +77,8 @@ public class ScreeningAiEvaluator
     {
         if (candidates == null || candidates.size() != 1)
             throw new ServiceException("独立评分每次必须且只能分析一位求职者");
-        ModelProvider provider = model.resolve();
+        // 优先使用 mpp_params_json 标记为 screening 的专用 Provider，未配置时回退通用 Provider
+        ModelProvider provider = model.resolve("screening");
         if (!permits.tryAcquire()) throw new ServiceException("AI筛选服务繁忙，请稍后重试");
         try
         {

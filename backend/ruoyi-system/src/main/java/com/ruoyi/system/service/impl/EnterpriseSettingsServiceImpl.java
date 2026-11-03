@@ -113,18 +113,6 @@ public class EnterpriseSettingsServiceImpl implements IEnterpriseSettingsService
     }
 
     @Override
-    public List<Map<String, Object>> listIntegrations(Long companyId)
-    {
-        return settingsMapper.selectIntegrations(companyId);
-    }
-
-    @Override
-    public int saveIntegration(Long companyId, String provider, Integer status, String configJson)
-    {
-        return settingsMapper.updateIntegration(companyId, provider, status, configJson);
-    }
-
-    @Override
     public List<Map<String, Object>> listMembers(Long companyId)
     {
         return settingsMapper.selectMembers(companyId);

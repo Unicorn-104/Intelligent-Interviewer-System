@@ -49,10 +49,49 @@ public class AgentModelClient
 
     public ModelProvider resolve()
     {
-        return providers.selectModelProviderList(new ModelProvider()).stream()
+        return resolve(null);
+    }
+
+    /**
+     * 按业务场景解析 Provider：场景写在 t_model_provider.mpp_params_json 的 scene 字段。
+     * 未指定场景、没有匹配记录或参数非法时回退到通用第一条，避免新场景配置缺失导致功能不可用。
+     */
+    public ModelProvider resolve(String scene)
+    {
+        List<ModelProvider> enabled = providers.selectModelProviderList(new ModelProvider()).stream()
                 .filter(p -> Integer.valueOf(1).equals(p.getMppStatus()))
                 .filter(p -> p.getMppApiKey() != null && !p.getMppApiKey().isBlank())
-                .findFirst().orElseThrow(() -> new ServiceException("AI 服务未配置，请联系管理员", 503));
+                .toList();
+        if (enabled.isEmpty())
+        {
+            throw new ServiceException("AI 服务未配置，请联系管理员", 503);
+        }
+        if (scene == null || scene.isBlank())
+        {
+            return enabled.get(0);
+        }
+        return enabled.stream()
+                .filter(p -> matchesScene(p.getMppParamsJson(), scene))
+                .findFirst()
+                .orElse(enabled.get(0));
+    }
+
+    /** mpp_params_json 形如 {"scene":"screening"}；解析失败按不匹配处理并回退通用 Provider */
+    private boolean matchesScene(String paramsJson, String scene)
+    {
+        if (paramsJson == null || paramsJson.isBlank())
+        {
+            return false;
+        }
+        try
+        {
+            JsonNode value = json.readTree(paramsJson).path("scene");
+            return value.isTextual() && scene.trim().equalsIgnoreCase(value.asText().trim());
+        }
+        catch (Exception ignored)
+        {
+            return false;
+        }
     }
 
     public Reply complete(ModelProvider provider, ArrayNode messages, JsonNode tools,
