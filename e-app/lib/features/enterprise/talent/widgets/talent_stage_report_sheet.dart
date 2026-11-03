@@ -121,7 +121,9 @@ class _TalentStageReportSheetState extends State<TalentStageReportSheet> {
     if (dimensions is Map) {
       final values = <String>[];
       for (final entry in dimensions.entries) {
-        final value = talentNumber(entry.value);
+        // AI 评估的维度值为 {score, evidence} 对象，展示时仅取分数
+        final raw = entry.value is Map ? entry.value['score'] : entry.value;
+        final value = talentNumber(raw);
         if (value != null) values.add('${entry.key}：$value');
       }
       if (values.isNotEmpty) sections.add(_section('维度评分', values.join('\n')));
