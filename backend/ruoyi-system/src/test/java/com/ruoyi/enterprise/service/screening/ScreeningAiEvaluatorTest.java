@@ -32,7 +32,7 @@ class ScreeningAiEvaluatorTest
         provider.setMppApiUrl("https://api.deepseek.com/chat/completions");
         provider.setMppApiKey("synthetic-test-key");
         provider.setMppModelName("deepseek-chat");
-        when(model.resolve()).thenReturn(provider);
+        when(model.resolve("screening")).thenReturn(provider);
         evaluator = new ScreeningAiEvaluator(new JdAiProperties(), model);
     }
 
@@ -77,7 +77,7 @@ class ScreeningAiEvaluatorTest
 
     @Test void missingProviderDoesNotContactModel() throws Exception
     {
-        when(model.resolve()).thenThrow(new ServiceException("AI 服务未配置，请联系管理员", 503));
+        when(model.resolve("screening")).thenThrow(new ServiceException("AI 服务未配置，请联系管理员", 503));
         assertEquals("AI 服务未配置，请联系管理员",
                 assertThrows(ServiceException.class, () -> evaluator.evaluate(Map.of("title", "Java岗位"), candidates)).getMessage());
         verify(model, never()).complete(any(), any(), any(), any(), anyLong(), anyInt());

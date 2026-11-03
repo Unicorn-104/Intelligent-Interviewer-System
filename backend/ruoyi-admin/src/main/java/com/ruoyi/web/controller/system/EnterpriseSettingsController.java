@@ -112,21 +112,6 @@ public class EnterpriseSettingsController extends BaseController
         return success();
     }
 
-    // ==================== 面试集成 ====================
-
-    @GetMapping("/integrations")
-    public AjaxResult integrations()
-    {
-        return success(settingsService.listIntegrations(companyId()));
-    }
-
-    @PutMapping("/integrations/{provider}")
-    public AjaxResult saveIntegration(@PathVariable String provider, @RequestBody Map<String, Object> body)
-    {
-        settingsService.saveIntegration(companyId(), provider, asInt(body.get("status")), str(body, "configJson"));
-        return success();
-    }
-
     // ==================== 用户权限 ====================
 
     @GetMapping("/members")

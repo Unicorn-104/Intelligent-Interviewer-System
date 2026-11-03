@@ -2,13 +2,16 @@ package com.ruoyi.system.service.impl;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import java.sql.Timestamp;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.TalStatusService;
@@ -75,7 +78,7 @@ public class ConferenceServiceImplTest
         when(scheduleService.cancelForRelaunch(5L, 101L)).thenReturn(Map.of("appointmentId", 101L));
         when(scheduleService.cancelForRelaunch(5L, 102L)).thenReturn(Map.of("appointmentId", 102L));
 
-        var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L));
+        var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L), null);
 
         // 顺序契约：先终止旧场次 → 逐个统一取消旧预约 → 再创建新预约/场次 → 推进投递状态
         InOrder order = inOrder(conferenceMapper, scheduleService, screeningMapper);
@@ -96,7 +99,7 @@ public class ConferenceServiceImplTest
         stubRelaunchBasics();
         when(conferenceMapper.selectPendingAppointmentIds(11L, 2L)).thenReturn(List.of());
 
-        var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L));
+        var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L), null);
 
         verify(scheduleService, never()).cancelForRelaunch(anyLong(), anyLong());
         assertEquals(301L, ((Number) result.get("sessionId")).longValue());
@@ -111,11 +114,35 @@ public class ConferenceServiceImplTest
         when(scheduleService.cancelForRelaunch(5L, 101L)).thenReturn(Map.of("message", "该面试安排已完成，已跳过"));
         when(scheduleService.cancelForRelaunch(5L, 102L)).thenReturn(Map.of("message", "已取消该面试安排，面试官时段已释放"));
 
-        var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L));
+        var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L), null);
 
         verify(scheduleService).cancelForRelaunch(5L, 101L);
         verify(scheduleService).cancelForRelaunch(5L, 102L);
         verify(conferenceMapper).insertAppointment(anyMap());
         assertEquals(301L, ((Number) result.get("sessionId")).longValue());
+    }
+
+    @Test
+    void explicitStartTimeBuildsAppointmentWindow()
+    {
+        stubRelaunchBasics();
+        when(conferenceMapper.selectPendingAppointmentIds(11L, 2L)).thenReturn(List.of());
+
+        service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L), "2099-01-01 09:00");
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(conferenceMapper).insertAppointment(captor.capture());
+        assertEquals(Timestamp.valueOf("2099-01-01 09:00:00"), captor.getValue().get("startTime"));
+        assertEquals(Timestamp.valueOf("2099-01-01 09:45:00"), captor.getValue().get("endTime"));
+    }
+
+    @Test
+    void pastStartTimeIsRejected()
+    {
+        stubRelaunchBasics();
+
+        assertThrows(ServiceException.class,
+                () -> service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L), "2020-01-01 09:00"));
+        verify(conferenceMapper, never()).insertAppointment(anyMap());
     }
 }

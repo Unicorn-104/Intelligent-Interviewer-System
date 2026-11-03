@@ -83,7 +83,7 @@ public class ConferenceController extends BaseController
     {
         return success(conferenceService.createRoomLink(getUserId(), longOf(body, "peerUserId"),
                 longOf(body, "positionId"), longOf(body, "stageId"), intOf(body, "durationMinutes"),
-                intOf(body, "mode"), longListOf(body, "interviewerIds")));
+                intOf(body, "mode"), longListOf(body, "interviewerIds"), str(body, "startTime")));
     }
 
     /**
@@ -326,6 +326,15 @@ public class ConferenceController extends BaseController
     public AjaxResult result(@PathVariable Long sessionId)
     {
         return success(conferenceService.getSessionResult(getUserId(), sessionId));
+    }
+
+    /**
+     * 候选人本人可见的 AI 评估摘要（不含风险/差距/逐字稿）
+     */
+    @GetMapping("/session/{sessionId}/report")
+    public AjaxResult report(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.getSessionReport(getUserId(), sessionId));
     }
 
     /**

@@ -42,9 +42,10 @@ public interface IConferenceService
      * HR 生成 / 复用会议链接（内部按需创建预约与场次）
      *
      * @param interviewerIds 被指派的面试官用户ID（按面试模式校验人数，纯AI 可为空）
+     * @param startTime      计划面试开始时间（yyyy-MM-dd HH:mm[:ss]），为空时按当前时间
      */
     public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Long stageId,
-            Integer durationMinutes, Integer mode, List<Long> interviewerIds);
+            Integer durationMinutes, Integer mode, List<Long> interviewerIds, String startTime);
 
     /**
      * 本企业全体在职用户（HR 发起面试时选择面试官）
@@ -188,6 +189,11 @@ public interface IConferenceService
      * 面试结果（时长、完成题目数、报告状态）
      */
     public Map<String, Object> getSessionResult(Long userId, Long sessionId);
+
+    /**
+     * 候选人本人可见的 AI 评估摘要：仅总分、五维分数、总体评述与建议，不含风险/差距/逐字稿
+     */
+    public Map<String, Object> getSessionReport(Long userId, Long sessionId);
 
     /**
      * 录制文件列表（企业范围内）

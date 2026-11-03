@@ -36,16 +36,6 @@ export function delDept(id) {
   return request({ url: '/system/enterprise/settings/depts/' + id, method: 'delete' })
 }
 
-// ==================== 面试集成 ====================
-
-export function listIntegrations() {
-  return request({ url: '/system/enterprise/settings/integrations', method: 'get' })
-}
-
-export function saveIntegration(provider, data) {
-  return request({ url: '/system/enterprise/settings/integrations/' + provider, method: 'put', data })
-}
-
 // ==================== 用户权限 ====================
 
 export function listMembers() {

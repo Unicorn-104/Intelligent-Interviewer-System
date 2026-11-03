@@ -349,7 +349,7 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
 .empty-tip.big{text-align:center;padding:60px 0}
 
 /* 抽屉 */
-.drawer-mask{position:fixed;inset:0;background:rgba(15,23,42,.3);z-index:100;display:flex;justify-content:flex-end}
+.drawer-mask{position:fixed;inset:0;background:transparent;z-index:100;display:flex;justify-content:flex-end}
 .drawer{width:460px;background:#fff;height:100%;display:flex;flex-direction:column;box-shadow:-8px 0 30px rgba(0,0,0,.1)}
 .drawer-head{display:flex;align-items:center;gap:11px;padding:16px 18px;border-bottom:1px solid #e2e8f0}
 .dh-info{flex:1;min-width:0}

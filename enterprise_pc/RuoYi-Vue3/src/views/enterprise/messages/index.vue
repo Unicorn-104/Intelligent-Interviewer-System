@@ -154,6 +154,18 @@ function linkParts(text) {
   return parts
 }
 
+// ---------- 面试邀请消息（type=1，内容以【面试邀请 开头） ----------
+// 与候选人端约定同一条文本，PC 端解析后以卡片展示，不改变原始消息内容
+function parseInvite(text) {
+  if (!text || !text.startsWith('【面试邀请')) return null
+  const end = text.indexOf('】')
+  if (end < 0) return null
+  const tags = text.slice(5, end).split('·').map(t => t.trim()).filter(Boolean)
+  const rest = text.slice(end + 1)
+  const link = rest.match(/https?:\/\/\S+/)?.[0] || ''
+  return { tags, desc: rest.replace(/https?:\/\/\S+/, '').replace(/视频面试.*$/, '').trim(), link }
+}
+
 // ---------- 岗位卡片消息（type=6，内容为 kind=job_card 的 JSON） ----------
 // 求职者端/企业端 App 已按卡片渲染，PC 端此前直接把 JSON 当文本气泡展示，这里补上卡片样式
 const EDU_LABEL = { 1: '中专', 2: '大专', 3: '本科', 4: '硕士', 5: '博士' }
@@ -297,6 +309,7 @@ async function loadMessages(sessionId) {
     text: m.content,
     // 岗位卡片解析失败时保留原文气泡，避免消息丢失
     job: m.type === 6 ? parseJobCard(m.content) : null,
+    invite: m.type === 1 ? parseInvite(m.content) : null,
     attachmentUrl: attachmentUrl(m.attachmentUrl),
     time: fmtTime(m.sendTime)
   }))
@@ -391,21 +404,6 @@ async function markRead() {
   conversations.value.forEach(c => { c.unread = 0 })
   await readAll()
   refreshUnread()
-}
-
-async function refreshMessages() {
-  try {
-    await loadConversations()
-    if (activeId.value != null && activeId.value !== SYSTEM_NOTICE_ID) {
-      await loadMessages(activeId.value)
-      await readSession(activeId.value)
-    } else {
-      await loadNotices()
-    }
-    refreshUnread()
-  } catch {
-    // Background refresh must not interrupt the current conversation.
-  }
 }
 
 // 跳转录制回放页，按当前会话对方（候选人）查看其全部面试录制
@@ -529,7 +527,15 @@ const positions = ref([])
 const interviewers = ref([])
 const selectedInterviewerIds = ref([])
 const linkResult = ref(null)
-const linkForm = ref({ peerUserId: null, positionId: null, stageId: null, durationMinutes: 45, mode: 2 })
+const linkForm = ref({ peerUserId: null, positionId: null, stageId: null, startTime: '', durationMinutes: 45, mode: 2 })
+// 面试开始时间默认取最近的 5 分钟整点，面试安排按该时间排序
+function defaultStartTime() {
+  const d = new Date(Date.now() + 5 * 60 * 1000)
+  d.setMinutes(d.getMinutes() - d.getMinutes() % 5, 0, 0)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+const minStartTime = ref('')
 // 生成链接时锁定的阶段名，随邀请文案一起发送
 const generatedStageName = ref('')
 // 会话对方在各岗位流程中的当前阶段（聊天头部展示）
@@ -571,7 +577,8 @@ const linkComplete = computed(() => /^https?:\/\//.test(linkUrl.value))
 function openLinkModal() {
   const peer = peerUserId.value
   if (peer == null) { ElMessage.warning('当前会话缺少对方信息，无法发起视频面试'); return }
-  linkForm.value = { peerUserId: peer, positionId: null, stageId: null, durationMinutes: 45, mode: 2 }
+  linkForm.value = { peerUserId: peer, positionId: null, stageId: null, startTime: defaultStartTime(), durationMinutes: 45, mode: 2 }
+  minStartTime.value = defaultStartTime()
   generatedStageName.value = ''
   positions.value = []
   selectedInterviewerIds.value = []
@@ -678,6 +685,8 @@ async function loadPeerPositions() {
 
 async function generateLink() {
   if (linkForm.value.positionId == null) { ElMessage.warning('请选择面试岗位'); return }
+  if (!linkForm.value.startTime) { ElMessage.warning('请选择面试开始时间'); return }
+  if (new Date(linkForm.value.startTime).getTime() < Date.now()) { ElMessage.warning('面试开始时间不能早于当前时间'); return }
   if (!validateMode()) return
   generating.value = true
   generatedStageName.value = currentStage.value?.name || ''
@@ -687,6 +696,8 @@ async function generateLink() {
       positionId: linkForm.value.positionId,
       // 阶段随场次落库，面试安排/流程流转才能读到轮次
       stageId: linkForm.value.stageId,
+      // 预约开始时间随场次落库，面试安排按该时间排序
+      startTime: linkForm.value.startTime.replace('T', ' '),
       durationMinutes: linkForm.value.durationMinutes,
       mode: linkForm.value.mode,
       interviewerIds: selectedInterviewerIds.value
@@ -803,7 +814,8 @@ onMounted(async () => {
     openConv(noticeConv.value)
   }
   refreshUnread()
-  refreshTimer = window.setInterval(refreshMessages, 5000)
+  // 只定时刷新未读角标，不再重载会话与消息列表，避免页面反复刷新
+  refreshTimer = window.setInterval(refreshUnread, 30000)
 })
 
 // 已在消息页时再次使用顶栏搜索，同步关键词筛选会话
@@ -871,6 +883,15 @@ onBeforeUnmount(() => {
             <template v-else-if="msg.type===2">
               <a v-if="msg.attachmentUrl && !msg.broken" class="bubble img-bubble" :href="msg.attachmentUrl" target="_blank"><img :src="msg.attachmentUrl" :alt="msg.text" @error="msg.broken = true"/></a>
               <span v-else class="bubble img-bubble img-broken">图片无法加载（{{msg.text}}）</span>
+              <time v-if="msg.time">{{msg.time}}</time>
+            </template>
+            <template v-else-if="msg.invite">
+              <article class="invite-bubble">
+                <div class="ib-head"><Video :size="16"/><span>面试邀请</span></div>
+                <div v-if="msg.invite.tags.length" class="ib-tags"><span v-for="t in msg.invite.tags" :key="t">{{ t }}</span></div>
+                <p class="ib-desc">{{ msg.invite.desc }}</p>
+                <a v-if="msg.invite.link" class="ib-link" :href="msg.invite.link" target="_blank" rel="noopener noreferrer"><Video :size="14"/>进入面试间</a>
+              </article>
               <time v-if="msg.time">{{msg.time}}</time>
             </template>
             <template v-else-if="msg.job">
@@ -952,6 +973,10 @@ onBeforeUnmount(() => {
           </select>
         </label>
         <p v-if="currentStage" class="lf-stage-hint">已按阶段「{{ currentStage.name }}」带出面试方式与时长，可按实际情况调整。</p>
+        <label class="lf-row">
+          <span>开始时间</span>
+          <input class="lf-time" type="datetime-local" v-model="linkForm.startTime" :min="minStartTime" />
+        </label>
         <label class="lf-row">
           <span>面试时长</span>
           <input class="lf-num" type="number" min="15" max="180" step="5" v-model.number="linkForm.durationMinutes" />
@@ -1041,10 +1066,11 @@ onBeforeUnmount(() => {
 .link-form{display:flex;flex-direction:column;gap:14px}
 .lf-row{display:flex;align-items:center;gap:10px;font-size:12px;color:#40516a}
 .lf-row>span{width:66px;flex:none;color:#8392a7}
-.lf-row select,.lf-num{height:34px;border:1px solid #dfe6ef;border-radius:8px;padding:0 10px;font-size:12px;outline:none;background:#fff;color:#40516a}
+.lf-row select,.lf-num,.lf-time{height:34px;border:1px solid #dfe6ef;border-radius:8px;padding:0 10px;font-size:12px;outline:none;background:#fff;color:#40516a}
 .lf-row select{flex:1;min-width:0}
 .lf-num{width:120px;flex:none}
-.lf-row select:focus,.lf-num:focus{border-color:#2563eb}
+.lf-time{flex:1;min-width:0}
+.lf-row select:focus,.lf-num:focus,.lf-time:focus{border-color:#2563eb}
 .lf-row em{font-style:normal;color:#8392a7;font-size:11px}
 .lf-col{align-items:flex-start}
 .lf-interviewers{flex:1;min-width:0}
@@ -1104,4 +1130,12 @@ onBeforeUnmount(() => {
 .jb-salary{margin-top:5px;font-size:12px;font-weight:600;color:#2563eb}
 .jb-meta{margin-top:4px;font-size:11px;color:#7d8ca1;line-height:1.5}
 .jb-foot{margin-top:9px;padding-top:9px;border-top:1px solid #eef2f7;font-size:11px;color:#07865e}
+.invite-bubble{width:310px;max-width:80%;background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px;padding:12px 13px;transition:.18s ease}
+.invite-bubble:hover{border-color:#8eb2fa;box-shadow:0 6px 18px rgba(37,99,235,.1)}
+.ib-head{display:flex;align-items:center;gap:6px;color:#2563eb;font-size:13px;font-weight:600}
+.ib-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.ib-tags span{font-size:10px;color:#2563eb;background:#eef4ff;border-radius:6px;padding:2px 8px}
+.ib-desc{margin-top:8px;font-size:12px;color:#40516a;line-height:1.55}
+.ib-link{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:10px;height:32px;border-radius:8px;background:#2563eb;color:white;font-size:12px;text-decoration:none}
+.ib-link:hover{background:#1d4ed8}
 </style>

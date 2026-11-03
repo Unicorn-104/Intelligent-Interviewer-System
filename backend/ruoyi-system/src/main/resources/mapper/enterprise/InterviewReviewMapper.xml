@@ -56,6 +56,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                s.ses_position_id as positionId, s.ses_interviewer_id as interviewerId,
                s.ses_template_id as templateId, s.ses_cascade_round as round,
                e.evl_overall_score as overallScore,
+               s.ses_report_status as reportStatus, s.ses_report_error as reportError,
                t.tal_user_id as candidateUserId, pos.pos_title as positionTitle,
                pos.pos_company_id as companyId
         from t_int_session s

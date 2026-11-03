@@ -100,6 +100,8 @@ class _NoticeReportPage extends StatelessWidget {
   String value(Object? raw) {
     if (raw == null) return '';
     if (raw is Map) {
+      // AI 维度值为 {score, evidence}，通知页只展示分数
+      if (raw.containsKey('score')) return raw['score']?.toString() ?? '';
       return raw.entries
           .map((entry) => '${entry.key}：${value(entry.value)}')
           .join('\n');

@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.enterprise.service.TalStatusService;
@@ -16,7 +17,9 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.InterviewReviewMapper;
 import com.ruoyi.enterprise.service.IInterviewReviewService;
+import com.ruoyi.system.event.InterviewFinishedEvent;
 import com.ruoyi.system.mapper.DashboardMapper;
+import com.ruoyi.system.mapper.InterviewReportMapper;
 
 /**
  * 企业端 - HR 终审与级联流转服务实现
@@ -55,6 +58,12 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     @Autowired
     private TalStatusService talStatusService;
 
+    @Autowired
+    private InterviewReportMapper reportMapper;
+
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+
     @Override
     public List<Map<String, Object>> listReviews(Long userId, Integer status, Integer pageNum, Integer pageSize)
     {
@@ -74,6 +83,29 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         Map<String, Object> result = new LinkedHashMap<>(detail);
         result.put("dimensionScores", detail.get("dimensionScores") == null ? null
                 : JSON.parse(String.valueOf(detail.get("dimensionScores"))));
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> retryReport(Long userId, Long sessionId)
+    {
+        Map<String, Object> session = requireSession(userId, sessionId);
+        int reportStatus = session.get("reportStatus") == null ? 0
+                : Integer.parseInt(String.valueOf(session.get("reportStatus")));
+        if (session.get("overallScore") != null || reportStatus == 2)
+        {
+            throw new ServiceException("报告已生成，无需重新生成");
+        }
+        if (reportStatus == 1)
+        {
+            throw new ServiceException("报告正在生成，请稍后刷新");
+        }
+        // 手动重试重新计数，避免历史失败次数耗尽自动补偿配额
+        reportMapper.resetReportRetry(sessionId);
+        eventPublisher.publishEvent(new InterviewFinishedEvent(sessionId));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("reportStatus", "generating");
         return result;
     }
 

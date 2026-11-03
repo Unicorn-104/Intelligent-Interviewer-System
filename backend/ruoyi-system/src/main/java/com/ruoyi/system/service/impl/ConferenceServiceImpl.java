@@ -1,6 +1,7 @@
 package com.ruoyi.system.service.impl;
 
 import java.io.InputStream;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -12,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -26,8 +28,10 @@ import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
 import com.ruoyi.enterprise.service.TalStatusService;
-import com.ruoyi.system.config.AsrProperties;
+import com.ruoyi.system.asr.AsrConfigResolver;
+import com.ruoyi.system.event.InterviewFinishedEvent;
 import com.ruoyi.system.mapper.ConferenceMapper;
+import com.ruoyi.system.mapper.InterviewReportMapper;
 import com.ruoyi.system.service.IConferenceService;
 import com.ruoyi.system.service.ILiveKitEgressService;
 
@@ -99,7 +103,7 @@ public class ConferenceServiceImpl implements IConferenceService
     private ILiveKitEgressService liveKitEgressService;
 
     @Autowired
-    private AsrProperties asrProperties;
+    private AsrConfigResolver asrConfig;
 
     /** 面试预约统一取消入口：重新发起面试时释放旧预约时段并恢复候选人/投递状态 */
     @Autowired
@@ -108,6 +112,14 @@ public class ConferenceServiceImpl implements IConferenceService
     /** 面试预约口径的投递状态推进（重新发起后同步「已约面」） */
     @Autowired
     private ScreeningMapper screeningMapper;
+
+    /** 面试正常结束后发布事件，事务提交后异步生成报告 */
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+
+    /** 候选人报告只读查询 */
+    @Autowired
+    private InterviewReportMapper interviewReportMapper;
 
     @Override
     public Map<String, Object> getCurrentSession(Long userId)
@@ -197,7 +209,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     @Transactional
     public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Long stageId,
-            Integer durationMinutes, Integer mode, List<Long> interviewerIds)
+            Integer durationMinutes, Integer mode, List<Long> interviewerIds, String startTime)
     {
         if (peerUserId == null)
         {
@@ -245,6 +257,9 @@ public class ConferenceServiceImpl implements IConferenceService
             throw new ServiceException("面试时长需在 1~" + MAX_INTERVIEW_MINUTES + " 分钟之间");
         }
         int duration = durationMinutes == null ? DEFAULT_INTERVIEW_MINUTES : durationMinutes;
+        // 预约时间按 HR 选定的开始时间写入，面试安排据此排序；未指定时沿用当前时间
+        Timestamp appointmentStart = parseInterviewStart(startTime);
+        Timestamp appointmentEnd = new Timestamp(appointmentStart.getTime() + duration * 60_000L);
         List<Long> selected = normalizeInterviewers(interviewerIds);
         validateInterviewerCount(interviewMode, selected.size());
         validateInterviewerScope(userId, selected);
@@ -272,6 +287,8 @@ public class ConferenceServiceImpl implements IConferenceService
         appointment.put("positionId", positionId);
         appointment.put("interviewerId", sessionInterviewerId);
         appointment.put("durationMinutes", duration);
+        appointment.put("startTime", appointmentStart);
+        appointment.put("endTime", appointmentEnd);
         putStage(appointment, stage);
         conferenceMapper.insertAppointment(appointment);
 
@@ -327,6 +344,34 @@ public class ConferenceServiceImpl implements IConferenceService
         result.put("status", ctx.get("status"));
         result.put("interviewers", conferenceMapper.selectSessionInterviewers(sessionId));
         return result;
+    }
+
+    /** 解析 HR 选定的面试开始时间；为空时按当前时间，格式非法或早于当前时间直接拒绝 */
+    private Timestamp parseInterviewStart(String startTime)
+    {
+        if (StringUtils.isEmpty(startTime))
+        {
+            return new Timestamp(System.currentTimeMillis());
+        }
+        String normalized = startTime.trim().replace('T', ' ');
+        if (normalized.length() == 16)
+        {
+            normalized = normalized + ":00";
+        }
+        Timestamp start;
+        try
+        {
+            start = Timestamp.valueOf(normalized);
+        }
+        catch (IllegalArgumentException e)
+        {
+            throw new ServiceException("面试开始时间格式不正确");
+        }
+        if (start.before(new Timestamp(System.currentTimeMillis())))
+        {
+            throw new ServiceException("面试开始时间不能早于当前时间");
+        }
+        return start;
     }
 
     @Override
@@ -751,16 +796,16 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             reason = "面试已结束";
         }
-        else if (!asrProperties.isReady())
+        else if (!asrConfig.isReady())
         {
-            reason = asrProperties.getUnavailableReason();
+            reason = asrConfig.unavailableReason();
         }
         Map<String, Object> result = new HashMap<>();
         result.put("enabled", reason == null);
         result.put("reason", reason);
         result.put("mode", mode);
         result.put("aiInterview", aiInterview);
-        result.put("provider", asrProperties.getProvider());
+        result.put("provider", asrConfig.provider());
         result.put("sampleRate", 16000);
         result.put("channels", 1);
         result.put("format", "pcm16le");
@@ -781,9 +826,9 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("面试已结束，无法开启实时字幕");
         }
-        if (!asrProperties.isReady())
+        if (!asrConfig.isReady())
         {
-            throw new ServiceException(asrProperties.getUnavailableReason());
+            throw new ServiceException(asrConfig.unavailableReason());
         }
         String role = String.valueOf(ctx.get("role"));
         if (!"CANDIDATE".equals(role) && !"HR".equals(role))
@@ -805,7 +850,7 @@ public class ConferenceServiceImpl implements IConferenceService
         result.put("sampleRate", 16000);
         result.put("channels", 1);
         result.put("format", "pcm16le");
-        result.put("provider", asrProperties.getProvider());
+        result.put("provider", asrConfig.provider());
         return result;
     }
 
@@ -1019,6 +1064,8 @@ public class ConferenceServiceImpl implements IConferenceService
             {
                 throw new ServiceException("面试状态已变化，请刷新后重试");
             }
+            // 事务提交后异步生成报告；重复结束不重复触发，补偿任务负责遗漏场次
+            eventPublisher.publishEvent(new InterviewFinishedEvent(sessionId));
         }
         Map<String, Object> result = buildSessionResult(sessionId);
         result.put("endReason", StringUtils.isEmpty(endReason) ? "normal" : endReason);
@@ -1066,6 +1113,54 @@ public class ConferenceServiceImpl implements IConferenceService
     {
         requireAccess(userId, sessionId);
         return buildSessionResult(sessionId);
+    }
+
+    @Override
+    public Map<String, Object> getSessionReport(Long userId, Long sessionId)
+    {
+        requireAccess(userId, sessionId);
+        Map<String, Object> result = buildSessionResult(sessionId);
+        if (!"ready".equals(result.get("reportStatus")))
+        {
+            return result;
+        }
+        Map<String, Object> report = interviewReportMapper.selectCandidateReport(sessionId);
+        if (report == null)
+        {
+            // 评估行缺失（历史脏数据）时退回「生成中」，由补偿任务收敛
+            result.put("reportStatus", "generating");
+            return result;
+        }
+        result.put("overallScore", report.get("overallScore"));
+        result.put("dimensionScores", candidateDimensionScores(report.get("dimensionScores")));
+        result.put("summary", report.get("summary"));
+        result.put("recommendation", report.get("recommendation"));
+        result.put("readyAt", report.get("readyAt"));
+        return result;
+    }
+
+    /** 候选人视图只暴露五维分数，剔除模型引用原文证据 */
+    private Map<String, Object> candidateDimensionScores(Object raw)
+    {
+        Map<String, Object> scores = new LinkedHashMap<>();
+        if (raw == null)
+        {
+            return scores;
+        }
+        com.alibaba.fastjson2.JSONObject dimensions = JSON.parseObject(String.valueOf(raw));
+        for (String key : dimensions.keySet())
+        {
+            Object value = dimensions.get(key);
+            if (value instanceof Map<?, ?> dimension)
+            {
+                scores.put(key, dimension.get("score") == null ? 0 : dimension.get("score"));
+            }
+            else
+            {
+                scores.put(key, value == null ? 0 : value);
+            }
+        }
+        return scores;
     }
 
     @Override
@@ -1677,7 +1772,16 @@ public class ConferenceServiceImpl implements IConferenceService
         int total = toInt(result.get("totalQuestionNo"));
         int answered = toInt(result.get("answeredCount"));
         result.put("completionRate", total > 0 ? Math.round(answered * 1000.0 / total) / 10.0 : 0);
-        result.put("reportStatus", toInt(result.get("reportGenerated")) > 0 ? "ready" : "generating");
+        // 状态机：0未触发 1生成中 2成功 3失败；历史数据无状态字段时回落到「评估行是否存在」
+        int reportStatusValue = toInt(result.get("reportStatusValue"));
+        String reportStatus = switch (reportStatusValue)
+        {
+            case 2 -> "ready";
+            case 3 -> "failed";
+            case 1 -> "generating";
+            default -> toInt(result.get("reportGenerated")) > 0 ? "ready" : "generating";
+        };
+        result.put("reportStatus", reportStatus);
         return result;
     }
 

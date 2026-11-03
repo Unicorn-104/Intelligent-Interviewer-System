@@ -452,7 +452,14 @@ class _ConferenceScreenState extends State<ConferenceScreen>
           '完成题目',
           '${c.result['answeredCount'] ?? '—'} / ${c.result['totalQuestionNo'] ?? '—'}',
         ),
-      _row('面试报告', c.result['reportStatus'] == 'ready' ? '已生成' : '整理中，请稍后查看'),
+      _row(
+        '面试报告',
+        c.result['reportStatus'] == 'ready'
+            ? '已生成'
+            : c.result['reportStatus'] == 'failed'
+                ? '生成失败，可稍后刷新'
+                : '整理中，请稍后查看',
+      ),
       TextButton.icon(
         onPressed: c.busy ? null : c.refreshResult,
         icon: const Icon(Icons.refresh),

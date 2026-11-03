@@ -43,6 +43,14 @@ export function getInterviewReview(sessionId) {
   })
 }
 
+// HR 手动重新生成 AI 面试报告（仅未生成或生成失败时可用）
+export function retryInterviewReport(sessionId) {
+  return request({
+    url: `/enterprise/review/${sessionId}/report/retry`,
+    method: 'post'
+  })
+}
+
 // HR 终审确认通过（recommendation：1-强烈推荐，2-推荐，3-待定，4-不推荐）
 export function confirmInterviewReview(sessionId, data) {
   return request({
