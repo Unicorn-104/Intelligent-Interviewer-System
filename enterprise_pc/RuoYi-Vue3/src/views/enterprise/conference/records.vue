@@ -74,21 +74,34 @@ function toggleReport(sid) {
 }
 
 const REPORT_TEXT = { ready: '已生成', generating: '整理中', failed: '生成失败' }
+// 后端错误码 -> 可操作提示，避免 HR 只看到笼统的「生成失败」
+const REPORT_ERRORS = {
+  INSUFFICIENT_DATA: '对话内容不足，建议人工评估',
+  EVIDENCE_MISMATCH: '生成结果与对话证据不符，已自动拦截',
+  MODEL_UNAVAILABLE: 'AI 服务暂不可用，请稍后重试',
+  INTERNAL_ERROR: '生成过程异常，可重新生成'
+}
 const reportLabel = (sid) => REPORT_TEXT[reports.value[sid]?.status] || '暂无'
+const reportErrorText = (sid) => REPORT_ERRORS[reports.value[sid]?.error] || '可重新生成'
 const reportClass = (sid) => ({ ready: 'green', generating: 'orange', failed: 'red' }[reports.value[sid]?.status] || 'gray')
 
 function normalizeDimensions(raw) {
-  if (!raw) return {}
+  const empty = { scores: {}, evidence: {} }
+  if (!raw) return empty
   let value = raw
   if (typeof raw === 'string') {
-    try { value = JSON.parse(raw) } catch (e) { return {} }
+    try { value = JSON.parse(raw) } catch (e) { return empty }
   }
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  return Object.fromEntries(
-    Object.entries(value)
-      .map(([name, item]) => [name, item && typeof item === 'object' ? item.score : item])
-      .filter(([, score]) => score != null)
-  )
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return empty
+  const scores = {}
+  const evidence = {}
+  for (const [name, item] of Object.entries(value)) {
+    // AI 报告每维存 {score, evidence}，兼容历史纯分数格式
+    const score = item && typeof item === 'object' ? item.score : item
+    if (score != null) scores[name] = score
+    if (item && typeof item === 'object' && item.evidence) evidence[name] = String(item.evidence)
+  }
+  return { scores, evidence }
 }
 
 function toLines(value) {
@@ -115,7 +128,9 @@ async function loadReports(items) {
         const res = await getInterviewReview(sid)
         const data = res.data || {}
         report.overallScore = data.overallScore
-        report.dimensionScores = normalizeDimensions(data.dimensionScores)
+        const dims = normalizeDimensions(data.dimensionScores)
+        report.dimensionScores = dims.scores
+        report.dimensionEvidence = dims.evidence
         report.summary = data.summary || ''
         report.advantages = toLines(data.advantages)
         report.risks = toLines(data.risks)
@@ -492,7 +507,7 @@ const statusClass = (status) => ({
                   <template v-if="reports[s.sid]?.status === 'ready'">
                     <p v-if="reports[s.sid].readyAt" class="muted tiny">生成于 {{ reports[s.sid].readyAt }}</p>
                     <div v-if="Object.keys(reports[s.sid].dimensionScores || {}).length" class="dim-row">
-                      <span v-for="(score, name) in reports[s.sid].dimensionScores" :key="name" class="dim">{{ name }} {{ score }}</span>
+                      <span v-for="(score, name) in reports[s.sid].dimensionScores" :key="name" class="dim" :title="reports[s.sid].dimensionEvidence?.[name] || ''">{{ name }} {{ score }}</span>
                     </div>
                     <div v-if="reports[s.sid].summary" class="report-section">
                       <label>本轮总结</label>
@@ -518,7 +533,7 @@ const statusClass = (status) => ({
                   </template>
                   <p v-else-if="reports[s.sid]?.status === 'generating'" class="report-hint orange">报告整理中，完成后自动展示。</p>
                   <div v-else-if="reports[s.sid]?.status === 'failed'" class="report-hint red">
-                    <span>报告生成失败，可重新生成。</span>
+                    <span>报告生成失败：{{ reportErrorText(s.sid) }}。</span>
                     <button class="link" :disabled="retrying.has(s.sid)" @click="retryReport(s.sid)"><RotateCcw :size="14" />重新生成</button>
                   </div>
                   <p v-else class="report-hint">本场暂无 AI 报告。</p>

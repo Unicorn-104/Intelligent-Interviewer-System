@@ -79,6 +79,22 @@ export function withdrawOffer(offerId, reason) {
   })
 }
 
+// 标记候选人已接受 Offer（候选人状态更新为已录用）
+export function markOfferAccepted(offerId) {
+  return request({
+    url: `/enterprise/offer/${offerId}/accept`,
+    method: 'post'
+  })
+}
+
+// 标记候选人已拒绝 Offer（候选人状态更新为已淘汰并归档人才库）
+export function markOfferRejected(offerId) {
+  return request({
+    url: `/enterprise/offer/${offerId}/reject`,
+    method: 'post'
+  })
+}
+
 // 企业候选人选项（创建表单用）
 export function listCandidateOptions() {
   return request({

@@ -27,20 +27,16 @@ watch(() => route.query.keyword, kw => {
   pageNum.value = 1
   load()
 })
-// 归档来源：0-未归档，1-笔试淘汰，2-面试淘汰，3-主动归档，4-初筛淘汰
-const ARCHIVE = { 0: ['未归档', 'gray'], 1: ['笔试淘汰', 'orange'], 2: ['面试淘汰', 'red'], 3: ['主动归档', 'purple'], 4: ['初筛淘汰', 'blue'] }
-// 流程状态（t_tal.tal_status）
-const STATUS = {
-  0: ['新入库', 'gray'], 1: ['初筛通过', 'green'], 2: ['面试中', 'purple'], 3: ['已淘汰', 'red'],
-  4: ['已录用', 'green'], 5: ['待笔试', 'orange'], 6: ['笔试中', 'orange'], 7: ['笔试通过', 'green'],
-  8: ['笔试未通过', 'red'], 9: ['笔试缺考', 'gray']
-}
-// 投递状态（t_app_record.app_status），按岗位维度
+// 归档来源：0-未归档，1-笔试淘汰，2-面试淘汰，3-主动归档，4-初筛淘汰，5-Offer拒绝
+const ARCHIVE = { 0: ['未归档', 'gray'], 1: ['笔试淘汰', 'orange'], 2: ['面试淘汰', 'red'], 3: ['主动归档', 'purple'], 4: ['初筛淘汰', 'blue'], 5: ['Offer拒绝', 'red'] }
+// 流程状态统一按岗位投递展示（t_app_record.app_status）
 const APP_STATUS = {
   0: ['待筛选', 'gray'], 1: ['初筛通过', 'green'], 2: ['初筛淘汰', 'red'], 3: ['已约面', 'blue'],
   4: ['待笔试', 'orange'], 5: ['笔试中', 'orange'], 6: ['笔试通过', 'green'], 7: ['笔试未通过', 'red'],
-  8: ['笔试缺考', 'gray'], 9: ['已撤回', 'gray']
+  8: ['笔试缺考', 'gray'], 9: ['已撤回', 'gray'], 10: ['待发Offer', 'orange'], 11: ['已录用', 'green'],
+  12: ['Offer拒绝', 'red']
 }
+const STATUS_OPTIONS = Object.keys(APP_STATUS).map(k => ({ value: k, label: APP_STATUS[k][0] }))
 
 // 选中的候选人（用于批量关怀通知）
 const selectedIds = ref([])
@@ -74,7 +70,8 @@ const careForm = ref({ title: '感谢参与，期待再会', content: '' })
 
 function notify(msg) { toast.value = msg; setTimeout(() => toast.value = '', 2600) }
 
-function statusOf(v) { return STATUS[v] || ['未知', 'gray'] }
+function statusOf(v) { return APP_STATUS[v] || ['未投递', 'gray'] }
+function statusLabel(v) { return APP_STATUS[v] ? APP_STATUS[v][0] : '流程状态' }
 function archiveOf(v) { return ARCHIVE[v] || ARCHIVE[0] }
 function appStatusOf(v) { return APP_STATUS[v] || ['未知', 'gray'] }
 function educationOf() {
@@ -261,12 +258,12 @@ onMounted(() => { loadPositions(); load() })
         </el-dropdown>
         <el-dropdown trigger="click" class="chip-dd" @command="selectStatus">
           <button class="filter-chip" :class="{ active: filters.status !== '' }">
-            <Tags :size="13" />{{ filters.status !== '' ? STATUS[filters.status][0] : '流程状态' }}<ChevronDown :size="13" class="chip-arrow" />
+            <Tags :size="13" />{{ filters.status !== '' ? statusLabel(filters.status) : '流程状态' }}<ChevronDown :size="13" class="chip-arrow" />
           </button>
           <template #dropdown>
             <el-dropdown-menu class="chip-menu">
               <el-dropdown-item command="">全部流程状态</el-dropdown-item>
-              <el-dropdown-item v-for="(item, key) in STATUS" :key="key" :command="key">{{ item[0] }}</el-dropdown-item>
+              <el-dropdown-item v-for="item in STATUS_OPTIONS" :key="item.value" :command="item.value">{{ item.label }}</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -295,7 +292,7 @@ onMounted(() => { loadPositions(); load() })
           </div>
           <div class="card-meta">
             <span><GraduationCap :size="12" />{{ row.school || '毕业学校未填写' }}</span>
-            <span><BriefcaseBusiness :size="12" />{{ row.jobDirection || '岗位方向未填写' }}</span>
+            <span><BriefcaseBusiness :size="12" />{{ row.positionName || row.jobDirection || '岗位方向未填写' }}</span>
           </div>
           <div class="card-tags">
             <template v-if="row.tags"><span v-for="tg in row.tags.split(',')" :key="tg" class="tag">{{ tg }}</span></template>
@@ -323,7 +320,7 @@ onMounted(() => { loadPositions(); load() })
           <b>{{ detailRow?.name || '未知候选人' }}</b>
           <small>{{ detailRow?.phone || '手机号缺失' }} · {{ detailRow?.email || '邮箱未填写' }}</small>
         </div>
-        <span class="pill" :class="statusOf(detailInfo?.status ?? detailRow?.status)[1]">{{ statusOf(detailInfo?.status ?? detailRow?.status)[0] }}</span>
+        <span class="pill" :class="statusOf(detailRow?.status)[1]">{{ statusOf(detailRow?.status)[0] }}</span>
         <span class="pill" :class="archiveOf(detailInfo?.archiveSource ?? detailRow?.archiveSource)[1]">{{ archiveOf(detailInfo?.archiveSource ?? detailRow?.archiveSource)[0] }}</span>
       </div>
 
