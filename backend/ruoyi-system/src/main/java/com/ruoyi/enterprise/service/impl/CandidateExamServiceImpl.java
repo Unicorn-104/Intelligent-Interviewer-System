@@ -19,6 +19,7 @@ import com.ruoyi.enterprise.mapper.ExamMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.ICandidateExamService;
 import com.ruoyi.enterprise.service.IExamGradeService;
+import com.ruoyi.enterprise.service.IExamMonitorService;
 import com.ruoyi.enterprise.service.TalStatusService;
 
 /**
@@ -45,6 +46,9 @@ public class CandidateExamServiceImpl implements ICandidateExamService
 
     @Autowired
     private IExamGradeService examGradeService;
+
+    @Autowired
+    private IExamMonitorService examMonitorService;
 
     @Autowired
     private ScreeningMapper screeningMapper;
@@ -193,13 +197,14 @@ public class CandidateExamServiceImpl implements ICandidateExamService
                 {
                     throw new ServiceException("考试已结束");
                 }
+                requireDualCameraReady(recordId);
                 candidateExamMapper.beginRecord(recordId);
                 if (candidateExamMapper.selectRecordQuestions(recordId).isEmpty())
                 {
                     snapshotQuestions(asLong(schedule.get("paperId")), parseJson(schedule.get("ruleJson")), recordId);
                 }
                 Long talId = asLong(requireTalent(userId).get("talId"));
-                screeningMapper.advanceApplicationStatus(asLong(schedule.get("positionId")), talId, 5, List.of(4));
+                screeningMapper.advanceApplicationStatus(asLong(schedule.get("positionId")), talId, 5, List.of(3, 4));
                 talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
                         List.of(0, 1, 2, 5, 6, 7, 8, 9), asLong(schedule.get("positionId")), null, "开始笔试", userId);
                 record = candidateExamMapper.selectRecordForCandidate(userId, recordId);
@@ -214,6 +219,7 @@ public class CandidateExamServiceImpl implements ICandidateExamService
             {
                 return expireRecord(userId, record);
             }
+            requireDualCameraReady(recordId);
             return resumeResult(record, deadline, now);
         }
 
@@ -221,13 +227,18 @@ public class CandidateExamServiceImpl implements ICandidateExamService
         {
             throw new ServiceException("考试已结束");
         }
+        // 强制双机位必须先完成设备检测并接入副机位，禁止直接开考
+        if (asInt(schedule.get("forceDualCamera"), 0) == 1)
+        {
+            throw new ServiceException("本场考试要求双机位监考，请先完成设备检测并接入副机位");
+        }
         // 首次开考：建记录 + 题目快照
         Long talId = asLong(requireTalent(userId).get("talId"));
         candidateExamMapper.insertRecord(scheduleId, talId, deviceInfo);
         recordId = (long) candidateExamMapper.selectLastRecordId();
         snapshotQuestions(asLong(schedule.get("paperId")), parseJson(schedule.get("ruleJson")), recordId);
-        // 首次开考即把该岗位投递状态同步为「笔试中」，候选人状态同步为「笔试中」
-        screeningMapper.advanceApplicationStatus(asLong(schedule.get("positionId")), talId, 5, List.of(4));
+        // 首次开考即把该岗位投递状态同步为「笔试中」，候选人状态同步为「笔试中」；已约面未发笔试通知的也允许直接开考
+        screeningMapper.advanceApplicationStatus(asLong(schedule.get("positionId")), talId, 5, List.of(3, 4));
         talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
                 List.of(0, 1, 2, 5, 6, 7, 8, 9), asLong(schedule.get("positionId")), null, "开始笔试", userId);
 
@@ -467,6 +478,56 @@ public class CandidateExamServiceImpl implements ICandidateExamService
         result.put("earnedScore", record.get("earnedScore"));
         result.put("passStatus", record.get("passStatus"));
         return result;
+    }
+
+    /** 定时结算：已开始未交卷的自动交卷，未开考且安排结束的按缺考收口 */
+    @Override
+    public int settleExpiredRecords()
+    {
+        int settled = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (Map<String, Object> row : candidateExamMapper.selectExpiredInProgressRecords())
+        {
+            LocalDateTime deadline = deadline(asTime(row.get("startAt")),
+                    asInt(row.get("durationMin"), 0), asTime(row.get("endAt")));
+            if (deadline == null || now.isBefore(deadline))
+            {
+                continue;
+            }
+            // 已开考未交卷：自动交卷，保留最后一次作答，等待笔试成绩
+            Long talId = asLong(row.get("talId"));
+            Long positionId = asLong(row.get("positionId"));
+            // 补齐开考时未写入的岗位投递/候选人状态，避免人才库仍显示「已约面」
+            screeningMapper.advanceApplicationStatus(positionId, talId, 5, List.of(3, 4));
+            talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
+                    List.of(0, 1, 2, 5, 6, 7, 8, 9), positionId, null, "笔试到期自动交卷", 0L);
+            candidateExamMapper.updateRecordSubmitted(asLong(row.get("recordId")));
+            tryGrade(asLong(row.get("recordId")));
+            settled++;
+        }
+        for (Map<String, Object> row : candidateExamMapper.selectExpiredUnstartedRecords())
+        {
+            if (candidateExamMapper.updateRecordAbandoned(asLong(row.get("recordId"))) != 1)
+            {
+                continue;
+            }
+            // 未开考且安排已结束：认定为笔试缺考，同步岗位投递与候选人状态
+            talStatusService.change(asLong(row.get("talId")), TalStatusService.TAL_EXAM_ABSENT,
+                    List.of(5), asLong(row.get("positionId")), null, "笔试缺考", 0L);
+            screeningMapper.advanceApplicationStatus(asLong(row.get("positionId")), asLong(row.get("talId")),
+                    8, List.of(3, 4, 5));
+            settled++;
+        }
+        return settled;
+    }
+
+    /** 强制双机位：副机位未在线禁止开考或续考 */
+    private void requireDualCameraReady(Long recordId)
+    {
+        if (!examMonitorService.isDualCameraReady(recordId))
+        {
+            throw new ServiceException("本场考试要求双机位监考，请先在设备检测页完成副机位扫码并保持连接");
+        }
     }
 
     /** 超时处理：autoSubmit=true（默认）自动交卷，否则记录作废 */

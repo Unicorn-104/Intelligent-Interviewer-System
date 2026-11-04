@@ -18,6 +18,7 @@ import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IExamService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
+import com.ruoyi.system.mapper.EnterpriseJobMapper;
 import com.ruoyi.system.service.EmailService;
 
 /**
@@ -44,6 +45,9 @@ public class ExamServiceImpl implements IExamService
 
     @Autowired
     private DashboardMapper dashboardMapper;
+
+    @Autowired
+    private EnterpriseJobMapper jobMapper;
 
     @Autowired
     private EmailService emailService;
@@ -475,6 +479,24 @@ public class ExamServiceImpl implements IExamService
         examMapper.updateScheduleStatus(scheduleId, 3);
     }
 
+    /** 岗位流程必须配置笔试阶段（阶段类型 1）才允许创建或发送笔试 */
+    private void requireExamStage(Long positionId)
+    {
+        boolean hasExamStage = false;
+        for (Map<String, Object> stage : jobMapper.selectJobStages(positionId))
+        {
+            if (asInt(stage.get("type"), -1) == 1)
+            {
+                hasExamStage = true;
+                break;
+            }
+        }
+        if (!hasExamStage)
+        {
+            throw new ServiceException("该岗位流程未配置笔试阶段，无法创建或发送笔试");
+        }
+    }
+
     private Map<String, Object> buildScheduleParams(Map<String, Object> body, Long id, Long companyId)
     {
         Long paperId = asLong(body.get("paperId"));
@@ -484,6 +506,7 @@ public class ExamServiceImpl implements IExamService
         {
             throw new ServiceException("考试安排岗位与试卷关联岗位不一致");
         }
+        requireExamStage(positionId);
         String startAt = normalizeTime(asString(body.get("startAt")));
         String endAt = normalizeTime(asString(body.get("endAt")));
         if (startAt == null || endAt == null)
@@ -574,6 +597,7 @@ public class ExamServiceImpl implements IExamService
     {
         Long companyId = resolveCompanyId(userId);
         Map<String, Object> schedule = requireSchedule(companyId, scheduleId);
+        requireExamStage(asLong(schedule.get("positionId")));
         if (asInt(schedule.get("status"), 0) >= 2)
         {
             throw new ServiceException("考试安排已结束或已取消，不能发送通知");
