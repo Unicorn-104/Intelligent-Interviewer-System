@@ -22,7 +22,7 @@ const interviews = ref([])
 const STATUS = {
   0: ['新入库', 'gray'], 1: ['初筛通过', 'green'], 2: ['面试中', 'purple'], 3: ['已淘汰', 'red'],
   4: ['已录用', 'green'], 5: ['待笔试', 'orange'], 6: ['笔试中', 'orange'], 7: ['笔试通过', 'green'],
-  8: ['笔试未通过', 'red'], 9: ['笔试缺考', 'gray']
+  8: ['笔试未通过', 'red'], 9: ['笔试缺考', 'gray'], 10: ['待发Offer', 'orange']
 }
 const APT_STATUS = { 0: ['待确认', 'gray'], 1: ['已确认', 'green'], 2: ['已取消', 'gray'], 3: ['已完成', 'purple'] }
 const STATUS_OPTIONS = Object.keys(STATUS).map(k => ({ value: Number(k), label: STATUS[k][0] }))

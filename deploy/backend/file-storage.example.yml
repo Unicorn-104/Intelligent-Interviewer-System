@@ -1,0 +1,15 @@
+# 合并到服务器后端的外部 application.yml；不要覆盖现有数据库、Redis 等配置。
+# 宿主机 JAR：endpoint 使用 RustFS 发布到宿主机的 API 地址。
+# 同 Docker 网络：改为实际 RustFS 服务名，例如 http://rustfs:9000。
+# 凭据从服务管理器/容器秘密配置注入，示例不包含实际凭据。
+app:
+  storage:
+    provider: ${FILE_STORAGE_PROVIDER:s3}
+    s3:
+      endpoint: ${FILE_STORAGE_S3_ENDPOINT:}
+      region: ${FILE_STORAGE_S3_REGION:us-east-1}
+      bucket: ${FILE_STORAGE_S3_BUCKET:recruit-files}
+      access-key: ${FILE_STORAGE_S3_ACCESS_KEY:}
+      secret-key: ${FILE_STORAGE_S3_SECRET_KEY:}
+      path-style: true
+      timeout-seconds: 60

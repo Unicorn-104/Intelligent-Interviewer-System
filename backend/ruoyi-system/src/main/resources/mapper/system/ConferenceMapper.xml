@@ -144,6 +144,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by tsl_created_at asc, tsl_id asc
     </select>
 
+    <!-- 锁候选人记录，串行化同一候选人的并发发起面试，避免产生多个活跃场次 -->
+    <select id="lockCandidateForUpdate" parameterType="Long" resultType="long">
+        select tal_id from t_tal where tal_id = #{candidateId} for update
+    </select>
+
     <!-- 只终止本企业岗位上的活跃场次，避免影响其他企业正在进行的面试 -->
     <update id="abortActiveSessionsByCandidate">
         update t_int_session
@@ -155,8 +160,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                        and p.pos_company_id = #{companyId})
     </update>
 
-    <!-- 重新发起面试前查询本企业下仍待面试的旧预约ID，由面试调度服务统一取消
-         （释放时段 + 恢复候选人/投递状态），避免日历残留多条待面试 -->
+    <!-- 查询本企业下仍待面试的旧预约，逐个走调度服务统一取消，释放时段并恢复候选人/投递状态 -->
     <select id="selectPendingAppointmentIds" resultType="long">
         select a.apt_id
         from t_sch_appointment a
@@ -181,8 +185,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
              apt_stage_id, apt_stage_name, apt_stage_type, apt_stage_order,
              apt_status, apt_created_at, apt_updated_at)
         values
-            (#{candidateId}, #{positionId}, #{interviewerId}, sysdate(),
-             date_add(sysdate(), interval #{durationMinutes} minute),
+            (#{candidateId}, #{positionId}, #{interviewerId}, #{startTime}, #{endTime},
              #{stageId,jdbcType=BIGINT}, #{stageName,jdbcType=VARCHAR},
              #{stageType,jdbcType=TINYINT}, #{stageOrder,jdbcType=INTEGER},
              1, sysdate(), sysdate())
@@ -497,7 +500,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         set ses_status = #{status},
             ses_end_at = sysdate(),
             ses_updated_at = sysdate()
-        where ses_id = #{sessionId}
+        where ses_id = #{sessionId} and ses_status in (0, 1)
     </update>
 
     <update id="abortSession">
@@ -505,7 +508,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         set ses_status = 3,
             ses_end_at = sysdate(),
             ses_updated_at = sysdate()
-        where ses_id = #{sessionId}
+        where ses_id = #{sessionId} and ses_status in (0, 1)
     </update>
 
     <select id="selectSessionResult" parameterType="Long" resultType="java.util.LinkedHashMap">
@@ -518,7 +521,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                   timestampdiff(second, s.ses_start_at, ifnull(s.ses_end_at, sysdate()))) as durationSeconds,
                ifnull(m.mst_current_question, 0) as answeredCount,
                ifnull(m.mst_total_question, 0)   as totalQuestionNo,
-               (select count(*) from t_int_evaluation e where e.evl_session_id = s.ses_id) as reportGenerated
+               s.ses_report_status as reportStatusValue,
+               s.ses_report_error  as reportError,
+               (select count(*) from t_int_evaluation e where e.evl_session_id = s.ses_id) as reportGenerated,
+               (select max(e.evl_created_at) from t_int_evaluation e where e.evl_session_id = s.ses_id) as reportReadyAt
         from t_int_session s
         left join t_int_meeting_state m on m.mst_session_id = s.ses_id
         where s.ses_id = #{sessionId}
@@ -586,6 +592,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                r.rcd_code as code,
                r.rcd_seq  as seq,
                r.rcd_status as status,
+               r.rcd_egress_id as egressId,
                date_format(r.rcd_start_at, '%Y-%m-%d %H:%i:%s') as startedAt
         from t_int_recording r
         where r.rcd_session_id = #{sessionId} and r.rcd_status = 0
@@ -623,7 +630,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <update id="finishRecordingByEgressId">
         update t_int_recording
-        set rcd_status = #{status},
+        set rcd_status = if(rcd_status = 0, #{status}, rcd_status),
             rcd_end_at = ifnull(rcd_end_at, sysdate()),
             rcd_duration_sec = ifnull(#{durationSec,jdbcType=INTEGER}, rcd_duration_sec),
             rcd_size_bytes = ifnull(#{sizeBytes,jdbcType=BIGINT}, rcd_size_bytes),

@@ -24,7 +24,7 @@ const pageSize = 10
 const APP_STATUS = {
   0: ['待筛选', 'gray'], 1: ['初筛通过', 'green'], 2: ['初筛淘汰', 'red'], 3: ['已约面', 'blue'],
   4: ['待笔试', 'orange'], 5: ['笔试中', 'orange'], 6: ['笔试通过', 'green'], 7: ['笔试未通过', 'red'], 8: ['笔试缺考', 'gray'],
-  9: ['已撤回', 'gray']
+  9: ['已撤回', 'gray'], 10: ['待发Offer', 'orange'], 11: ['已录用', 'green'], 12: ['Offer拒绝', 'red']
 }
 // Offer 状态（t_offer.ofr_status），存在 Offer 时覆盖投递状态显示
 const OFFER_STATUS = { 0: ['Offer 已发送', 'purple'], 1: ['已录取', 'green'], 2: ['Offer 已拒绝', 'red'], 3: ['Offer 已过期', 'gray'], 4: ['Offer 草稿', 'gray'], 5: ['Offer 审批中', 'orange'], 6: ['Offer 已撤回', 'gray'] }

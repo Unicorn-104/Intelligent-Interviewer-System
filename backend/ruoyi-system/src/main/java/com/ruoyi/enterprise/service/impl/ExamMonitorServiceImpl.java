@@ -40,8 +40,8 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
 {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    /** 副机位心跳超过该秒数视为掉线 */
-    private static final long SUB_ONLINE_WINDOW_SEC = 45;
+    /** 副机位心跳超过该秒数视为掉线（副机位每 15 秒上报一次，容忍一次漏报） */
+    private static final long SUB_ONLINE_WINDOW_SEC = 30;
 
     @Value("${livekit.api-key:}")
     private String apiKey;
@@ -90,6 +90,21 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
         result.put("forceDualCamera", record.get("forceDualCamera"));
         result.put("sub", monitorStatus(recordId));
         return result;
+    }
+
+    @Override
+    public boolean isDualCameraReady(Long recordId)
+    {
+        Map<String, Object> record = examMonitorMapper.selectRecordForMonitor(recordId);
+        if (record == null)
+        {
+            return false;
+        }
+        if (asInt(record.get("forceDualCamera"), 0) != 1)
+        {
+            return true;
+        }
+        return Boolean.TRUE.equals(monitorStatus(recordId).get("subOnline"));
     }
 
     @Override

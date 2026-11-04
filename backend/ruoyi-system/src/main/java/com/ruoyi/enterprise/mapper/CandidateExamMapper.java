@@ -56,4 +56,10 @@ public interface CandidateExamMapper
 
     /** 超时未交卷作废：进行中→已缺考（status=3） */
     public int updateRecordAbandoned(@Param("recordId") Long recordId);
+
+    /** 定时结算：已开始但到达截止时间仍未交卷的记录 */
+    public List<Map<String, Object>> selectExpiredInProgressRecords();
+
+    /** 定时结算：考试安排已结束但未开考的记录 */
+    public List<Map<String, Object>> selectExpiredUnstartedRecords();
 }

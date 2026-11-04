@@ -23,6 +23,7 @@ import com.ruoyi.system.config.ResumeStructureProperties;
 import com.ruoyi.system.domain.ModelProvider;
 import com.ruoyi.system.domain.app.AppResume;
 import com.ruoyi.system.service.IModelProviderService;
+import com.ruoyi.system.service.IntegrationSecretService;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /** 将任意简历标题和布局转换为已有简历表字段，不让模型决定用户或附件信息。 */
@@ -71,6 +72,9 @@ public class ResumeAiStructurer
 
     @Autowired(required = false)
     private IModelProviderService modelProviderService;
+
+    @Autowired(required = false)
+    private IntegrationSecretService integrationSecretService;
 
     public ResumeAiStructurer(ResumeStructureProperties properties)
     {
@@ -177,6 +181,12 @@ public class ResumeAiStructurer
 
     private AiSettings resolveSettings()
     {
+        String dbApiKey = integrationSecretService == null ? "" : integrationSecretService.get("resume_ai", "api-key");
+        if (hasText(dbApiKey))
+            return new AiSettings(
+                    blankToDefault(integrationSecretService.get("resume_ai", "api-url"), properties.getApiUrl()),
+                    blankToDefault(integrationSecretService.get("resume_ai", "model"), properties.getModel()),
+                    dbApiKey);
         if (hasText(properties.getApiKey()))
             return new AiSettings(properties.getApiUrl(), properties.getModel(), properties.getApiKey());
         if (modelProviderService == null)

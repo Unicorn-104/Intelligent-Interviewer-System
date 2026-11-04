@@ -4,7 +4,7 @@ import { Plus, Send, FileText, Mail, CircleCheck, Timer, Users, Building2, UserR
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { listOffers, getOffer, createOffer, sendOffer, listCandidateOptions, getMailProfile, startOfferApproval, approveOffer, rejectOffer, withdrawOffer } from '@/api/offer'
+import { listOffers, getOffer, createOffer, sendOffer, listCandidateOptions, getMailProfile, startOfferApproval, approveOffer, rejectOffer, withdrawOffer, markOfferAccepted, markOfferRejected } from '@/api/offer'
 import { listJobs } from '@/api/system/job'
 
 const toast = ref('')
@@ -134,6 +134,21 @@ async function submitApproval() {
   }
 }
 
+// 标记候选人接受/拒绝 Offer（仅已发送状态可操作）
+async function markResult(row, accepted) {
+  const tip = accepted
+    ? '确认候选人已接受该 Offer？候选人状态将更新为「已录用」。'
+    : '确认候选人拒绝该 Offer？候选人状态将被标记为「已淘汰」并归档人才库。'
+  if (!window.confirm(tip)) return
+  try {
+    const action = accepted ? markOfferAccepted : markOfferRejected
+    const res = await action(row.offerId)
+    notify(res.data?.message || res.msg || '已更新 Offer 结果')
+    if (detail.value && detail.value.offerId === row.offerId) detail.value = null
+    await load()
+  } catch (e) { /* 拦截器已提示 */ }
+}
+
 // 撤回 Offer
 const withdrawOpen = ref(false)
 const withdrawRow = ref(null)
@@ -240,6 +255,8 @@ onMounted(load)
             </button>
             <button v-if="row.status === 5" @click="openApproval(row, 'approve')"><CircleCheck :size="13" />通过</button>
             <button v-if="row.status === 5" @click="openApproval(row, 'reject')"><CircleX :size="13" />拒绝</button>
+            <button v-if="row.status === 0" @click="markResult(row, true)"><CircleCheck :size="13" />标记接受</button>
+            <button v-if="row.status === 0" @click="markResult(row, false)"><CircleX :size="13" />标记拒绝</button>
             <button v-if="row.status === 0" @click="openWithdraw(row)"><RotateCcw :size="13" />撤回</button>
           </div>
         </article>
@@ -280,6 +297,8 @@ onMounted(load)
       <template #footer>
         <button v-if="detail.status === 4" class="btn" @click="startApprovalRow(detail)"><CircleCheck :size="14" />提交审批</button>
         <button v-if="detail.status === 4" class="btn primary" @click="openSender(detail); detail = null"><Send :size="14" />发送录用意向书与入职指引</button>
+        <button v-if="detail.status === 0" class="btn primary" @click="markResult(detail, true)"><CircleCheck :size="14" />标记候选人接受</button>
+        <button v-if="detail.status === 0" class="btn" @click="markResult(detail, false)"><CircleX :size="14" />标记候选人拒绝</button>
         <button v-if="detail.status === 0" class="btn" @click="openWithdraw(detail); detail = null"><RotateCcw :size="14" />撤回</button>
         <button class="btn" @click="detail = null">关闭</button>
       </template>

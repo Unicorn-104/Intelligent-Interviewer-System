@@ -235,7 +235,7 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         {
             throw new ServiceException("该简历尚未上传 PDF");
         }
-        return new AppResumePdfDocument(pdfStorage.read(userId, resume.getFilePath()), resume.getFileName());
+        return new AppResumePdfDocument(pdfStorage.readResource(userId, resume.getFilePath()), resume.getFileName());
     }
     @Override
     @Transactional

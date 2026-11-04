@@ -30,6 +30,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                r.erc_candidate_id as talId, r.erc_status as status,
                r.erc_sub_camera_token as subToken,
                date_format(r.erc_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
+               s.esd_force_dual_camera as forceDualCamera,
                p.epa_name as paperName, p.epa_duration_min as durationMin,
                pos.pos_title as positionTitle, pos.pos_company_id as companyId,
                u.nick_name as candidateName

@@ -1,4 +1,5 @@
 <script setup>
+import { resolveResourceUrl } from "@/utils/resourceUrl"
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -114,15 +115,7 @@ function resolveUrl(p) {
 // 聊天附件地址：按当前部署的接口前缀拼接；历史消息里若写死了别的端地址
 // （如 http://127.0.0.1:5180/dev-api/profile/...），也还原成当前部署可访问的地址
 function attachmentUrl(p) {
-  if (!p) return ''
-  try {
-    const api = String(import.meta.env.VITE_APP_BASE_API || '')
-    let path = /^https?:\/\//i.test(p) ? new URL(p).pathname : String(p)
-    if (api && (path === api || path.startsWith(api + '/'))) path = path.slice(api.length)
-    return api + (path.startsWith('/') ? path : '/' + path)
-  } catch (e) {
-    return ''
-  }
+  return resolveResourceUrl(p, import.meta.env.VITE_APP_BASE_API)
 }
 
 // yyyy-MM-dd HH:mm:ss -> 今天显示 HH:mm，昨天显示 昨天 HH:mm，其余 MM-DD
@@ -159,6 +152,18 @@ function linkParts(text) {
   }
   if (last < text.length) parts.push({ text: text.slice(last) })
   return parts
+}
+
+// ---------- 面试邀请消息（type=1，内容以【面试邀请 开头） ----------
+// 与候选人端约定同一条文本，PC 端解析后以卡片展示，不改变原始消息内容
+function parseInvite(text) {
+  if (!text || !text.startsWith('【面试邀请')) return null
+  const end = text.indexOf('】')
+  if (end < 0) return null
+  const tags = text.slice(5, end).split('·').map(t => t.trim()).filter(Boolean)
+  const rest = text.slice(end + 1)
+  const link = rest.match(/https?:\/\/\S+/)?.[0] || ''
+  return { tags, desc: rest.replace(/https?:\/\/\S+/, '').replace(/视频面试.*$/, '').trim(), link }
 }
 
 // ---------- 岗位卡片消息（type=6，内容为 kind=job_card 的 JSON） ----------
@@ -304,6 +309,7 @@ async function loadMessages(sessionId) {
     text: m.content,
     // 岗位卡片解析失败时保留原文气泡，避免消息丢失
     job: m.type === 6 ? parseJobCard(m.content) : null,
+    invite: m.type === 1 ? parseInvite(m.content) : null,
     attachmentUrl: attachmentUrl(m.attachmentUrl),
     time: fmtTime(m.sendTime)
   }))
@@ -400,21 +406,6 @@ async function markRead() {
   refreshUnread()
 }
 
-async function refreshMessages() {
-  try {
-    await loadConversations()
-    if (activeId.value != null && activeId.value !== SYSTEM_NOTICE_ID) {
-      await loadMessages(activeId.value)
-      await readSession(activeId.value)
-    } else {
-      await loadNotices()
-    }
-    refreshUnread()
-  } catch {
-    // Background refresh must not interrupt the current conversation.
-  }
-}
-
 // 跳转录制回放页，按当前会话对方（候选人）查看其全部面试录制
 function openRecordings() {
   const peer = peerUserId.value
@@ -425,16 +416,30 @@ function openRecordings() {
   })
 }
 
-// ---------- 发送笔试：选择试卷，复用有效考试安排（没有则自动创建），把答题链接发到会话 ----------
+// ---------- 发送笔试：选择岗位与试卷，设置考试开放时间与双机位要求 ----------
 const examOpen = ref(false)
 const examLoading = ref(false)
 const examSending = ref(false)
 const examPapers = ref([])
-const selectedPaperKey = ref(null)
+const examMinStart = ref('')
+const examForm = ref({ positionId: null, paperKey: null, startTime: '', endTime: '', forceDualCamera: false })
+// 可发送笔试的岗位（只保留有启用试卷的投递岗位）
+const examPositions = computed(() => {
+  const map = new Map()
+  for (const p of examPapers.value) {
+    if (!map.has(p.positionId)) map.set(p.positionId, { positionId: p.positionId, positionTitle: p.positionTitle, count: 0 })
+    map.get(p.positionId).count++
+  }
+  return [...map.values()]
+})
+const examPositionPapers = computed(() => examPapers.value.filter(p => p.positionId === examForm.value.positionId))
+const selectedExamPaper = computed(() => examPapers.value.find(p => p.key === examForm.value.paperKey) || null)
 
 function pad2(n) { return String(n).padStart(2, '0') }
-function fmtMinute(d) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+function addDays(time, days) {
+  const d = new Date(String(time).replace(/-/g, '/').replace('T', ' '))
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 function toTs(v) {
   if (!v) return null
@@ -442,11 +447,18 @@ function toTs(v) {
   return isNaN(t) ? null : t
 }
 
+function onExamPositionChange() {
+  const first = examPositionPapers.value[0]
+  examForm.value.paperKey = first ? first.key : null
+}
+
 async function openExamModal() {
   const peer = peerUserId.value
   if (peer == null) { ElMessage.warning('当前会话缺少对方信息，无法发送笔试'); return }
-  selectedPaperKey.value = null
   examPapers.value = []
+  const start = defaultStartTime()
+  examMinStart.value = start
+  examForm.value = { positionId: null, paperKey: null, startTime: start, endTime: addDays(start, 7), forceDualCamera: false }
   examOpen.value = true
   examLoading.value = true
   try {
@@ -465,6 +477,10 @@ async function openExamModal() {
       }
     }
     examPapers.value = papers
+    if (papers.length) {
+      examForm.value.positionId = papers[0].positionId
+      examForm.value.paperKey = papers[0].key
+    }
   } finally {
     examLoading.value = false
   }
@@ -472,48 +488,46 @@ async function openExamModal() {
 
 async function sendExamToChat() {
   const peer = peerUserId.value
-  const paper = examPapers.value.find(p => p.key === selectedPaperKey.value)
+  const paper = selectedExamPaper.value
   if (peer == null || !paper) { ElMessage.warning('请选择要发送的试卷'); return }
   if (!candidateBase) { ElMessage.error('未配置候选人端地址，无法生成完整链接'); return }
+  if (!examForm.value.startTime || !examForm.value.endTime) { ElMessage.warning('请设置考试开始和结束时间'); return }
+  const startAt = String(examForm.value.startTime).replace('T', ' ')
+  const endAt = String(examForm.value.endTime).replace('T', ' ')
+  if (toTs(endAt) <= toTs(startAt)) { ElMessage.warning('考试结束时间必须晚于开始时间'); return }
   examSending.value = true
   try {
     let scheduleId = null
-    let deadline = ''
+    const dual = examForm.value.forceDualCamera ? 1 : 0
     const sres = await listSchedules({ positionId: paper.positionId, pageNum: 1, pageSize: 50 }).catch(() => null)
-    const nowTs = Date.now()
-    // 只复用当前正在有效窗口内的安排（已开始且未结束），否则新建，避免发出去的是过期或未开始链接
+    // 仅复用试卷、开放时间与双机位设置完全一致的进行中安排；设置不同则新建
     const hit = (sres?.rows || []).find(s => {
       if (Number(s.paperId) !== Number(paper.paperId)) return false
       if (Number(s.status) >= 2) return false
-      const start = toTs(s.startAt)
-      const end = toTs(s.endAt)
-      return (start == null || start <= nowTs) && (end == null || end > nowTs)
+      return toTs(s.startAt) === toTs(startAt) && toTs(s.endAt) === toTs(endAt)
+        && Number(s.forceDualCamera || 0) === dual
     })
     if (hit) {
       scheduleId = hit.scheduleId
-      deadline = hit.endAt || ''
     } else {
-      const now = new Date()
-      const end = new Date(now.getTime() + 7 * 24 * 3600 * 1000)
-      deadline = fmtMinute(end)
       const res = await createSchedule({
         positionId: paper.positionId,
         paperId: paper.paperId,
-        startAt: fmtMinute(now),
-        endAt: deadline,
+        startAt,
+        endAt,
         maxAttempts: 1,
         passThreshold: Math.min(60, Number(paper.totalScore) || 60),
-        forceDualCamera: 0,
+        forceDualCamera: dual,
         submitRule: { autoSubmit: true, allowEarly: true, autosaveInterval: 30 }
       })
       scheduleId = res?.data
     }
     if (!scheduleId) throw new Error('创建考试安排失败')
     const url = `${candidateBase}/agent/exam?scheduleId=${scheduleId}`
-    const deadlineText = deadline ? `，考试截止 ${deadline}` : ''
+    const dualText = dual ? '本次考试强制开启双机位监考。' : ''
     const body = {
       type: 1,
-      content: `【在线笔试】${paper.positionTitle || '应聘岗位'}《${paper.name}》${deadlineText}，请点击链接进入笔试作答：${url}`
+      content: `【在线笔试】${paper.positionTitle || '应聘岗位'}《${paper.name}》，考试开放时间 ${startAt} 至 ${endAt}（试卷时长 ${paper.durationMin} 分钟）。${dualText}请点击链接进入笔试作答：${url}`
     }
     if (activeId.value != null) body.sessionId = activeId.value
     else body.peerId = newChat.value.peerId
@@ -536,7 +550,15 @@ const positions = ref([])
 const interviewers = ref([])
 const selectedInterviewerIds = ref([])
 const linkResult = ref(null)
-const linkForm = ref({ peerUserId: null, positionId: null, stageId: null, durationMinutes: 45, mode: 2 })
+const linkForm = ref({ peerUserId: null, positionId: null, stageId: null, startTime: '', durationMinutes: 45, mode: 2 })
+// 面试开始时间默认取最近的 5 分钟整点，面试安排按该时间排序
+function defaultStartTime() {
+  const d = new Date(Date.now() + 5 * 60 * 1000)
+  d.setMinutes(d.getMinutes() - d.getMinutes() % 5, 0, 0)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+const minStartTime = ref('')
 // 生成链接时锁定的阶段名，随邀请文案一起发送
 const generatedStageName = ref('')
 // 会话对方在各岗位流程中的当前阶段（聊天头部展示）
@@ -578,7 +600,8 @@ const linkComplete = computed(() => /^https?:\/\//.test(linkUrl.value))
 function openLinkModal() {
   const peer = peerUserId.value
   if (peer == null) { ElMessage.warning('当前会话缺少对方信息，无法发起视频面试'); return }
-  linkForm.value = { peerUserId: peer, positionId: null, stageId: null, durationMinutes: 45, mode: 2 }
+  linkForm.value = { peerUserId: peer, positionId: null, stageId: null, startTime: defaultStartTime(), durationMinutes: 45, mode: 2 }
+  minStartTime.value = defaultStartTime()
   generatedStageName.value = ''
   positions.value = []
   selectedInterviewerIds.value = []
@@ -685,6 +708,8 @@ async function loadPeerPositions() {
 
 async function generateLink() {
   if (linkForm.value.positionId == null) { ElMessage.warning('请选择面试岗位'); return }
+  if (!linkForm.value.startTime) { ElMessage.warning('请选择面试开始时间'); return }
+  if (new Date(linkForm.value.startTime).getTime() < Date.now()) { ElMessage.warning('面试开始时间不能早于当前时间'); return }
   if (!validateMode()) return
   generating.value = true
   generatedStageName.value = currentStage.value?.name || ''
@@ -694,6 +719,8 @@ async function generateLink() {
       positionId: linkForm.value.positionId,
       // 阶段随场次落库，面试安排/流程流转才能读到轮次
       stageId: linkForm.value.stageId,
+      // 预约开始时间随场次落库，面试安排按该时间排序
+      startTime: linkForm.value.startTime.replace('T', ' '),
       durationMinutes: linkForm.value.durationMinutes,
       mode: linkForm.value.mode,
       interviewerIds: selectedInterviewerIds.value
@@ -810,7 +837,8 @@ onMounted(async () => {
     openConv(noticeConv.value)
   }
   refreshUnread()
-  refreshTimer = window.setInterval(refreshMessages, 5000)
+  // 只定时刷新未读角标，不再重载会话与消息列表，避免页面反复刷新
+  refreshTimer = window.setInterval(refreshUnread, 30000)
 })
 
 // 已在消息页时再次使用顶栏搜索，同步关键词筛选会话
@@ -878,6 +906,15 @@ onBeforeUnmount(() => {
             <template v-else-if="msg.type===2">
               <a v-if="msg.attachmentUrl && !msg.broken" class="bubble img-bubble" :href="msg.attachmentUrl" target="_blank"><img :src="msg.attachmentUrl" :alt="msg.text" @error="msg.broken = true"/></a>
               <span v-else class="bubble img-bubble img-broken">图片无法加载（{{msg.text}}）</span>
+              <time v-if="msg.time">{{msg.time}}</time>
+            </template>
+            <template v-else-if="msg.invite">
+              <article class="invite-bubble">
+                <div class="ib-head"><Video :size="16"/><span>面试邀请</span></div>
+                <div v-if="msg.invite.tags.length" class="ib-tags"><span v-for="t in msg.invite.tags" :key="t">{{ t }}</span></div>
+                <p class="ib-desc">{{ msg.invite.desc }}</p>
+                <a v-if="msg.invite.link" class="ib-link" :href="msg.invite.link" target="_blank" rel="noopener noreferrer"><Video :size="14"/>进入面试间</a>
+              </article>
               <time v-if="msg.time">{{msg.time}}</time>
             </template>
             <template v-else-if="msg.job">
@@ -960,6 +997,10 @@ onBeforeUnmount(() => {
         </label>
         <p v-if="currentStage" class="lf-stage-hint">已按阶段「{{ currentStage.name }}」带出面试方式与时长，可按实际情况调整。</p>
         <label class="lf-row">
+          <span>开始时间</span>
+          <input class="lf-time" type="datetime-local" v-model="linkForm.startTime" :min="minStartTime" />
+        </label>
+        <label class="lf-row">
           <span>面试时长</span>
           <input class="lf-num" type="number" min="15" max="180" step="5" v-model.number="linkForm.durationMinutes" />
           <em>分钟</em>
@@ -1021,20 +1062,41 @@ onBeforeUnmount(() => {
       </div>
     </BaseModal>
 
-    <BaseModal v-if="examOpen" title="发送笔试" width="480px" @close="examOpen=false">
+    <BaseModal v-if="examOpen" title="发送笔试" width="520px" @close="examOpen=false">
       <div class="survey-form">
-        <p class="sf-tip">选择要发送给「{{ activeConv?.name || '当前候选人' }}」的试卷；若该试卷暂无有效考试安排，系统会自动创建一个 7 天内的考试安排。</p>
+        <p class="sf-tip">为「{{ activeConv?.name || '当前候选人' }}」发送岗位笔试：选择投递岗位与试卷，设置考试开放时间与双机位要求。到达结束时间仍未开考将记为缺考。</p>
         <p v-if="examLoading" class="sf-empty">加载中…</p>
         <p v-else-if="!examPapers.length" class="sf-empty">该候选人投递岗位下暂无启用试卷，请先在「在线笔试 → 试卷」中创建并启用</p>
-        <div v-else class="sf-list">
-          <label v-for="p in examPapers" :key="p.key" class="sf-item" :class="{ on: selectedPaperKey === p.key }">
-            <input type="radio" :value="p.key" v-model="selectedPaperKey" />
-            <div><b>{{ p.name }}</b><small>{{ p.positionTitle }} · {{ p.durationMin }} 分钟 · {{ p.totalScore }} 分</small></div>
+        <template v-else>
+          <label class="lf-row">
+            <span>笔试岗位</span>
+            <select v-model="examForm.positionId" @change="onExamPositionChange">
+              <option v-for="p in examPositions" :key="p.positionId" :value="p.positionId">{{ p.positionTitle }}（{{ p.count }} 份试卷）</option>
+            </select>
           </label>
-        </div>
+          <div class="sf-list exam-paper-list">
+            <label v-for="p in examPositionPapers" :key="p.key" class="sf-item" :class="{ on: examForm.paperKey === p.key }">
+              <input type="radio" :value="p.key" v-model="examForm.paperKey" />
+              <div><b>{{ p.name }}</b><small>{{ p.durationMin }} 分钟 · {{ p.totalScore }} 分</small></div>
+            </label>
+          </div>
+          <label class="lf-row">
+            <span>开始时间</span>
+            <input class="lf-time" type="datetime-local" v-model="examForm.startTime" :min="examMinStart" />
+          </label>
+          <label class="lf-row">
+            <span>结束时间</span>
+            <input class="lf-time" type="datetime-local" v-model="examForm.endTime" :min="examForm.startTime" />
+          </label>
+          <label class="lf-row exam-dual">
+            <span>强制双机位</span>
+            <input type="checkbox" v-model="examForm.forceDualCamera" />
+            <em>开启后候选人需同时启用主、副设备监考</em>
+          </label>
+        </template>
         <div class="sf-foot">
           <button class="btn" @click="examOpen=false">取消</button>
-          <button class="btn primary" :disabled="examSending || !selectedPaperKey" @click="sendExamToChat"><Send :size="14"/>{{ examSending ? '发送中…' : '发送' }}</button>
+          <button class="btn primary" :disabled="examSending || !selectedExamPaper" @click="sendExamToChat"><Send :size="14"/>{{ examSending ? '发送中…' : '发送' }}</button>
         </div>
       </div>
     </BaseModal>
@@ -1048,10 +1110,11 @@ onBeforeUnmount(() => {
 .link-form{display:flex;flex-direction:column;gap:14px}
 .lf-row{display:flex;align-items:center;gap:10px;font-size:12px;color:#40516a}
 .lf-row>span{width:66px;flex:none;color:#8392a7}
-.lf-row select,.lf-num{height:34px;border:1px solid #dfe6ef;border-radius:8px;padding:0 10px;font-size:12px;outline:none;background:#fff;color:#40516a}
+.lf-row select,.lf-num,.lf-time{height:34px;border:1px solid #dfe6ef;border-radius:8px;padding:0 10px;font-size:12px;outline:none;background:#fff;color:#40516a}
 .lf-row select{flex:1;min-width:0}
 .lf-num{width:120px;flex:none}
-.lf-row select:focus,.lf-num:focus{border-color:#2563eb}
+.lf-time{flex:1;min-width:0}
+.lf-row select:focus,.lf-num:focus,.lf-time:focus{border-color:#2563eb}
 .lf-row em{font-style:normal;color:#8392a7;font-size:11px}
 .lf-col{align-items:flex-start}
 .lf-interviewers{flex:1;min-width:0}
@@ -1104,6 +1167,9 @@ onBeforeUnmount(() => {
 .sf-item b{display:block;font-size:12px;color:#26364d}
 .sf-item small{color:#8392a7;font-size:10px}
 .sf-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:4px}
+.exam-paper-list{max-height:180px}
+.exam-dual input[type=checkbox]{width:16px;height:16px;accent-color:#2563eb;flex:none}
+.exam-dual em{font-style:normal;color:#9aa7b8;font-size:11px}
 .img-bubble.img-broken{padding:9px 12px;color:#98a5b7;font-size:10px;background:#eef2f7;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .job-bubble{width:264px;max-width:76%;background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px;padding:12px 13px;cursor:pointer;transition:.18s ease}
 .job-bubble:hover{border-color:#8eb2fa;box-shadow:0 6px 18px rgba(37,99,235,.1)}
@@ -1111,4 +1177,12 @@ onBeforeUnmount(() => {
 .jb-salary{margin-top:5px;font-size:12px;font-weight:600;color:#2563eb}
 .jb-meta{margin-top:4px;font-size:11px;color:#7d8ca1;line-height:1.5}
 .jb-foot{margin-top:9px;padding-top:9px;border-top:1px solid #eef2f7;font-size:11px;color:#07865e}
+.invite-bubble{width:310px;max-width:80%;background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px;padding:12px 13px;transition:.18s ease}
+.invite-bubble:hover{border-color:#8eb2fa;box-shadow:0 6px 18px rgba(37,99,235,.1)}
+.ib-head{display:flex;align-items:center;gap:6px;color:#2563eb;font-size:13px;font-weight:600}
+.ib-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.ib-tags span{font-size:10px;color:#2563eb;background:#eef4ff;border-radius:6px;padding:2px 8px}
+.ib-desc{margin-top:8px;font-size:12px;color:#40516a;line-height:1.55}
+.ib-link{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:10px;height:32px;border-radius:8px;background:#2563eb;color:white;font-size:12px;text-decoration:none}
+.ib-link:hover{background:#1d4ed8}
 </style>

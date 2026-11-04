@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/app_config.dart';
+import '../../../core/network/resource_url.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/page_states.dart';
 import '../../../widgets/skeleton_list.dart';
@@ -18,38 +19,18 @@ class _PublicAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = _text(profile['name'], '求职者');
     final raw = _text(profile['avatar'], '');
-    final base = Uri.parse(AppConfig.apiBaseUrl);
-    final path = Uri.tryParse(raw);
-    // 字符串拼接而非 resolveUri：base 含子路径（如 /prod-api）时，
-    // resolveUri 会丢弃子路径，导致绕过 Nginx 反代返回 404。
-    final Uri? uri;
-    if (path == null) {
-      uri = null;
-    } else if (path.hasScheme) {
-      uri = ['http', 'https'].contains(path.scheme) ? path : null;
-    } else {
-      uri = Uri.parse(
-        '${AppConfig.apiBaseUrl}${raw.startsWith('/') ? raw : '/$raw'}',
-      );
-    }
-    // 去掉 base 尾部斜杠后，头像路径必须位于 /profile/ 目录下
-    final profilePrefix =
-        '${base.path.replaceAll(RegExp(r'/+$'), '')}/profile/';
-    final safe =
-        uri != null &&
-        ['http', 'https'].contains(uri.scheme) &&
-        uri.origin == base.origin &&
-        uri.userInfo.isEmpty &&
-        uri.query.isEmpty &&
-        uri.fragment.isEmpty &&
-        uri.path.startsWith(profilePrefix);
+    final url = resolveResourceUrl(
+      raw,
+      apiBaseUrl: AppConfig.apiBaseUrl,
+      profileOnly: true,
+    );
     return SizedBox(
       width: 48,
       height: 48,
       child: ClipOval(
-        child: safe
+        child: url != null
             ? Image.network(
-                uri.toString(),
+                url,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => _fallback(name),
               )
@@ -213,8 +194,10 @@ class DiscoveryTalentCard extends StatelessWidget {
       foregroundColor: AppColors.canvas,
       minimumSize: const Size(92, 44),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      textStyle: Theme.of(context).textTheme.labelLarge
-          ?.copyWith(fontSize: 13, fontWeight: FontWeight.w500),
+      textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
     ),
     child: const Text('主动沟通'),

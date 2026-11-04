@@ -40,7 +40,6 @@ public class DataManageServiceImpl implements IDataManageService
     /** 备份的业务表（按 company 列过滤） */
     private static final String[][] BACKUP_TABLES = {
             { "t_cmp_dept", "company_id" },
-            { "t_cmp_integration", "company_id" },
             { "t_msg_template", "tpl_company_id" },
             { "t_cmp_binding", "bnd_company_id" },
             { "t_tal", "tal_company_id" }

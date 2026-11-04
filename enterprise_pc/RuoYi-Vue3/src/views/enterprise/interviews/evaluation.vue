@@ -3,7 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ArrowLeft, Sparkles, CheckCircle2, AlertTriangle, FileText, Send, RotateCcw } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { getInterviewReview, confirmInterviewReview, adjustInterviewReview, rejectInterviewReview, cascadeInterviewReview } from '@/api/interview'
+import { getInterviewReview, confirmInterviewReview, adjustInterviewReview, rejectInterviewReview, cascadeInterviewReview, retryInterviewReport } from '@/api/interview'
+import { getSessionResult } from '@/api/system/conference'
 import { triggerOffer } from '@/api/offer'
 
 const router = useRouter()
@@ -19,6 +20,16 @@ const resultType = ref('final')
 const cascadeInfo = ref(null)
 const offerTriggering = ref(false)
 const offerCreated = ref(false)
+// 报告生成状态仅在缺少评估行时用于说明原因（生成中/失败）并提供重新生成
+const reportState = ref({ status: '', error: '' })
+const retryingReport = ref(false)
+
+const REPORT_ERRORS = {
+  INSUFFICIENT_DATA: '对话内容不足，建议转人工评估',
+  EVIDENCE_MISMATCH: '生成结果与对话证据不符，已自动拦截',
+  MODEL_UNAVAILABLE: 'AI 服务暂不可用，请稍后重新生成',
+  INTERNAL_ERROR: '生成过程异常，可重新生成'
+}
 
 // 维度字典与阶段建议字典（与后端 t_int_evaluation 字段注释一致）
 const DIMENSION_NAMES = { 1: '技术能力', 2: '逻辑思维', 3: '沟通表达', 4: '性格匹配', 5: '稳定性' }
@@ -49,12 +60,20 @@ const dimensions = computed(() => {
   if (!raw || typeof raw !== 'object') return []
   return Object.keys(raw)
     .sort((a, b) => Number(a) - Number(b))
-    .map((key) => ({
-      key,
-      name: DIMENSION_NAMES[key] || `维度 ${key}`,
-      score: Math.max(0, Math.min(100, Number(raw[key]) || 0))
-    }))
+    .map((key) => {
+      // AI 报告每维存 {score, evidence}，历史数据可能是纯分数
+      const value = raw[key]
+      const score = value && typeof value === 'object' ? value.score : value
+      return {
+        key,
+        name: DIMENSION_NAMES[key] || `维度 ${key}`,
+        score: Math.max(0, Math.min(100, Number(score) || 0)),
+        evidence: value && typeof value === 'object' ? String(value.evidence || '') : ''
+      }
+    })
 })
+
+const reportErrorText = computed(() => REPORT_ERRORS[reportState.value.error] || '')
 
 const reviewed = computed(() => Number(review.value?.hrStatus) !== 0)
 
@@ -81,6 +100,37 @@ const statusInfo = computed(() => {
 const overallScore = computed(() => {
   const value = Number(review.value?.overallScore)
   return Number.isFinite(value) ? value.toFixed(1) : '—'
+})
+
+// HR 调整后对比 AI 原始评分：快照只在首次调整前写入一次
+const aiSnapshot = computed(() => {
+  const raw = review.value?.aiSnapshot
+  if (!raw) return null
+  let value = raw
+  if (typeof raw === 'string') {
+    try { value = JSON.parse(raw) } catch (e) { return null }
+  }
+  if (!value || typeof value !== 'object') return null
+  const scores = {}
+  const rawDims = value.dimensionScores
+  if (rawDims && typeof rawDims === 'object') {
+    for (const [key, item] of Object.entries(rawDims)) {
+      const score = item && typeof item === 'object' ? item.score : item
+      if (score != null) scores[key] = Number(score)
+    }
+  }
+  return { overallScore: value.overallScore ?? null, dimensionScores: scores }
+})
+
+const aiCompare = computed(() => {
+  if (!aiSnapshot.value) return []
+  return dimensions.value
+    .filter((item) => aiSnapshot.value.dimensionScores[item.key] != null)
+    .map((item) => {
+      const ai = Number(aiSnapshot.value.dimensionScores[item.key])
+      const delta = Math.round((item.score - ai) * 10) / 10
+      return { key: item.key, name: item.name, ai, current: item.score, delta }
+    })
 })
 
 const stageTitle = computed(() => {
@@ -120,7 +170,10 @@ async function load() {
       }
       comment.value = review.value.hrComment || ''
       editScores.value = Object.fromEntries(
-        Object.entries(review.value.dimensionScores || {}).map(([key, value]) => [key, Number(value) || 0])
+        Object.entries(review.value.dimensionScores || {}).map(([key, value]) => [
+          key,
+          Number(value && typeof value === 'object' ? value.score : value) || 0
+        ])
       )
       const round = Number(review.value.round)
       const total = Number(review.value.totalRounds)
@@ -133,6 +186,32 @@ async function load() {
     review.value = null
   } finally {
     loading.value = false
+  }
+}
+
+// 评估行不存在时读取报告生成状态，用于区分生成中/失败并提示原因
+async function loadReportState() {
+  reportState.value = { status: '', error: '' }
+  try {
+    const res = await getSessionResult(route.params.id)
+    const data = res.data || {}
+    reportState.value = { status: data.reportStatus || '', error: data.reportError || '' }
+  } catch (e) {
+    // 后端未就绪时保持未知状态
+  }
+}
+
+async function retryReport() {
+  if (retryingReport.value) return
+  retryingReport.value = true
+  try {
+    await retryInterviewReport(route.params.id)
+    notify('已提交重新生成，完成后刷新页面即可查看')
+    await loadReportState()
+  } catch (e) {
+    // 请求拦截器已统一提示
+  } finally {
+    retryingReport.value = false
   }
 }
 
@@ -179,7 +258,8 @@ async function adjust() {
     const res = await adjustInterviewReview(review.value.sessionId, {
       ...dims,
       recommendation: selectedRecommendation.value,
-      comment: comment.value || undefined
+      comment: comment.value || undefined,
+      isFinal: resultType.value === 'final'
     })
     if (resultType.value !== 'final') {
       // 调整接口不含级联，非终面时按级联规则单独创建下一轮预约
@@ -232,7 +312,10 @@ function backToList() {
   router.push('/enterprise/interviews')
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadReportState()
+})
 </script>
 
 <template>
@@ -243,8 +326,18 @@ onMounted(load)
 
     <div v-else-if="!review" class="card state-card empty">
       <FileText :size="28" />
-      <b>暂无评估报告</b>
-      <p>该场次尚未生成 AI 评估报告，请确认面试已结束且评估已完成后再查看。</p>
+      <b v-if="reportState.status === 'generating'">AI 报告生成中</b>
+      <b v-else-if="reportState.status === 'failed'">AI 报告生成失败</b>
+      <b v-else>暂无评估报告</b>
+      <p v-if="reportState.status === 'generating'">报告正在生成，完成后刷新页面即可查看。</p>
+      <p v-else-if="reportState.status === 'failed'">{{ reportErrorText || 'AI 报告生成失败，可重新生成。' }}</p>
+      <p v-else>该场次尚未生成 AI 评估报告，请确认面试已结束且评估已完成后再查看。</p>
+      <button
+        v-if="reportState.status === 'failed'"
+        class="btn"
+        :disabled="retryingReport"
+        @click="retryReport"
+      >{{ retryingReport ? '提交中…' : '重新生成报告' }}</button>
       <button class="btn" @click="backToList">返回面试列表</button>
     </div>
 
@@ -282,9 +375,20 @@ onMounted(load)
                 />
                 <b v-else>{{ item.score }}</b>
                 <i><u :style="{ width: displayScore(item.key) + '%' }"/></i>
+                <p v-if="item.evidence" class="dim-evidence">依据：{{ item.evidence }}</p>
               </div>
             </div>
             <p v-else class="dim-empty">该报告未包含维度评分明细。</p>
+
+            <div v-if="aiCompare.length" class="ai-snapshot">
+              <div class="snap-head"><b>AI 原始评分</b><span>HR 调整前留存，仅作对比</span></div>
+              <div v-for="item in aiCompare" :key="item.key" class="snap-row">
+                <span>{{ item.name }}</span>
+                <em>AI {{ item.ai }} → 当前 {{ item.current }}</em>
+                <small v-if="item.delta" :class="item.delta > 0 ? 'up' : 'down'">{{ item.delta > 0 ? '+' : '' }}{{ item.delta }}</small>
+              </div>
+              <p class="snap-total">AI 综合分 {{ aiSnapshot.overallScore ?? '—' }} · 当前综合分 {{ overallScore }}</p>
+            </div>
           </section>
 
           <section class="card evidence-card">
@@ -390,5 +494,5 @@ onMounted(load)
 </template>
 
 <style scoped>
-.evaluation-page{padding-bottom:28px}.back{border:0;background:transparent;color:#6f7f99;display:flex;align-items:center;gap:5px;font-size:11px;padding:0;margin-bottom:9px}.page-heading{align-items:center}.page-heading>span{margin-left:auto}.evaluation-grid{display:grid;grid-template-columns:minmax(650px,1fr) 330px;gap:15px}.evaluation-grid>main,.evaluation-grid>aside{display:flex;flex-direction:column;gap:15px}.score-card,.evidence-card,.decision-card,.next-card{padding:19px}.state-card{padding:34px;text-align:center;color:#64748b;font-size:12px}.state-card.empty{display:flex;flex-direction:column;align-items:center;gap:8px}.state-card.empty b{font-size:14px;color:#334155}.state-card.empty p{font-size:10px;color:#8291a5;line-height:1.6}.state-card.empty .btn{margin-top:6px}.score-overview{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,#edf4ff,#f9fbff);border-radius:11px;padding:16px}.eyebrow{display:flex;align-items:center;gap:5px;color:#2563eb;font-size:10px;font-weight:700}.score-overview strong{display:block;font-size:36px;color:#2057d8;margin-top:7px}.score-overview strong small{font-size:11px;color:#7890b2}.score-overview p{font-size:9px;color:#7d8da5;margin-top:3px}.ring{width:66px;height:66px;border:7px solid #c9ddff;border-top-color:#2563eb;border-right-color:#2563eb;border-radius:50%;display:grid;place-items:center;color:#2563eb;font-size:15px}.score-bars{margin-top:18px}.score-bars>div{display:grid;grid-template-columns:100px 54px 1fr;gap:8px;align-items:center;margin:12px 0;font-size:10px;color:#657791}.score-bars b{text-align:right;color:#263d62}.score-input{width:50px;height:26px;padding:0 4px;border:1px solid #dbe4ef;border-radius:6px;text-align:center;font-size:10px;color:#263d62;background:#fff}.score-input:focus{outline:none;border-color:#8db4fa;box-shadow:0 0 0 2px #e8f0ff}.score-bars i{height:7px;border-radius:5px;background:#e2e8f1}.score-bars u{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#3477f5,#06b6d4)}.dim-empty{font-size:10px;color:#8291a5;margin-top:14px}.evidence-card>.section-title svg{color:#2563eb}.summary-text{font-size:10px;line-height:1.7;color:#5f7089;white-space:pre-line;margin-top:8px}.detail-block{padding-top:12px;margin-top:12px;border-top:1px solid #e8edf4}.detail-block b{font-size:11px;color:#334155}.decision-card label{display:block;font-size:10px;color:#63758f;margin:16px 0 7px}.decision-options{display:grid;grid-template-columns:1fr 1fr;gap:7px}.decision-options button{height:34px;border:1px solid #dbe4ef;background:#fff;border-radius:7px;color:#657892;font-size:10px}.decision-options button.active{color:#2563eb;border-color:#8db4fa;background:#edf4ff;font-weight:700}.decision-options button:disabled{cursor:not-allowed;opacity:.6}.textarea{min-height:90px;resize:vertical}.textarea:disabled{background:#f7f9fc;color:#7b8ba3}.review-note{display:flex;gap:6px;align-items:flex-start;padding:9px;background:#fff5e6;border-radius:8px;color:#a96b18;font-size:9px;line-height:1.45;margin:12px 0}.green{color:#10b981}.full{width:100%;margin-top:7px}.full:disabled{cursor:not-allowed;opacity:.6}.next-card{font-size:10px}.next-card p{font-size:9px;color:#8291a5;line-height:1.5;margin-top:6px}.reviewed-banner{padding:10px 11px;margin-top:14px;border-radius:8px;background:#f0fdf6;border:1px solid #cbeee0}.reviewed-banner b{font-size:11px;color:#07865e}.reviewed-banner p{font-size:9px;color:#4b7f6c;line-height:1.55;margin-top:4px}.cascade-box{padding:10px 11px;margin-top:10px;border-radius:8px;background:#eef4ff;border:1px solid #d3e2ff}.cascade-box b{font-size:11px;color:#2057d8}.cascade-box p{font-size:9px;color:#5470a3;line-height:1.55;margin-top:4px}.result-hint{font-size:9px;color:#8291a5;line-height:1.5;margin-top:6px}.result-types{margin-top:0}.offer-card .full+.full{margin-top:6px}
+.evaluation-page{padding-bottom:28px}.back{border:0;background:transparent;color:#6f7f99;display:flex;align-items:center;gap:5px;font-size:11px;padding:0;margin-bottom:9px}.page-heading{align-items:center}.page-heading>span{margin-left:auto}.evaluation-grid{display:grid;grid-template-columns:minmax(650px,1fr) 330px;gap:15px}.evaluation-grid>main,.evaluation-grid>aside{display:flex;flex-direction:column;gap:15px}.score-card,.evidence-card,.decision-card,.next-card{padding:19px}.state-card{padding:34px;text-align:center;color:#64748b;font-size:12px}.state-card.empty{display:flex;flex-direction:column;align-items:center;gap:8px}.state-card.empty b{font-size:14px;color:#334155}.state-card.empty p{font-size:10px;color:#8291a5;line-height:1.6}.state-card.empty .btn{margin-top:6px}.score-overview{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,#edf4ff,#f9fbff);border-radius:11px;padding:16px}.eyebrow{display:flex;align-items:center;gap:5px;color:#2563eb;font-size:10px;font-weight:700}.score-overview strong{display:block;font-size:36px;color:#2057d8;margin-top:7px}.score-overview strong small{font-size:11px;color:#7890b2}.score-overview p{font-size:9px;color:#7d8da5;margin-top:3px}.ring{width:66px;height:66px;border:7px solid #c9ddff;border-top-color:#2563eb;border-right-color:#2563eb;border-radius:50%;display:grid;place-items:center;color:#2563eb;font-size:15px}.score-bars{margin-top:18px}.score-bars>div{display:grid;grid-template-columns:100px 54px 1fr;gap:8px;align-items:center;margin:12px 0;font-size:10px;color:#657791}.score-bars b{text-align:right;color:#263d62}.score-input{width:50px;height:26px;padding:0 4px;border:1px solid #dbe4ef;border-radius:6px;text-align:center;font-size:10px;color:#263d62;background:#fff}.score-input:focus{outline:none;border-color:#8db4fa;box-shadow:0 0 0 2px #e8f0ff}.score-bars i{height:7px;border-radius:5px;background:#e2e8f1}.score-bars u{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#3477f5,#06b6d4)}.dim-empty{font-size:10px;color:#8291a5;margin-top:14px}.evidence-card>.section-title svg{color:#2563eb}.summary-text{font-size:10px;line-height:1.7;color:#5f7089;white-space:pre-line;margin-top:8px}.detail-block{padding-top:12px;margin-top:12px;border-top:1px solid #e8edf4}.detail-block b{font-size:11px;color:#334155}.decision-card label{display:block;font-size:10px;color:#63758f;margin:16px 0 7px}.decision-options{display:grid;grid-template-columns:1fr 1fr;gap:7px}.decision-options button{height:34px;border:1px solid #dbe4ef;background:#fff;border-radius:7px;color:#657892;font-size:10px}.decision-options button.active{color:#2563eb;border-color:#8db4fa;background:#edf4ff;font-weight:700}.decision-options button:disabled{cursor:not-allowed;opacity:.6}.textarea{min-height:90px;resize:vertical}.textarea:disabled{background:#f7f9fc;color:#7b8ba3}.review-note{display:flex;gap:6px;align-items:flex-start;padding:9px;background:#fff5e6;border-radius:8px;color:#a96b18;font-size:9px;line-height:1.45;margin:12px 0}.green{color:#10b981}.full{width:100%;margin-top:7px}.full:disabled{cursor:not-allowed;opacity:.6}.next-card{font-size:10px}.next-card p{font-size:9px;color:#8291a5;line-height:1.5;margin-top:6px}.reviewed-banner{padding:10px 11px;margin-top:14px;border-radius:8px;background:#f0fdf6;border:1px solid #cbeee0}.reviewed-banner b{font-size:11px;color:#07865e}.reviewed-banner p{font-size:9px;color:#4b7f6c;line-height:1.55;margin-top:4px}.cascade-box{padding:10px 11px;margin-top:10px;border-radius:8px;background:#eef4ff;border:1px solid #d3e2ff}.cascade-box b{font-size:11px;color:#2057d8}.cascade-box p{font-size:9px;color:#5470a3;line-height:1.55;margin-top:4px}.result-hint{font-size:9px;color:#8291a5;line-height:1.5;margin-top:6px}.result-types{margin-top:0}.offer-card .full+.full{margin-top:6px}.dim-evidence{grid-column:1/-1;margin:-6px 0 0;font-size:9px;line-height:1.55;color:#7d8da5}.ai-snapshot{margin-top:16px;padding-top:12px;border-top:1px dashed #e2e8f1}.snap-head{display:flex;align-items:baseline;gap:8px}.snap-head b{font-size:11px;color:#334155}.snap-head span{font-size:9px;color:#9aa8bd}.snap-row{display:grid;grid-template-columns:100px 1fr 40px;gap:8px;align-items:center;margin-top:8px;font-size:10px;color:#657791}.snap-row em{font-style:normal}.snap-row small{text-align:right;font-weight:700}.snap-row .up{color:#10b981}.snap-row .down{color:#ef4444}.snap-total{margin-top:8px;font-size:9px;color:#7d8da5}
 </style>

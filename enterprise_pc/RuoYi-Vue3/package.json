@@ -6,6 +6,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "test:unit": "node --test test/resourceUrl.test.js",
     "dev": "vite",
     "build:prod": "vite build",
     "build:stage": "vite build --mode staging",

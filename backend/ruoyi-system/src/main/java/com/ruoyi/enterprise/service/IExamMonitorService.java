@@ -16,6 +16,9 @@ public interface IExamMonitorService
     /** 候选人端：主机位入会信息 + 副机位接入码/二维码地址 + 副机位状态 */
     public Map<String, Object> getMonitorInfo(Long userId, Long recordId);
 
+    /** 强制双机位考试要求副机位在线；非双机位考试直接返回 true */
+    public boolean isDualCameraReady(Long recordId);
+
     /** 副机位H5：凭 recordId+接入码换取入会令牌（匿名） */
     public Map<String, Object> subJoin(Long recordId, String code);
 

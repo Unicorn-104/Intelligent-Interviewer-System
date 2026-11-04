@@ -103,6 +103,12 @@ public interface OfferMapper
     /** 更新 Offer 状态 */
     public int updateOfferStatus(@Param("offerId") Long offerId, @Param("status") Integer status);
 
+    /** 已发送 Offer 落结果（接受/拒绝/过期），仅当仍为已发送状态时生效 */
+    public int updateOfferResult(@Param("offerId") Long offerId, @Param("status") Integer status);
+
+    /** 超过回复截止时间仍未处理的 Offer（过期补偿扫描用） */
+    public List<Map<String, Object>> selectOverdueOffers();
+
     /** 更新 Offer 审批状态 */
     public int updateOfferApprovalStatus(@Param("offerId") Long offerId,
             @Param("approvalStatus") Integer approvalStatus);

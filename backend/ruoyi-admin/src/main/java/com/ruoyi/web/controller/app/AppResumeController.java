@@ -11,7 +11,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.ResponseEntity;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -116,7 +115,7 @@ public class AppResumeController extends BaseController
                         .filename(document.name() == null ? "resume.pdf" : document.name(), StandardCharsets.UTF_8).build().toString())
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                 .header("X-Content-Type-Options", "nosniff")
-                .body(new FileSystemResource(document.path()));
+                .body(document.resource());
     }
 
     private void validatePdf(MultipartFile file) throws IOException

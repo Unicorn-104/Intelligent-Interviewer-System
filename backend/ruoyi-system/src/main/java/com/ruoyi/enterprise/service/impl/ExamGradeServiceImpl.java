@@ -236,7 +236,7 @@ public class ExamGradeServiceImpl implements IExamGradeService
         if (passStatus != 2 && firstFinalize && ctx.get("positionId") != null)
         {
             screeningMapper.advanceApplicationStatus(asLong(ctx.get("positionId")), asLong(ctx.get("talId")),
-                    passStatus == 1 ? 6 : 7, List.of(4, 5, 6, 7));
+                    passStatus == 1 ? 6 : 7, List.of(3, 4, 5, 6, 7));
         }
 
         String comment = buildComment(ctx, commentOverride, objective, subjective,

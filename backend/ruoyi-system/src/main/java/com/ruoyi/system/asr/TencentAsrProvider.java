@@ -29,11 +29,11 @@ public class TencentAsrProvider implements AsrProvider
 {
     private static final String NAME = "tencent";
 
-    private final AsrProperties properties;
+    private final AsrConfigResolver config;
 
-    public TencentAsrProvider(AsrProperties properties)
+    public TencentAsrProvider(AsrConfigResolver config)
     {
-        this.properties = properties;
+        this.config = config;
     }
 
     @Override
@@ -45,13 +45,13 @@ public class TencentAsrProvider implements AsrProvider
     @Override
     public boolean isConfigured()
     {
-        return properties.isReady();
+        return config.isReady();
     }
 
     @Override
     public URI buildStreamUri(AsrStreamContext context)
     {
-        AsrProperties.Tencent cfg = properties.getTencent();
+        AsrProperties.Tencent cfg = config.tencent();
         long timestamp = System.currentTimeMillis() / 1000L;
         long expired = timestamp + Math.max(60, cfg.getExpireSeconds());
 

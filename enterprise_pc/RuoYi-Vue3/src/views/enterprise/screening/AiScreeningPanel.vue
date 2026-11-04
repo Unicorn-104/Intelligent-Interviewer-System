@@ -26,9 +26,9 @@ const reviewing = ref(false)
 
 const PASS_THRESHOLD = 60
 // 候选人状态映射（t_tal.tal_status）
-const statusMap = { 0: { text: '新入库', tone: 'gray' }, 1: { text: '初筛通过', tone: 'green' }, 2: { text: '面试中', tone: 'blue' }, 3: { text: '已淘汰', tone: 'red' }, 4: { text: '已录用', tone: 'purple' }, 5: { text: '待笔试', tone: 'orange' }, 6: { text: '笔试中', tone: 'orange' }, 7: { text: '笔试通过', tone: 'green' }, 8: { text: '笔试未通过', tone: 'red' }, 9: { text: '笔试缺考', tone: 'gray' } }
+const statusMap = { 0: { text: '新入库', tone: 'gray' }, 1: { text: '初筛通过', tone: 'green' }, 2: { text: '面试中', tone: 'blue' }, 3: { text: '已淘汰', tone: 'red' }, 4: { text: '已录用', tone: 'purple' }, 5: { text: '待笔试', tone: 'orange' }, 6: { text: '笔试中', tone: 'orange' }, 7: { text: '笔试通过', tone: 'green' }, 8: { text: '笔试未通过', tone: 'red' }, 9: { text: '笔试缺考', tone: 'gray' }, 10: { text: '待发Offer', tone: 'orange' } }
 // 本岗位投递状态映射（t_app_record.app_status）：候选人可同时投递多个岗位，列表应展示本岗位状态
-const appStatusMap = { 0: { text: '待筛选', tone: 'gray' }, 1: { text: '初筛通过', tone: 'green' }, 2: { text: '初筛淘汰', tone: 'red' }, 3: { text: '已约面', tone: 'blue' }, 4: { text: '待笔试', tone: 'orange' }, 5: { text: '笔试中', tone: 'orange' }, 6: { text: '笔试通过', tone: 'green' }, 7: { text: '笔试未通过', tone: 'red' }, 8: { text: '笔试缺考', tone: 'gray' }, 9: { text: '已撤回', tone: 'gray' } }
+const appStatusMap = { 0: { text: '待筛选', tone: 'gray' }, 1: { text: '初筛通过', tone: 'green' }, 2: { text: '初筛淘汰', tone: 'red' }, 3: { text: '已约面', tone: 'blue' }, 4: { text: '待笔试', tone: 'orange' }, 5: { text: '笔试中', tone: 'orange' }, 6: { text: '笔试通过', tone: 'green' }, 7: { text: '笔试未通过', tone: 'red' }, 8: { text: '笔试缺考', tone: 'gray' }, 9: { text: '已撤回', tone: 'gray' }, 10: { text: '待发Offer', tone: 'orange' }, 11: { text: '已录用', tone: 'green' }, 12: { text: 'Offer拒绝', tone: 'red' } }
 function rowStatus(row) { return appStatusMap[row.applicationStatus] || statusMap[row.status] || statusMap[0] }
 // 与后端 ScreeningAiEvaluator.WEIGHTS 保持一致（合计 100%）
 const dimensions = [
@@ -349,7 +349,7 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
 .empty-tip.big{text-align:center;padding:60px 0}
 
 /* 抽屉 */
-.drawer-mask{position:fixed;inset:0;background:rgba(15,23,42,.3);z-index:100;display:flex;justify-content:flex-end}
+.drawer-mask{position:fixed;inset:0;background:transparent;z-index:100;display:flex;justify-content:flex-end}
 .drawer{width:460px;background:#fff;height:100%;display:flex;flex-direction:column;box-shadow:-8px 0 30px rgba(0,0,0,.1)}
 .drawer-head{display:flex;align-items:center;gap:11px;padding:16px 18px;border-bottom:1px solid #e2e8f0}
 .dh-info{flex:1;min-width:0}

@@ -13,10 +13,17 @@
 ## 构建
 
 ```powershell
-flutter build apk --release --no-pub --build-number=2 --dart-define=API_BASE_URL=https://114.55.175.79/prod-api --dart-define=TRUST_BAOTA_CERTIFICATE=true
+flutter build apk --release --no-pub --build-number=3 `
+  --dart-define=API_BASE_URL=https://114.55.175.79/prod-api `
+  --dart-define=CANDIDATE_APP_URL=https://114.55.175.79/user `
+  --dart-define=TRUST_BAOTA_CERTIFICATE=true
 ```
 
 原始输出：build/app/outputs/flutter-apk/app-release.apk。
+
+> **CANDIDATE_APP_URL 说明**：求职者通过手机浏览器打开此地址下的 `/conference-join?token=xxx` 入会。
+> 必须是 HTTPS 公网地址（手机浏览器 getUserMedia 要求安全上下文），不能用 localhost 或 HTTP IP。
+> 构建后应在 APK 内确认该值不再是默认的 `http://localhost:5180`。
 
 现有android/app/build.gradle.kts的release使用debug签名。本包供安装联调测试，并非应用商店发布包。用户提供的服务器TLS证书不用于Android应用签名。正式分发需配置独立且受保护的应用签名密钥。
 
@@ -33,5 +40,17 @@ flutter build apk --release --no-pub --build-number=2 --dart-define=API_BASE_URL
 APK版本1.0.0，versionCode=2，minSdk=24，targetSdk=36；包含arm64-v8a、armeabi-v7a、x86_64。包大小62,175,581字节（约59.3MiB），v2签名验证通过，签名为项目现有Android Debug证书。交付路径：build/deliverables/e-app-1.0.0+2-server-114.55.175.79.apk。
 
 SHA-256：97F5D8A8B92C062914DCD3F99D174B433659A115094256ED810445C351F96508。
+
+## 2026-10-30 构建记录（修复邀请链接 localhost:5180）
+
+本次补传 `--dart-define=CANDIDATE_APP_URL=https://114.55.175.79/user`，修复 E-App 发起面试时求职者收到的链接指向 `http://localhost:5180/conference-join` 的问题。
+
+构建时同样临时注释 `integration_test` dev 依赖以规避 GeneratedPluginRegistrant 残留，构建后已恢复 pubspec.yaml。
+
+APK版本1.0.0，versionCode=3，包大小97.7MB。交付路径：build/deliverables/e-app-1.0.0+3-server-114.55.175.79.apk。
+
+SHA-256：0F11E5475970F89150586172B87FCBB8E32B815074ECE055415BCD9E8714FD00。
+
+已验证 libapp.so 内含 `https://114.55.175.79/user`，不含 `http://localhost:5180`。求职者 Web 入口 `https://114.55.175.79/user/conference-join` 公网 HTTPS 可达（200）。
 
 APK资源公钥CA与导出根CA一致，未包含PFX/P12/JKS/keystore文件，三个架构libapp.so均确认含目标API地址。27项相关定向测试、修改文件静态与格式检查通过；不等同真实账号及所有远端业务接口验收。

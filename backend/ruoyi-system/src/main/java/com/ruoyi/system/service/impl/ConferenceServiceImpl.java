@@ -1,6 +1,7 @@
 package com.ruoyi.system.service.impl;
 
 import java.io.InputStream;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -12,8 +13,11 @@ import java.util.concurrent.TimeUnit;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.constant.Constants;
 import com.ruoyi.common.core.redis.RedisCache;
@@ -24,13 +28,18 @@ import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
 import com.ruoyi.enterprise.service.TalStatusService;
-import com.ruoyi.system.config.AsrProperties;
+import com.ruoyi.system.asr.AsrConfigResolver;
+import com.ruoyi.system.event.InterviewFinishedEvent;
 import com.ruoyi.system.mapper.ConferenceMapper;
+import com.ruoyi.system.mapper.InterviewReportMapper;
 import com.ruoyi.system.service.IConferenceService;
 import com.ruoyi.system.service.ILiveKitEgressService;
 
 /**
  * 视频会议（面试链路）服务层实现
+ *
+ * 并发锁顺序约定：候选人(t_tal) -> 场次(t_int_session) -> 预约(t_sch_appointment) -> 面试官时段。
+ * 新增路径必须复用对应的 lock 方法并保持该顺序，禁止在持有场次锁后反向更新候选人，避免死锁。
  *
  * @author ruoyi
  */
@@ -94,7 +103,7 @@ public class ConferenceServiceImpl implements IConferenceService
     private ILiveKitEgressService liveKitEgressService;
 
     @Autowired
-    private AsrProperties asrProperties;
+    private AsrConfigResolver asrConfig;
 
     /** 面试预约统一取消入口：重新发起面试时释放旧预约时段并恢复候选人/投递状态 */
     @Autowired
@@ -103,6 +112,14 @@ public class ConferenceServiceImpl implements IConferenceService
     /** 面试预约口径的投递状态推进（重新发起后同步「已约面」） */
     @Autowired
     private ScreeningMapper screeningMapper;
+
+    /** 面试正常结束后发布事件，事务提交后异步生成报告 */
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+
+    /** 候选人报告只读查询 */
+    @Autowired
+    private InterviewReportMapper interviewReportMapper;
 
     @Override
     public Map<String, Object> getCurrentSession(Long userId)
@@ -192,7 +209,7 @@ public class ConferenceServiceImpl implements IConferenceService
     @Override
     @Transactional
     public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Long stageId,
-            Integer durationMinutes, Integer mode, List<Long> interviewerIds)
+            Integer durationMinutes, Integer mode, List<Long> interviewerIds, String startTime)
     {
         if (peerUserId == null)
         {
@@ -240,10 +257,18 @@ public class ConferenceServiceImpl implements IConferenceService
             throw new ServiceException("面试时长需在 1~" + MAX_INTERVIEW_MINUTES + " 分钟之间");
         }
         int duration = durationMinutes == null ? DEFAULT_INTERVIEW_MINUTES : durationMinutes;
+        // 预约时间按 HR 选定的开始时间写入，面试安排据此排序；未指定时沿用当前时间
+        Timestamp appointmentStart = parseInterviewStart(startTime);
+        Timestamp appointmentEnd = new Timestamp(appointmentStart.getTime() + duration * 60_000L);
         List<Long> selected = normalizeInterviewers(interviewerIds);
         validateInterviewerCount(interviewMode, selected.size());
         validateInterviewerScope(userId, selected);
 
+        // 锁候选人，串行化同一候选人的并发发起请求，避免同时插入多个活跃场次
+        if (conferenceMapper.lockCandidateForUpdate(candidateId) == null)
+        {
+            throw new ServiceException("候选人不存在，无法发起面试");
+        }
         // 每次发起都新建场次并签发新的随机链接：先把该候选人此前尚未结束的场次与待面试预约清理掉，
         // 保证同一候选人同一时间只有一个活跃场次，且日历上不残留重复的「待面试」。
         // 旧预约逐个经面试调度服务的统一取消逻辑处理：释放关联时段、恢复候选人/投递状态；
@@ -262,6 +287,8 @@ public class ConferenceServiceImpl implements IConferenceService
         appointment.put("positionId", positionId);
         appointment.put("interviewerId", sessionInterviewerId);
         appointment.put("durationMinutes", duration);
+        appointment.put("startTime", appointmentStart);
+        appointment.put("endTime", appointmentEnd);
         putStage(appointment, stage);
         conferenceMapper.insertAppointment(appointment);
 
@@ -317,6 +344,34 @@ public class ConferenceServiceImpl implements IConferenceService
         result.put("status", ctx.get("status"));
         result.put("interviewers", conferenceMapper.selectSessionInterviewers(sessionId));
         return result;
+    }
+
+    /** 解析 HR 选定的面试开始时间；为空时按当前时间，格式非法或早于当前时间直接拒绝 */
+    private Timestamp parseInterviewStart(String startTime)
+    {
+        if (StringUtils.isEmpty(startTime))
+        {
+            return new Timestamp(System.currentTimeMillis());
+        }
+        String normalized = startTime.trim().replace('T', ' ');
+        if (normalized.length() == 16)
+        {
+            normalized = normalized + ":00";
+        }
+        Timestamp start;
+        try
+        {
+            start = Timestamp.valueOf(normalized);
+        }
+        catch (IllegalArgumentException e)
+        {
+            throw new ServiceException("面试开始时间格式不正确");
+        }
+        if (start.before(new Timestamp(System.currentTimeMillis())))
+        {
+            throw new ServiceException("面试开始时间不能早于当前时间");
+        }
+        return start;
     }
 
     @Override
@@ -610,6 +665,7 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     @Override
+    @Transactional
     public Map<String, Object> startSession(Long userId, Long sessionId)
     {
         Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
@@ -622,9 +678,17 @@ public class ConferenceServiceImpl implements IConferenceService
             // 主面试官可随时开启；非主面试官须等到预约开始时间 5 分钟后兜底开启
             assertPrimaryOrGrace(ctx, userId, sessionId, "开启");
         }
-        if (toInt(ctx.get("status")) == 0)
+        // 与结束/异常终止共用场次行锁，锁后重新判断状态，避免并发状态迁移覆盖
+        conferenceMapper.lockSessionForUpdate(sessionId);
+        Map<String, Object> latest = conferenceMapper.selectSessionContext(sessionId);
+        int status = toInt(latest.get("status"));
+        if (status == 2 || status == 3)
         {
-            conferenceMapper.startSession(sessionId);
+            throw new ServiceException("本场面试已结束，无法开始");
+        }
+        if (status == 0 && conferenceMapper.startSession(sessionId) != 1)
+        {
+            throw new ServiceException("面试状态已变化，请刷新后重试");
         }
         return getSessionContext(userId, sessionId);
     }
@@ -732,16 +796,16 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             reason = "面试已结束";
         }
-        else if (!asrProperties.isReady())
+        else if (!asrConfig.isReady())
         {
-            reason = asrProperties.getUnavailableReason();
+            reason = asrConfig.unavailableReason();
         }
         Map<String, Object> result = new HashMap<>();
         result.put("enabled", reason == null);
         result.put("reason", reason);
         result.put("mode", mode);
         result.put("aiInterview", aiInterview);
-        result.put("provider", asrProperties.getProvider());
+        result.put("provider", asrConfig.provider());
         result.put("sampleRate", 16000);
         result.put("channels", 1);
         result.put("format", "pcm16le");
@@ -762,9 +826,9 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("面试已结束，无法开启实时字幕");
         }
-        if (!asrProperties.isReady())
+        if (!asrConfig.isReady())
         {
-            throw new ServiceException(asrProperties.getUnavailableReason());
+            throw new ServiceException(asrConfig.unavailableReason());
         }
         String role = String.valueOf(ctx.get("role"));
         if (!"CANDIDATE".equals(role) && !"HR".equals(role))
@@ -786,7 +850,7 @@ public class ConferenceServiceImpl implements IConferenceService
         result.put("sampleRate", 16000);
         result.put("channels", 1);
         result.put("format", "pcm16le");
-        result.put("provider", asrProperties.getProvider());
+        result.put("provider", asrConfig.provider());
         return result;
     }
 
@@ -973,6 +1037,7 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> finishSession(Long userId, Long sessionId, String endReason)
     {
         Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
@@ -980,12 +1045,28 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             assertPrimaryOrGrace(ctx, userId, sessionId, "结束");
         }
-        Map<String, Object> params = new HashMap<>();
-        params.put("sessionId", sessionId);
-        params.put("status", 2);
-        // 会议结束时收敛仍在进行的录制（停止 Egress 并回填状态），避免录制记录永远停在「录制中」
-        settleActiveRecording(ctx, sessionId, false);
-        conferenceMapper.finishSession(params);
+        // 与开始/异常终止共用场次行锁，锁后重新判断状态，避免终态被并发覆盖
+        conferenceMapper.lockSessionForUpdate(sessionId);
+        Map<String, Object> latest = conferenceMapper.selectSessionContext(sessionId);
+        int status = toInt(latest.get("status"));
+        if (status == 3)
+        {
+            throw new ServiceException("本场面试已异常终止，无法正常结束");
+        }
+        if (status != 2)
+        {
+            // 会议结束时收敛仍在进行的录制（停止 Egress 并回填状态），避免录制记录永远停在「录制中」
+            settleActiveRecording(latest, sessionId, false);
+            Map<String, Object> params = new HashMap<>();
+            params.put("sessionId", sessionId);
+            params.put("status", 2);
+            if (conferenceMapper.finishSession(params) != 1)
+            {
+                throw new ServiceException("面试状态已变化，请刷新后重试");
+            }
+            // 事务提交后异步生成报告；重复结束不重复触发，补偿任务负责遗漏场次
+            eventPublisher.publishEvent(new InterviewFinishedEvent(sessionId));
+        }
         Map<String, Object> result = buildSessionResult(sessionId);
         result.put("endReason", StringUtils.isEmpty(endReason) ? "normal" : endReason);
         return result;
@@ -996,18 +1077,32 @@ public class ConferenceServiceImpl implements IConferenceService
     public Map<String, Object> abortSession(Long userId, Long sessionId, String reason)
     {
         requireParticipant(userId, sessionId, false);
+        // 与开始/结束共用场次行锁，锁后重新判断状态，避免终态被并发覆盖
+        conferenceMapper.lockSessionForUpdate(sessionId);
         Map<String, Object> abortCtx = conferenceMapper.selectSessionContext(sessionId);
-        settleActiveRecording(abortCtx, sessionId, true);
-        conferenceMapper.abortSession(sessionId);
-        Map<String, Object> params = new HashMap<>();
-        params.put("sessionId", sessionId);
-        params.put("order", conferenceMapper.selectNextDialogueOrder(sessionId));
-        params.put("role", ROLE_AI);
-        params.put("type", 3);
-        params.put("intent", "abnormal_termination");
-        params.put("content", "【系统】面试异常终止（" + ("offline".equals(reason) ? "断网超过 30 秒" : "超过 2 分钟未检测到有效语音")
-                + "），已标记异常终止并通知 HR 人工复核。");
-        conferenceMapper.insertDialogue(params);
+        int status = toInt(abortCtx.get("status"));
+        if (status == 2)
+        {
+            throw new ServiceException("本场面试已正常结束，无法异常终止");
+        }
+        if (status != 3)
+        {
+            settleActiveRecording(abortCtx, sessionId, true);
+            if (conferenceMapper.abortSession(sessionId) != 1)
+            {
+                throw new ServiceException("面试状态已变化，请刷新后重试");
+            }
+            Map<String, Object> params = new HashMap<>();
+            params.put("sessionId", sessionId);
+            // 已持有场次行锁，与 ASR 字幕共用同一把锁，避免对话序号并发冲突
+            params.put("order", conferenceMapper.selectNextDialogueOrder(sessionId));
+            params.put("role", ROLE_AI);
+            params.put("type", 3);
+            params.put("intent", "abnormal_termination");
+            params.put("content", "【系统】面试异常终止（" + ("offline".equals(reason) ? "断网超过 30 秒" : "超过 2 分钟未检测到有效语音")
+                    + "），已标记异常终止并通知 HR 人工复核。");
+            conferenceMapper.insertDialogue(params);
+        }
         Map<String, Object> result = buildSessionResult(sessionId);
         result.put("abortReason", StringUtils.isEmpty(reason) ? "silence" : reason);
         return result;
@@ -1018,6 +1113,54 @@ public class ConferenceServiceImpl implements IConferenceService
     {
         requireAccess(userId, sessionId);
         return buildSessionResult(sessionId);
+    }
+
+    @Override
+    public Map<String, Object> getSessionReport(Long userId, Long sessionId)
+    {
+        requireAccess(userId, sessionId);
+        Map<String, Object> result = buildSessionResult(sessionId);
+        if (!"ready".equals(result.get("reportStatus")))
+        {
+            return result;
+        }
+        Map<String, Object> report = interviewReportMapper.selectCandidateReport(sessionId);
+        if (report == null)
+        {
+            // 评估行缺失（历史脏数据）时退回「生成中」，由补偿任务收敛
+            result.put("reportStatus", "generating");
+            return result;
+        }
+        result.put("overallScore", report.get("overallScore"));
+        result.put("dimensionScores", candidateDimensionScores(report.get("dimensionScores")));
+        result.put("summary", report.get("summary"));
+        result.put("recommendation", report.get("recommendation"));
+        result.put("readyAt", report.get("readyAt"));
+        return result;
+    }
+
+    /** 候选人视图只暴露五维分数，剔除模型引用原文证据 */
+    private Map<String, Object> candidateDimensionScores(Object raw)
+    {
+        Map<String, Object> scores = new LinkedHashMap<>();
+        if (raw == null)
+        {
+            return scores;
+        }
+        com.alibaba.fastjson2.JSONObject dimensions = JSON.parseObject(String.valueOf(raw));
+        for (String key : dimensions.keySet())
+        {
+            Object value = dimensions.get(key);
+            if (value instanceof Map<?, ?> dimension)
+            {
+                scores.put(key, dimension.get("score") == null ? 0 : dimension.get("score"));
+            }
+            else
+            {
+                scores.put(key, value == null ? 0 : value);
+            }
+        }
+        return scores;
     }
 
     @Override
@@ -1196,6 +1339,7 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> startRecording(Long userId, Long sessionId)
     {
         Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
@@ -1204,7 +1348,10 @@ public class ConferenceServiceImpl implements IConferenceService
             // 录制为主面试官独占操作；非主面试官沿用预约时间 5 分钟宽限兜底规则
             assertPrimaryOrGrace(ctx, userId, sessionId, "开始录制");
         }
-        if (toInt(ctx.get("status")) != 1)
+        // 与开始/结束/异常终止共用场次行锁：锁后重新校验状态，串行化同一场次的并发起录
+        conferenceMapper.lockSessionForUpdate(sessionId);
+        Map<String, Object> latest = conferenceMapper.selectSessionContext(sessionId);
+        if (toInt(latest.get("status")) != 1)
         {
             throw new ServiceException("面试尚未开始，无法录制");
         }
@@ -1214,7 +1361,7 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             return active;
         }
-        String room = StringUtils.isEmpty(str(ctx.get("roomId"))) ? "INTERVIEW-" + sessionId : str(ctx.get("roomId"));
+        String room = StringUtils.isEmpty(str(latest.get("roomId"))) ? "INTERVIEW-" + sessionId : str(latest.get("roomId"));
         int seq = toInt(conferenceMapper.selectNextRecordingSeq(sessionId));
         // 编号格式：REC-<yyyyMMdd>-<场次ID补3位>-<场次内序号2位>，每次录制都是新的编号与文件
         String code = "REC-" + DateUtils.dateTime() + "-" + String.format("%03d", sessionId)
@@ -1231,22 +1378,38 @@ public class ConferenceServiceImpl implements IConferenceService
         conferenceMapper.insertRecording(params);
         Long recordingId = toLong(params.get("recordingId"));
 
-        String egressId;
+        // 起录接口或数据库更新失败时回滚事务并补偿停止已启动的 Egress，避免留下无记录的录制任务
+        String egressId = null;
         try
         {
             egressId = liveKitEgressService.startRoomRecording(room,
                     EGRESS_OUTPUT_ROOT + "/" + datePath + "/" + fileName);
+            Map<String, Object> egressParams = new HashMap<>();
+            egressParams.put("recordingId", recordingId);
+            egressParams.put("egressId", egressId);
+            if (conferenceMapper.updateRecordingEgressId(egressParams) != 1)
+            {
+                throw new ServiceException("录制任务信息保存失败，请重试");
+            }
         }
         catch (RuntimeException e)
         {
-            // 起录失败时把刚落库的录制记录标记为异常终止，避免留下永远「录制中」的脏记录
-            conferenceMapper.abortRecordingBySession(sessionId);
+            stopEgressQuietly(egressId);
             throw e;
         }
-        Map<String, Object> egressParams = new HashMap<>();
-        egressParams.put("recordingId", recordingId);
-        egressParams.put("egressId", egressId);
-        conferenceMapper.updateRecordingEgressId(egressParams);
+        // 事务提交失败时同样补偿停止 Egress，避免数据库回滚后仍有录制任务在运行
+        String startedEgressId = egressId;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization()
+        {
+            @Override
+            public void afterCompletion(int status)
+            {
+                if (status != STATUS_COMMITTED)
+                {
+                    stopEgressQuietly(startedEgressId);
+                }
+            }
+        });
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("recordingId", recordingId);
@@ -1258,6 +1421,7 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> stopRecording(Long userId, Long sessionId)
     {
         Map<String, Object> ctx = requireParticipant(userId, sessionId, false);
@@ -1265,21 +1429,26 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             assertPrimaryOrGrace(ctx, userId, sessionId, "停止录制");
         }
+        // 与起录、会议结束、异常终止共用场次行锁，避免并发停止同一录制
+        conferenceMapper.lockSessionForUpdate(sessionId);
         Map<String, Object> active = conferenceMapper.selectActiveRecording(sessionId);
         if (active == null || active.isEmpty())
         {
             throw new ServiceException("当前没有进行中的录制");
         }
-        String egressId = str(active.get("egressId"));
-        if (StringUtils.isNotEmpty(egressId))
-        {
-            liveKitEgressService.stopEgress(egressId);
-        }
-        // 先按录制起止墙钟时间回落为已完成，Egress 结束回调到达后再用真实时长 / 字节数覆盖
+        // 先落库再停 Egress：落库失败时 Egress 仍在运行，事务回滚后可直接重试；
+        // 若 Webhook 已先收敛该录制，则更新 0 行，此时 Egress 也已结束，无需重复停止。
         Map<String, Object> params = new HashMap<>();
         params.put("recordingId", toLong(active.get("recordingId")));
         params.put("keepDays", toInt(storagePolicy(toLong(ctx.get("companyId"))).get("keepDays")));
-        conferenceMapper.finishRecordingByRecordingId(params);
+        if (conferenceMapper.finishRecordingByRecordingId(params) == 1)
+        {
+            String egressId = str(active.get("egressId"));
+            if (StringUtils.isNotEmpty(egressId))
+            {
+                liveKitEgressService.stopEgress(egressId);
+            }
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("recordingId", params.get("recordingId"));
@@ -1365,6 +1534,22 @@ public class ConferenceServiceImpl implements IConferenceService
         return value instanceof Map ? (Map<String, Object>) value : null;
     }
 
+    /** 补偿停止 Egress：失败不覆盖原始异常，避免补偿动作影响主流程错误信息 */
+    private void stopEgressQuietly(String egressId)
+    {
+        if (StringUtils.isEmpty(egressId))
+        {
+            return;
+        }
+        try
+        {
+            liveKitEgressService.stopEgress(egressId);
+        }
+        catch (Exception ignored)
+        {
+        }
+    }
+
     /**
      * 场次结束时收敛仍在进行的录制：先停 Egress，再按正常 / 异常回填录制状态
      */
@@ -1376,26 +1561,23 @@ public class ConferenceServiceImpl implements IConferenceService
             return;
         }
         String egressId = str(active.get("egressId"));
-        if (StringUtils.isNotEmpty(egressId))
-        {
-            try
-            {
-                liveKitEgressService.stopEgress(egressId);
-            }
-            catch (Exception e)
-            {
-                // Egress 停止失败不阻断会议结束流程，录制状态仍按墙钟时长收敛
-            }
-        }
+        // 先落库再停 Egress：数据库异常时不提前停止录制，事务回滚后仍保留可重试状态；
+        // 更新 0 行说明 Webhook 已收敛该录制，Egress 也已结束，无需重复停止。
         if (aborted)
         {
-            conferenceMapper.abortRecordingBySession(sessionId);
+            if (conferenceMapper.abortRecordingBySession(sessionId) == 1)
+            {
+                stopEgressQuietly(egressId);
+            }
             return;
         }
         Map<String, Object> params = new HashMap<>();
         params.put("recordingId", toLong(active.get("recordingId")));
         params.put("keepDays", toInt(storagePolicy(ctx == null ? null : toLong(ctx.get("companyId"))).get("keepDays")));
-        conferenceMapper.finishRecordingByRecordingId(params);
+        if (conferenceMapper.finishRecordingByRecordingId(params) == 1)
+        {
+            stopEgressQuietly(egressId);
+        }
     }
 
     /**
@@ -1590,7 +1772,16 @@ public class ConferenceServiceImpl implements IConferenceService
         int total = toInt(result.get("totalQuestionNo"));
         int answered = toInt(result.get("answeredCount"));
         result.put("completionRate", total > 0 ? Math.round(answered * 1000.0 / total) / 10.0 : 0);
-        result.put("reportStatus", toInt(result.get("reportGenerated")) > 0 ? "ready" : "generating");
+        // 状态机：0未触发 1生成中 2成功 3失败；历史数据无状态字段时回落到「评估行是否存在」
+        int reportStatusValue = toInt(result.get("reportStatusValue"));
+        String reportStatus = switch (reportStatusValue)
+        {
+            case 2 -> "ready";
+            case 3 -> "failed";
+            case 1 -> "generating";
+            default -> toInt(result.get("reportGenerated")) > 0 ? "ready" : "generating";
+        };
+        result.put("reportStatus", reportStatus);
         return result;
     }
 

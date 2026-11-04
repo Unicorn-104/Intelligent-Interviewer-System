@@ -208,6 +208,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_off_offer set ofr_status = #{status} where ofr_id = #{offerId}
     </update>
 
+    <!-- 候选人结果/过期收口：仅「已发送(0)」的 Offer 可落结果，避免并发重复处理 -->
+    <update id="updateOfferResult">
+        update t_off_offer set ofr_status = #{status}
+        where ofr_id = #{offerId} and ofr_status = 0
+    </update>
+
+    <select id="selectOverdueOffers" resultType="java.util.LinkedHashMap">
+        select ofr_id as offerId, ofr_candidate_id as candidateId, ofr_position_id as positionId
+        from t_off_offer
+        where ofr_status = 0 and ofr_deadline is not null and ofr_deadline &lt; now()
+    </select>
+
     <update id="updateOfferApprovalStatus">
         update t_off_offer set ofr_approval_status = #{approvalStatus} where ofr_id = #{offerId}
     </update>

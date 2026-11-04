@@ -126,6 +126,24 @@ public class OfferController extends BaseController
     }
 
     /**
+     * Offer 管理页：标记候选人已接受 Offer（候选人状态更新为已录用）
+     */
+    @PostMapping("/{offerId}/accept")
+    public AjaxResult accept(@PathVariable("offerId") Long offerId)
+    {
+        return success(offerService.acceptOffer(getUserId(), offerId));
+    }
+
+    /**
+     * Offer 管理页：标记候选人拒绝 Offer（候选人状态更新为已淘汰并按 Offer 拒绝归档）
+     */
+    @PostMapping("/{offerId}/reject")
+    public AjaxResult reject(@PathVariable("offerId") Long offerId)
+    {
+        return success(offerService.rejectOffer(getUserId(), offerId));
+    }
+
+    /**
      * Offer 管理页：企业候选人选项（创建表单下拉用，按投递记录关联企业）
      */
     @GetMapping("/candidate-options")

@@ -61,11 +61,12 @@ export function getScreeningReport(resultId) {
   })
 }
 
-// 个性化招呼语（Top 3 自动生成）
+// 个性化招呼语（Top 3 自动生成）；未生成时后端返回错误，属正常空状态，静默处理
 export function getScreeningGreeting(resultId) {
   return request({
     url: `/enterprise/screening/results/${resultId}/greeting`,
-    method: 'get'
+    method: 'get',
+    silent: true
   })
 }
 

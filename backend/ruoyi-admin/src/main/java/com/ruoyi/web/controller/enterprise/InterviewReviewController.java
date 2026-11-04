@@ -55,6 +55,15 @@ public class InterviewReviewController extends BaseController
     }
 
     /**
+     * 重新生成 AI 评估报告（生成中或已生成时拒绝，失败后由 HR 手动触发）
+     */
+    @PostMapping("/{sessionId}/report/retry")
+    public AjaxResult retryReport(@PathVariable("sessionId") Long sessionId)
+    {
+        return success(reviewService.retryReport(getUserId(), sessionId));
+    }
+
+    /**
      * UC-12 步骤8-9：确认通过（终面 → Offer 流程；非终面 → 级联下一轮 UC-15）
      */
     @PutMapping("/{sessionId}/confirm")
@@ -87,7 +96,8 @@ public class InterviewReviewController extends BaseController
         Integer recommendation = body == null || body.get("recommendation") == null ? null
                 : Integer.valueOf(String.valueOf(body.get("recommendation")));
         String comment = body == null || body.get("comment") == null ? null : String.valueOf(body.get("comment"));
-        return success(reviewService.adjust(getUserId(), sessionId, dims, recommendation, comment));
+        Boolean isFinal = body == null ? null : asBool(body.get("isFinal"));
+        return success(reviewService.adjust(getUserId(), sessionId, dims, recommendation, comment, isFinal));
     }
 
     /**

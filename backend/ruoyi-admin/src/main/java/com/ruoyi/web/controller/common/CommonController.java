@@ -2,6 +2,7 @@ package com.ruoyi.web.controller.common;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.io.InputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -16,9 +17,11 @@ import org.springframework.web.multipart.MultipartFile;
 import com.ruoyi.common.config.RuoYiConfig;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.utils.StringUtils;
-import com.ruoyi.common.utils.file.FileUploadUtils;
+import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.file.FileUtils;
 import com.ruoyi.framework.config.ServerConfig;
+import com.ruoyi.system.service.storage.PublicUploadStorage;
 
 /**
  * 通用请求处理
@@ -33,6 +36,9 @@ public class CommonController
 
     @Autowired
     private ServerConfig serverConfig;
+
+    @Autowired
+    private PublicUploadStorage uploadStorage;
 
     private static final String FILE_DELIMITER = ",";
 
@@ -76,21 +82,21 @@ public class CommonController
     {
         try
         {
-            // 上传文件路径
-            String filePath = RuoYiConfig.getUploadPath();
-            // 上传并返回新文件名称
-            String fileName = FileUploadUtils.upload(filePath, file);
+            PublicUploadStorage.Uploaded uploaded = uploadStorage.store(SecurityUtils.getUserId(), file);
+            String fileName = uploaded.path();
             String url = serverConfig.getUrl() + fileName;
             AjaxResult ajax = AjaxResult.success();
             ajax.put("url", url);
             ajax.put("fileName", fileName);
             ajax.put("newFileName", FileUtils.getName(fileName));
-            ajax.put("originalFilename", file.getOriginalFilename());
+            ajax.put("originalFilename", uploaded.originalName());
+            ajax.put("contentType", uploaded.contentType());
+            ajax.put("size", uploaded.size());
             return ajax;
         }
         catch (Exception e)
         {
-            return AjaxResult.error(e.getMessage());
+            return AjaxResult.error(e instanceof ServiceException ? e.getMessage() : "文件上传失败，请稍后重试");
         }
     }
 
@@ -100,23 +106,24 @@ public class CommonController
     @PostMapping("/uploads")
     public AjaxResult uploadFiles(List<MultipartFile> files) throws Exception
     {
+        Long userId = SecurityUtils.getUserId();
+        List<String> created = new ArrayList<>();
         try
         {
-            // 上传文件路径
-            String filePath = RuoYiConfig.getUploadPath();
             List<String> urls = new ArrayList<String>();
             List<String> fileNames = new ArrayList<String>();
             List<String> newFileNames = new ArrayList<String>();
             List<String> originalFilenames = new ArrayList<String>();
             for (MultipartFile file : files)
             {
-                // 上传并返回新文件名称
-                String fileName = FileUploadUtils.upload(filePath, file);
+                PublicUploadStorage.Uploaded uploaded = uploadStorage.store(userId, file);
+                String fileName = uploaded.path();
+                created.add(fileName);
                 String url = serverConfig.getUrl() + fileName;
                 urls.add(url);
                 fileNames.add(fileName);
                 newFileNames.add(FileUtils.getName(fileName));
-                originalFilenames.add(file.getOriginalFilename());
+                originalFilenames.add(uploaded.originalName());
             }
             AjaxResult ajax = AjaxResult.success();
             ajax.put("urls", StringUtils.join(urls, FILE_DELIMITER));
@@ -127,7 +134,8 @@ public class CommonController
         }
         catch (Exception e)
         {
-            return AjaxResult.error(e.getMessage());
+            created.forEach(path -> uploadStorage.deleteNewObject(userId, path));
+            return AjaxResult.error(e instanceof ServiceException ? e.getMessage() : "文件上传失败，请稍后重试");
         }
     }
 
@@ -140,6 +148,17 @@ public class CommonController
     {
         try
         {
+            if (uploadStorage.isStoredPath(resource))
+            {
+                response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+                FileUtils.setAttachmentResponseHeader(response, FileUtils.getName(resource));
+                response.setHeader("X-Content-Type-Options", "nosniff");
+                try (InputStream input = uploadStorage.read(resource).getInputStream())
+                {
+                    input.transferTo(response.getOutputStream());
+                }
+                return;
+            }
             if (!FileUtils.checkAllowDownload(resource))
             {
                 throw new Exception(StringUtils.format("资源文件({})非法，不允许下载。 ", resource));

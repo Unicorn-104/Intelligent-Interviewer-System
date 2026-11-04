@@ -1,7 +1,6 @@
 package com.ruoyi.enterprise.service.impl;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -230,9 +229,14 @@ public class ScreeningServiceImpl implements IScreeningService
         {
             try
             {
-                Path file = pdfStorage.read(Long.valueOf(candidate.get("resumeUserId").toString()), reference.toString());
-                if (Files.size(file) > 10 * 1024 * 1024) throw new ServiceException("原始简历过大");
-                String text = redact(pdfParser.parse(Files.readAllBytes(file)).text());
+                byte[] bytes;
+                try (InputStream input = pdfStorage.readResource(
+                        Long.valueOf(candidate.get("resumeUserId").toString()), reference.toString()).getInputStream())
+                {
+                    bytes = input.readNBytes(10 * 1024 * 1024 + 1);
+                }
+                if (bytes.length > 10 * 1024 * 1024) throw new ServiceException("原始简历过大");
+                String text = redact(pdfParser.parse(bytes).text());
                 if (text.length() > 16000)
                 {
                     text = text.substring(0, 16000);

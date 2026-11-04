@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../../api/message_api.dart' as im;
 import '../../../../config/app_config.dart';
 import '../../../../core/network/api_exception.dart';
+import '../../../../core/network/resource_url.dart';
 import '../../../../core/network/enterprise_api_client.dart';
 import '../../jobs/data/job_detail_data_source.dart';
 import '../../profile/data/profile_data_source.dart';
@@ -34,8 +35,9 @@ class MessageDataSource {
 
   Future<ChatContext> loadChatContext(Map<String, dynamic> session) async {
     await _requireSession();
-    return ChatContextDataSource(client: client ?? EnterpriseApiClient())
-        .load(session);
+    return ChatContextDataSource(
+      client: client ?? EnterpriseApiClient(),
+    ).load(session);
   }
 
   Future<EnterpriseProfile> loadRecruiterProfile() =>
@@ -260,30 +262,21 @@ class MessageDataSource {
   }
 
   String? attachmentUrl(String path) {
-    if (path.isEmpty || RegExp(r'[\x00-\x20\x7f]').hasMatch(path)) return null;
+    if (RegExp(r'[\x00-\x20\x7f]').hasMatch(path)) return null;
     final parsed = Uri.tryParse(path);
-    if (parsed == null || parsed.userInfo.isNotEmpty || parsed.hasFragment) {
-      return null;
-    }
+    if (parsed == null || parsed.hasQuery) return null;
     final base = Uri.parse(AppConfig.apiBaseUrl);
-    // 字符串拼接而非 resolveUri：base 含子路径（如 /prod-api）时，
-    // resolveUri 会丢弃子路径，导致绕过 Nginx 反代返回 404。
-    final resolved = parsed.hasScheme
-        ? parsed.toString()
-        : '${AppConfig.apiBaseUrl}${path.startsWith('/') ? path : '/$path'}';
-    final url = Uri.parse(resolved);
-    // 去掉 base 尾部斜杠后，附件路径必须位于 /profile/ 目录下
-    final profilePrefix =
-        '${base.path.replaceAll(RegExp(r'/+$'), '')}/profile/';
-    if (!['http', 'https'].contains(url.scheme) ||
-        url.origin != base.origin ||
-        url.query.isNotEmpty ||
-        !url.path.startsWith(profilePrefix) ||
-        RegExp(r'%2f|%5c|%2e', caseSensitive: false).hasMatch(url.path) ||
-        parsed.pathSegments.contains('..')) {
+    if (parsed.hasScheme &&
+        (!['http', 'https'].contains(parsed.scheme) ||
+            parsed.host.isEmpty ||
+            parsed.origin != base.origin)) {
       return null;
     }
-    return url.toString();
+    return resolveResourceUrl(
+      path,
+      apiBaseUrl: AppConfig.apiBaseUrl,
+      profileOnly: true,
+    );
   }
 
   Future<NotificationSlice> loadNotifications({int? beforeId}) async {
@@ -330,17 +323,7 @@ class MessageDataSource {
   }
 
   String? avatarUrl(String path) {
-    if (path.isEmpty) return null;
-    final parsed = Uri.tryParse(path);
-    if (parsed == null) return null;
-    // 已是完整 URL（http/https）时直接使用，其他协议拒绝
-    if (parsed.hasScheme) {
-      return ['http', 'https'].contains(parsed.scheme) ? parsed.toString() : null;
-    }
-    // 相对路径：字符串拼接，保留 base 的子路径（如 /prod-api）。
-    // 不能用 resolveUri：当 base 含子路径、引用以 / 开头时，子路径会被整个丢弃。
-    final base = AppConfig.apiBaseUrl;
-    return '$base${path.startsWith('/') ? path : '/$path'}';
+    return resolveResourceUrl(path, apiBaseUrl: AppConfig.apiBaseUrl);
   }
 }
 

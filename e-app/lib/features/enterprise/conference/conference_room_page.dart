@@ -16,6 +16,7 @@ typedef FinishConferenceSession = Future<void> Function(
 typedef JoinConferenceSession = Future<Map<String, dynamic>> Function(
   int sessionId,
 );
+typedef StartConferenceSession = Future<void> Function(int sessionId);
 typedef ConferenceHeartbeat = Future<void> Function(int sessionId);
 typedef ConferenceEngineFactory = ConferenceRoomEngine Function();
 
@@ -38,6 +39,7 @@ class ConferenceRoomPage extends StatefulWidget {
     this.loadToken = room.getLiveKitToken,
     this.finish = room.finishSession,
     this.join = room.joinInterviewerSession,
+    this.startSession = room.startSession,
     this.heartbeat = room.sendSessionHeartbeat,
     this.engineFactory = _createConferenceEngine,
   });
@@ -47,6 +49,7 @@ class ConferenceRoomPage extends StatefulWidget {
   final LoadLiveKitToken loadToken;
   final FinishConferenceSession finish;
   final JoinConferenceSession join;
+  final StartConferenceSession startSession;
   final ConferenceHeartbeat heartbeat;
   final ConferenceEngineFactory engineFactory;
 
@@ -66,6 +69,10 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
   Timer? _clock;
   Timer? _heartbeat;
   String? _lastNotice;
+  bool _startSessionTriggered = false;
+  Timer? _startSessionRetryTimer;
+  bool _startSessionRetryInProgress = false;
+  bool _startSessionWaitingNoticeShown = false;
 
   @override
   void initState() {
@@ -80,6 +87,7 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
   void dispose() {
     _clock?.cancel();
     _heartbeat?.cancel();
+    _startSessionRetryTimer?.cancel();
     _engine.removeListener(_onEngineUpdate);
     _engine.dispose();
     super.dispose();
@@ -127,6 +135,11 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
         token: jwt,
         canPublish: _info.role != 'OBSERVER',
       );
+      // 主面试官成功进入 LiveKit 后，标记面试开始，通知候选人等待室放行。
+      if (_info.role == 'HR' && _isPrimarySelf && !_startSessionTriggered) {
+        _startSessionTriggered = true;
+        _tryStartSession(sessionId);
+      }
     } catch (error) {
       if (!mounted) return;
       try {
@@ -143,6 +156,54 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     if (!mounted) return;
     setState(() => _booting = false);
     _startTimers();
+  }
+
+  /// 候选人尚未同意录制告知时，后端拒绝 startSession。
+  /// 此时 HR 已在 LiveKit 房间内，持续重试直到候选人同意。
+  bool _isConsentPendingError(Object error) {
+    final msg = error.toString();
+    return msg.contains('候选人尚未同意') ||
+        msg.contains('录制告知') ||
+        msg.contains('consent');
+  }
+
+  Future<void> _tryStartSession(int sessionId) async {
+    if (!mounted) return;
+    if (_startSessionRetryInProgress) return;
+    _startSessionRetryInProgress = true;
+    try {
+      await widget.startSession(sessionId);
+      // 成功：停止重试
+      _startSessionRetryTimer?.cancel();
+      _startSessionWaitingNoticeShown = false;
+    } catch (error) {
+      if (!mounted) return;
+      if (_isConsentPendingError(error)) {
+        // 候选人尚未同意录制：5 秒后重试，只提示一次
+        if (!_startSessionWaitingNoticeShown) {
+          _startSessionWaitingNoticeShown = true;
+          const msg = '正在等待候选人同意录制，系统将自动开始面试';
+          _lastNotice = msg;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _toast(msg);
+          });
+        }
+        _startSessionRetryTimer?.cancel();
+        _startSessionRetryTimer = Timer(const Duration(seconds: 5), () {
+          _startSessionRetryInProgress = false;
+          _tryStartSession(sessionId);
+        });
+      } else {
+        // 不可恢复错误：明确提示，不重试
+        final msg = '开始面试失败：$error';
+        _lastNotice = msg;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _toast(msg);
+        });
+      }
+    } finally {
+      _startSessionRetryInProgress = false;
+    }
   }
 
   void _startTimers() {

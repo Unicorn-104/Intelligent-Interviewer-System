@@ -2,6 +2,8 @@ package com.ruoyi.system.service.app.pdf;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,6 +13,7 @@ import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -24,7 +27,10 @@ import com.ruoyi.system.domain.app.AppResume;
 import com.ruoyi.system.mapper.app.AppResumeMapper;
 import com.ruoyi.system.service.app.IAppResumeService;
 import com.ruoyi.system.service.app.impl.AppResumeServiceImpl;
+import com.ruoyi.system.service.storage.S3FileStorage;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 class ResumePdfPersistenceTest
 {
@@ -33,6 +39,7 @@ class ResumePdfPersistenceTest
     private ResumePdfStorage storage;
     private JdbcTemplate jdbc;
     private AppResumeMapper mapper;
+    private AppResumeServiceImpl target;
 
     @BeforeEach
     void setup() throws Exception
@@ -75,7 +82,7 @@ class ResumePdfPersistenceTest
         mapper = new SqlSessionTemplate(factory.getObject()).getMapper(AppResumeMapper.class);
         ResumePdfProperties props = new ResumePdfProperties();
         storage = new ResumePdfStorage(props);
-        AppResumeServiceImpl target = new AppResumeServiceImpl();
+        target = new AppResumeServiceImpl();
         ReflectionTestUtils.setField(target, "resumeMapper", mapper);
         ReflectionTestUtils.setField(target, "pdfParser", new LocalResumePdfParser(props));
         ReflectionTestUtils.setField(target, "pdfStorage", storage);
@@ -128,7 +135,7 @@ class ResumePdfPersistenceTest
         assertEquals(bytes.length, saved.getFileSize());
         assertEquals("/app/resumes/" + saved.getResumeId() + "/pdf", saved.getPdfUrl());
         assertEquals(1, saved.getEducations().size());
-        assertArrayEquals(bytes, Files.readAllBytes(service.selectPdf(17L, saved.getResumeId()).path()));
+        assertArrayEquals(bytes, service.selectPdf(17L, saved.getResumeId()).resource().getContentAsByteArray());
         assertEquals(saved.getFilePath(), jdbc.queryForObject("select rbs_file_path from t_res_base", String.class));
         assertThrows(ServiceException.class, () -> service.selectPdf(18L, saved.getResumeId()));
         assertEquals(1, fileCount());
@@ -259,5 +266,59 @@ class ResumePdfPersistenceTest
         byte[] bytes = LocalResumePdfParserTest.textPdf(1);
         assertThrows(ServiceException.class, () -> unsafe.store(17L, bytes, "test.pdf"));
         assertEquals(0, fileCount());
+    }
+
+    private Map<String, byte[]> useObjectStorage()
+    {
+        Map<String, byte[]> objects = new HashMap<>();
+        S3FileStorage cloud = mock(S3FileStorage.class);
+        when(cloud.enabled()).thenReturn(true);
+        when(cloud.store(anyString(), any(), anyString())).thenAnswer(invocation -> {
+            String reference = "s3:recruit-files/" + invocation.getArgument(0, String.class);
+            objects.put(reference, invocation.getArgument(1, byte[].class));
+            return reference;
+        });
+        when(cloud.read(anyString(), anyInt())).thenAnswer(invocation ->
+                new ByteArrayResource(objects.get(invocation.getArgument(0, String.class))));
+        doAnswer(invocation -> objects.remove(invocation.getArgument(0, String.class))).when(cloud).delete(anyString());
+        storage = new ResumePdfStorage(new ResumePdfProperties(), cloud);
+        ReflectionTestUtils.setField(target, "pdfStorage", storage);
+        return objects;
+    }
+
+    @Test void objectReplacementKeepsOldBytesOnRollbackAndDeletesOldObjectAfterCommit() throws Exception
+    {
+        Map<String, byte[]> objects = useObjectStorage();
+        byte[] original = LocalResumePdfParserTest.textPdf(1);
+        AppResume saved = service.saveResumeWithPdf(17L, draft(), original, "old.pdf");
+        String old = saved.getFilePath();
+        AppResume.Project project = new AppResume.Project();
+        project.setName("FAIL");
+        saved.getProjects().add(project);
+        byte[] replacement = LocalResumePdfParserTest.textPdf(2);
+        assertThrows(RuntimeException.class, () -> service.saveResumeWithPdf(17L, saved, replacement, "failed.pdf"));
+        assertEquals(1, objects.size());
+        assertArrayEquals(original, objects.get(old));
+        assertEquals(old, mapper.selectResume(saved.getResumeId(), 17L).getFilePath());
+        saved.getProjects().clear();
+        AppResume updated = service.saveResumeWithPdf(17L, saved, replacement, "new.pdf");
+        assertFalse(objects.containsKey(old));
+        assertEquals(1, objects.size());
+        assertArrayEquals(replacement, service.selectPdf(17L, updated.getResumeId()).resource().getContentAsByteArray());
+        assertEquals(1, service.deleteResume(17L, updated.getResumeId()));
+        assertTrue(objects.isEmpty());
+    }
+
+    @Test void switchingToObjectsStillReadsAndReplacesExistingPrivateLocalFile() throws Exception
+    {
+        byte[] original = LocalResumePdfParserTest.textPdf(1);
+        AppResume saved = service.saveResumeWithPdf(17L, draft(), original, "local.pdf");
+        Path local = storage.read(17L, saved.getFilePath());
+        Map<String, byte[]> objects = useObjectStorage();
+        assertArrayEquals(original, service.selectPdf(17L, saved.getResumeId()).resource().getContentAsByteArray());
+        AppResume updated = service.saveResumeWithPdf(17L, saved, original, "cloud.pdf");
+        assertFalse(Files.exists(local));
+        assertTrue(objects.containsKey(updated.getFilePath()));
+        assertTrue(updated.getFilePath().startsWith("s3:"));
     }
 }

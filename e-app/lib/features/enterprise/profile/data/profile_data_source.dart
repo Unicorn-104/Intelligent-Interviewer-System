@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../../../config/app_config.dart';
 import '../../../../core/network/api_exception.dart';
+import '../../../../core/network/resource_url.dart';
 import '../../../../core/network/enterprise_api_client.dart';
 import '../models/profile_view_data.dart';
 
@@ -15,7 +16,7 @@ class ProfileAvatar {
       bytes = Uint8List.fromList(bytes).asUnmodifiableView() {
     validateSize(bytes.length);
     if (!mimeTypes.containsKey(extension)) {
-      throw const FormatException('请选择 JPG、PNG、GIF、BMP 或 WEBP 图片');
+      throw const FormatException('请选择 JPG、PNG、GIF 或 BMP 图片');
     }
     final b = this.bytes;
     final matches = switch (extension) {
@@ -24,10 +25,6 @@ class ProfileAvatar {
       'png' => b.length >= 8 && base64Encode(b.sublist(0, 8)) == 'iVBORw0KGgo=',
       'gif' => b.length >= 6 && String.fromCharCodes(b.sublist(0, 3)) == 'GIF',
       'bmp' => b.length >= 2 && b[0] == 66 && b[1] == 77,
-      'webp' =>
-        b.length >= 12 &&
-            String.fromCharCodes(b.sublist(0, 4)) == 'RIFF' &&
-            String.fromCharCodes(b.sublist(8, 12)) == 'WEBP',
       _ => false,
     };
     if (!matches) throw const FormatException('图片内容与格式不符，请重新选择');
@@ -39,7 +36,6 @@ class ProfileAvatar {
     'png': 'image/png',
     'gif': 'image/gif',
     'bmp': 'image/bmp',
-    'webp': 'image/webp',
   };
   final String name;
   final Uint8List bytes;
@@ -126,7 +122,7 @@ class ProfileDataSource {
     if (!ProfileAvatar.mimeTypes.containsKey(
       file.name.split('.').last.toLowerCase(),
     )) {
-      throw const FormatException('请选择 JPG、PNG、GIF、BMP 或 WEBP 图片');
+      throw const FormatException('请选择 JPG、PNG、GIF 或 BMP 图片');
     }
     final reported = file.lengthSync() ?? await file.length();
     if (reported != null) ProfileAvatar.validateSize(reported);
@@ -152,17 +148,7 @@ class ProfileDataSource {
         value: jsonEncode(value.toJson()),
       );
   String? avatarUrl(String path) {
-    if (path.isEmpty) return null;
-    final uri = Uri.tryParse(path);
-    if (uri == null) return null;
-    // 已是完整 URL（http/https）时直接使用，其他协议拒绝
-    if (uri.hasScheme) {
-      return ['http', 'https'].contains(uri.scheme) ? uri.toString() : null;
-    }
-    // 相对路径：字符串拼接，保留 base 的子路径（如 /prod-api）。
-    // 不能用 resolveUri：当 base 含子路径、引用以 / 开头时，子路径会被整个丢弃。
-    final base = AppConfig.apiBaseUrl;
-    return '$base${path.startsWith('/') ? path : '/$path'}';
+    return resolveResourceUrl(path, apiBaseUrl: AppConfig.apiBaseUrl);
   }
 }
 

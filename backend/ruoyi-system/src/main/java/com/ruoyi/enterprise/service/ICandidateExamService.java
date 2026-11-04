@@ -27,4 +27,11 @@ public interface ICandidateExamService
 
     /** 交卷（可携带最终作答；超时按 submitRule.autoSubmit 处理） */
     public Map<String, Object> submit(Long userId, Long recordId, List<Map<String, Object>> answers);
+
+    /**
+     * 定时结算到期考试记录：已开考未交卷自动交卷；未开考且安排结束按缺考收口
+     *
+     * @return 本轮到期的记录数量
+     */
+    public int settleExpiredRecords();
 }
