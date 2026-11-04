@@ -5,6 +5,12 @@
       <span v-if="info.candidateName">{{ info.candidateName }} · {{ info.paperName }}</span>
     </header>
 
+    <!-- 副机位网络断开时持续提示，恢复后自动消失 -->
+    <div v-if="state === 'live' && netAlert" class="sub-offline" role="alert">
+      <b>网络连接已断开</b>
+      <span>心跳上报连续失败，正在自动重试。请检查手机网络，恢复前主机位会提示副机位掉线。</span>
+    </div>
+
     <main class="sub-body">
       <div v-if="state === 'connecting'" class="sub-card">副机位连接中，请允许摄像头权限...</div>
       <div v-else-if="state === 'error'" class="sub-card err">
@@ -36,8 +42,10 @@ const state = ref('connecting')
 const error = ref('')
 const info = ref({})
 const video = ref(null)
+const netAlert = ref(false)
 let room = null
 let pingTimer = null
+let pingFails = 0
 
 async function join() {
   state.value = 'connecting'
@@ -57,8 +65,16 @@ async function join() {
     state.value = 'live'
     await nextTick()
     if (track && video.value) track.attach(video.value)
-    pingTimer = setInterval(() => {
-      subPing({ recordId, code }).catch(() => { /* 心跳失败下次重试 */ })
+    pingTimer = setInterval(async () => {
+      try {
+        await subPing({ recordId, code })
+        pingFails = 0
+        netAlert.value = false
+      } catch (e) {
+        // 连续两次心跳失败判定网络断开，持续提示直到恢复
+        pingFails++
+        if (pingFails >= 2) netAlert.value = true
+      }
     }, 15000)
   } catch (e) {
     state.value = 'error'
@@ -107,6 +123,9 @@ onBeforeUnmount(() => {
 .sub-head{padding:14px 16px;display:flex;flex-direction:column;gap:3px;border-bottom:1px solid #223047}
 .sub-head strong{font-size:14px}
 .sub-head span{color:#8FA1B8;font-size:11px}
+.sub-offline{display:flex;flex-direction:column;gap:3px;padding:10px 16px;background:#3A1418;border-bottom:1px solid #7A2530;color:#FF8A92;font-size:12px;line-height:1.5}
+.sub-offline b{color:#FF6B74;font-size:13px}
+.sub-offline span{color:#D98C93}
 .sub-body{flex:1;display:grid;place-items:center;padding:16px}
 .sub-video{width:min(92vw,520px);aspect-ratio:1/1;border-radius:14px;background:#000;object-fit:cover}
 .sub-card{max-width:340px;padding:28px 22px;border:1px solid #223047;border-radius:14px;text-align:center;color:#8FA1B8;font-size:13px}
