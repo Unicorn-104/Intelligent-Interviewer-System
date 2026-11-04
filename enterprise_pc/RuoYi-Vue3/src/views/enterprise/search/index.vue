@@ -24,9 +24,8 @@ const isEmptyKeyword = computed(() => !keyword.value)
 const TALENT_STATUS = {
   0: ['新入库', 'gray'], 1: ['初筛通过', 'green'], 2: ['面试中', 'purple'], 3: ['已淘汰', 'red'],
   4: ['已录用', 'green'], 5: ['待笔试', 'orange'], 6: ['笔试中', 'orange'], 7: ['笔试通过', 'green'],
-  8: ['笔试未通过', 'red'], 9: ['笔试缺考', 'gray']
+  8: ['笔试未通过', 'red'], 9: ['笔试缺考', 'gray'], 10: ['待发Offer', 'orange']
 }
-// 岗位状态（t_pos.pos_status）
 const JOB_STATUS = { 1: ['招聘中', 'green'], 2: ['已暂停', 'gray'], 0: ['已下线', 'red'] }
 
 function salaryText(row) {

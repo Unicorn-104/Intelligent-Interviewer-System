@@ -53,8 +53,30 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                (w.wrk_end_date is not null and w.wrk_end_date &gt;= w.wrk_start_date))
     </sql>
 
+    <!-- 人才库按岗位展示：指定岗位时取该岗位投递，否则取最新投递 -->
+    <sql id="talentLatestApplicationPosition">
+        (select ar.app_position_id from t_app_record ar
+            where ar.app_candidate_id = t.tal_id
+            <if test="criteria.positionId != null">
+                and ar.app_position_id = #{criteria.positionId}
+            </if>
+            order by ar.app_id desc limit 1)
+    </sql>
+
+    <sql id="talentApplicationStatus">
+        (select ar.app_status from t_app_record ar
+            where ar.app_candidate_id = t.tal_id
+              and ar.app_position_id = <include refid="talentLatestApplicationPosition"/>
+            order by ar.app_id desc limit 1)
+    </sql>
+
     <select id="selectFilteredTalentList" resultType="java.util.LinkedHashMap">
-        select t.tal_id as talentId, t.tal_status as status, t.tal_matched_score as matchedScore,
+        select t.tal_id as talentId, t.tal_status as talentStatus,
+               <include refid="talentApplicationStatus"/> as status,
+               <include refid="talentLatestApplicationPosition"/> as positionId,
+               (select p.pos_title from t_pos p
+                   where p.pos_id = <include refid="talentLatestApplicationPosition"/>) as positionName,
+               t.tal_matched_score as matchedScore,
                t.tal_current_round as currentRound, t.tal_resume_id as resumeId,
                date_format(t.tal_updated_at, '%Y-%m-%d %H:%i') as updateTime,
                ifnull(t.tal_archive_source, 0) as archiveSource,
@@ -93,7 +115,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         ) experience on experience.resumeId = r.rbs_id
         where t.tal_company_id = #{companyId}
         <if test="status != null">
-            and t.tal_status = #{status}
+            and <include refid="talentApplicationStatus"/> = #{status}
         </if>
         <if test="keyword != null and keyword != ''">
             and (u.nick_name like concat('%', #{keyword}, '%')

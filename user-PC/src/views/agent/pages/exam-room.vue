@@ -16,6 +16,15 @@
         </div>
       </header>
 
+      <!-- 强制双机位掉线持续告警 -->
+      <div v-if="dualOffline" class="mon-alert" role="alert">
+        <span class="mon-alert-icon">!</span>
+        <div class="mon-alert-text">
+          <b>副机位已断开</b>
+          <span>请立即用手机重新扫码加入副机位（右侧监考区可查看二维码），已断开 {{ offlineText }}。持续断开可能影响本次考试的有效性。</span>
+        </div>
+      </div>
+
       <main class="body">
         <section class="paper">
           <div class="q-head">
@@ -67,7 +76,7 @@
           </div>
           <div class="side-stat">已答 {{ answeredCount }} / {{ questions.length }} 题</div>
 
-          <div class="monitor">
+          <div class="monitor" :class="{ 'monitor-bad': dualOffline }">
             <div class="side-title">双机位监考<span v-if="forceDual" class="mon-force">必开</span></div>
             <div class="mon-row">
               <span class="mon-label"><i class="dot-state" :class="mainStateClass"></i>主机位（电脑摄像头）</span>
@@ -122,7 +131,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Room, Track } from 'livekit-client'
 import QRCode from 'qrcode'
 import { getExamEntry, getExamMonitor, saveExamAnswers, startExam, submitExam } from '@/api/agent/exam'
@@ -130,6 +139,7 @@ import { appHref } from '@/utils/agentNavigation'
 import { userAppUrl } from '@/utils/appLink'
 
 const route = useRoute()
+const router = useRouter()
 const scheduleId = String(route.query.scheduleId || '')
 
 const stage = ref('loading') // loading | doing | done | error
@@ -139,6 +149,7 @@ const questions = ref([])
 const current = ref(0)
 const answers = reactive({})
 const recordId = ref(null)
+let pageTitle = ''
 const remainingSec = ref(0)
 const saveState = ref('idle') // idle | saving | saved | offline
 const dirty = ref(false)
@@ -153,6 +164,8 @@ const subQr = ref(null)
 const mainStatus = ref('idle') // idle | connecting | live | error
 const mainError = ref('')
 const subInfo = ref({ subStatus: 0, subOnline: false })
+const offlineSince = ref(0)
+const offlineSec = ref(0)
 const forceDual = ref(false)
 const subUrl = ref('')
 let lkRoom = null
@@ -166,6 +179,11 @@ const mainStateClass = computed(() => ({
   idle: 'gray', connecting: 'orange', live: 'green', error: 'red'
 }[mainStatus.value]))
 const subStateClass = computed(() => subInfo.value.subOnline ? 'green' : 'gray')
+const dualOffline = computed(() => forceDual.value && stage.value === 'doing' && !subInfo.value.subOnline)
+const offlineText = computed(() => {
+  const s = offlineSec.value
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+})
 const subStateText = computed(() => {
   if (subInfo.value.subOnline) return '副机位在线'
   if (subInfo.value.subStatus === 2) return '副机位已断开'
@@ -276,16 +294,35 @@ function stopTimers() {
   tickTimer = null
   autosaveTimer = null
   subPollTimer = null
+  if (pageTitle) document.title = pageTitle
 }
 
 let monitorInfo = null
+function applySubInfo(sub) {
+  subInfo.value = sub || { subStatus: 0, subOnline: false }
+  if (subInfo.value.subOnline) {
+    offlineSince.value = 0
+    offlineSec.value = 0
+  } else if (forceDual.value && stage.value === 'doing' && !offlineSince.value) {
+    // 强制双机位：记录掉线起点，供顶部持续告警计时
+    offlineSince.value = Date.now()
+  }
+  updateTitleAlert()
+}
+
+// 浏览器标签页也持续提示，切到其他页面时仍能看到掉线状态
+function updateTitleAlert() {
+  if (!pageTitle) return
+  document.title = dualOffline.value ? `【副机位断开】${pageTitle}` : pageTitle
+}
+
 async function loadMonitor() {
   if (!recordId.value) return
   try {
     const res = await getExamMonitor(recordId.value)
     monitorInfo = res.data || {}
     forceDual.value = Number(monitorInfo.forceDualCamera) === 1
-    subInfo.value = monitorInfo.sub || { subStatus: 0, subOnline: false }
+    applySubInfo(monitorInfo.sub)
     // 副机位地址按当前部署位置拼接，兼容 /user/ 子路径
     subUrl.value = userAppUrl(monitorInfo.subUrl || '')
     await nextTick()
@@ -297,9 +334,9 @@ async function loadMonitor() {
     subPollTimer = setInterval(async () => {
       try {
         const res = await getExamMonitor(recordId.value)
-        subInfo.value = (res.data || {}).sub || subInfo.value
+        applySubInfo((res.data || {}).sub)
       } catch (e) { /* 忽略轮询错误 */ }
-    }, 10000)
+    }, 5000)
   }
 }
 
@@ -335,6 +372,20 @@ async function init() {
     return
   }
   try {
+    // 强制双机位：续考或直接打开答题页时，副机位未在线必须先回设备检测页
+    const entryRes = await getExamEntry(scheduleId)
+    const entry = entryRes.data || {}
+    if (Number(entry.forceDualCamera) === 1) {
+      if (!entry.recordId) {
+        router.replace({ path: '/exam-prep', query: { scheduleId } })
+        return
+      }
+      const monitor = await getExamMonitor(entry.recordId).catch(() => null)
+      if (!monitor?.data?.sub?.subOnline) {
+        router.replace({ path: '/exam-prep', query: { scheduleId } })
+        return
+      }
+    }
     const res = await startExam(scheduleId)
     const d = res.data || {}
     if (d.submitted) {
@@ -350,16 +401,13 @@ async function init() {
     stage.value = 'doing'
 
     // 交卷规则：自动保存间隔 / 是否允许提前交卷（兼容新旧键名）
-    let rule = {}
-    try {
-      const entryRes = await getExamEntry(scheduleId)
-      rule = (entryRes.data && entryRes.data.submitRule) || {}
-    } catch (e) { /* 规则获取失败用默认值 */ }
+    const rule = entry.submitRule || {}
     const interval = Number(rule.autosaveInterval ?? rule.saveIntervalSec ?? 30)
     allowEarly.value = rule.allowEarly !== false && rule.allowEarlySubmit !== false
 
     tickTimer = setInterval(() => {
       remainingSec.value--
+      if (offlineSince.value) offlineSec.value = Math.floor((Date.now() - offlineSince.value) / 1000)
       if (remainingSec.value <= 0) {
         stopTimers()
         doSubmit(true)
@@ -376,7 +424,10 @@ async function init() {
   }
 }
 
-onMounted(init)
+onMounted(() => {
+  pageTitle = document.title
+  init()
+})
 onBeforeUnmount(() => {
   stopTimers()
   teardownMonitor()
@@ -432,6 +483,13 @@ onBeforeUnmount(() => {
 .dot.picked{background:#E9F7F1;border-color:#B7E3CE}
 .side-stat{margin-top:10px;color:#647894;font-size:11px}
 .monitor{margin-top:16px;padding-top:14px;border-top:1px solid #EEF2F7}
+.monitor-bad{border-top-color:#FCA5A5;background:#FFF7F7;border-radius:10px;padding:12px 10px;margin-top:12px}
+.mon-alert{width:min(1240px,100% - 44px);margin:12px auto 0;display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid #FCA5A5;border-left:4px solid #DC2626;border-radius:8px;background:#FEF2F2;color:#991B1B}
+.mon-alert-icon{flex:none;width:20px;height:20px;border-radius:50%;background:#DC2626;color:#fff;font-weight:700;text-align:center;line-height:20px;animation:mon-pulse 1.2s infinite}
+.mon-alert-text{display:flex;flex-direction:column;gap:2px;font-size:12px;line-height:1.5}
+.mon-alert-text b{font-size:13px}
+.mon-alert-text span{color:#B4232B}
+@keyframes mon-pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .monitor .side-title{display:flex;align-items:center;gap:6px}
 .mon-force{padding:1px 6px;border-radius:4px;color:#D94B55;background:#FCEDEF;font-size:9px;font-weight:700}
 .mon-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}

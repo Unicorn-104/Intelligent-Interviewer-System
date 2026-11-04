@@ -34,6 +34,9 @@ public interface InterviewReviewMapper
     public int updateDimensionScores(@Param("sessionId") Long sessionId,
             @Param("dimsJson") String dimsJson, @Param("overallScore") Double overallScore);
 
+    /** HR 调整前留存 AI 原始评分快照（仅在快照为空时写入一次） */
+    public int snapshotAiEvaluation(@Param("sessionId") Long sessionId);
+
     /** 级联规则（模板 + 下一轮） */
     public Map<String, Object> selectCascadeRule(@Param("templateId") Long templateId,
             @Param("round") Integer round);

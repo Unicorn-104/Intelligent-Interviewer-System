@@ -70,7 +70,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         if (criteria == null) criteria = new TalentSearchCriteria();
         criteria.validate();
         if (status != null && !isTalentStatus(status)) throw new ServiceException("招聘状态不合法");
-        if (archiveSource != null && (archiveSource < 0 || archiveSource > 4)) throw new ServiceException("归档来源不合法");
+        if (archiveSource != null && (archiveSource < 0 || archiveSource > 5)) throw new ServiceException("归档来源不合法");
         if (pageNum == null || pageNum < 1 || pageSize == null || pageSize < 1 || pageSize > 100)
             throw new ServiceException("分页参数不合法");
         Long companyId = requireSearchCompany(userId);
@@ -117,7 +117,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         // 系统归档来源（初筛/笔试/面试淘汰）由状态机写入，手动归档/取消归档都不得覆盖
         int currentSource = talent.get("archiveSource") == null ? 0
                 : Integer.parseInt(String.valueOf(talent.get("archiveSource")));
-        if (currentSource == 1 || currentSource == 2 || currentSource == 4)
+        if (currentSource == 1 || currentSource == 2 || currentSource == 4 || currentSource == 5)
         {
             throw new ServiceException("该候选人已按淘汰流程自动归档，不能手动修改归档状态");
         }
@@ -382,7 +382,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     public List<Map<String, Object>> listApplications(Long userId, Long positionId, Integer status,
             Long talentId, Integer pageNum, Integer pageSize)
     {
-        if (status != null && (status < 0 || status > 8))
+        if (status != null && (status < 0 || status > 12))
         {
             throw new ServiceException("投递状态不合法");
         }
@@ -407,7 +407,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     public Map<String, Object> updateApplicationStatus(Long userId, List<Long> applicationIds, Integer status)
     {
         Long companyId = resolveCompanyId(userId);
-        if (status == null || status < 0 || status > 8)
+        if (status == null || status < 0 || status > 12)
         {
             throw new ServiceException("投递状态不合法");
         }
@@ -466,9 +466,9 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         return companyId == null ? 1L : companyId;
     }
 
-    /** 求职者状态收敛为四种：0-已投递、2-待面试、3-已淘汰、4-已录用 */
+    /** 人才库流程状态按岗位投递展示：0-8 投递流程，10-待发 Offer，11-已录用，12-Offer 拒绝/过期 */
     private boolean isTalentStatus(int status)
     {
-        return status == 0 || status == 2 || status == 3 || status == 4;
+        return (status >= 0 && status <= 8) || status == 10 || status == 11 || status == 12;
     }
 }

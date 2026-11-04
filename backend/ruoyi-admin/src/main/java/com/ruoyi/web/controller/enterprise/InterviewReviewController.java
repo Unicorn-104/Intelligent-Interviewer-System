@@ -96,7 +96,8 @@ public class InterviewReviewController extends BaseController
         Integer recommendation = body == null || body.get("recommendation") == null ? null
                 : Integer.valueOf(String.valueOf(body.get("recommendation")));
         String comment = body == null || body.get("comment") == null ? null : String.valueOf(body.get("comment"));
-        return success(reviewService.adjust(getUserId(), sessionId, dims, recommendation, comment));
+        Boolean isFinal = body == null ? null : asBool(body.get("isFinal"));
+        return success(reviewService.adjust(getUserId(), sessionId, dims, recommendation, comment, isFinal));
     }
 
     /**
