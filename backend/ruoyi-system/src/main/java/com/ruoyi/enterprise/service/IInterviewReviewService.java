@@ -35,9 +35,11 @@ public interface IInterviewReviewService
 
     /**
      * 调整后通过（UC-12 步骤8）：修改五维评分后确认（重算综合分）
+     *
+     * @param isFinal 终面调整后通过时推进候选人至「待发 Offer」，非终面由调用方单独触发级联
      */
     public Map<String, Object> adjust(Long userId, Long sessionId, Map<String, Object> dims,
-            Integer recommendation, String comment);
+            Integer recommendation, String comment, Boolean isFinal);
 
     /**
      * 驳回淘汰（UC-12 步骤10）：淘汰归档人才库 + 感谢信

@@ -16,6 +16,7 @@ import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.InterviewReviewMapper;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewReviewService;
 import com.ruoyi.system.event.InterviewFinishedEvent;
 import com.ruoyi.system.mapper.DashboardMapper;
@@ -59,6 +60,9 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     private TalStatusService talStatusService;
 
     @Autowired
+    private ScreeningMapper screeningMapper;
+
+    @Autowired
     private InterviewReportMapper reportMapper;
 
     @Autowired
@@ -83,6 +87,8 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         Map<String, Object> result = new LinkedHashMap<>(detail);
         result.put("dimensionScores", detail.get("dimensionScores") == null ? null
                 : JSON.parse(String.valueOf(detail.get("dimensionScores"))));
+        result.put("aiSnapshot", detail.get("aiSnapshot") == null ? null
+                : JSON.parse(String.valueOf(detail.get("aiSnapshot"))));
         return result;
     }
 
@@ -110,6 +116,7 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> confirm(Long userId, Long sessionId, Boolean isFinal,
             Integer recommendation, String comment)
     {
@@ -128,16 +135,19 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         }
         else
         {
-            result.put("message", "已确认通过（终面），请前往 Offer 管理触发录用意向书发送");
+            // 终面通过 → 候选人进入「待发 Offer」，后续由 Offer 接受/拒绝收口到录用/淘汰
+            advanceToPendingOffer(session, userId, "终面通过");
+            result.put("message", "已确认通过（终面），候选人状态已更新为待发 Offer，请前往 Offer 管理触发录用意向书发送");
         }
         return result;
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> adjust(Long userId, Long sessionId, Map<String, Object> dims,
-            Integer recommendation, String comment)
+            Integer recommendation, String comment, Boolean isFinal)
     {
-        requireSession(userId, sessionId);
+        Map<String, Object> session = requireSession(userId, sessionId);
         if (dims == null || dims.isEmpty())
         {
             throw new ServiceException("调整的五维评分不能为空");
@@ -149,10 +159,17 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
             total += Double.parseDouble(String.valueOf(value));
         }
         double overall = round(total / dims.size());
+        // 首次调整前留存 AI 原始评分，便于终审页对比，重复调整不覆盖首次快照
+        reviewMapper.snapshotAiEvaluation(sessionId);
         reviewMapper.updateDimensionScores(sessionId, JSON.toJSONString(dims), overall);
         reviewMapper.updateHrStatus(sessionId, HR_ADJUSTED,
                 recommendation == null ? 1 : recommendation,
                 comment == null || comment.isBlank() ? "调整后通过" : comment);
+        if (Boolean.TRUE.equals(isFinal))
+        {
+            // 终面调整后通过同样进入「待发 Offer」；非终面的级联由调用方单独触发
+            advanceToPendingOffer(session, userId, "终面调整后通过");
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", sessionId);
         result.put("overallScore", overall);
@@ -244,6 +261,21 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         result.put("suggestedTime", nextStart.format(TIME_FORMAT));
         result.put("message", "已自动创建第 " + nextRound + " 轮面试预约任务，并通知候选人");
         return result;
+    }
+
+    /** 终面通过：候选人从面试中进入「待发 Offer」，已淘汰/已录用等终态不再流转 */
+    private void advanceToPendingOffer(Map<String, Object> session, Long userId, String reason)
+    {
+        if (!talStatusService.change(asLong(session.get("candidateId")), TalStatusService.TAL_PENDING_OFFER,
+                List.of(TalStatusService.TAL_INTERVIEWING, TalStatusService.TAL_PENDING_OFFER),
+                asLong(session.get("positionId")), null, reason, userId))
+        {
+            throw new ServiceException("候选人已淘汰或已录用，无法进入待发 Offer");
+        }
+        // 同步岗位投递状态为待发 Offer(10)，人才库按岗位展示时与候选人状态一致
+        screeningMapper.advanceApplicationStatus(asLong(session.get("positionId")),
+                asLong(session.get("candidateId")), 10,
+                List.of(1, 2, 3, 4, 5, 6, 7, 8, 10));
     }
 
     private Map<String, Object> requireSession(Long userId, Long sessionId)

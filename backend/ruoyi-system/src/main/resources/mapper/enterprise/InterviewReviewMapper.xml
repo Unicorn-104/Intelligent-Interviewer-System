@@ -39,6 +39,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                e.evl_recommendation as recommendation,
                e.evl_hr_status as hrStatus, e.evl_hr_comment as hrComment,
                e.evl_hr_recommendation as hrRecommendation,
+               cast(e.evl_ai_snapshot as char) as aiSnapshot,
                u.nick_name as candidateName, pos.pos_title as positionTitle,
                pos.pos_company_id as companyId,
                (select max(psg.psg_sort_order) from t_process_stage psg
@@ -78,6 +79,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         set evl_dimension_scores = #{dimsJson}, evl_overall_score = #{overallScore},
             evl_hr_updated_at = now()
         where evl_session_id = #{sessionId}
+    </update>
+
+    <update id="snapshotAiEvaluation">
+        update t_int_evaluation
+        set evl_ai_snapshot = json_object(
+                'overallScore', evl_overall_score,
+                'dimensionScores', evl_dimension_scores,
+                'recommendation', evl_recommendation)
+        where evl_session_id = #{sessionId} and evl_ai_snapshot is null
     </update>
 
     <select id="selectCascadeRule" resultType="java.util.LinkedHashMap">
