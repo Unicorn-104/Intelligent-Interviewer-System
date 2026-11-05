@@ -35,7 +35,7 @@ public class ImMessage extends BaseEntity
     private Integer isRecalled;
 
     /** 发送时间 */
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     private Date sendTime;
 
     /** 请求参数：聊天对象用户ID（新建会话时使用，不入库） */

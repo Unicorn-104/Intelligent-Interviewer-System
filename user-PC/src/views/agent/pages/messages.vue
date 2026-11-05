@@ -295,6 +295,7 @@ import { listImMessages, listImSessions, markImSessionRead, sendImMessage, uploa
 import { cancelAiRun, createAiSession, listAiMessages, listAiSessions, startAiRun, streamAiRun } from '@/api/agent/ai'
 import { getToken } from '@/utils/auth'
 import { unreadBadge, unreadCount } from '@/utils/agentUnread'
+import { formatMessageTime, formatShortTime } from '@/utils/agentTime'
 import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageLinkParts, resolveMessageAttachment, uploadedMessageAttachmentPath } from '@/utils/agentMessage'
 
 const sessions = ref([])
@@ -373,27 +374,6 @@ const showSystemConversation = computed(() => {
 function avatarText(value) {
   const text = String(value || '联系人').trim()
   return text.slice(0, 1).toUpperCase()
-}
-
-function parseDate(value) {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
-function formatShortTime(value) {
-  const date = parseDate(value)
-  if (!date) return '--'
-  const now = new Date()
-  if (date.toDateString() === now.toDateString()) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-  }
-  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function formatMessageTime(value) {
-  const date = parseDate(value)
-  return date ? date.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '--'
 }
 
 function plainText(value) {

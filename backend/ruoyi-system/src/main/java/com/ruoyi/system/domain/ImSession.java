@@ -26,7 +26,7 @@ public class ImSession extends BaseEntity
     private String lastMessage;
 
     /** 最近消息时间 */
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     private Date lastMessageAt;
 
     /** A未读数 */
