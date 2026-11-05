@@ -132,6 +132,13 @@ function fmt(value) {
 }
 
 function goRoom() {
+  // 首次进入先做设备检测（双机位考试必须通过检测才开考计时），续考直接回答题页
+  const e = entry.value
+  if (e && e.recordStatus !== 1) {
+    router.push({ path: '/exam-prep', query: { scheduleId } })
+    return
+  }
+  // 走路由跳转，自动带上部署子路径（/user/），避免硬编码根路径
   router.push({ path: '/exam-room', query: { scheduleId } })
 }
 

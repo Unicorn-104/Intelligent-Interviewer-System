@@ -12,6 +12,7 @@ public class TalentSearchCriteria
     private String city;
     private String cityType = "target";
     private Integer loginWithinDays;
+    private Long positionId;
     private LocalDateTime referenceTime;
 
     public void validate()
@@ -44,6 +45,8 @@ public class TalentSearchCriteria
     public void setCityType(String value) { cityType = value; }
     public Integer getLoginWithinDays() { return loginWithinDays; }
     public void setLoginWithinDays(Integer value) { loginWithinDays = value; }
+    public Long getPositionId() { return positionId; }
+    public void setPositionId(Long value) { positionId = value; }
     public LocalDateTime getReferenceTime() { return referenceTime; }
     public LocalDateTime getLoginSince() { return loginWithinDays == null ? null : referenceTime.minusDays(loginWithinDays); }
     public Integer getMinimumWorkMonths()

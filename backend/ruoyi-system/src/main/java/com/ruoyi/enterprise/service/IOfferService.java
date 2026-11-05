@@ -74,4 +74,21 @@ public interface IOfferService
      * 撤回 Offer：仅已发送状态可撤回，记录原因并通知候选人
      */
     public Map<String, Object> withdrawOffer(Long userId, Long offerId, String reason);
+
+    /**
+     * 标记候选人接受 Offer：Offer 置为已接受，候选人状态推进为已录用
+     */
+    public Map<String, Object> acceptOffer(Long userId, Long offerId);
+
+    /**
+     * 标记候选人拒绝 Offer：Offer 置为已拒绝，候选人状态置为已淘汰并按 Offer 拒绝归档
+     */
+    public Map<String, Object> rejectOffer(Long userId, Long offerId);
+
+    /**
+     * 定时补偿：超过回复截止时间仍未处理的 Offer 置为已过期，并收口候选人状态
+     *
+     * @return 本轮处理的 Offer 数量
+     */
+    public int expireOverdueOffers();
 }

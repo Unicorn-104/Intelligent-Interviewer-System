@@ -20,7 +20,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.ruoyi.common.core.redis.RedisCache;
-import com.ruoyi.system.config.AsrProperties;
 import com.ruoyi.system.service.IConferenceService;
 
 /**
@@ -42,16 +41,16 @@ public class ConferenceAsrWebSocketHandler extends AbstractWebSocketHandler
 
     private final IConferenceService conferenceService;
 
-    private final AsrProperties asrProperties;
+    private final AsrConfigResolver asrConfig;
 
     private final List<AsrProvider> providers;
 
     public ConferenceAsrWebSocketHandler(RedisCache redisCache, IConferenceService conferenceService,
-            AsrProperties asrProperties, List<AsrProvider> providers)
+            AsrConfigResolver asrConfig, List<AsrProvider> providers)
     {
         this.redisCache = redisCache;
         this.conferenceService = conferenceService;
-        this.asrProperties = asrProperties;
+        this.asrConfig = asrConfig;
         this.providers = providers;
     }
 
@@ -104,7 +103,7 @@ public class ConferenceAsrWebSocketHandler extends AbstractWebSocketHandler
         AsrProvider provider = resolveProvider();
         if (provider == null)
         {
-            send(session, message("error", asrProperties.getUnavailableReason()));
+            send(session, message("error", asrConfig.unavailableReason()));
             close(session, CloseStatus.POLICY_VIOLATION);
             return;
         }
@@ -198,7 +197,7 @@ public class ConferenceAsrWebSocketHandler extends AbstractWebSocketHandler
         }
         for (AsrProvider provider : providers)
         {
-            if (provider.name().equalsIgnoreCase(asrProperties.getProvider()) && provider.isConfigured())
+            if (provider.name().equalsIgnoreCase(asrConfig.provider()) && provider.isConfigured())
             {
                 return provider;
             }

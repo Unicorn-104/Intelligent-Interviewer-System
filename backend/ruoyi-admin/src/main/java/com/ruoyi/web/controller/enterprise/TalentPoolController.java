@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -68,10 +67,11 @@ public class TalentPoolController extends BaseController
     @GetMapping("/applications")
     public TableDataInfo applications(@RequestParam(required = false) Long positionId,
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) Long talentId,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize)
     {
-        return getDataTable(talentPoolService.listApplications(getUserId(), positionId, status,
+        return getDataTable(talentPoolService.listApplications(getUserId(), positionId, status, talentId,
                 pageNum, pageSize));
     }
 
@@ -271,6 +271,6 @@ public class TalentPoolController extends BaseController
                                 StandardCharsets.UTF_8).build().toString())
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                 .header("X-Content-Type-Options", "nosniff")
-                .body(new FileSystemResource(document.path()));
+                .body(document.resource());
     }
 }

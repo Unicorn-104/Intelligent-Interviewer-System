@@ -70,7 +70,8 @@ public interface TalentPoolMapper
 
     /** 候选人列表（按投递 t_app_record 一行，状态按投递 + Offer 展示） */
     public List<Map<String, Object>> selectApplicationList(@Param("companyId") Long companyId,
-            @Param("positionId") Long positionId, @Param("status") Integer status);
+            @Param("positionId") Long positionId, @Param("status") Integer status,
+            @Param("talentId") Long talentId);
 
     /** 本企业有过投递的岗位下拉选项（去重，按岗位ID倒序） */
     public List<Map<String, Object>> selectApplicationPositions(@Param("companyId") Long companyId);

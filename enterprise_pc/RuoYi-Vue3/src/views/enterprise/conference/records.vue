@@ -3,14 +3,15 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Search, Download, Play, Eye, Archive, KeyRound, Database,
-  AlertTriangle, ShieldCheck, Clock3, Video
+  AlertTriangle, ShieldCheck, Clock3, Video, Sparkles, ChevronDown, RotateCcw
 } from '@/views/enterprise/components/icons'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import {
   listRecordings, getStorageUsage, getStoragePolicy, saveStoragePolicy,
-  sendDownloadCode, verifyDownloadCode, getPlayback, updateRecordingAccess
+  sendDownloadCode, verifyDownloadCode, getPlayback, updateRecordingAccess, getSessionResult
 } from '@/api/system/conference'
+import { getInterviewReview, retryInterviewReport } from '@/api/interview'
 
 const router = useRouter()
 const route = useRoute()
@@ -32,6 +33,132 @@ const filtered = computed(() => records.value.filter((item) => {
   if (f.to && item.date > f.to) return false
   return true
 }))
+
+// 按场次分组：同一场面试的多个录制视频归入同一菜单，报告归属场次
+const sessions = computed(() => {
+  const groups = new Map()
+  for (const item of filtered.value) {
+    const key = item.sid != null ? `session-${item.sid}` : `rec-${item.rid ?? item.id}`
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        sid: item.sid,
+        candidate: item.candidate,
+        position: item.position,
+        date: item.date,
+        mode: item.mode,
+        records: []
+      })
+    }
+    groups.get(key).records.push(item)
+  }
+  return [...groups.values()]
+})
+
+// 场次 AI 报告：key 为 sessionId；状态来自结果接口，内容仅在已生成时拉取
+const reports = ref({})
+const expandedSessions = ref(new Set())
+const expandedReports = ref(new Set())
+const retrying = ref(new Set())
+
+const isSessionOpen = (key) => expandedSessions.value.has(key)
+const isReportOpen = (sid) => sid != null && expandedReports.value.has(sid)
+
+function toggleSession(key) {
+  expandedSessions.value.has(key) ? expandedSessions.value.delete(key) : expandedSessions.value.add(key)
+}
+
+function toggleReport(sid) {
+  if (sid == null) return
+  expandedReports.value.has(sid) ? expandedReports.value.delete(sid) : expandedReports.value.add(sid)
+}
+
+const REPORT_TEXT = { ready: '已生成', generating: '整理中', failed: '生成失败' }
+// 后端错误码 -> 可操作提示，避免 HR 只看到笼统的「生成失败」
+const REPORT_ERRORS = {
+  INSUFFICIENT_DATA: '对话内容不足，建议人工评估',
+  EVIDENCE_MISMATCH: '生成结果与对话证据不符，已自动拦截',
+  MODEL_UNAVAILABLE: 'AI 服务暂不可用，请稍后重试',
+  INTERNAL_ERROR: '生成过程异常，可重新生成'
+}
+const reportLabel = (sid) => REPORT_TEXT[reports.value[sid]?.status] || '暂无'
+const reportErrorText = (sid) => REPORT_ERRORS[reports.value[sid]?.error] || '可重新生成'
+const reportClass = (sid) => ({ ready: 'green', generating: 'orange', failed: 'red' }[reports.value[sid]?.status] || 'gray')
+
+function normalizeDimensions(raw) {
+  const empty = { scores: {}, evidence: {} }
+  if (!raw) return empty
+  let value = raw
+  if (typeof raw === 'string') {
+    try { value = JSON.parse(raw) } catch (e) { return empty }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return empty
+  const scores = {}
+  const evidence = {}
+  for (const [name, item] of Object.entries(value)) {
+    // AI 报告每维存 {score, evidence}，兼容历史纯分数格式
+    const score = item && typeof item === 'object' ? item.score : item
+    if (score != null) scores[name] = score
+    if (item && typeof item === 'object' && item.evidence) evidence[name] = String(item.evidence)
+  }
+  return { scores, evidence }
+}
+
+function toLines(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean)
+  return String(value).split(/\n|；|;/).map((item) => item.trim()).filter(Boolean)
+}
+
+async function loadReports(items) {
+  const sids = [...new Set(items.map((item) => item.sid).filter((sid) => sid != null))]
+  await Promise.allSettled(sids.map(async (sid) => {
+    const report = { status: 'none', error: '', readyAt: '' }
+    try {
+      const res = await getSessionResult(sid)
+      const data = res.data || {}
+      report.status = data.reportStatus || 'none'
+      report.error = data.reportError || ''
+      report.readyAt = String(data.reportReadyAt || '').slice(0, 16)
+    } catch (e) {
+      report.status = 'none'
+    }
+    if (report.status === 'ready') {
+      try {
+        const res = await getInterviewReview(sid)
+        const data = res.data || {}
+        report.overallScore = data.overallScore
+        const dims = normalizeDimensions(data.dimensionScores)
+        report.dimensionScores = dims.scores
+        report.dimensionEvidence = dims.evidence
+        report.summary = data.summary || ''
+        report.advantages = toLines(data.advantages)
+        report.risks = toLines(data.risks)
+        report.gaps = data.gaps || ''
+        report.recommendation = data.recommendation || ''
+      } catch (e) {
+        // 结果已生成但详情读取失败时保留状态，避免误报为无报告
+        report.detailError = true
+      }
+    }
+    reports.value = { ...reports.value, [sid]: report }
+  }))
+}
+
+async function retryReport(sid) {
+  if (sid == null || retrying.value.has(sid)) return
+  retrying.value.add(sid)
+  reports.value = { ...reports.value, [sid]: { ...(reports.value[sid] || {}), status: 'generating', error: '' } }
+  try {
+    await retryInterviewReport(sid)
+    notify('已提交重新生成，完成后自动展示')
+  } catch (e) {
+    reports.value = { ...reports.value, [sid]: { ...(reports.value[sid] || {}), status: 'failed' } }
+    notify('重新生成失败，请稍后再试')
+  } finally {
+    retrying.value.delete(sid)
+  }
+}
 
 const storage = ref({ used: 0, total: 0 })
 const storagePercent = computed(() => storage.value.total ? Math.round((storage.value.used / storage.value.total) * 100) : 0)
@@ -144,7 +271,10 @@ async function initPage() {
   if (candidateUserId.value && route.query.candidateName) filters.value.candidate = String(route.query.candidateName)
   try {
     const res = await listRecordings(candidateUserId.value ? { candidateUserId: candidateUserId.value } : {})
-    if (Array.isArray(res.data)) records.value = res.data.map(mapRecord)
+    if (Array.isArray(res.data)) {
+      records.value = res.data.map(mapRecord)
+      await loadReports(records.value)
+    }
   } catch (e) {
     // 后端未就绪时保持空态
   }
@@ -182,7 +312,10 @@ async function query() {
     }
     if (candidateUserId.value) params.candidateUserId = candidateUserId.value
     const res = await listRecordings(params)
-    if (Array.isArray(res.data)) records.value = res.data.map(mapRecord)
+    if (Array.isArray(res.data)) {
+      records.value = res.data.map(mapRecord)
+      await loadReports(records.value)
+    }
   } catch (e) {
     // 查询失败时保留现有列表
   }
@@ -333,41 +466,83 @@ const statusClass = (status) => ({
         </div>
       </section>
 
-      <section class="card table-card">
+      <section class="card session-card">
         <div class="table-head">
-          <h2>录制文件列表</h2>
-          <span class="muted tiny">共 {{ filtered.length }} 条 · 按面试时间倒序</span>
+          <h2>录播回放</h2>
+          <span class="muted tiny">共 {{ sessions.length }} 个场次 · {{ filtered.length }} 个录制视频</span>
         </div>
-        <table class="record-table">
-          <thead>
-            <tr>
-              <th>面试 ID</th><th>候选人</th><th>岗位</th><th>日期</th>
-              <th>时长</th><th>占用</th><th>状态</th><th class="op">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in filtered" :key="item.id">
-              <td class="mono">{{ item.id }}</td>
-              <td>
-                <strong>{{ item.candidate }}</strong>
-                <small class="muted">{{ item.mode }}</small>
-              </td>
-              <td>{{ item.position }}</td>
-              <td>{{ item.date }}</td>
-              <td class="mono">{{ item.duration }}</td>
-              <td class="mono">{{ item.size }}</td>
-              <td><span class="pill" :class="statusClass(item.status)"><i class="dot" />{{ item.status }}</span></td>
-              <td class="op">
-                <button class="link" :disabled="item.status !== '已完成'" @click="openPlayback(item)"><Play :size="14" />回放</button>
-                <button class="link" @click="openDownload(item)"><Download :size="14" />下载</button>
-                <button class="link" @click="openDetail(item)"><Eye :size="14" />查看</button>
-              </td>
-            </tr>
-            <tr v-if="!filtered.length">
-              <td colspan="8" class="empty">没有符合条件的录制文件</td>
-            </tr>
-          </tbody>
-        </table>
+
+        <div v-if="sessions.length" class="session-list">
+          <article v-for="s in sessions" :key="s.key" class="session">
+            <button class="session-head" @click="toggleSession(s.key)">
+              <span class="session-icon"><Video :size="18" /></span>
+              <span class="session-title">
+                <strong>场次 #{{ s.sid }} · {{ s.candidate }}</strong>
+                <small class="muted">{{ s.date }} · {{ s.records.length }} 个录制视频 · {{ s.mode }}</small>
+              </span>
+              <ChevronDown :size="18" class="chev" :class="{ open: isSessionOpen(s.key) }" />
+            </button>
+
+            <div v-if="isSessionOpen(s.key)" class="session-body">
+              <div v-for="item in s.records" :key="item.rid ?? item.id" class="video-row">
+                <span class="video-name">{{ item.id }}</span>
+                <span class="muted tiny">{{ item.duration }} · {{ item.size }}</span>
+                <span class="pill" :class="statusClass(item.status)"><i class="dot" />{{ item.status }}</span>
+                <span class="row-actions">
+                  <button class="link" :disabled="item.status !== '已完成'" @click="openPlayback(item)"><Play :size="14" />回放</button>
+                  <button class="link" @click="openDownload(item)"><Download :size="14" />下载</button>
+                  <button class="link" @click="openDetail(item)"><Eye :size="14" />查看</button>
+                </span>
+              </div>
+
+              <div class="report">
+                <button class="report-head" @click="toggleReport(s.sid)">
+                  <Sparkles :size="16" />
+                  <strong>AI 面试报告</strong>
+                  <span class="pill" :class="reportClass(s.sid)">{{ reportLabel(s.sid) }}</span>
+                  <span v-if="reports[s.sid]?.status === 'ready' && reports[s.sid].overallScore != null" class="report-score">{{ reports[s.sid].overallScore }} 分</span>
+                  <ChevronDown :size="16" class="chev" :class="{ open: isReportOpen(s.sid) }" />
+                </button>
+                <div v-if="isReportOpen(s.sid)" class="report-body">
+                  <template v-if="reports[s.sid]?.status === 'ready'">
+                    <p v-if="reports[s.sid].readyAt" class="muted tiny">生成于 {{ reports[s.sid].readyAt }}</p>
+                    <div v-if="Object.keys(reports[s.sid].dimensionScores || {}).length" class="dim-row">
+                      <span v-for="(score, name) in reports[s.sid].dimensionScores" :key="name" class="dim" :title="reports[s.sid].dimensionEvidence?.[name] || ''">{{ name }} {{ score }}</span>
+                    </div>
+                    <div v-if="reports[s.sid].summary" class="report-section">
+                      <label>本轮总结</label>
+                      <p>{{ reports[s.sid].summary }}</p>
+                    </div>
+                    <div v-if="reports[s.sid].advantages?.length" class="report-section">
+                      <label>表现亮点</label>
+                      <p v-for="line in reports[s.sid].advantages" :key="line">{{ line }}</p>
+                    </div>
+                    <div v-if="reports[s.sid].risks?.length" class="report-section">
+                      <label>风险提示</label>
+                      <p v-for="line in reports[s.sid].risks" :key="line">{{ line }}</p>
+                    </div>
+                    <div v-if="reports[s.sid].gaps" class="report-section">
+                      <label>待提升项</label>
+                      <p>{{ reports[s.sid].gaps }}</p>
+                    </div>
+                    <div v-if="reports[s.sid].recommendation" class="report-section">
+                      <label>评估建议</label>
+                      <p>{{ reports[s.sid].recommendation }}</p>
+                    </div>
+                    <p v-if="reports[s.sid].detailError" class="report-hint orange">报告详情读取失败，请稍后刷新。</p>
+                  </template>
+                  <p v-else-if="reports[s.sid]?.status === 'generating'" class="report-hint orange">报告整理中，完成后自动展示。</p>
+                  <div v-else-if="reports[s.sid]?.status === 'failed'" class="report-hint red">
+                    <span>报告生成失败：{{ reportErrorText(s.sid) }}。</span>
+                    <button class="link" :disabled="retrying.has(s.sid)" @click="retryReport(s.sid)"><RotateCcw :size="14" />重新生成</button>
+                  </div>
+                  <p v-else class="report-hint">本场暂无 AI 报告。</p>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+        <p v-else class="empty">没有符合条件的录制文件</p>
       </section>
 
       <section class="card storage">
@@ -506,18 +681,52 @@ const statusClass = (status) => ({
 .filter-actions { display: flex; gap: 8px; }
 .field small { display: block; margin-top: 6px; font-size: 11px; }
 
-.table-card { margin-top: 16px; padding: 18px 20px 6px; }
+.session-card { margin-top: 16px; padding: 18px 20px; }
 .table-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .table-head h2 { font-size: 16px; }
-.record-table { width: 100%; border-collapse: collapse; }
-.record-table th, .record-table td { text-align: left; padding: 13px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
-.record-table th { color: var(--muted); font-weight: 600; font-size: 12px; background: #fafcff; }
-.record-table tbody tr:hover { background: #f7fbff; }
-.record-table td strong { display: block; font-weight: 600; }
-.record-table td small { display: block; font-size: 11px; }
+.session-list { display: flex; flex-direction: column; gap: 12px; }
+.session { border: 1px solid var(--line); border-radius: 12px; background: #fff; overflow: hidden; }
+.session-head {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; border: 0; background: transparent; text-align: left; cursor: pointer;
+}
+.session-head:hover { background: #f7fbff; }
+.session-icon {
+  width: 38px; height: 38px; border-radius: 10px; flex: none;
+  display: grid; place-items: center;
+  color: var(--primary); background: var(--primary-soft);
+}
+.session-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.session-title strong { font-size: 14px; }
+.session-title small { font-size: 12px; }
+.chev { color: var(--muted); transition: transform .18s ease; flex: none; }
+.chev.open { transform: rotate(180deg); }
+.session-body { border-top: 1px dashed var(--line); padding: 8px 16px 4px; background: #fbfdff; }
+.video-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f0f4fa; }
+.video-row:last-child { border-bottom: 0; }
+.video-name { font-size: 12.5px; font-weight: 600; font-family: 'DM Sans', monospace; }
+.row-actions { margin-left: auto; display: flex; gap: 2px; }
+.report { border-top: 1px dashed var(--line); margin: 0; padding-bottom: 6px; }
+.report-head {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 10px 0; border: 0; background: transparent; text-align: left; cursor: pointer;
+}
+.report-head > svg:first-child { color: var(--primary); }
+.report-head strong { font-size: 13px; }
+.report-head .chev { margin-left: auto; }
+.report-score { font-size: 12px; font-weight: 700; color: var(--primary); }
+.report-body { padding: 4px 0 8px; }
+.report-body > .tiny { display: block; margin-bottom: 8px; }
+.dim-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.dim { padding: 3px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: 11px; font-weight: 600; }
+.report-section { margin-bottom: 8px; }
+.report-section label { display: block; margin-bottom: 2px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.report-section p { margin: 0; color: var(--text-2, #334155); font-size: 12.5px; line-height: 1.6; }
+.report-hint { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12px; color: var(--muted); }
+.report-hint.orange { color: #96650a; }
+.report-hint.red { color: #b42318; }
 .mono { font-variant-numeric: tabular-nums; font-family: 'DM Sans', monospace; }
 .pill i.dot { background: currentColor; }
-.op { text-align: right; white-space: nowrap; }
 .link {
   border: 0; background: transparent; color: var(--primary);
   display: inline-flex; align-items: center; gap: 4px;
@@ -567,7 +776,7 @@ const statusClass = (status) => ({
 @media (max-width: 760px) {
   .bar, .page { width: calc(100% - 28px); }
   .filter { grid-template-columns: 1fr; }
-  .table-card { overflow-x: auto; }
+  .session-card { padding: 16px 12px; }
   .storage-head { flex-direction: column; align-items: flex-start; }
 }
 </style>

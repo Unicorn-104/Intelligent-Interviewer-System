@@ -28,6 +28,12 @@ public interface CandidateExamMapper
     public int insertRecord(@Param("scheduleId") Long scheduleId, @Param("talId") Long talId,
             @Param("deviceInfo") String deviceInfo);
 
+    /** 设备检测阶段新建记录（状态0-未开始，开始时间留空，不计入考试时长） */
+    public int insertPrepRecord(@Param("scheduleId") Long scheduleId, @Param("talId") Long talId);
+
+    /** 检测通过后开考：未开始→进行中，开始时间=now */
+    public int beginRecord(@Param("recordId") Long recordId);
+
     public int selectLastRecordId();
 
     /** 考试记录（限本人），含安排的时长/截止/交卷规则，用于续考与判卷时间线 */
@@ -50,4 +56,10 @@ public interface CandidateExamMapper
 
     /** 超时未交卷作废：进行中→已缺考（status=3） */
     public int updateRecordAbandoned(@Param("recordId") Long recordId);
+
+    /** 定时结算：已开始但到达截止时间仍未交卷的记录 */
+    public List<Map<String, Object>> selectExpiredInProgressRecords();
+
+    /** 定时结算：考试安排已结束但未开考的记录 */
+    public List<Map<String, Object>> selectExpiredUnstartedRecords();
 }

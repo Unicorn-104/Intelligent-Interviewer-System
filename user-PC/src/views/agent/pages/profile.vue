@@ -21,6 +21,7 @@
 
 <script setup>
 import { appHref } from '@/utils/agentNavigation'
+import { resolveResourceUrl } from '@/utils/resourceUrl'
 import { onMounted } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getAppProfile, updateAppProfile, uploadAvatar } from '@/api/system/user'
@@ -65,9 +66,7 @@ function showToast(text) {
 }
 
 function resolveAvatarUrl(avatar) {
-  if (!avatar) return ''
-  if (/^(https?:|data:|blob:)/i.test(avatar)) return avatar
-  return `${import.meta.env.VITE_APP_BASE_API}${avatar}`
+  return resolveResourceUrl(avatar, import.meta.env.VITE_APP_BASE_API)
 }
 
 function getDisplayName(profile) {

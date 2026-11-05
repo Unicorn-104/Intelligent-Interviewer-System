@@ -16,13 +16,49 @@ function jobsPage(overrides = {}) {
     listJobs: async query => ({ data: { items: query.jobIds ? [{ id: 1 }, { id: 2 }] : [{ id: 1 }], total: query.jobIds ? 2 : 1, hasNext: false } }),
     ...overrides
   }
-  const page = new Function(...Object.keys(dependencies), `${script}\nreturn { loadJobs, jobs, savedJobs, savedOnly, savedJobCount, visibleJobs, toggleSaved, syncSavedJobs, errorMessage, keyword, filters }`)(...Object.values(dependencies))
+  const page = new Function(...Object.keys(dependencies), `${script}\nreturn { loadJobs, jobs, savedJobs, savedOnly, savedJobCount, visibleJobs, toggleSaved, syncSavedJobs, errorMessage, keyword, filters, hotTags, selectHotTag, clearFilter, activeFilterLabels }`)(...Object.values(dependencies))
   return { page, storage }
 }
 
 test('收藏 ID 去重并排除空值、对象、非正数及超出数据库范围的值', () => {
   assert.deepEqual(normalizeSavedJobIds([1, '1', ' 2 ', '002', null, {}, -1, 0, 'NaN', '', '9223372036854775808']), ['1', '2'])
   assert.deepEqual(normalizeSavedJobIds('not-array'), [])
+})
+
+test('杭州快捷入口使用工作城市约束，普通列表和收藏列表不走公司名称关键词匹配', async () => {
+  const calls = []
+  const { page } = jobsPage({ listJobs: async query => {
+    calls.push(query)
+    return { data: { items: [], total: 0, hasNext: false } }
+  } })
+  page.keyword.value = 'React'
+  page.filters.city = '广州'
+  page.filters.education = '本科'
+  await page.selectHotTag(page.hotTags.find(tag => tag.label === '杭州'))
+  assert.equal(page.keyword.value, '')
+  assert.equal(page.filters.city, '杭州')
+  assert.equal(calls.length, 2)
+  assert.ok(calls.every(query => query.city === '杭州' && query.keyword === undefined && query.education === 3))
+  assert.ok(calls.some(query => query.jobIds))
+  assert.ok(page.activeFilterLabels.value.some(item => item.key === 'city' && item.label === '杭州'))
+  page.clearFilter('city')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(page.filters.city, '')
+  assert.ok(calls.slice(2).every(query => query.city === undefined))
+})
+
+test('职位和技能快捷词仍使用关键词搜索，并保留已选择的工作城市', async () => {
+  const calls = []
+  const { page } = jobsPage({ listJobs: async query => {
+    calls.push(query)
+    return { data: { items: [], total: 0, hasNext: false } }
+  } })
+  page.filters.city = '杭州'
+  for (const tag of page.hotTags.filter(tag => tag.keyword)) {
+    await page.selectHotTag(tag)
+    assert.equal(page.keyword.value, tag.keyword)
+    assert.ok(calls.slice(-2).every(query => query.keyword === tag.keyword && query.city === '杭州'))
+  }
 })
 
 test('后端实际收藏列表排除失效 ID，不删除原始收藏记录', async () => {

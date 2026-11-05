@@ -40,10 +40,6 @@ public interface ExamGradeMapper
     /** 成绩报告 upsert（record 唯一键） */
     public int upsertResult(Map<String, Object> params);
 
-    /** 人才库状态流转（归档/笔试通过），并回写最新笔试记录 */
-    public int updateTalStatus(@Param("talId") Long talId, @Param("status") Integer status,
-            @Param("recordId") Long recordId);
-
     /** 成绩报告列表（企业隔离，按交卷时间倒序） */
     public List<Map<String, Object>> selectResultList(@Param("companyId") Long companyId,
             @Param("positionId") Long positionId, @Param("passStatus") Integer passStatus);

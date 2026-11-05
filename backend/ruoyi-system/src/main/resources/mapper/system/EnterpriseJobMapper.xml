@@ -99,7 +99,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <select id="selectJobFunnel" resultType="java.util.LinkedHashMap">
         select count(*) as total,
-               sum(case when t.tal_status in (1,2,4,5,7) then 1 else 0 end) as passed,
+               sum(case when t.tal_status in (1,2,4,5,7,10) then 1 else 0 end) as passed,
                sum(case when t.tal_status = 2 then 1 else 0 end) as interviewing,
                sum(case when t.tal_status = 3 then 1 else 0 end) as rejected,
                sum(case when t.tal_status = 4 then 1 else 0 end) as offered,

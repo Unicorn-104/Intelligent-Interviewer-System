@@ -1,6 +1,7 @@
 package com.ruoyi.enterprise.service.impl;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import java.sql.Timestamp;
 import java.time.format.DateTimeFormatter;
@@ -24,6 +25,7 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 
@@ -76,7 +78,11 @@ public class InterviewScheduleServiceImplTest
         ReflectionTestUtils.setField(target,"scheduleMapper",mapper);
         ReflectionTestUtils.setField(target,"dashboardMapper",companyMapper);
         ReflectionTestUtils.setField(target,"jobMapper",jobs);
-        ReflectionTestUtils.setField(target,"screeningMapper",mock(ScreeningMapper.class));
+        var screening = mock(ScreeningMapper.class);
+        var status = mock(TalStatusService.class);
+        when(status.change(anyLong(), anyInt(), anyList(), anyLong(), any(), any(), anyLong())).thenReturn(true);
+        ReflectionTestUtils.setField(target,"screeningMapper",screening);
+        ReflectionTestUtils.setField(target,"talStatusService",status);
         var proxy = new ProxyFactory(target);
         proxy.setProxyTargetClass(true);
         proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(ds), new AnnotationTransactionAttributeSource()));

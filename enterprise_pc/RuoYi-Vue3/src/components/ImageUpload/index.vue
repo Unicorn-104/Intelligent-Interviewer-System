@@ -46,6 +46,7 @@
 </template>
 
 <script setup>
+import { resourcePath, resolveResourceUrl } from "@/utils/resourceUrl";
 import { getToken } from "@/utils/auth";
 
 const props = defineProps({
@@ -92,15 +93,10 @@ watch(() => props.modelValue, val => {
     const list = Array.isArray(val) ? val : props.modelValue.split(",");
     // 然后将数组转为对象数组
     fileList.value = list.map(item => {
-      if (typeof item === "string") {
-        if (item.indexOf(baseUrl) === -1) {
-          item = { name: baseUrl + item, url: baseUrl + item };
-        } else {
-          item = { name: item, url: item };
-        }
-      }
-      return item;
-    });
+      const raw = typeof item === "string" ? item : item.url;
+      const url = resolveResourceUrl(raw, baseUrl);
+      return { ...(typeof item === "object" ? item : {}), name: resourcePath(raw, baseUrl) || raw, url };
+    }).filter(item => item.url);
   } else {
     fileList.value = [];
     return [];
@@ -148,7 +144,7 @@ function handleExceed() {
 // 上传成功回调
 function handleUploadSuccess(res, file) {
   if (res.code === 200) {
-    uploadList.value.push({ name: res.fileName, url: res.fileName });
+    uploadList.value.push({ name: resourcePath(res.fileName, baseUrl) || res.fileName, url: resolveResourceUrl(res.fileName, baseUrl) });
     uploadedSuccessfully();
   } else {
     number.value--;
@@ -198,7 +194,7 @@ function listToString(list, separator) {
   separator = separator || ",";
   for (let i in list) {
     if (undefined !== list[i].url && list[i].url.indexOf("blob:") !== 0) {
-      strs += list[i].url.replace(baseUrl, "") + separator;
+      strs += (resourcePath(list[i].url, baseUrl) || list[i].url) + separator;
     }
   }
   return strs != "" ? strs.substr(0, strs.length - 1) : "";

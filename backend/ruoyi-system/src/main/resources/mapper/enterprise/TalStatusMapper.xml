@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.TalStatusMapper">
+
+    <select id="lockTalStatus" resultType="java.lang.Integer">
+        select tal_status from t_tal where tal_id = #{talId} for update
+    </select>
+
+    <!-- 状态机守卫：只有当前状态等于 fromStatus 时才更新，禁止回退已淘汰/已录用等终态 -->
+    <update id="updateTalStatus">
+        update t_tal
+        set tal_status = #{toStatus},
+            tal_updated_at = now()
+            <if test="examRecordId != null">, tal_exam_record_id = #{examRecordId}</if>
+            <if test="archiveSource != null">, tal_archive_source = #{archiveSource}</if>
+        where tal_id = #{talId} and tal_status = #{fromStatus}
+    </update>
+
+    <update id="updateProcessInstanceStatus">
+        update t_process_instance
+        set pin_status = #{toStatus}
+        where pin_candidate_id = #{talId} and pin_position_id = #{positionId}
+          and pin_status in
+        <foreach collection="fromStatuses" item="s" open="(" separator="," close=")">#{s}</foreach>
+    </update>
+
+    <insert id="insertStatusLog">
+        insert into t_tal_status_log (tsl_candidate_id, tsl_from_status, tsl_to_status, tsl_reason, tsl_operator_id)
+        values (#{talId}, #{fromStatus}, #{toStatus}, #{reason}, #{operatorId})
+    </insert>
+</mapper>

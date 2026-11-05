@@ -10,6 +10,11 @@ export function getExamEntry(scheduleId) {
   return request({ url: '/candidate/exam/schedule/' + scheduleId, method: 'get' })
 }
 
+// 设备检测准备：创建未开始的考试记录（不计入答题时长），供双机位测试
+export function prepareExam(scheduleId) {
+  return request({ url: '/candidate/exam/schedule/' + scheduleId + '/prepare', method: 'post' })
+}
+
 // 开始/续考：返回题目快照与剩余秒数（幂等，断网重进同样调用）
 export function startExam(scheduleId) {
   return request({ url: '/candidate/exam/schedule/' + scheduleId + '/start', method: 'post' })

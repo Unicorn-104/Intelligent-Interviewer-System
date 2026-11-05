@@ -23,6 +23,11 @@ public interface IInterviewReviewService
     public Map<String, Object> getReviewDetail(Long userId, Long sessionId);
 
     /**
+     * 重新生成 AI 评估报告：仅本企业可操作；生成中不可重复触发，已生成直接拒绝
+     */
+    public Map<String, Object> retryReport(Long userId, Long sessionId);
+
+    /**
      * 确认通过（UC-12 步骤8-9）：终面 → Offer 流程；非终面 → 级联下一轮
      */
     public Map<String, Object> confirm(Long userId, Long sessionId, Boolean isFinal,
@@ -30,9 +35,11 @@ public interface IInterviewReviewService
 
     /**
      * 调整后通过（UC-12 步骤8）：修改五维评分后确认（重算综合分）
+     *
+     * @param isFinal 终面调整后通过时推进候选人至「待发 Offer」，非终面由调用方单独触发级联
      */
     public Map<String, Object> adjust(Long userId, Long sessionId, Map<String, Object> dims,
-            Integer recommendation, String comment);
+            Integer recommendation, String comment, Boolean isFinal);
 
     /**
      * 驳回淘汰（UC-12 步骤10）：淘汰归档人才库 + 感谢信

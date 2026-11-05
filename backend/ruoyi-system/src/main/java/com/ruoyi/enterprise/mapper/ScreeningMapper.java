@@ -22,6 +22,9 @@ public interface ScreeningMapper
     /** 岗位候选人池（来自流程实例 + 候选人档案） */
     public List<Map<String, Object>> selectCandidatesByPosition(@Param("positionId") Long positionId);
 
+    /** 可参与 AI 初筛的候选人：仅待筛选(app_status=0)且流程实例进行中的投递 */
+    public List<Map<String, Object>> selectScreenableCandidates(@Param("positionId") Long positionId);
+
     /** 候选人技能标签（简历解析产物） */
     public List<String> selectCandidateSkills(@Param("talId") Long talId);
 
@@ -37,8 +40,6 @@ public interface ScreeningMapper
     /** 候选人最新推荐报告/招呼语记录（grt_match_points + grt_content） */
     public Map<String, Object> selectGreetingByCandidate(@Param("talId") Long talId);
 
-    /** 更新候选人流程状态（UC-06 复核确认，状态日志由数据库触发器写入） */
-    public int updateTalStatus(@Param("talId") Long talId, @Param("status") Integer status);
     Map<String, Object> selectPosition(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
     Map<String, Object> selectOwnedCandidate(@Param("companyId") Long companyId, @Param("talId") Long talId);
     List<Map<String, Object>> selectEducationEvidence(@Param("resumeId") Long resumeId);
@@ -66,13 +67,18 @@ public interface ScreeningMapper
     public int updateApplicationScreened(@Param("applicationId") Long applicationId, @Param("score") Double score,
             @Param("status") Integer status);
 
-    /** 按岗位 + 候选人回写投递评分与状态（AI 初筛完成、HR 复核共用） */
+    /** 按岗位 + 候选人回写投递评分与状态（AI 初筛完成、HR 复核共用），仅当当前状态在 fromStatuses 内才更新 */
     public int updateApplicationByCandidate(@Param("positionId") Long positionId, @Param("talId") Long talId,
-            @Param("score") Double score, @Param("status") Integer status);
+            @Param("score") Double score, @Param("status") Integer status,
+            @Param("fromStatuses") List<Integer> fromStatuses);
 
-    /** 按岗位 + 候选人只更新投递状态，保留已有评分 */
+    /** 按岗位 + 候选人只更新投递评分，保留已有状态，仅当当前状态在 fromStatuses 内才更新 */
+    public int updateApplicationScore(@Param("positionId") Long positionId, @Param("talId") Long talId,
+            @Param("score") Double score, @Param("fromStatuses") List<Integer> fromStatuses);
+
+    /** 按岗位 + 候选人只更新投递状态，保留已有评分，仅当当前状态在 fromStatuses 内才更新 */
     public int updateApplicationStatusByCandidate(@Param("positionId") Long positionId, @Param("talId") Long talId,
-            @Param("status") Integer status);
+            @Param("status") Integer status, @Param("fromStatuses") List<Integer> fromStatuses);
 
     /** 本企业仍有待初筛（app_status = 0）投递的岗位 */
     public List<Long> selectPendingPositions(@Param("companyId") Long companyId);
@@ -80,6 +86,10 @@ public interface ScreeningMapper
     /** 流程环节推进时同步投递状态（仅当当前状态在 fromStatuses 内才更新） */
     public int advanceApplicationStatus(@Param("positionId") Long positionId, @Param("talId") Long talId,
             @Param("status") Integer status, @Param("fromStatuses") List<Integer> fromStatuses);
+
+    /** 校验候选人是否真实投递过该企业岗位 */
+    public int countOwnedApplication(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
+            @Param("talId") Long talId);
 
     /** 投递记录关联的简历ID（无 AI 分析结果时用于创建人工评分记录） */
     public Long selectApplicationResume(@Param("companyId") Long companyId, @Param("positionId") Long positionId,

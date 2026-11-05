@@ -82,6 +82,13 @@ const shapes = {
     ['path', { d: 'm22 2-7 20-4-9-9-4Z' }],
     ['path', { d: 'M22 2 11 13' }]
   ],
+  Share2: [
+    ['circle', { cx: 18, cy: 5, r: 3 }],
+    ['circle', { cx: 6, cy: 12, r: 3 }],
+    ['circle', { cx: 18, cy: 19, r: 3 }],
+    ['path', { d: 'm8.59 13.51 6.83 3.98' }],
+    ['path', { d: 'm15.41 6.51-6.82 3.98' }]
+  ],
   Smile: [
     ['circle', { cx: 12, cy: 12, r: 10 }],
     ['path', { d: 'M8 14s1.5 2 4 2 4-2 4-2' }],
@@ -485,7 +492,7 @@ export const {
   GripVertical, History, KeyRound, LayoutDashboard, Lightbulb, Link2, Mail, MailPlus,
   MapPin, Megaphone, MessageCircle, MessageSquare, MessageSquareText, Mic, MicOff,
   MonitorUp, Paperclip, PauseCircle, Pencil, PhoneOff, Plus, RotateCcw, RotateCw,
-  Save, Search, Send, Settings, Settings2, ShieldCheck, SlidersHorizontal, Smile,
+  Save, Search, Send, Settings, Settings2, Share2, ShieldCheck, SlidersHorizontal, Smile,
   Smartphone, Sparkles, Tags, Target, Timer, Trash2, Upload, UserRound, UserRoundCheck,
   UserX, Users, UsersRound, Video, Volume2, WandSparkles, X, Zap, GraduationCap,
   Play, Pause, Eye, Maximize, Bot

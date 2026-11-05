@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -104,5 +105,19 @@ class AppResumeControllerTest
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
         verify(service).deleteResume(17L, 7L);
+    }
+
+    @Test
+    void objectBackedPdfSupportsRangeWithoutExposingStorageLocation() throws Exception
+    {
+        byte[] bytes = "%PDF-synthetic-object".getBytes(StandardCharsets.UTF_8);
+        when(service.selectPdf(17L, 7L)).thenReturn(new AppResumePdfDocument(
+                new ByteArrayResource(bytes), "简历.pdf"));
+        mvc.perform(get("/app/resumes/7/pdf").header("Range", "bytes=0-4"))
+                .andExpect(status().isPartialContent())
+                .andExpect(content().bytes("%PDF-".getBytes(StandardCharsets.UTF_8)))
+                .andExpect(header().string("Content-Range", "bytes 0-4/" + bytes.length))
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(header().doesNotExist("Location"));
     }
 }

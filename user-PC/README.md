@@ -39,6 +39,7 @@ npm run dev
 - 新建简历通过 `GET /app/profile` 读取本人基础资料，映射姓名、性别、求职状态、城市、手机号、邮箱及求职方向；编辑已有简历不自动覆盖已保存信息。基础资料读取失败时仍可手动填写。
 - 编辑页扫描和简历列表直接上传 PDF 均优先保留已填基本信息及求职意向，PDF 只补充空白字段。编辑页替换已有经历或技能前需确认；PDF 中缺失的栏目不清空原内容。
 - AI 编排区分学习、任职与项目客户等语义，合并工作和实习经历；未配置 AI 时规则识别严格按栏目处理，不再全篇匹配公司/学校或逐两行创建项目。
+- 规则识别支持经历名称与起止时间分行，以及“时间 / 任职时间 / 项目时间”标注；同栏目按前置或后置日期顺序匹配，不跨栏目套用。仅有年月时补为当月 01 日并提示核对；“至今”的工作经历保留开始时间并标记目前在职。没有对应经历的日期保留到未归类原文，仍需人工核对混合或双栏版式。已有简历不会自动重扫，需重新上传 PDF 或在编辑页重新解析后保存。
 - 大专、中专及未知学历均可正确显示；日期适配日期输入框。不能确定的日期归属、非法日期和未归类原文保留提示供人工核对，不能保证所有扫描版式均准确识别。原 PDF 仍通过原有导入接口作为附件保存。
 - 前端回归：`node --test test/agentResume.test.js`；后端回归：在 `backend/` 执行 `mvn -pl ruoyi-system -am -Dtest=ResumeRuleStructurerTest,ResumeAiFieldMapperTest,LocalResumePdfParserTest,ResumePdfPersistenceTest -Dsurefire.failIfNoSpecifiedTests=false test`。使用合成数据及内存数据库，不写真实用户简历。
 

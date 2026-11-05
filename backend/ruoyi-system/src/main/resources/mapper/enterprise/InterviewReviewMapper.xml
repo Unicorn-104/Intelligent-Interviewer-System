@@ -39,6 +39,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                e.evl_recommendation as recommendation,
                e.evl_hr_status as hrStatus, e.evl_hr_comment as hrComment,
                e.evl_hr_recommendation as hrRecommendation,
+               cast(e.evl_ai_snapshot as char) as aiSnapshot,
                u.nick_name as candidateName, pos.pos_title as positionTitle,
                pos.pos_company_id as companyId,
                (select max(psg.psg_sort_order) from t_process_stage psg
@@ -56,6 +57,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                s.ses_position_id as positionId, s.ses_interviewer_id as interviewerId,
                s.ses_template_id as templateId, s.ses_cascade_round as round,
                e.evl_overall_score as overallScore,
+               s.ses_report_status as reportStatus, s.ses_report_error as reportError,
                t.tal_user_id as candidateUserId, pos.pos_title as positionTitle,
                pos.pos_company_id as companyId
         from t_int_session s
@@ -79,6 +81,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where evl_session_id = #{sessionId}
     </update>
 
+    <update id="snapshotAiEvaluation">
+        update t_int_evaluation
+        set evl_ai_snapshot = json_object(
+                'overallScore', evl_overall_score,
+                'dimensionScores', evl_dimension_scores,
+                'recommendation', evl_recommendation)
+        where evl_session_id = #{sessionId} and evl_ai_snapshot is null
+    </update>
+
     <select id="selectCascadeRule" resultType="java.util.LinkedHashMap">
         select csr_id as ruleId, csr_template_id as templateId, csr_current_round as round,
                csr_dimension as dimension, csr_pass_threshold as passThreshold,
@@ -96,12 +107,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             (#{candidateId}, #{positionId}, #{interviewerId},
              #{startTime}, #{endTime}, 0)
     </insert>
-
-    <update id="updateTalStatus">
-        update t_tal
-        set tal_status = #{status}, tal_updated_at = now()
-        where tal_id = #{talId}
-    </update>
 
     <insert id="insertMessage">
         insert into t_msg (msg_receiver_id, msg_sender_id, msg_type, msg_title, msg_content, msg_is_read)

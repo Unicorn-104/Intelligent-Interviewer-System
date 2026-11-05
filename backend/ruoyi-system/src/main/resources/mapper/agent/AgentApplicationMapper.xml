@@ -461,6 +461,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         FOR UPDATE
     </select>
 
+    <!-- 撤回投递后终止对应流程实例，避免实例停留在「进行中」 -->
+    <update id="terminateProcessInstance">
+        UPDATE t_process_instance pi
+        JOIN t_app_record app ON app.app_candidate_id = pi.pin_candidate_id AND app.app_position_id = pi.pin_position_id
+        SET pi.pin_status = 2
+        WHERE app.app_id = #{applicationId} AND pi.pin_status = 0
+    </update>
+
     <update id="withdrawApplication">
         UPDATE t_app_record app
         SET app_status = 9, app_updated_at = CURRENT_TIMESTAMP

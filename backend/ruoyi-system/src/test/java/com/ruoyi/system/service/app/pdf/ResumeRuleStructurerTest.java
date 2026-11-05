@@ -142,12 +142,54 @@ class ResumeRuleStructurerTest
     }
 
     @Test
-    void standaloneDatesBetweenRecordsAreNotCopiedToWrongExperience()
+    void standaloneDatesBetweenRecordsAttachToTheFollowingExperience()
     {
         AppResume draft = structurer.structure("教育背景\n2018.09-2022.06\n示例大学 | 本科\n2022.09-2025.06\n另一大学 | 硕士");
         assertEquals(LocalDate.of(2018, 9, 1), draft.getEducations().get(0).getStartDate());
-        assertNull(draft.getEducations().get(1).getStartDate());
-        assertTrue(draft.getUnmappedText().contains("2022.09-2025.06"));
+        assertEquals(LocalDate.of(2022, 9, 1), draft.getEducations().get(1).getStartDate());
+        assertEquals(LocalDate.of(2025, 6, 1), draft.getEducations().get(1).getEndDate());
+    }
+
+    @Test
+    void dateLinesAfterExperienceAndLabeledDateLinesAreFilled()
+    {
+        AppResume draft = structurer.structure("教育经历\n示例大学 | 本科\n时间：2018.09-2022.06\n"
+                + "工作经历\n示例科技公司 | 后端工程师\n任职时间：2022.07—至今\n"
+                + "项目经历\n订单平台\n项目时间：2023.01~2023.06");
+        assertEquals(LocalDate.of(2018, 9, 1), draft.getEducations().get(0).getStartDate());
+        assertEquals(LocalDate.of(2022, 6, 1), draft.getEducations().get(0).getEndDate());
+        assertEquals(LocalDate.of(2022, 7, 1), draft.getWorks().get(0).getStartDate());
+        assertTrue(draft.getWorks().get(0).getCurrent());
+        assertEquals(LocalDate.of(2023, 1, 1), draft.getProjects().get(0).getStartDate());
+        assertEquals(LocalDate.of(2023, 6, 1), draft.getProjects().get(0).getEndDate());
+    }
+
+    @Test
+    void trailingDatesStayWithEachRecordInsteadOfMovingToTheNextOne()
+    {
+        AppResume draft = structurer.structure("教育背景\n示例大学 | 本科\n2018.09-2022.06\n另一大学 | 硕士\n2022.09-2025.06\n"
+                + "实习经历\n示例公司 | 开发\n2021.07-2021.09\n另一公司 | 工程师\n2023.07-至今\n"
+                + "项目经历\n项目名称：订单平台\n2023.01-2023.06\n项目名称：支付平台\n2024.01-2024.06");
+        assertEquals(LocalDate.of(2018, 9, 1), draft.getEducations().get(0).getStartDate());
+        assertEquals(LocalDate.of(2022, 9, 1), draft.getEducations().get(1).getStartDate());
+        assertEquals(LocalDate.of(2021, 7, 1), draft.getWorks().get(0).getStartDate());
+        assertEquals(LocalDate.of(2021, 9, 1), draft.getWorks().get(0).getEndDate());
+        assertEquals(LocalDate.of(2023, 7, 1), draft.getWorks().get(1).getStartDate());
+        assertTrue(draft.getWorks().get(1).getCurrent());
+        assertEquals(LocalDate.of(2023, 1, 1), draft.getProjects().get(0).getStartDate());
+        assertEquals(LocalDate.of(2024, 6, 1), draft.getProjects().get(1).getEndDate());
+    }
+
+    @Test
+    void unmatchedDatesRemainInOriginalTextAndNeverCrossSectionBoundaries()
+    {
+        AppResume draft = structurer.structure("教育经历\n2018.09-2022.06\n2022.09-2025.06\n示例大学 | 硕士\n2026.01-2026.06\n"
+                + "工作经历\n示例公司 | 开发\n项目经历\n项目名称：订单平台");
+        assertEquals(LocalDate.of(2022, 9, 1), draft.getEducations().get(0).getStartDate());
+        assertTrue(draft.getUnmappedText().contains("2018.09-2022.06"));
+        assertTrue(draft.getUnmappedText().contains("2026.01-2026.06"));
+        assertNull(draft.getWorks().get(0).getStartDate());
+        assertNull(draft.getProjects().get(0).getStartDate());
     }
 
     @Test

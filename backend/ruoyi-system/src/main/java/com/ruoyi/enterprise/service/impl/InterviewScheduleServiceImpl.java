@@ -24,6 +24,7 @@ import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.RescheduleMessageService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 
@@ -37,6 +38,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     @Autowired private EnterpriseJobMapper jobMapper;
     @Autowired private ScreeningMapper screeningMapper;
     @Autowired private RescheduleMessageService rescheduleMessages;
+    @Autowired private TalStatusService talStatusService;
 
     private Long company(Long userId)
     {
@@ -102,6 +104,9 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         if (candidateId == null || scheduleMapper.lockCandidate(candidateId) == null
                 || scheduleMapper.countApplication(candidateId, positionId) == 0)
             throw new ServiceException("候选人未投递当前岗位");
+        // 初筛淘汰/已撤回的投递不允许再安排面试
+        if (scheduleMapper.countSchedulableApplication(candidateId, positionId) == 0)
+            throw new ServiceException("该投递已初筛淘汰或已撤回，无法安排面试");
         Set<Long> interviewerIds = new TreeSet<>();
         for (Map<String, Object> row : stages) interviewerIds.add(requiredId(row.get("interviewerId")));
         for (Long id : interviewerIds) lockInterviewer(userId, companyId, id);
@@ -117,6 +122,13 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
                 Map<String, Object> stage = scheduleMapper.selectStageByIdForPosition(stageId, positionId);
                 if (stage == null) throw new ServiceException("招聘阶段已变更，请刷新后重新排期");
                 values.putAll(stage);
+                // 岗位流程中先有笔试阶段时，必须笔试通过才能安排后续面试
+                if (scheduleMapper.countExamStagesBefore(positionId, integer(stage.get("stageOrder"), 0)) > 0)
+                {
+                    Integer appStatus = scheduleMapper.selectApplicationStatus(candidateId, positionId);
+                    if (appStatus == null || appStatus != 6)
+                        throw new ServiceException("该岗位流程中笔试阶段尚未通过，暂不能安排后续面试");
+                }
             }
             else
             {
@@ -153,8 +165,12 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             row.put("status", 0);
             row.put("message", "邀约已创建，等待候选人确认");
         }
-        // 发起面试后自动把候选人流程状态推进为「面试中」，与候选人管理/面试安排联动
-        scheduleMapper.markCandidateInterviewing(candidateId);
+        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退
+        if (!talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
+                List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
+                        TalStatusService.TAL_EXAM_PASSED),
+                positionId, null, "安排面试", userId))
+            throw new ServiceException("候选人已淘汰或已录用，无法安排面试");
         // 同时把该岗位投递状态同步为「已约面」，投递详情/候选人列表立即可见
         screeningMapper.advanceApplicationStatus(positionId, candidateId, 3, List.of(0, 1, 2));
         return prepared;
@@ -445,13 +461,13 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     }
 
     /**
-     * 取消预约后按需把候选人/投递状态回退到进入「面试中」之前。
+     * 取消预约后按需把候选人/投递状态回退为「初筛通过」。
      *
      * <p>投递状态按岗位判定（该岗位无其他有效预约），候选人状态按全岗位判定（跨岗位无有效预约），
      * 防止回退影响其他岗位正在进行的面试。仅当其余条件全部满足才回退，防止把已完成其他阶段
      * 或笔试通过的候选人错误回退：招聘流程实例进行中、该岗位无已完成面试场次、候选人当前为
-     * 面试中(2)且投递为已约面(3)、状态日志中最近一次进入 2 的来源为 0/1（笔试态 5/6 等不回退）。
-     * 条件更新限定当前状态，不覆盖并发变更；日志缺失时保持现状不猜测。</p>
+     * 面试中(2)且投递为已约面(3)、状态日志中最近一次进入 2 的来源为 0/1（笔试态 5/6 等不回退），
+     * 满足时统一回退为「初筛通过(1)」。条件更新限定当前状态，不覆盖并发变更；日志缺失时保持现状不猜测。</p>
      */
     private int[] restoreCandidateAndApplication(Long candidateId, Long positionId, Long cancelledAppointmentId)
     {
@@ -466,10 +482,10 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         Integer prior = scheduleMapper.selectPriorTalStatus(candidateId);
         if (prior == null || (prior != 0 && prior != 1)) return restored;
         if (scheduleMapper.countValidAppointmentsExcluding(candidateId, cancelledAppointmentId) == 0
-                && scheduleMapper.restoreTalStatus(candidateId, prior) == 1)
+                && scheduleMapper.restoreTalStatus(candidateId, TalStatusService.TAL_SCREENED) == 1)
             restored[0] = 1;
         if (scheduleMapper.countOtherValidAppointments(candidateId, positionId, cancelledAppointmentId) == 0
-                && scheduleMapper.restoreApplicationStatus(candidateId, positionId, prior) == 1)
+                && scheduleMapper.restoreApplicationStatus(candidateId, positionId, TalStatusService.TAL_SCREENED) == 1)
             restored[1] = 1;
         return restored;
     }

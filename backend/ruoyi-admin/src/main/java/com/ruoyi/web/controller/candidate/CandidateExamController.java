@@ -47,6 +47,13 @@ public class CandidateExamController extends BaseController
         return success(candidateExamService.getExamEntry(getUserId(), scheduleId));
     }
 
+    /** 设备检测准备：创建未开始记录（不计时），用于双机位测试 */
+    @PostMapping("/schedule/{scheduleId}/prepare")
+    public AjaxResult prepare(@PathVariable("scheduleId") Long scheduleId)
+    {
+        return success(candidateExamService.prepareExam(getUserId(), scheduleId));
+    }
+
     /** 开始/续考：返回题目快照与剩余秒数 */
     @PostMapping("/schedule/{scheduleId}/start")
     public AjaxResult start(@PathVariable("scheduleId") Long scheduleId)

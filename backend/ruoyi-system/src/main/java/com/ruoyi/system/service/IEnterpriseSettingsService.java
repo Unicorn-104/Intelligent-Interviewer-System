@@ -28,10 +28,6 @@ public interface IEnterpriseSettingsService
 
     public void removeDept(Long companyId, Long id);
 
-    public List<Map<String, Object>> listIntegrations(Long companyId);
-
-    public int saveIntegration(Long companyId, String provider, Integer status, String configJson);
-
     public List<Map<String, Object>> listMembers(Long companyId);
 
     public int changeMemberRole(Long companyId, Long userId, Long roleId);

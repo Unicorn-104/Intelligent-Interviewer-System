@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.enterprise.service.screening.ScreeningAiEvaluator;
 import com.ruoyi.system.mapper.DashboardMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -29,20 +30,24 @@ class ScreeningServiceImplTest
     DashboardMapper dashboard;
     ScreeningAiEvaluator evaluator;
     PlatformTransactionManager transactions;
+    TalStatusService talStatusService;
 
     @BeforeEach void setup()
     {
         service = new ScreeningServiceImpl();
         mapper = mock(ScreeningMapper.class); dashboard = mock(DashboardMapper.class);
         evaluator = mock(ScreeningAiEvaluator.class); transactions = mock(PlatformTransactionManager.class);
+        talStatusService = mock(TalStatusService.class);
         ReflectionTestUtils.setField(service, "screeningMapper", mapper);
         ReflectionTestUtils.setField(service, "dashboardMapper", dashboard);
         ReflectionTestUtils.setField(service, "evaluator", evaluator);
         ReflectionTestUtils.setField(service, "transactionManager", transactions);
+        ReflectionTestUtils.setField(service, "talStatusService", talStatusService);
         when(transactions.getTransaction(any())).thenAnswer(call -> new SimpleTransactionStatus());
         when(dashboard.selectCompanyIdByUser(3L)).thenReturn(1L);
         when(mapper.selectPosition(1L, 7L)).thenReturn(Map.of("positionId", 7L, "title", "演示数据Java岗位", "positionVersion", "p1"));
         when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "v1"))));
+        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "v1"))));
         when(mapper.selectOwnedCandidate(anyLong(), anyLong())).thenReturn(null);
         when(mapper.selectCandidateSkills(11L)).thenReturn(List.of("Java"));
         when(mapper.selectEducationEvidence(21L)).thenReturn(List.of(Map.of("major", "计算机科学")));
@@ -181,6 +186,7 @@ class ScreeningServiceImplTest
         var original = new LinkedHashMap<String, Object>(Map.of("talentId", 12L, "resumeId", 22L, "resumeVersion", "v1"));
         var added = new LinkedHashMap<String, Object>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "v1"));
         when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(original, added));
+        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(original, added));
         when(mapper.selectAnalyzedCandidates(1L, 7L)).thenReturn(List.of(Map.of("candidateId", 12L, "resumeVersion", "v1", "positionVersion", "p1")));
         when(evaluator.evaluate(anyMap(), anyList())).thenAnswer(call -> {
             List<Map<String, Object>> input = call.getArgument(1);
@@ -200,6 +206,8 @@ class ScreeningServiceImplTest
         when(mapper.selectAnalyzedCandidates(1L, 7L)).thenReturn(List.of(
                 Map.of("candidateId", 11L, "resumeVersion", "old", "positionVersion", "p1")));
         when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(
+                new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "new"))));
+        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(
                 new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "new"))));
         var reply = service.triggerScreeningAsync(3L, 7L, 20);
         assertEquals(1, reply.get("skippedCount"));
@@ -246,6 +254,9 @@ class ScreeningServiceImplTest
         when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(
                 new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L)),
                 new LinkedHashMap<>(Map.of("talentId", 12L, "resumeId", 22L))));
+        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(
+                new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L)),
+                new LinkedHashMap<>(Map.of("talentId", 12L, "resumeId", 22L))));
         when(mapper.claimTask(eq(1L), eq(7L), anyString(), eq(2))).thenAnswer(call -> {
             when(mapper.lockTask(1L, 7L)).thenReturn(Map.of("runId", call.getArgument(2))); return 1;
         });
@@ -278,6 +289,8 @@ class ScreeningServiceImplTest
     {
         when(mapper.selectOwnedCandidate(1L, 11L)).thenReturn(Map.of("talentId", 11L));
         when(mapper.selectApplicationResume(1L, 7L, 11L)).thenReturn(21L);
+        when(mapper.countOwnedApplication(1L, 7L, 11L)).thenReturn(1);
+        when(mapper.updateApplicationByCandidate(eq(7L), eq(11L), anyDouble(), anyInt(), anyList())).thenReturn(1);
 
         Map<String, Object> reply = service.reviewResult(3L, 11L, null, 72.0, 7L);
 
@@ -285,28 +298,31 @@ class ScreeningServiceImplTest
         assertEquals(1, reply.get("applicationStatus"));
         verify(mapper).saveAnalysis(argThat(row -> "manual".equals(row.get("source"))
                 && row.get("resultId").equals(11L) && row.get("resumeId").equals(21L)));
-        verify(mapper).updateApplicationByCandidate(7L, 11L, 72.0, 1);
+        verify(mapper).updateApplicationByCandidate(7L, 11L, 72.0, 1, List.of(0, 1));
         // 人工评分只判定投递结果，不推进候选人状态
-        verify(mapper, never()).updateTalStatus(anyLong(), anyInt());
+        verifyNoInteractions(talStatusService);
     }
 
     @Test void manualScoreBelowThresholdRejectsApplicationOnly()
     {
         when(mapper.selectOwnedCandidate(1L, 11L)).thenReturn(Map.of("talentId", 11L));
+        when(mapper.countOwnedApplication(1L, 7L, 11L)).thenReturn(1);
+        when(mapper.updateApplicationByCandidate(eq(7L), eq(11L), anyDouble(), anyInt(), anyList())).thenReturn(1);
 
         Map<String, Object> reply = service.reviewResult(3L, 11L, null, 55.0, 7L);
 
         assertEquals(2, reply.get("applicationStatus"));
-        verify(mapper).updateApplicationByCandidate(7L, 11L, 55.0, 2);
-        verify(mapper, never()).updateTalStatus(anyLong(), anyInt());
+        verify(mapper).updateApplicationByCandidate(7L, 11L, 55.0, 2, List.of(0, 1));
+        verifyNoInteractions(talStatusService);
     }
 
     @Test void reviewRequiresEitherConclusionOrManualScore()
     {
         when(mapper.selectOwnedCandidate(1L, 11L)).thenReturn(Map.of("talentId", 11L));
+        when(mapper.countOwnedApplication(1L, 7L, 11L)).thenReturn(1);
 
         assertThrows(ServiceException.class, () -> service.reviewResult(3L, 11L, null, null, 7L));
-        verify(mapper, never()).updateApplicationByCandidate(anyLong(), anyLong(), any(), anyInt());
+        verify(mapper, never()).updateApplicationByCandidate(anyLong(), anyLong(), any(), anyInt(), anyList());
         verify(mapper, never()).saveAnalysis(anyMap());
     }
 

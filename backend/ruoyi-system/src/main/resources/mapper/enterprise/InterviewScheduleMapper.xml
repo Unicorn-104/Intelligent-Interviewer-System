@@ -80,6 +80,19 @@
         select count(*) from t_process_instance
         where pin_candidate_id = #{candidateId} and pin_position_id = #{positionId}
     </select>
+    <!-- 可排期的投递：初筛淘汰(2)与已撤回(9)的投递不允许安排面试 -->
+    <select id="countSchedulableApplication" resultType="int">
+        select count(*) from t_app_record
+        where app_candidate_id = #{candidateId} and app_position_id = #{positionId}
+          and app_status not in (2, 9)
+    </select>
+    <!-- 岗位流程中排目标阶段之前的笔试阶段数量，用于校验“笔试通过后才能进入后续面试” -->
+    <select id="countExamStagesBefore" resultType="int">
+        select count(*) from t_process_stage s
+        join t_pos p on p.pos_process_template_id = s.psg_template_id
+        where p.pos_id = #{positionId} and s.psg_type = 1
+          and s.psg_sort_order &lt; #{stageOrder}
+    </select>
     <select id="selectConflicts" resultType="java.util.LinkedHashMap">
         select slt_id as conflictId from t_sch_slot
         where slt_interviewer_id = #{interviewerId} and slt_status = 0

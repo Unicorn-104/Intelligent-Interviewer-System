@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../api/jobs_api.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/network/resource_url.dart';
+import '../../../config/app_config.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/page_states.dart';
 import '../../../widgets/skeleton_list.dart';
@@ -122,7 +124,12 @@ class _JobPreviewPageState extends State<JobPreviewPage> {
       _text(job['companyCity']),
     ].where((s) => s.isNotEmpty).join(' · ');
     final companyIntro = _text(job['companyIntro']);
-    final logo = _text(job['companyLogoUrl']);
+    final logo =
+        resolveResourceUrl(
+          _text(job['companyLogoUrl']),
+          apiBaseUrl: AppConfig.apiBaseUrl,
+        ) ??
+        '';
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(

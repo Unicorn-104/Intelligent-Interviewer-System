@@ -1,6 +1,7 @@
 package com.ruoyi.enterprise.service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +29,7 @@ import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.mapper.RescheduleRequestMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.impl.InterviewScheduleServiceImpl;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 import com.ruoyi.system.mapper.ImMessageMapper;
@@ -120,6 +122,7 @@ public class RescheduleRequestServiceTest
             "insert into t_tal(tal_id,tal_user_id) values(11,101),(12,102)",
             "insert into t_pos values(7,1,'合成岗位',1),(8,2,'另一企业岗位',2)",
             "insert into t_process_instance values(11,7,0),(12,7,0)",
+            "insert into t_app_record(app_candidate_id,app_position_id,app_status) values(11,7,0),(12,7,0)",
             "insert into t_cmp_binding values(1,9,1),(1,19,1),(1,20,1)",
             "insert into t_process_stage values(31,1,'在线笔试',1,1,'{\"duration\":30}'),(32,1,'技术面试',2,2,'{\"duration\":30}')")) jdbc.execute(sql);
         Path directory = Path.of("").toAbsolutePath();
@@ -164,6 +167,10 @@ public class RescheduleRequestServiceTest
         ReflectionTestUtils.setField(scheduleTarget,"jobMapper",jobs);
         ReflectionTestUtils.setField(scheduleTarget,"screeningMapper",mock(ScreeningMapper.class));
         ReflectionTestUtils.setField(scheduleTarget,"rescheduleMessages",notifications);
+        ReflectionTestUtils.setField(scheduleTarget,"screeningMapper",mock(ScreeningMapper.class));
+        var status = mock(TalStatusService.class);
+        when(status.change(anyLong(), anyInt(), anyList(), anyLong(), any(), any(), anyLong())).thenReturn(true);
+        ReflectionTestUtils.setField(scheduleTarget,"talStatusService",status);
         schedules = transactional(scheduleTarget, InterviewScheduleServiceImpl.class);
         service = buildService(requests, scheduleMapper);
     }

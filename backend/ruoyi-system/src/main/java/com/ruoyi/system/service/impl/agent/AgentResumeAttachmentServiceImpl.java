@@ -63,7 +63,7 @@ public class AgentResumeAttachmentServiceImpl implements IAgentResumeAttachmentS
     public AppResumeAttachmentDocument file(Long userId, Long resumeId, Long attachmentId)
     {
         AgentResumeAttachment attachment = requireAttachment(userId, resumeId, attachmentId);
-        return new AppResumeAttachmentDocument(attachmentStorage.read(userId, attachment.getFilePath()),
+        return new AppResumeAttachmentDocument(attachmentStorage.readResource(userId, attachment.getFilePath()),
                 attachment.getFileName(), attachment.getContentType());
     }
 

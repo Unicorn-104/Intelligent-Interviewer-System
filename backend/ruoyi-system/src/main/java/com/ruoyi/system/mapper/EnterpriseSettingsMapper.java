@@ -43,12 +43,6 @@ public interface EnterpriseSettingsMapper
 
     public int countDeptMembers(@Param("id") Long id, @Param("companyId") Long companyId);
 
-    /** 集成配置列表 */
-    public List<Map<String, Object>> selectIntegrations(@Param("companyId") Long companyId);
-
-    public int updateIntegration(@Param("companyId") Long companyId, @Param("provider") String provider,
-            @Param("status") Integer status, @Param("configJson") String configJson);
-
     /** 公司成员列表（昵称/部门/角色/状态） */
     public List<Map<String, Object>> selectMembers(@Param("companyId") Long companyId);
 

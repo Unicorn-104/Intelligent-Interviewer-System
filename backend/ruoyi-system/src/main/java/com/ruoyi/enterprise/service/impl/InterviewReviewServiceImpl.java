@@ -8,13 +8,19 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.InterviewReviewMapper;
+import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IInterviewReviewService;
+import com.ruoyi.system.event.InterviewFinishedEvent;
 import com.ruoyi.system.mapper.DashboardMapper;
+import com.ruoyi.system.mapper.InterviewReportMapper;
 
 /**
  * 企业端 - HR 终审与级联流转服务实现
@@ -50,6 +56,18 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     @Autowired
     private DashboardMapper dashboardMapper;
 
+    @Autowired
+    private TalStatusService talStatusService;
+
+    @Autowired
+    private ScreeningMapper screeningMapper;
+
+    @Autowired
+    private InterviewReportMapper reportMapper;
+
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+
     @Override
     public List<Map<String, Object>> listReviews(Long userId, Integer status, Integer pageNum, Integer pageSize)
     {
@@ -69,10 +87,36 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         Map<String, Object> result = new LinkedHashMap<>(detail);
         result.put("dimensionScores", detail.get("dimensionScores") == null ? null
                 : JSON.parse(String.valueOf(detail.get("dimensionScores"))));
+        result.put("aiSnapshot", detail.get("aiSnapshot") == null ? null
+                : JSON.parse(String.valueOf(detail.get("aiSnapshot"))));
         return result;
     }
 
     @Override
+    public Map<String, Object> retryReport(Long userId, Long sessionId)
+    {
+        Map<String, Object> session = requireSession(userId, sessionId);
+        int reportStatus = session.get("reportStatus") == null ? 0
+                : Integer.parseInt(String.valueOf(session.get("reportStatus")));
+        if (session.get("overallScore") != null || reportStatus == 2)
+        {
+            throw new ServiceException("报告已生成，无需重新生成");
+        }
+        if (reportStatus == 1)
+        {
+            throw new ServiceException("报告正在生成，请稍后刷新");
+        }
+        // 手动重试重新计数，避免历史失败次数耗尽自动补偿配额
+        reportMapper.resetReportRetry(sessionId);
+        eventPublisher.publishEvent(new InterviewFinishedEvent(sessionId));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("reportStatus", "generating");
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> confirm(Long userId, Long sessionId, Boolean isFinal,
             Integer recommendation, String comment)
     {
@@ -91,16 +135,19 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         }
         else
         {
-            result.put("message", "已确认通过（终面），请前往 Offer 管理触发录用意向书发送");
+            // 终面通过 → 候选人进入「待发 Offer」，后续由 Offer 接受/拒绝收口到录用/淘汰
+            advanceToPendingOffer(session, userId, "终面通过");
+            result.put("message", "已确认通过（终面），候选人状态已更新为待发 Offer，请前往 Offer 管理触发录用意向书发送");
         }
         return result;
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> adjust(Long userId, Long sessionId, Map<String, Object> dims,
-            Integer recommendation, String comment)
+            Integer recommendation, String comment, Boolean isFinal)
     {
-        requireSession(userId, sessionId);
+        Map<String, Object> session = requireSession(userId, sessionId);
         if (dims == null || dims.isEmpty())
         {
             throw new ServiceException("调整的五维评分不能为空");
@@ -112,10 +159,17 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
             total += Double.parseDouble(String.valueOf(value));
         }
         double overall = round(total / dims.size());
+        // 首次调整前留存 AI 原始评分，便于终审页对比，重复调整不覆盖首次快照
+        reviewMapper.snapshotAiEvaluation(sessionId);
         reviewMapper.updateDimensionScores(sessionId, JSON.toJSONString(dims), overall);
         reviewMapper.updateHrStatus(sessionId, HR_ADJUSTED,
                 recommendation == null ? 1 : recommendation,
                 comment == null || comment.isBlank() ? "调整后通过" : comment);
+        if (Boolean.TRUE.equals(isFinal))
+        {
+            // 终面调整后通过同样进入「待发 Offer」；非终面的级联由调用方单独触发
+            advanceToPendingOffer(session, userId, "终面调整后通过");
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", sessionId);
         result.put("overallScore", overall);
@@ -125,12 +179,15 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> reject(Long userId, Long sessionId, String reason)
     {
         Map<String, Object> session = requireSession(userId, sessionId);
-        // UC-12 步骤10：驳回淘汰——候选人状态"已淘汰"（触发器自动写状态日志）+ 感谢信
+        // UC-12 步骤10：驳回淘汰——候选人状态"已淘汰"，归档来源记为面试淘汰(2)，状态日志由状态机统一写入
         reviewMapper.updateHrStatus(sessionId, HR_CONFIRMED, 0, reason);
-        reviewMapper.updateTalStatus(Long.valueOf(String.valueOf(session.get("candidateId"))), TAL_REJECTED);
+        if (!talStatusService.change(asLong(session.get("candidateId")), TalStatusService.TAL_REJECTED, List.of(2),
+                asLong(session.get("positionId")), 2, "面试未通过", userId))
+            throw new ServiceException("候选人已淘汰或已录用，无法重复驳回");
         reviewMapper.insertMessage(Long.valueOf(String.valueOf(session.get("candidateUserId"))),
                 "感谢参与",
                 "感谢您参与「" + session.get("positionTitle") + "」的面试。很遗憾本次未能与您携手，"
@@ -142,6 +199,7 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> cascade(Long userId, Long sessionId)
     {
         return cascadeInternal(requireSession(userId, sessionId));
@@ -174,8 +232,13 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         double threshold = Double.parseDouble(String.valueOf(rule.get("passThreshold")));
         if (overall < threshold)
         {
-            // UC-12 E2：级联模式评分未达阈值，直接走淘汰流程
-            reviewMapper.updateTalStatus(Long.valueOf(String.valueOf(session.get("candidateId"))), TAL_REJECTED);
+            // UC-12 E2：级联模式评分未达阈值，直接走淘汰流程；候选人已处于终态时不再改写
+            if (!talStatusService.change(asLong(session.get("candidateId")), TalStatusService.TAL_REJECTED,
+                    List.of(2), asLong(session.get("positionId")), 2, "面试级联未达标", 0L))
+            {
+                result.put("message", "候选人已淘汰或已录用，本次不再重复流转状态");
+                return result;
+            }
             reviewMapper.insertMessage(Long.valueOf(String.valueOf(session.get("candidateUserId"))),
                     "感谢参与",
                     "感谢您参与「" + session.get("positionTitle") + "」的面试。很遗憾本次未能与您携手，期待未来再会。");
@@ -198,6 +261,21 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         result.put("suggestedTime", nextStart.format(TIME_FORMAT));
         result.put("message", "已自动创建第 " + nextRound + " 轮面试预约任务，并通知候选人");
         return result;
+    }
+
+    /** 终面通过：候选人从面试中进入「待发 Offer」，已淘汰/已录用等终态不再流转 */
+    private void advanceToPendingOffer(Map<String, Object> session, Long userId, String reason)
+    {
+        if (!talStatusService.change(asLong(session.get("candidateId")), TalStatusService.TAL_PENDING_OFFER,
+                List.of(TalStatusService.TAL_INTERVIEWING, TalStatusService.TAL_PENDING_OFFER),
+                asLong(session.get("positionId")), null, reason, userId))
+        {
+            throw new ServiceException("候选人已淘汰或已录用，无法进入待发 Offer");
+        }
+        // 同步岗位投递状态为待发 Offer(10)，人才库按岗位展示时与候选人状态一致
+        screeningMapper.advanceApplicationStatus(asLong(session.get("positionId")),
+                asLong(session.get("candidateId")), 10,
+                List.of(1, 2, 3, 4, 5, 6, 7, 8, 10));
     }
 
     private Map<String, Object> requireSession(Long userId, Long sessionId)

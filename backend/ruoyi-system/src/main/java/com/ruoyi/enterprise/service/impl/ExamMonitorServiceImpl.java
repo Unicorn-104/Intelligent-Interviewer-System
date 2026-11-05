@@ -40,8 +40,8 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
 {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    /** 副机位心跳超过该秒数视为掉线 */
-    private static final long SUB_ONLINE_WINDOW_SEC = 45;
+    /** 副机位心跳超过该秒数视为掉线（副机位每 15 秒上报一次，容忍一次漏报） */
+    private static final long SUB_ONLINE_WINDOW_SEC = 30;
 
     @Value("${livekit.api-key:}")
     private String apiKey;
@@ -90,6 +90,21 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
         result.put("forceDualCamera", record.get("forceDualCamera"));
         result.put("sub", monitorStatus(recordId));
         return result;
+    }
+
+    @Override
+    public boolean isDualCameraReady(Long recordId)
+    {
+        Map<String, Object> record = examMonitorMapper.selectRecordForMonitor(recordId);
+        if (record == null)
+        {
+            return false;
+        }
+        if (asInt(record.get("forceDualCamera"), 0) != 1)
+        {
+            return true;
+        }
+        return Boolean.TRUE.equals(monitorStatus(recordId).get("subOnline"));
     }
 
     @Override
@@ -176,7 +191,9 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
         {
             throw new ServiceException("考试记录不存在或无权访问");
         }
-        if (asInt(record.get("status")) != 1)
+        int status = asInt(record.get("status"));
+        // 状态0为设备检测阶段（尚未开考），同样需要主机位/副机位连接，保证开考前可预览画面
+        if (status != 0 && status != 1)
         {
             throw new ServiceException("考试未处于进行中，无需监考");
         }
@@ -196,7 +213,9 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
         {
             throw new ServiceException("副机位接入码无效");
         }
-        if (asInt(record.get("status")) != 1)
+        int status = asInt(record.get("status"));
+        // 允许设备检测阶段（状态0）副机位提前接入，便于考生开考前调整机位
+        if (status != 0 && status != 1)
         {
             throw new ServiceException("考试未处于进行中，副机位不可加入");
         }
