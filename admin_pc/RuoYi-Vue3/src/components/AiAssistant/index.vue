@@ -36,6 +36,19 @@
             <el-tooltip content="导出对话" placement="bottom">
               <el-icon @click="exportMd" :size="16"><Download /></el-icon>
             </el-tooltip>
+            <el-upload
+              :show-file-list="false"
+              :before-upload="beforeUpload"
+              action="/ai/kb/upload"
+              :headers="{ Authorization: 'Bearer ' + token }"
+              name="file"
+              :data="{ category: '操作手册' }"
+              accept=".txt,.md"
+            >
+              <el-tooltip content="上传知识库文档" placement="bottom">
+                <el-icon :size="16"><UploadFilled /></el-icon>
+              </el-tooltip>
+            </el-upload>
             <el-tooltip content="清空对话" placement="bottom">
               <el-icon @click="clearAll" :size="16"><Delete /></el-icon>
             </el-tooltip>
@@ -126,7 +139,8 @@ import {
   Promotion,
   Microphone,
   Plus,
-  Clock
+  Clock,
+  UploadFilled
 } from '@element-plus/icons-vue'
 import { getToken } from '@/utils/auth'
 import { ElMessage } from 'element-plus'
@@ -240,6 +254,12 @@ function clearAll() {
   const s = sessions.value.find((x) => x.id === currentId.value)
   if (s) s.msgs = []
   persistHistory()
+}
+
+function beforeUpload(file) {
+  const ok = file.name.endsWith('.txt') || file.name.endsWith('.md')
+  if (!ok) ElMessage.warning('只支持 .txt / .md 文件')
+  return ok
 }
 
 function stop() {
@@ -385,7 +405,7 @@ async function send(preset) {
       .slice(-10)
       .map((m) => ({ role: m.role, content: m.content }))
     abortCtrl = new AbortController()
-    const resp = await fetch('http://127.0.0.1:8080/ai/assistant/chat/stream', {
+    const resp = await fetch('/prod-api/ai/assistant/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
       body: JSON.stringify({ message: text, history: hist }),
