@@ -84,8 +84,8 @@
                   <span @click="copyText(m.content)"
                     ><el-icon :size="12"><DocumentCopy /></el-icon>复制</span
                   >
-                  <span v-if="m.role === 'assistant'" @click="speak(m.content)"
-                    ><el-icon :size="12"><Microphone /></el-icon>朗读</span
+                  <span v-if="m.role === 'assistant'" @click="speak(m.content)" :class="{ 'speaking-on': speaking && !loading }"
+                    ><el-icon :size="12"><Microphone /></el-icon>{{ speaking && !loading ? '停止朗读' : '朗读' }}</span
                   >
                   <span v-if="m.role === 'assistant'" @click="retry(i)"
                     ><el-icon :size="12"><RefreshRight /></el-icon>重试</span
@@ -164,7 +164,7 @@ const messages = computed(() => {
 })
 
 const HISTORY_KEY = 'ai-assistant-sessions-v2'
-const quickQuestions = ['平台现在有多少岗位和候选人？', '企业入驻审核在哪里？', '最近有没有登录失败的异常？']
+const quickQuestions = ['平台现在有多少岗位和候选人？', '待审核的企业和岗位有哪些？', '最近有没有登录失败的异常？', 'Offer 即将到期的有几个？', 'AI 调用量今天用了多少？', '帮我看看哪个企业快到期了']
 
 const drawerSize = computed(() => (window.innerWidth < 768 ? '100%' : '440px'))
 
@@ -287,15 +287,24 @@ function removeMsg(i) {
   persistHistory()
 }
 
+const speaking = ref(false)
 function speak(text) {
   if (!('speechSynthesis' in window)) {
     ElMessage.warning('浏览器不支持语音朗读')
+    return
+  }
+  if (speaking.value) {
+    window.speechSynthesis.cancel()
+    speaking.value = false
     return
   }
   window.speechSynthesis.cancel()
   const u = new SpeechSynthesisUtterance(text.replace(/[#*`>_\[\]()]/g, ''))
   u.lang = 'zh-CN'
   u.rate = 1.1
+  u.onend = () => (speaking.value = false)
+  u.onerror = () => (speaking.value = false)
+  speaking.value = true
   window.speechSynthesis.speak(u)
 }
 
@@ -373,11 +382,12 @@ function renderMd(src) {
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
   // 链接
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+  // 有序列表（先处理，用临时标记避免和无序列表混淆）
+  s = s.replace(/^\d+\. (.*)$/gm, '<olist>$1</olist>')
+  s = s.replace(/(?:<olist>[\s\S]*?<\/olist>)+/g, (m) => '<ol>' + m.replace(/<\/?olist>/g, '<li>') + '</ol>')
   // 无序列表
-  s = s.replace(/^[-•] (.*)$/gm, '<li>$1</li>')
-  s = s.replace(/(?:<li>[\s\S]*?<\/li>)+/g, (m) => `<ul>${m}</ul>`)
-  // 有序列表
-  s = s.replace(/^\d+\. (.*)$/gm, '<li>$1</li>')
+  s = s.replace(/^[-•] (.*)$/gm, '<ulist>$1</ulist>')
+  s = s.replace(/(?:<ulist>[\s\S]*?<\/ulist>)+/g, (m) => '<ul>' + m.replace(/<\/?ulist>/g, '<li>') + '</ul>')
   // 换行
   s = s.replace(/\n/g, '<br/>')
   s += '<span class="ai-cursor"></span>'
@@ -386,7 +396,8 @@ function renderMd(src) {
 
 async function send(preset) {
   const text = (preset || input.value).trim()
-  if (!text || loading.value) return
+  if (!text) { ElMessage.warning('请输入问题'); return }
+  if (loading.value) return
   input.value = ''
   if (!currentId.value || !sessions.value.find((x) => x.id === currentId.value)) {
     newSession()
@@ -738,6 +749,9 @@ onBeforeUnmount(() => {
 }
 .ai-actions span:hover {
   color: #4f6ef7;
+}
+.ai-actions span.speaking-on {
+  color: #ef4444;
 }
 
 .ai-go {
