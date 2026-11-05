@@ -39,7 +39,7 @@
             <el-upload
               :show-file-list="false"
               :before-upload="beforeUpload"
-              action="/ai/kb/upload"
+              action="/prod-api/ai/kb/upload"
               :headers="{ Authorization: 'Bearer ' + token }"
               name="file"
               :data="{ category: '操作手册' }"
