@@ -16,10 +16,12 @@ import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.enterprise.domain.ProcessStageInstance;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ExamGradeMapper;
-import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.IExamGradeService;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
+import com.ruoyi.enterprise.service.ProcessStageInstanceService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 
@@ -58,7 +60,10 @@ public class ExamGradeServiceImpl implements IExamGradeService
     private IInterviewScheduleService scheduleService;
 
     @Autowired
-    private ScreeningMapper screeningMapper;
+    private ApplicationStatusMapper applicationStatusMapper;
+
+    @Autowired
+    private ProcessStageInstanceService processStageInstanceService;
 
     // ==================== 交卷自动判分 ====================
 
@@ -232,11 +237,15 @@ public class ExamGradeServiceImpl implements IExamGradeService
         // 已是终判（erc_status=4）时再次判分只更新成绩，不重复流转候选人/投递状态，防止状态被反复翻转
         boolean firstFinalize = finalize && asInt(ctx.get("status"), 4) != 4;
         gradeMapper.updateRecordScored(recordId, total, passStatus, recordStatus);
-        // 笔试终判后立即同步该岗位投递状态：通过→笔试通过，未通过→笔试未通过
+        // 笔试终判：只写本轮节点结果（通过/未通过），不再推进 t_app_record.app_status；
+        // 未通过/缺考不自动淘汰投递，HR 可继续安排补考/新一轮或主动终止。
         if (passStatus != 2 && firstFinalize && ctx.get("positionId") != null)
         {
-            screeningMapper.advanceApplicationStatus(asLong(ctx.get("positionId")), asLong(ctx.get("talId")),
-                    passStatus == 1 ? 6 : 7, List.of(3, 4, 5, 6, 7));
+            int nodeResult = passStatus == 1 ? ProcessStageInstance.RESULT_PASS : ProcessStageInstance.RESULT_FAIL;
+            String note = "笔试终判：总分 " + total.stripTrailingZeros().toPlainString()
+                    + " / 阈值 " + (threshold == null ? "-" : threshold.stripTrailingZeros().toPlainString());
+            completeExamNode(recordId, asLong(ctx.get("talId")), asLong(ctx.get("positionId")),
+                    nodeResult, note, operatorUserId);
         }
 
         String comment = buildComment(ctx, commentOverride, objective, subjective,
@@ -335,6 +344,42 @@ public class ExamGradeServiceImpl implements IExamGradeService
         catch (ServiceException e)
         {
             return "自动邀约失败：" + e.getMessage() + "，请手动安排";
+        }
+    }
+
+    // ==================== 节点收口 ====================
+
+    /** 终判收口本轮笔试节点：按 refId=recordId 幂等 complete；无流程实例则跳过 */
+    private void completeExamNode(Long recordId, Long talId, Long positionId, int result,
+            String note, Long operatorId)
+    {
+        if (recordId == null || talId == null || positionId == null)
+        {
+            return;
+        }
+        try
+        {
+            Long appId = applicationStatusMapper.selectAppId(talId, positionId);
+            if (appId == null)
+            {
+                return;
+            }
+            Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+            Long instanceId = app == null ? null : asLong(app.get("instanceId"));
+            if (instanceId == null)
+            {
+                return;
+            }
+            ProcessStageInstance node = processStageInstanceService.getOrCreate(instanceId, null,
+                    ProcessStageInstance.TYPE_EXAM, "在线笔试", recordId, operatorId);
+            if (node != null && node.getId() != null)
+            {
+                processStageInstanceService.complete(node.getId(), result, note);
+            }
+        }
+        catch (Exception ignore)
+        {
+            // 节点收口失败不影响笔试成绩落库
         }
     }
 

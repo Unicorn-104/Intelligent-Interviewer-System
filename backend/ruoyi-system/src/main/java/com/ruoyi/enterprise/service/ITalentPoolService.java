@@ -83,9 +83,18 @@ public interface ITalentPoolService
     public List<Map<String, Object>> listApplicationPositions(Long userId);
 
     /**
-     * 批量更新投递状态（0待筛选、1初筛通过、2初筛淘汰）
+     * 批量更新投递状态：逐条经 ApplicationStatusService 状态机校验与记录，
+     * 目标为未录用(5)时按 endReason 记录终止原因（HR 批量操作默认 HR_REJECTED）。
      */
-    public Map<String, Object> updateApplicationStatus(Long userId, List<Long> applicationIds, Integer status);
+    public Map<String, Object> updateApplicationStatus(Long userId, List<Long> applicationIds,
+            Integer status, String endReason);
+
+    /**
+     * 单条投递 HR 主动淘汰：按候选人+岗位定位投递，经 ApplicationStatusService 状态机
+     * 终止为未录用并记录原因（默认 HR_REJECTED），供企业端快捷淘汰按钮调用。
+     */
+    public Map<String, Object> terminateApplication(Long userId, Long candidateId,
+            Long positionId, String endReason);
 
     /**
      * 待初筛岗位：各岗位下尚未经过 AI 初筛的投递数量

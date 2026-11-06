@@ -37,10 +37,12 @@ import com.ruoyi.system.domain.app.AppResume;
 import com.ruoyi.system.domain.app.AppResumePdfDocument;
 import com.ruoyi.system.mapper.agent.AgentApplicationMapper;
 import com.ruoyi.system.mapper.agent.AgentJobMapper;
+import com.ruoyi.system.service.IEnterpriseJobService;
 import com.ruoyi.system.service.agent.IAgentApplicationService;
 import com.ruoyi.system.service.app.IAppResumeService;
 import com.ruoyi.system.service.app.pdf.ResumePdfParser;
 import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
 
 /**
  * 求职者端简历与投递服务实现。
@@ -62,6 +64,12 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
 
     @Autowired
     private ResumePdfStorage pdfStorage;
+
+    @Autowired
+    private IEnterpriseJobService enterpriseJobService;
+
+    @Autowired
+    private ApplicationStatusService applicationStatusService;
 
     @Override
     public List<AgentResumeOption> selectResumeOptions(Long userId, Long jobId)
@@ -301,17 +309,9 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
                 application.getAppliedAt());
         if (statusTimeline != null)
         {
-            for (AgentTimeline node : statusTimeline)
-            {
-                if (Integer.valueOf(9).equals(application.getStatusCode()) && node.getOccurredAt() != null
-                        && application.getUpdatedAt() != null && node.getOccurredAt().after(application.getUpdatedAt())) continue;
-                timeline.add(node);
-            }
+            timeline.addAll(statusTimeline);
         }
         application.setTimeline(timeline);
-        if (Integer.valueOf(9).equals(application.getStatusCode()))
-            timeline.add(new AgentTimeline("withdrawn", "closed", "已撤回", "你已撤回本次投递，原投递记录保留",
-                    application.getUpdatedAt()));
         return application;
     }
 
@@ -325,12 +325,11 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
             throw new ServiceException("投递记录不存在或无权访问", 404);
         AgentApplication application = applicationMapper.selectApplicationById(userId, applicationId);
         if (application == null) throw new ServiceException("投递记录不存在或无权访问", 404);
-        if (Integer.valueOf(9).equals(application.getStatusCode())) return selectApplication(userId, applicationId);
-        if (!Boolean.TRUE.equals(application.getCanWithdraw())
-                || applicationMapper.withdrawApplication(userId, applicationId) != 1)
+        // canWithdraw 由 SQL 按 app_status=0（HR 尚未启动招聘）计算；已进入流程或已终态不可撤回
+        if (!Boolean.TRUE.equals(application.getCanWithdraw()))
             throw new ServiceException("投递已进入招聘流程或状态已更新，无法撤回，请刷新后查看", 409);
-        // 同步终止流程实例，避免撤回后实例仍显示进行中
-        applicationMapper.terminateProcessInstance(applicationId);
+        // 投递状态变更统一经状态机：已投递(0)→未录用(5)/CANDIDATE_WITHDRAWN，并写状态日志、收尾流程实例
+        applicationStatusService.withdraw(application.getCandidateId(), application.getJobId(), userId);
         return selectApplication(userId, applicationId);
     }
 
@@ -390,6 +389,9 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         {
             throw new ServiceException("投递失败，请稍后重试");
         }
+        // 新投递口径：投递成功即 app_status=0（已投递），并同步创建流程实例，
+        // 企业端岗位详情/漏斗/筛选均以实例为候选人来源；不经过任何待筛选/初筛中间态。
+        enterpriseJobService.ensureProcessInstance(job.getCompanyId(), candidateId, request.getJobId());
         AgentApplication created = applicationMapper.selectApplicationById(userId, application.getId());
         if (created == null)
         {
@@ -742,12 +744,14 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
     {
         if (code == null)
         {
-            return "pending";
+            return "active";
         }
         return switch (code)
         {
-            case 3, 5, 6 -> "interview";
-            case 2, 7, 8, 9 -> "closed";
+            // 招聘中(1) 含全部笔试/面试环节，归到面试中分组；
+            // 已投递(0)/待发Offer(2)/待确认Offer(3) 仍在流程中，归进行中；已录用(4)/未录用(5) 为终态
+            case 1 -> "interview";
+            case 4, 5 -> "closed";
             default -> "active";
         };
     }
@@ -760,16 +764,12 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         }
         return switch (code)
         {
-            case 0 -> "待处理";
-            case 1 -> "初筛通过";
-            case 2 -> "初筛淘汰";
-            case 3 -> "已约面";
-            case 4 -> "待笔试";
-            case 5 -> "笔试中";
-            case 6 -> "笔试通过";
-            case 7 -> "笔试未通过";
-            case 8 -> "笔试缺考";
-            case 9 -> "已撤回";
+            case 0 -> "已投递";
+            case 1 -> "招聘中";
+            case 2 -> "待发Offer";
+            case 3 -> "待确认Offer";
+            case 4 -> "已录用";
+            case 5 -> "未录用";
             default -> "投递处理中";
         };
     }

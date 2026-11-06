@@ -104,7 +104,25 @@ public class TalentPoolController extends BaseController
         }
         Integer status = body.get("status") == null ? null
                 : Integer.valueOf(String.valueOf(body.get("status")));
-        return success(talentPoolService.updateApplicationStatus(getUserId(), applicationIds, status));
+        String endReason = body.get("endReason") == null ? null
+                : String.valueOf(body.get("endReason"));
+        return success(talentPoolService.updateApplicationStatus(getUserId(), applicationIds, status, endReason));
+    }
+
+    /**
+     * 单条投递 HR 主动淘汰（企业端快捷淘汰按钮）：按候选人+岗位定位，经状态机终止为未录用。
+     */
+    @PutMapping("/applications/terminate")
+    public AjaxResult terminateApplication(@RequestBody Map<String, Object> body)
+    {
+        Long candidateId = body.get("candidateId") == null ? null
+                : Long.valueOf(String.valueOf(body.get("candidateId")));
+        Long positionId = body.get("positionId") == null ? null
+                : Long.valueOf(String.valueOf(body.get("positionId")));
+        String endReason = body.get("endReason") == null ? null
+                : String.valueOf(body.get("endReason"));
+        return success(talentPoolService.terminateApplication(
+                getUserId(), candidateId, positionId, endReason));
     }
 
     /**

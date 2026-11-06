@@ -13,8 +13,10 @@ import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.common.enums.ApplicationStatus;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ExamMapper;
-import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.IExamService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
@@ -53,10 +55,13 @@ public class ExamServiceImpl implements IExamService
     private EmailService emailService;
 
     @Autowired
-    private ScreeningMapper screeningMapper;
+    private TalStatusService talStatusService;
 
     @Autowired
-    private TalStatusService talStatusService;
+    private ApplicationStatusService applicationStatusService;
+
+    @Autowired
+    private ApplicationStatusMapper applicationStatusMapper;
 
     // ==================== 题库 ====================
 
@@ -690,17 +695,42 @@ public class ExamServiceImpl implements IExamService
             item.put("channels", channelsResult);
             results.add(item);
         }
-        // 笔试通知发出后立即把对应岗位投递状态同步为「待笔试」
+        // HR 正式发送第一场笔试通知 = 启动招聘流程：已投递(0)→招聘中(1)。
+        // 多轮笔试/补考/改期全程保持招聘中，不重复流转；已终态(已录用/未录用)不动。
         Long schedulePositionId = asLong(schedule.get("positionId"));
         if (schedulePositionId != null)
         {
             for (Map<String, Object> item : results)
             {
                 Long talId = asLong(item.get("talId"));
-                if (talId != null && screeningMapper.advanceApplicationStatus(schedulePositionId, talId, 4,
-                        List.of(0, 1, 2, 3)) > 0)
+                if (talId == null)
                 {
-                    // 仅对仍在有效流程中的投递推进候选人状态，已淘汰/已撤回投递不参与笔试
+                    continue;
+                }
+                Long appId = applicationStatusMapper.selectAppId(talId, schedulePositionId);
+                if (appId == null)
+                {
+                    continue;
+                }
+                Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+                Integer currentStatus = app == null ? null : asInt(app.get("status"), null);
+                ApplicationStatus cur = currentStatus == null ? null
+                        : ApplicationStatus.fromCode(currentStatus);
+                boolean active = cur != null && !cur.isTerminal();
+                // 仅对仍在流程中的投递推进候选人状态；已淘汰/已撤回投递不参与笔试
+                if (active)
+                {
+                    if (cur == ApplicationStatus.APPLIED)
+                    {
+                        try
+                        {
+                            applicationStatusService.startRecruitment(appId, userId);
+                        }
+                        catch (Exception ex)
+                        {
+                            // 并发或终态保护：不阻断通知发送，HR 可在投递管理页手动启动
+                        }
+                    }
                     talStatusService.change(talId, TalStatusService.TAL_PENDING_EXAM,
                             List.of(0, 1, 2, 5, 6, 7, 8, 9), schedulePositionId, null, "已发送笔试通知", userId);
                 }

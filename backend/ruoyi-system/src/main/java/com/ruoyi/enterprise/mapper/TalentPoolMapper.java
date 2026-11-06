@@ -76,10 +76,6 @@ public interface TalentPoolMapper
     /** 本企业有过投递的岗位下拉选项（去重，按岗位ID倒序） */
     public List<Map<String, Object>> selectApplicationPositions(@Param("companyId") Long companyId);
 
-    /** 批量更新投递状态（企业隔离） */
-    public int updateApplicationStatus(@Param("companyId") Long companyId,
-            @Param("applicationIds") List<Long> applicationIds, @Param("status") Integer status);
-
     /** 企业下待初筛人选总数（同一人投递多个岗位只算一次） */
     public Integer selectUnscreenedCandidateCount(@Param("companyId") Long companyId);
 

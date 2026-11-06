@@ -14,12 +14,14 @@ import org.springframework.transaction.annotation.Transactional;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.enterprise.domain.ProcessStageInstance;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.CandidateExamMapper;
 import com.ruoyi.enterprise.mapper.ExamMapper;
-import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.ICandidateExamService;
 import com.ruoyi.enterprise.service.IExamGradeService;
 import com.ruoyi.enterprise.service.IExamMonitorService;
+import com.ruoyi.enterprise.service.ProcessStageInstanceService;
 import com.ruoyi.enterprise.service.TalStatusService;
 
 /**
@@ -51,7 +53,10 @@ public class CandidateExamServiceImpl implements ICandidateExamService
     private IExamMonitorService examMonitorService;
 
     @Autowired
-    private ScreeningMapper screeningMapper;
+    private ApplicationStatusMapper applicationStatusMapper;
+
+    @Autowired
+    private ProcessStageInstanceService processStageInstanceService;
 
     @Autowired
     private TalStatusService talStatusService;
@@ -204,7 +209,8 @@ public class CandidateExamServiceImpl implements ICandidateExamService
                     snapshotQuestions(asLong(schedule.get("paperId")), parseJson(schedule.get("ruleJson")), recordId);
                 }
                 Long talId = asLong(requireTalent(userId).get("talId"));
-                screeningMapper.advanceApplicationStatus(asLong(schedule.get("positionId")), talId, 5, List.of(3, 4));
+                // 本轮笔试节点：开考 start（按 refId=recordId 幂等）；app_status 已由 HR 发通知时切到招聘中，这里不动
+                openExamNode(recordId, talId, asLong(schedule.get("positionId")), userId);
                 talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
                         List.of(0, 1, 2, 5, 6, 7, 8, 9), asLong(schedule.get("positionId")), null, "开始笔试", userId);
                 record = candidateExamMapper.selectRecordForCandidate(userId, recordId);
@@ -237,8 +243,8 @@ public class CandidateExamServiceImpl implements ICandidateExamService
         candidateExamMapper.insertRecord(scheduleId, talId, deviceInfo);
         recordId = (long) candidateExamMapper.selectLastRecordId();
         snapshotQuestions(asLong(schedule.get("paperId")), parseJson(schedule.get("ruleJson")), recordId);
-        // 首次开考即把该岗位投递状态同步为「笔试中」，候选人状态同步为「笔试中」；已约面未发笔试通知的也允许直接开考
-        screeningMapper.advanceApplicationStatus(asLong(schedule.get("positionId")), talId, 5, List.of(3, 4));
+        // 本轮笔试节点：开考 start；app_status 不动（HR 发通知时已切到招聘中）
+        openExamNode(recordId, talId, asLong(schedule.get("positionId")), userId);
         talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
                 List.of(0, 1, 2, 5, 6, 7, 8, 9), asLong(schedule.get("positionId")), null, "开始笔试", userId);
 
@@ -494,11 +500,9 @@ public class CandidateExamServiceImpl implements ICandidateExamService
             {
                 continue;
             }
-            // 已开考未交卷：自动交卷，保留最后一次作答，等待笔试成绩
+            // 已开考未交卷：自动交卷，保留最后一次作答，等待笔试成绩；节点已在开考时 start，终判时 complete
             Long talId = asLong(row.get("talId"));
             Long positionId = asLong(row.get("positionId"));
-            // 补齐开考时未写入的岗位投递/候选人状态，避免人才库仍显示「已约面」
-            screeningMapper.advanceApplicationStatus(positionId, talId, 5, List.of(3, 4));
             talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
                     List.of(0, 1, 2, 5, 6, 7, 8, 9), positionId, null, "笔试到期自动交卷", 0L);
             candidateExamMapper.updateRecordSubmitted(asLong(row.get("recordId")));
@@ -507,18 +511,89 @@ public class CandidateExamServiceImpl implements ICandidateExamService
         }
         for (Map<String, Object> row : candidateExamMapper.selectExpiredUnstartedRecords())
         {
-            if (candidateExamMapper.updateRecordAbandoned(asLong(row.get("recordId"))) != 1)
+            Long recordId = asLong(row.get("recordId"));
+            if (candidateExamMapper.updateRecordAbandoned(recordId) != 1)
             {
                 continue;
             }
-            // 未开考且安排已结束：认定为笔试缺考，同步岗位投递与候选人状态
+            // 未开考且安排已结束：认定为笔试缺考；只写节点结果，不终止投递（HR 可补考/新一轮）
             talStatusService.change(asLong(row.get("talId")), TalStatusService.TAL_EXAM_ABSENT,
                     List.of(5), asLong(row.get("positionId")), null, "笔试缺考", 0L);
-            screeningMapper.advanceApplicationStatus(asLong(row.get("positionId")), asLong(row.get("talId")),
-                    8, List.of(3, 4, 5));
+            completeExamNode(recordId, asLong(row.get("talId")), asLong(row.get("positionId")),
+                    ProcessStageInstance.RESULT_ABSENT, "笔试缺考", 0L);
             settled++;
         }
         return settled;
+    }
+
+    /** 开考：按 refId=recordId 幂等建立本轮笔试节点并 start；无流程实例则跳过（不阻断考试） */
+    private void openExamNode(Long recordId, Long talId, Long positionId, Long operatorId)
+    {
+        Long instanceId = resolveInstanceId(talId, positionId);
+        if (instanceId == null || recordId == null)
+        {
+            return;
+        }
+        try
+        {
+            ProcessStageInstance node = processStageInstanceService.getOrCreate(instanceId, null,
+                    ProcessStageInstance.TYPE_EXAM, "在线笔试", recordId, operatorId);
+            if (node != null && node.getId() != null)
+            {
+                processStageInstanceService.start(node.getId(), operatorId);
+            }
+        }
+        catch (Exception ignore)
+        {
+            // 节点写入失败不阻断考试主流程
+        }
+    }
+
+    /** 收口本轮笔试节点（通过/未通过/缺考）：按 refId=recordId 幂等 complete */
+    private void completeExamNode(Long recordId, Long talId, Long positionId, int result,
+            String note, Long operatorId)
+    {
+        Long instanceId = resolveInstanceId(talId, positionId);
+        if (instanceId == null || recordId == null)
+        {
+            return;
+        }
+        try
+        {
+            ProcessStageInstance node = processStageInstanceService.getOrCreate(instanceId, null,
+                    ProcessStageInstance.TYPE_EXAM, "在线笔试", recordId, operatorId);
+            if (node != null && node.getId() != null)
+            {
+                processStageInstanceService.complete(node.getId(), result, note);
+            }
+        }
+        catch (Exception ignore)
+        {
+            // 节点收口失败不影响笔试成绩
+        }
+    }
+
+    /** 由候选人+岗位解析投递的流程实例ID；不存在或异常返回 null */
+    private Long resolveInstanceId(Long talId, Long positionId)
+    {
+        if (talId == null || positionId == null)
+        {
+            return null;
+        }
+        try
+        {
+            Long appId = applicationStatusMapper.selectAppId(talId, positionId);
+            if (appId == null)
+            {
+                return null;
+            }
+            Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+            return app == null ? null : asLong(app.get("instanceId"));
+        }
+        catch (Exception ignore)
+        {
+            return null;
+        }
     }
 
     /** 强制双机位：副机位未在线禁止开考或续考 */
@@ -565,11 +640,11 @@ public class CandidateExamServiceImpl implements ICandidateExamService
             return result;
         }
         candidateExamMapper.updateRecordAbandoned(recordId);
-        // 超时未交卷且未自动交卷：候选人记为笔试缺考，同步该岗位投递状态
+        // 超时未交卷且未自动交卷：候选人记为笔试缺考；节点写缺考结果，不终止投递
         talStatusService.change(asLong(record.get("talId")), TalStatusService.TAL_EXAM_ABSENT,
                 List.of(5, 6), asLong(record.get("positionId")), null, "笔试超时未交卷", userId);
-        screeningMapper.advanceApplicationStatus(asLong(record.get("positionId")), asLong(record.get("talId")),
-                8, List.of(4, 5));
+        completeExamNode(recordId, asLong(record.get("talId")), asLong(record.get("positionId")),
+                ProcessStageInstance.RESULT_ABSENT, "笔试超时未交卷", userId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("recordId", recordId);
         result.put("status", 3);

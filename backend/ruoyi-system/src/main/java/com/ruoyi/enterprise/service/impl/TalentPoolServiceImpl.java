@@ -8,9 +8,13 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.ruoyi.common.enums.ApplicationEndReason;
+import com.ruoyi.common.enums.ApplicationStatus;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.TalentPoolMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.IScreeningService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
 import com.ruoyi.enterprise.service.TalStatusService;
@@ -52,6 +56,12 @@ public class TalentPoolServiceImpl implements ITalentPoolService
 
     @Autowired
     private ResumePdfStorage resumePdfStorage;
+
+    @Autowired
+    private ApplicationStatusService applicationStatusService;
+
+    @Autowired
+    private ApplicationStatusMapper applicationStatusMapper;
 
     @Override
     public List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
@@ -382,7 +392,8 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     public List<Map<String, Object>> listApplications(Long userId, Long positionId, Integer status,
             Long talentId, Integer pageNum, Integer pageSize)
     {
-        if (status != null && (status < 0 || status > 12))
+        // 新六态：0已投递/1招聘中/2待发Offer/3待确认Offer/4已录用/5未录用
+        if (status != null && (status < 0 || status > 5))
         {
             throw new ServiceException("投递状态不合法");
         }
@@ -404,10 +415,12 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     }
 
     @Override
-    public Map<String, Object> updateApplicationStatus(Long userId, List<Long> applicationIds, Integer status)
+    public Map<String, Object> updateApplicationStatus(Long userId, List<Long> applicationIds,
+            Integer status, String endReason)
     {
         Long companyId = resolveCompanyId(userId);
-        if (status == null || status < 0 || status > 12)
+        ApplicationStatus target = ApplicationStatus.fromCode(status);
+        if (target == null)
         {
             throw new ServiceException("投递状态不合法");
         }
@@ -415,10 +428,70 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         {
             throw new ServiceException("请选择要更新的投递");
         }
-        int updated = talentPoolMapper.updateApplicationStatus(companyId, applicationIds, status);
+        // 逐条经状态机：合法流转、终态保护、终止原因校验、日志与流程实例收尾统一由状态机承担
+        ApplicationEndReason reason = null;
+        if (target == ApplicationStatus.NOT_HIRED)
+        {
+            reason = ApplicationEndReason.fromCode(endReason);
+            if (reason == null) reason = ApplicationEndReason.HR_REJECTED;
+        }
+        int updated = 0;
+        List<Long> skipped = new ArrayList<>();
+        for (Long applicationId : applicationIds)
+        {
+            try
+            {
+                if (target == ApplicationStatus.NOT_HIRED)
+                {
+                    applicationStatusService.terminate(applicationId, reason, userId,
+                            ApplicationStatusService.SOURCE_HR, "HR 批量更新投递状态");
+                }
+                else
+                {
+                    applicationStatusService.transition(applicationId, target, userId,
+                            ApplicationStatusService.SOURCE_HR, null, "HR 批量更新投递状态");
+                }
+                updated++;
+            }
+            catch (ServiceException error)
+            {
+                // 终态/非法流转/并发冲突的行跳过，不影响其余投递
+                skipped.add(applicationId);
+            }
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("updated", updated);
-        result.put("message", "已更新 " + updated + " 条投递的状态");
+        result.put("skipped", skipped);
+        result.put("message", "已更新 " + updated + " 条投递的状态"
+                + (skipped.isEmpty() ? "" : "，" + skipped.size() + " 条因终态或非法流转跳过"));
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> terminateApplication(Long userId, Long candidateId,
+            Long positionId, String endReason)
+    {
+        resolveCompanyId(userId);
+        if (candidateId == null || positionId == null)
+        {
+            throw new ServiceException("候选人或岗位信息缺失，无法淘汰");
+        }
+        Long applicationId = applicationStatusMapper.selectAppId(candidateId, positionId);
+        if (applicationId == null)
+        {
+            throw new ServiceException("岗位投递记录不存在，无法淘汰");
+        }
+        ApplicationEndReason reason = ApplicationEndReason.fromCode(endReason);
+        if (reason == null)
+        {
+            reason = ApplicationEndReason.HR_REJECTED;
+        }
+        applicationStatusService.terminate(applicationId, reason, userId,
+                ApplicationStatusService.SOURCE_HR, "HR 主动淘汰（企业端快捷操作）");
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("applicationId", applicationId);
+        result.put("endReason", reason.getCode());
+        result.put("message", "已终止该投递为未录用（" + reason.getLabel() + "）");
         return result;
     }
 
@@ -466,9 +539,9 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         return companyId == null ? 1L : companyId;
     }
 
-    /** 人才库流程状态按岗位投递展示：0-8 投递流程，10-待发 Offer，11-已录用，12-Offer 拒绝/过期 */
+    /** 人才库列表按投递全局状态（新六态）筛选：0已投递/1招聘中/2待发Offer/3待确认Offer/4已录用/5未录用 */
     private boolean isTalentStatus(int status)
     {
-        return (status >= 0 && status <= 8) || status == 10 || status == 11 || status == 12;
+        return status >= 0 && status <= 5;
     }
 }

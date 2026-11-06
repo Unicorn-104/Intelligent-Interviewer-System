@@ -27,4 +27,16 @@ public interface TalStatusMapper
     int insertStatusLog(@Param("talId") Long talId, @Param("fromStatus") Integer fromStatus,
             @Param("toStatus") int toStatus, @Param("reason") String reason,
             @Param("operatorId") Long operatorId);
+
+    /**
+     * 统计该候选人仍处于活跃投递（新六态 0/1/2/3：已投递/招聘中/待发Offer/待确认Offer）的岗位投递数。
+     * 终态聚合守卫用：用于判断是否可把全局 tal_status 翻转为已录用/已淘汰。
+     */
+    int countActiveApplications(@Param("talId") Long talId);
+
+    /**
+     * 同上，但排除触发本次终态写入的岗位，避免因时序（本岗位 app_status 尚未落终态）误判。
+     */
+    int countActiveApplicationsExcludingPosition(@Param("talId") Long talId,
+            @Param("positionId") Long positionId);
 }

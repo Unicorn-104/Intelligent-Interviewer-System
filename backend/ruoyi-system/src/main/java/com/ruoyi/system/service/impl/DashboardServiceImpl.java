@@ -22,14 +22,22 @@ import com.ruoyi.system.service.IDashboardService;
 @Service
 public class DashboardServiceImpl implements IDashboardService
 {
-    /** 候选人状态中文映射（四态收敛：0-已投递、2-待面试、3-已淘汰、4-已录用） */
+    /** 候选人人才库状态中文映射（tal_status 保留 11 码：0新入库 1初筛通过 2面试中 3已淘汰 4已录用
+     *  5待笔试 6笔试中 7笔试通过 8笔试未通过 9笔试缺考 10待发Offer） */
     private static final Map<Integer, String> STATUS_TEXT = new LinkedHashMap<>();
     static
     {
-        STATUS_TEXT.put(0, "已投递");
-        STATUS_TEXT.put(2, "待面试");
+        STATUS_TEXT.put(0, "新入库");
+        STATUS_TEXT.put(1, "初筛通过");
+        STATUS_TEXT.put(2, "面试中");
         STATUS_TEXT.put(3, "已淘汰");
         STATUS_TEXT.put(4, "已录用");
+        STATUS_TEXT.put(5, "待笔试");
+        STATUS_TEXT.put(6, "笔试中");
+        STATUS_TEXT.put(7, "笔试通过");
+        STATUS_TEXT.put(8, "笔试未通过");
+        STATUS_TEXT.put(9, "笔试缺考");
+        STATUS_TEXT.put(10, "待发Offer");
     }
 
     @Autowired
