@@ -18,9 +18,12 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.common.enums.ApplicationEndReason;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.IScreeningService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.enterprise.service.screening.ScreeningAiEvaluator;
@@ -42,6 +45,8 @@ public class ScreeningServiceImpl implements IScreeningService
     @Autowired private ResumePdfStorage pdfStorage;
     @Autowired private ResumePdfParser pdfParser;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private ApplicationStatusService applicationStatusService;
+    @Autowired private ApplicationStatusMapper applicationStatusMapper;
     private final ExecutorService workers = Executors.newFixedThreadPool(2);
     private final Semaphore capacity = new Semaphore(2);
 
@@ -82,7 +87,7 @@ public class ScreeningServiceImpl implements IScreeningService
         Long companyId = resolveCompanyId(userId);
         Map<String, Object> job = requirePosition(companyId, positionId);
         if (topN != null && (topN < 1 || topN > 200)) throw new ServiceException("短名单人数须为1至200");
-        // 只筛选仍停留在待筛选(0)的投递，避免重筛改写已约面/笔试/录用/撤回的投递状态
+        // 待分析/已分析候选覆盖 app_status=0(已投递) 与 1(招聘中)；AI 只分析评分，不回写 app_status
         List<Map<String, Object>> candidates = screeningMapper.selectScreenableCandidates(positionId);
         if (candidates.isEmpty())
             return Map.of("taskId", positionId, "state", "completed", "processing", false,
@@ -179,13 +184,12 @@ public class ScreeningServiceImpl implements IScreeningService
                     row.put("companyId", companyId);
                     row.put("report", JSON.toJSONString(analysis));
                     screeningMapper.saveAnalysis(row);
-                    // AI 初筛完成后同步回写该岗位该候选人的投递记录（评分 + 初筛状态）
+                    // AI 初筛完成后只回写适配度评分（app_matched_score），绝不写 app_status；
+                    // 淘汰/推进只能由 HR 决策或合法业务事件经 ApplicationStatusService 触发
                     Double totalScore = asDouble(analysis.get("totalScore"));
                     if (totalScore != null)
                     {
-                        // 仅回写仍处于待筛选(0)的投递；若 HR 已复核或已进入后续环节则不覆盖
-                        screeningMapper.updateApplicationByCandidate(positionId, id, totalScore,
-                                totalScore >= PASS_THRESHOLD ? 1 : 2, List.of(0));
+                        screeningMapper.updateApplicationScore(positionId, id, totalScore, List.of(0, 1));
                     }
                     // Result and progress commit together. No HTTP/model call inside this transaction.
                     String state = nextCompleted == candidates.size() ? "completed" : "processing";
@@ -205,8 +209,7 @@ public class ScreeningServiceImpl implements IScreeningService
         }
         finally
         {
-            // 任务结束（含失败）统一同步一次：已有分析结果的投递按评分回写，
-            // 无分析结果（评估失败）的投递保持待筛选，等待 HR 人工评分
+            // 任务结束（含失败）统一同步一次：把已有 AI 分析结果的评分回写到投递记录（仅评分，不改 app_status）
             try { syncScreenedApplications(companyId, positionId); }
             catch (RuntimeException ignored) { /* 同步失败不影响已保存的分析结果 */ }
             capacity.release();
@@ -315,14 +318,14 @@ public class ScreeningServiceImpl implements IScreeningService
             empty.put("message", "该岗位暂无待初筛的投递");
             return empty;
         }
-        // 已有 AI 分析结果的投递直接按真实评分回写，避免前台长期停留在待筛选
+        // 已有 AI 分析结果的投递直接按真实评分回写（仅评分，不改 app_status），避免前台长期停留在待分析
         int writtenBack = syncScreenedApplications(companyId, positionId);
         Map<String, Object> task = new LinkedHashMap<>(triggerScreeningAsync(userId, positionId, 20));
         task.put("writtenBackCount", writtenBack);
         return task;
     }
 
-    /** 按已有 AI 分析结果回写待筛选投递的评分与初筛状态；无分析结果（评估失败）的保持待筛选，可人工评分。 */
+    /** 按已有 AI 分析结果回写投递的适配度评分；只写 app_matched_score，绝不写 app_status。 */
     private int syncScreenedApplications(Long companyId, Long positionId)
     {
         int writtenBack = 0;
@@ -335,8 +338,8 @@ public class ScreeningServiceImpl implements IScreeningService
             {
                 continue;
             }
-            screeningMapper.updateApplicationScreened(Long.valueOf(String.valueOf(application.get("applicationId"))),
-                    score, score >= PASS_THRESHOLD ? 1 : 2);
+            screeningMapper.updateApplicationMatchedScore(
+                    Long.valueOf(String.valueOf(application.get("applicationId"))), score);
             writtenBack++;
         }
         return writtenBack;
@@ -361,8 +364,8 @@ public class ScreeningServiceImpl implements IScreeningService
         result.put("syncedApplications", synced);
         result.put("positions", touchedPositions);
         result.put("message", synced == 0
-                ? "暂无可用 AI 分析结果回写的待筛选投递"
-                : "已按 AI 分析结果回写 " + synced + " 条投递的评分和初筛状态");
+                ? "暂无可用 AI 分析结果回写的待分析投递"
+                : "已按 AI 分析结果回写 " + synced + " 条投递的适配度评分（不改动投递状态）");
         return result;
     }
 
@@ -597,54 +600,39 @@ public class ScreeningServiceImpl implements IScreeningService
         }
         if (approved == null)
         {
-            // 人工评分：按分数阈值更新该岗位投递状态，不推进候选人状态（供 AI 评估失败的投递使用）；
-            // 仅允许处于初筛段(0待筛选/1初筛通过)的投递被评分，淘汰(2)及后续环节不可被改回
-            int status = currentScore >= PASS_THRESHOLD ? 1 : 2;
-            if (screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, status,
-                    List.of(0, 1)) == 0)
-                throw new ServiceException("该岗位投递已淘汰或已进入后续环节，无法修改初筛评分");
-            result.put("applicationStatus", status);
-            result.put("message", "已保存人工评分 " + currentScore + " 分，该岗位投递状态更新为"
-                    + (status == 1 ? "通过初筛" : "初筛淘汰") + "；候选人状态保持不变，可在人才库继续跟进");
+            // 仅人工评分：只写适配度评分与 AI 分析报告，不写 app_status；
+            // 是否通过/淘汰由 HR 通过/驳回决策触发，绝不按分数阈值自动改投递状态
+            result.put("message", "已保存人工评分 " + currentScore + " 分；投递状态保持不变，可在列表中继续通过或驳回");
             return result;
         }
         if (Boolean.TRUE.equals(approved))
         {
-            // 先校验投递仍处于初筛段，再推进候选人状态，避免出现“投递未变、候选人却已推进”的割裂
-            if (positionId != null)
-            {
-                int rows = currentScore == null
-                        ? screeningMapper.updateApplicationStatusByCandidate(positionId, resultId, 1, List.of(0, 1))
-                        : screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, 1, List.of(0, 1));
-                if (rows == 0) throw new ServiceException("该岗位投递已淘汰或已进入后续环节，无法重复复核");
-                result.put("applicationStatus", 1);
-            }
-            // 复核通过推进为「初筛通过」(1)，是否进入面试由约面环节写 2；已淘汰/已录用不可回退
+            // HR 复核通过：不改 app_status（仅作参考）；约面/笔试等后续环节经状态机推进，已录用/未录用不可回退
             if (!talStatusService.change(resultId, TalStatusService.TAL_SCREENED, List.of(0, 1), positionId,
                     null, "HR复核通过", userId))
                 throw new ServiceException("候选人已淘汰或已录用，状态不可回退");
             result.put("message", positionId == null
                     ? "已确认通过，候选人状态推进为待面试，等待流入面试邀约"
-                    : "已确认通过，该岗位投递状态更新为通过初筛，候选人状态推进为待面试，等待流入面试邀约");
+                    : "已确认通过，投递状态保持不变（仅作参考），候选人状态推进为待面试，等待流入面试邀约");
         }
         else
         {
+            // HR 驳回：唯一合法淘汰路径是经状态机 terminate → 未录用(5)，由状态机写日志与流程实例收尾
             if (positionId != null)
             {
-                // 驳回时同步当前总分，避免投递匹配度与 AI 报告分数不一致；已进入后续环节的投递不可再被驳回
-                int rows = currentScore == null
-                        ? screeningMapper.updateApplicationStatusByCandidate(positionId, resultId, 2, List.of(0, 1, 2))
-                        : screeningMapper.updateApplicationByCandidate(positionId, resultId, currentScore, 2, List.of(0, 1, 2));
-                if (rows == 0) throw new ServiceException("该岗位投递已进入后续环节，无法驳回");
-                result.put("applicationStatus", 2);
+                Long appId = applicationStatusMapper.selectAppId(resultId, positionId);
+                if (appId == null) throw new ServiceException("岗位投递记录不存在，无法驳回");
+                applicationStatusService.terminate(appId, ApplicationEndReason.HR_REJECTED, userId,
+                        ApplicationStatusService.SOURCE_HR, "HR 初筛复核驳回");
+                result.put("applicationId", appId);
             }
-            // 初筛驳回即进入淘汰终态，归档来源记为初筛淘汰(4)，日志与流程实例终止由状态机统一处理
+            // tal_status 由 TalStatusService 独立维护，调用方式不变
             if (!talStatusService.change(resultId, TalStatusService.TAL_REJECTED, List.of(0, 1), positionId,
                     4, "初筛未通过", userId))
                 throw new ServiceException("候选人已淘汰或已录用，状态不可变更");
             result.put("message", positionId == null
                     ? "已驳回，候选人状态更新为已淘汰并归档人才库"
-                    : "已驳回，该岗位投递状态更新为初筛淘汰，候选人状态更新为已淘汰并归档人才库");
+                    : "已驳回，该岗位投递经状态机终止为未录用（HR 主动淘汰），候选人状态更新为已淘汰并归档人才库");
         }
         return result;
     }

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.ApplicationStatusMapper">
+
+    <select id="lockAppStatus" resultType="java.lang.Integer">
+        select app_status from t_app_record where app_id = #{appId} for update
+    </select>
+
+    <select id="selectAppId" resultType="java.lang.Long">
+        select app_id from t_app_record
+        where app_candidate_id = #{candidateId} and app_position_id = #{positionId}
+        limit 1
+    </select>
+
+    <select id="selectApplicationById" resultType="java.util.LinkedHashMap">
+        select app_id as "appId", app_candidate_id as "candidateId",
+               app_position_id as "positionId", app_status as "status",
+               app_resume_id as "resumeId", app_process_instance_id as "instanceId"
+        from t_app_record where app_id = #{appId}
+    </select>
+
+    <!-- 守卫更新：where 限定当前状态，配合行锁实现并发保护与终态保护 -->
+    <update id="updateAppStatus">
+        update t_app_record
+        set app_status = #{toStatus}, app_updated_at = now()
+        where app_id = #{appId} and app_status = #{fromStatus}
+    </update>
+
+    <!-- 终止字段：ended_at 由数据库统一取当前时间，保证与状态变更同一事务 -->
+    <update id="updateEndFields">
+        update t_app_record
+        set end_reason = #{endReason},
+            ended_at = now(),
+            ended_by = #{endedBy},
+            end_remark = #{endRemark}
+        where app_id = #{appId} and app_status = 5
+    </update>
+
+    <update id="clearEndFields">
+        update t_app_record
+        set end_reason = null, ended_at = null, ended_by = null, end_remark = null
+        where app_id = #{appId}
+    </update>
+
+    <select id="existsEndReason" resultType="boolean">
+        select exists(select 1 from t_app_record
+            where app_id = #{appId} and end_reason is not null)
+    </select>
+
+    <insert id="insertStatusLog">
+        insert into t_app_status_log (asl_app_id, asl_candidate_id, asl_position_id,
+            asl_from_status, asl_to_status, asl_operator_id, asl_source, asl_reason)
+        values (#{appId}, #{candidateId}, #{positionId}, #{fromStatus}, #{toStatus},
+            #{operatorId}, #{source}, #{reason})
+    </insert>
+
+    <update id="updateProcessInstanceStatus">
+        update t_process_instance
+        set pin_status = #{toStatus},
+            pin_end_at = case when #{toStatus} in (1, 3) then now() else pin_end_at end
+        where pin_candidate_id = #{candidateId} and pin_position_id = #{positionId}
+          and pin_status in
+        <foreach collection="fromStatuses" item="s" open="(" separator="," close=")">#{s}</foreach>
+    </update>
+</mapper>

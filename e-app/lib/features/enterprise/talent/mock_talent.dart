@@ -11,7 +11,7 @@ library;
 /// - missingFields：缺失的关键字段（完整度检查标记）
 /// - skills：技能标签
 /// - tags：人才标签（检索/收藏用）
-/// - stage：当前流程状态
+/// - stage：当前投递状态（六态口径：已投递/招聘中/待发Offer/待确认Offer/已录用/未录用）
 const List<Map<String, dynamic>> mockTalents = [
   {
     'talId': 201,
@@ -24,7 +24,8 @@ const List<Map<String, dynamic>> mockTalents = [
     'tags': ['高潜', '技术栈匹配'],
     'integrity': 96,
     'missingFields': <String>[],
-    'stage': 'AI 初筛通过',
+    'statusCode': 1,
+    'stage': '招聘中 · 第 2 轮面试',
     'appliedJob': '高级 Flutter 开发工程师',
   },
   {
@@ -38,7 +39,8 @@ const List<Map<String, dynamic>> mockTalents = [
     'tags': ['高潜'],
     'integrity': 88,
     'missingFields': ['项目经验 1 条待补充'],
-    'stage': '待初筛',
+    'statusCode': 0,
+    'stage': '已投递',
     'appliedJob': 'Java 后端开发工程师',
   },
   {
@@ -52,7 +54,8 @@ const List<Map<String, dynamic>> mockTalents = [
     'tags': ['技术栈匹配'],
     'integrity': 92,
     'missingFields': <String>[],
-    'stage': '面试已预约',
+    'statusCode': 1,
+    'stage': '招聘中 · 第 1 轮笔试',
     'appliedJob': '算法工程师（NLP）',
   },
   {
@@ -66,7 +69,8 @@ const List<Map<String, dynamic>> mockTalents = [
     'tags': <String>[],
     'integrity': 71,
     'missingFields': ['工作经历 1 条待补充', '期望薪资未填写'],
-    'stage': '待初筛',
+    'statusCode': 5,
+    'stage': '未录用',
     'appliedJob': 'UI 设计师',
   },
   {
@@ -80,7 +84,8 @@ const List<Map<String, dynamic>> mockTalents = [
     'tags': ['高潜', '技术栈匹配'],
     'integrity': 98,
     'missingFields': <String>[],
-    'stage': 'AI 初筛通过',
+    'statusCode': 4,
+    'stage': '已录用',
     'appliedJob': 'Java 后端开发工程师',
   },
 ];

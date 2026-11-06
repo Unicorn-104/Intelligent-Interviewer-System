@@ -170,11 +170,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           and a.apt_status in (0, 1)
     </select>
 
-    <!-- 可发起面试的投递：初筛淘汰(2)与已撤回(9)的投递不允许再发起面试 -->
+    <!-- 可发起面试的投递：新六态下仅终态（已录用4/未录用5，含旧初筛淘汰与已撤回）不允许再发起面试 -->
     <select id="countSchedulableApplication" resultType="int">
         select count(*) from t_app_record
         where app_candidate_id = #{candidateId} and app_position_id = #{positionId}
-          and app_status not in (2, 9)
+          and app_status not in (4, 5)
     </select>
 
 

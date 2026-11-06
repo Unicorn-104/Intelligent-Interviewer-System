@@ -17,7 +17,8 @@ const toast = ref('')
 
 const educationMap = { 1: '不限', 2: '大专及以上', 3: '本科及以上', 4: '硕士及以上', 5: '博士' }
 const jobTypeMap = { 1: '全职', 2: '实习', 3: '兼职' }
-const statusTone = { 0: 'gray', 1: 'blue', 2: 'purple', 3: 'red', 4: 'green', 5: 'green', 6: 'gray', 7: 'blue', 8: 'red', 9: 'orange' }
+// 候选人投递状态（t_app_record.app_status）六态颜色：0已投递 1招聘中 2待发Offer 3待确认Offer 4已录用 5未录用
+const statusTone = { 0: 'gray', 1: 'blue', 2: 'orange', 3: 'purple', 4: 'green', 5: 'red' }
 const stageTypeMap = { 1: '笔试', 2: 'AI 面试', 3: 'HR 面试', 4: '实操' }
 
 const checkedCount = computed(() => selected.value.size)
@@ -40,11 +41,11 @@ async function load() {
   const f = d.funnel || {}
   const total = Number(f.total) || 0
   funnel.value = [
-    { label: '简历总量', value: total, width: 100 },
-    { label: '初筛通过待面试', value: Number(f.passed) || 0, width: total ? (Number(f.passed) / total) * 100 : 0 },
-    { label: '面试中', value: Number(f.interviewing) || 0, width: total ? (Number(f.interviewing) / total) * 100 : 0 },
-    { label: '已淘汰', value: Number(f.rejected) || 0, width: total ? (Number(f.rejected) / total) * 100 : 0 },
-    { label: '待发放/已发 Offer', value: Number(f.offered) || 0, width: total ? (Number(f.offered) / total) * 100 : 0 }
+    { label: '已投递', value: total, width: 100 },
+    { label: '招聘中', value: Number(f.passed) || 0, width: total ? (Number(f.passed) / total) * 100 : 0 },
+    { label: '笔试/面试环节', value: Number(f.interviewing) || 0, width: total ? (Number(f.interviewing) / total) * 100 : 0 },
+    { label: '未录用', value: Number(f.rejected) || 0, width: total ? (Number(f.rejected) / total) * 100 : 0 },
+    { label: 'Offer 阶段', value: Number(f.offered) || 0, width: total ? (Number(f.offered) / total) * 100 : 0 }
   ]
   candidates.value = (d.candidates || []).map(c => ({ ...c, match: Math.round(Number(c.matchScore) || 0), tone: statusTone[c.statusCode] || 'gray', stage: c.currentStage || c.statusLabel || '待定' }))
   stages.value = (d.stages || []).map(s => ({ name: s.name, type: stageTypeMap[s.type] || '综合面' }))
@@ -64,9 +65,9 @@ onMounted(load)
     <div class="detail-grid">
       <div class="left-col">
         <section class="card funnel-card">
-          <div class="section-title"><span>招聘漏斗</span><small><i class="live-dot"/>实时更新</small></div>
+          <div class="section-title"><span>招聘阶段分布</span><small><i class="live-dot"/>实时更新</small></div>
           <div class="funnel-list"><div v-for="(item,index) in funnel" :key="item.label"><label>{{ item.label }}</label><span class="rail"><i :style="{ width:`${Math.max(item.width,4)}%`, opacity: 1-index*.11 }"/></span><b>{{ item.value }}</b></div></div>
-          <p v-if="funnel.length && funnel[0].value">漏斗参考：初筛通过率 {{ Math.round(funnel[1].value / funnel[0].value * 1000) / 10 }}% · 面试转化 {{ Math.round(funnel[2].value / funnel[0].value * 1000) / 10 }}% · Offer 转化 {{ Math.round(funnel[4].value / funnel[0].value * 1000) / 10 }}%</p>
+          <p v-if="funnel.length && funnel[0].value">各阶段人数占比：进入招聘 {{ Math.round(funnel[1].value / funnel[0].value * 1000) / 10 }}% · 笔试/面试环节 {{ Math.round(funnel[2].value / funnel[0].value * 1000) / 10 }}% · Offer 阶段 {{ Math.round(funnel[4].value / funnel[0].value * 1000) / 10 }}%（当前阶段分布，非累计转化）</p>
         </section>
         <section class="card candidates-card">
           <div class="section-title"><span>候选人列表 <em>{{ candidates.length }}</em></span><button>全部阶段 <ChevronDown :size="14"/></button></div>

@@ -53,21 +53,30 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                (w.wrk_end_date is not null and w.wrk_end_date &gt;= w.wrk_start_date))
     </sql>
 
-    <!-- 人才库按岗位展示：指定岗位时取该岗位投递，否则取最新投递 -->
+    <!-- 多岗位聚合：不任取最新一条投递当全局状态。
+         优先取候选人“招聘进度最靠前”的投递：活跃投递(0/1/2/3)优于终态，活跃内阶段越靠前越优先；
+         无活跃投递时已录用(4)优先于未录用(5)。指定岗位时聚合退化为该单岗位投递。 -->
+    <sql id="appProgressOrder">
+        case when ar.app_status in (0, 1, 2, 3) then 10 + ar.app_status
+             when ar.app_status = 4 then 5
+             else 0 end
+    </sql>
+
+    <!-- 人才库按岗位展示：指定岗位时取该岗位投递，否则取进度最靠前的投递 -->
     <sql id="talentLatestApplicationPosition">
         (select ar.app_position_id from t_app_record ar
             where ar.app_candidate_id = t.tal_id
             <if test="criteria.positionId != null">
                 and ar.app_position_id = #{criteria.positionId}
             </if>
-            order by ar.app_id desc limit 1)
+            order by <include refid="appProgressOrder"/> desc, ar.app_id desc limit 1)
     </sql>
 
     <sql id="talentApplicationStatus">
         (select ar.app_status from t_app_record ar
             where ar.app_candidate_id = t.tal_id
               and ar.app_position_id = <include refid="talentLatestApplicationPosition"/>
-            order by ar.app_id desc limit 1)
+            order by <include refid="appProgressOrder"/> desc, ar.app_id desc limit 1)
     </sql>
 
     <select id="selectFilteredTalentList" resultType="java.util.LinkedHashMap">
@@ -191,7 +200,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_tal set tal_archive_source = #{archiveSource} where tal_id = #{talId}
     </update>
 
-    <!-- 待初筛岗位：投递状态仍为待筛选(0) 且候选人尚无 AI 匹配评分；按人去重计数 -->
+    <!-- 待初筛岗位：投递仍为已投递(0)、HR 尚未启动招聘流程的投递；按人去重计数 -->
     <select id="selectUnscreenedPositions" resultType="java.util.LinkedHashMap">
         select p.pos_id as positionId, p.pos_title as positionName, p.pos_work_city as city,
                count(distinct t.tal_id) as pendingCount
@@ -254,17 +263,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           and exists (select 1 from t_app_record a where a.app_position_id = p.pos_id)
         order by p.pos_id desc
     </select>
-
-    <!-- 批量更新投递状态：仅允许更新本企业岗位下的投递 -->
-    <update id="updateApplicationStatus">
-        update t_app_record
-        set app_status = #{status}, app_updated_at = now()
-        where app_id in
-        <foreach collection="applicationIds" item="applicationId" open="(" separator="," close=")">
-            #{applicationId}
-        </foreach>
-          and app_position_id in (select pos_id from t_pos where pos_company_id = #{companyId})
-    </update>
 
     <!-- 企业下待初筛人选总数（同一候选人投递多个岗位只算一人） -->
     <select id="selectUnscreenedCandidateCount" resultType="java.lang.Integer">

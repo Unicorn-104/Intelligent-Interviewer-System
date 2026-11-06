@@ -6,11 +6,14 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.ruoyi.common.enums.ApplicationEndReason;
+import com.ruoyi.common.enums.ApplicationStatus;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.OfferMapper;
-import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.IOfferService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.enterprise.util.MailCredentialCipher;
@@ -50,14 +53,6 @@ public class OfferServiceImpl implements IOfferService
     /** 归档来源：5-Offer 拒绝/过期 */
     private static final int ARCHIVE_OFFER = 5;
 
-    /** 岗位投递状态（t_app_record.app_status）：11-已录用，12-Offer 拒绝/过期 */
-    private static final int APP_HIRED = 11;
-
-    private static final int APP_OFFER_CLOSED = 12;
-
-    /** 投递状态可被 Offer 结果覆盖的来源集合 */
-    private static final List<Integer> APP_BEFORE_OFFER = List.of(1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12);
-
     /** 审批状态：0-未审批，1-审批中，2-已通过，3-已拒绝 */
     private static final int APPROVAL_RUNNING = 1;
 
@@ -84,7 +79,10 @@ public class OfferServiceImpl implements IOfferService
     private TalStatusService talStatusService;
 
     @Autowired
-    private ScreeningMapper screeningMapper;
+    private ApplicationStatusService applicationStatusService;
+
+    @Autowired
+    private ApplicationStatusMapper applicationStatusMapper;
 
     @Override
     public Map<String, Object> triggerOffer(Long userId, Long sessionId, Map<String, Object> body)
@@ -223,6 +221,14 @@ public class OfferServiceImpl implements IOfferService
             throw new ServiceException("请填写撤回原因");
         }
         offerMapper.updateOfferWithdraw(offerId, reason);
+        // HR 撤销已发放 Offer → 投递未录用（原因 OFFER_CANCELLED，必须记录 HR 操作人）
+        Long appId = applicationStatusMapper.selectAppId(toLong(offer.get("candidateId")),
+                toLong(offer.get("positionId")));
+        if (appId != null)
+        {
+            applicationStatusService.terminate(appId, ApplicationEndReason.OFFER_CANCELLED, userId,
+                    ApplicationStatusService.SOURCE_HR, "HR 撤销已发放 Offer：" + reason);
+        }
         Long candidateUserId = offerMapper.selectCandidateUserId(toLong(offer.get("candidateId")));
         if (candidateUserId != null)
         {
@@ -246,15 +252,19 @@ public class OfferServiceImpl implements IOfferService
         {
             throw new ServiceException("Offer 状态已变化，请刷新后重试");
         }
-        // Offer 接受 → 候选人已录用，流程实例按完成收口
+        // Offer 接受 → 候选人已录用（待确认Offer→已录用，经状态机幂等收口）
         if (!talStatusService.change(toLong(offer.get("candidateId")), TalStatusService.TAL_OFFERED,
                 List.of(TalStatusService.TAL_PENDING_OFFER, TalStatusService.TAL_INTERVIEWING),
                 toLong(offer.get("positionId")), null, "候选人接受 Offer", userId))
         {
             throw new ServiceException("候选人已淘汰或已录用，无法更新为已录用");
         }
-        screeningMapper.advanceApplicationStatus(toLong(offer.get("positionId")),
-                toLong(offer.get("candidateId")), APP_HIRED, APP_BEFORE_OFFER);
+        Long appId = applicationStatusMapper.selectAppId(toLong(offer.get("candidateId")),
+                toLong(offer.get("positionId")));
+        if (appId != null)
+        {
+            applicationStatusService.offerAccepted(appId, userId, ApplicationStatusService.SOURCE_OFFER);
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("offerId", offerId);
         result.put("status", OFR_ACCEPTED);
@@ -271,15 +281,20 @@ public class OfferServiceImpl implements IOfferService
         {
             throw new ServiceException("Offer 状态已变化，请刷新后重试");
         }
-        // Offer 拒绝 → 候选人已淘汰，归档来源记为 Offer 拒绝(5)
+        // Offer 拒绝 → 候选人已淘汰（待确认Offer→未录用，原因 OFFER_REJECTED），归档来源记为 Offer 拒绝(5)
         if (!talStatusService.change(toLong(offer.get("candidateId")), TalStatusService.TAL_REJECTED,
                 List.of(TalStatusService.TAL_PENDING_OFFER, TalStatusService.TAL_INTERVIEWING),
                 toLong(offer.get("positionId")), ARCHIVE_OFFER, "候选人拒绝 Offer", userId))
         {
             throw new ServiceException("候选人已淘汰或已录用，无法更新为已淘汰");
         }
-        screeningMapper.advanceApplicationStatus(toLong(offer.get("positionId")),
-                toLong(offer.get("candidateId")), APP_OFFER_CLOSED, APP_BEFORE_OFFER);
+        Long appId = applicationStatusMapper.selectAppId(toLong(offer.get("candidateId")),
+                toLong(offer.get("positionId")));
+        if (appId != null)
+        {
+            applicationStatusService.terminate(appId, ApplicationEndReason.OFFER_REJECTED, userId,
+                    ApplicationStatusService.SOURCE_OFFER, "候选人拒绝 Offer");
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("offerId", offerId);
         result.put("status", OFR_REJECTED);
@@ -304,10 +319,13 @@ public class OfferServiceImpl implements IOfferService
             boolean rejected = talStatusService.change(candidateId, TalStatusService.TAL_REJECTED,
                     List.of(TalStatusService.TAL_PENDING_OFFER, TalStatusService.TAL_INTERVIEWING),
                     toLong(row.get("positionId")), ARCHIVE_OFFER, "Offer 回复超时未确认", 0L);
-            if (rejected)
+            // Offer 过期 → 投递未录用（原因 OFFER_EXPIRED，系统来源，与拒绝可区分且幂等；
+            // 过期后候选人再接受会因 ofr_status 已非 0 而被 updateOfferResult 拒绝）
+            Long appId = applicationStatusMapper.selectAppId(candidateId, toLong(row.get("positionId")));
+            if (appId != null)
             {
-                screeningMapper.advanceApplicationStatus(toLong(row.get("positionId")), candidateId,
-                        APP_OFFER_CLOSED, APP_BEFORE_OFFER);
+                applicationStatusService.terminate(appId, ApplicationEndReason.OFFER_EXPIRED, null,
+                        ApplicationStatusService.SOURCE_SCHEDULER, "Offer 回复超时未确认");
             }
             Long candidateUserId = offerMapper.selectCandidateUserId(candidateId);
             if (rejected && candidateUserId != null)
@@ -473,12 +491,19 @@ public class OfferServiceImpl implements IOfferService
             intentSent = emailService.sendSimpleMail(email, intentSubject, intent.toString());
             guideSent = emailService.sendSimpleMail(email, guideSubject, guide.toString());
         }
+        // 录用意向书真正发送成功才标记已发送并进入「待确认Offer」；发送失败一律不进入、不标记
+        if (!intentSent)
+        {
+            throw new ServiceException("录用意向书发送失败，请检查邮箱配置后重试；Offer 仍为草稿，未标记已发送");
+        }
         offerMapper.updateOfferSent(offerId);
         offerMapper.insertSendNode(offerId, userId);
-        // 兜底：候选人仍处于面试中（如手动创建 Offer）时同步进入「待发 Offer」，便于后续接受/拒绝收口
+        // 兜底：候选人仍处于面试中（如手动创建 Offer）时同步进入「待发 Offer」（tal_status 独立维度）
         talStatusService.change(toLong(offer.get("candidateId")), TalStatusService.TAL_PENDING_OFFER,
                 List.of(TalStatusService.TAL_INTERVIEWING), toLong(offer.get("positionId")), null,
                 "发送录用意向书", userId);
+        // 经状态机收口：发送成功 → 待确认Offer（手动创建、尚未待发时先补齐待发Offer）
+        advanceToOfferConfirmation(toLong(offer.get("candidateId")), toLong(offer.get("positionId")), userId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("offerId", offerId);
         result.put("email", email);
@@ -557,6 +582,37 @@ public class OfferServiceImpl implements IOfferService
     {
         Long companyId = offerMapper.selectCompanyIdByUser(userId);
         return companyId == null ? 1L : companyId;
+    }
+
+    /**
+     * Offer 真正发送成功后经状态机进入「待确认Offer(3)」。
+     * 手动创建 Offer 时投递可能仍在招聘中(1)甚至已投递(0)，先补齐到待发Offer(2)再发送收口；
+     * 已处于待确认Offer(3)时 offerSent 幂等命中；终态则由状态机拦截。
+     */
+    private void advanceToOfferConfirmation(Long candidateId, Long positionId, Long operatorId)
+    {
+        Long appId = applicationStatusMapper.selectAppId(candidateId, positionId);
+        if (appId == null) return;
+        Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+        Integer cur = app == null ? null : toStatusInt(app.get("status"));
+        ApplicationStatus st = ApplicationStatus.fromCode(cur);
+        if (st == ApplicationStatus.APPLIED)
+        {
+            applicationStatusService.startRecruitment(appId, operatorId);
+            applicationStatusService.passToPendingOffer(appId, operatorId);
+        }
+        else if (st == ApplicationStatus.IN_PROGRESS)
+        {
+            applicationStatusService.passToPendingOffer(appId, operatorId);
+        }
+        applicationStatusService.offerSent(appId, operatorId);
+    }
+
+    private Integer toStatusInt(Object value)
+    {
+        if (value == null) return null;
+        try { return Integer.parseInt(String.valueOf(value)); }
+        catch (Exception e) { return null; }
     }
 
     private String str(Object value)

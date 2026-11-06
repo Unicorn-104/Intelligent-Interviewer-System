@@ -379,6 +379,7 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
                   peerId: jobPositiveId(widget.candidate['userId']),
                   name: jobValue(widget.candidate['name'], fallback: '姓名未填写'),
                   source: widget.actionsSource,
+                  appStatusCode: widget.candidate['statusCode'],
                   job: TalentJobContext(
                     positionId: widget.job.positionId,
                     title: widget.job.title,

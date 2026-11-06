@@ -60,6 +60,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="salaryMax" column="salary_max"/>
         <result property="resumeName" column="resume_name"/>
         <result property="statusCode" column="status_code"/>
+        <result property="endReasonText" column="end_reason_text"/>
         <result property="canWithdraw" column="can_withdraw"/>
         <result property="matchedScore" column="matched_score"/>
         <result property="appliedAt" column="applied_at"/>
@@ -414,11 +415,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             pos.pos_salary_max AS salary_max,
             rbs.rbs_resume_name AS resume_name,
             app.app_status AS status_code,
-            (app.app_status = 0
-                AND NOT EXISTS (SELECT 1 FROM t_process_instance pi WHERE pi.pin_candidate_id=app.app_candidate_id AND pi.pin_position_id=app.app_position_id)
-                AND NOT EXISTS (SELECT 1 FROM t_int_session ses WHERE ses.ses_candidate_id=app.app_candidate_id AND ses.ses_position_id=app.app_position_id)
-                AND NOT EXISTS (SELECT 1 FROM t_exam_record er JOIN t_exam_schedule es ON es.esd_id=er.erc_schedule_id
-                    WHERE er.erc_candidate_id=app.app_candidate_id AND es.esd_position_id=app.app_position_id)) AS can_withdraw,
+            <!-- 候选人友好终止文案：不暴露内部编码与 HR 备注；历史无原因给统一提示，不伪造具体原因 -->
+            CASE
+                WHEN app.app_status = 5 AND app.end_reason IS NULL THEN '招聘流程已结束'
+                WHEN app.end_reason = 'CANDIDATE_WITHDRAWN' THEN '已撤回投递'
+                WHEN app.end_reason = 'OFFER_REJECTED' THEN '已拒绝 Offer'
+                WHEN app.end_reason = 'OFFER_EXPIRED' THEN 'Offer 已过期'
+                WHEN app.end_reason IS NULL THEN NULL
+                ELSE '招聘流程已结束'
+            END AS end_reason_text,
+            <!-- 新口径：仅 HR 尚未启动招聘（app_status=0 已投递）时允许候选人撤回；进入招聘中(1)及以后不可撤回 -->
+            (app.app_status = 0) AS can_withdraw,
             app.app_matched_score AS matched_score,
             app.app_created_at AS applied_at,
             app.app_updated_at AS updated_at
@@ -432,10 +439,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <select id="selectApplicationList" resultMap="ApplicationResult">
         <include refid="applicationSelect"/>
         WHERE tal.tal_user_id = #{userId}
+        <!-- 新六态：进行中=已投递(0)/待发Offer(2)/待确认Offer(3)；招聘中=笔试面试环节(1)；终态=已录用(4)/未录用(5) -->
         <choose>
-            <when test="status == 'active'">AND app.app_status IN (0, 1, 4)</when>
-            <when test="status == 'interview'">AND app.app_status IN (3, 5, 6)</when>
-            <when test="status == 'closed'">AND app.app_status IN (2, 7, 8, 9)</when>
+            <when test="status == 'active'">AND app.app_status IN (0, 2, 3)</when>
+            <when test="status == 'interview'">AND app.app_status = 1</when>
+            <when test="status == 'closed'">AND app.app_status IN (4, 5)</when>
         </choose>
         ORDER BY app.app_updated_at DESC, app.app_id DESC
     </select>
@@ -469,17 +477,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         WHERE app.app_id = #{applicationId} AND pi.pin_status = 0
     </update>
 
-    <update id="withdrawApplication">
-        UPDATE t_app_record app
-        SET app_status = 9, app_updated_at = CURRENT_TIMESTAMP
-        WHERE app.app_id = #{applicationId} AND app.app_status = 0
-          AND EXISTS (SELECT 1 FROM t_tal tal
-                      WHERE tal.tal_id = app.app_candidate_id AND tal.tal_user_id = #{userId})
-          AND NOT EXISTS (SELECT 1 FROM t_process_instance pi WHERE pi.pin_candidate_id=app.app_candidate_id AND pi.pin_position_id=app.app_position_id)
-          AND NOT EXISTS (SELECT 1 FROM t_int_session ses WHERE ses.ses_candidate_id=app.app_candidate_id AND ses.ses_position_id=app.app_position_id)
-          AND NOT EXISTS (SELECT 1 FROM t_exam_record er JOIN t_exam_schedule es ON es.esd_id=er.erc_schedule_id
-                          WHERE er.erc_candidate_id=app.app_candidate_id AND es.esd_position_id=app.app_position_id)
-    </update>
+    <!-- 已废弃：撤回统一改走 ApplicationStatusService.withdraw（状态机，落 CANDIDATE_WITHDRAWN）。
+         此语句仅为兼容仍声明该方法的 Mapper 接口而保留为只读资格校验，不再直接写 app_status。 -->
+    <select id="withdrawApplication" resultType="int">
+        SELECT COUNT(*)
+        FROM t_app_record app
+        JOIN t_tal tal ON tal.tal_id = app.app_candidate_id
+        WHERE app.app_id = #{applicationId}
+          AND app.app_status = 0
+          AND tal.tal_user_id = #{userId}
+    </select>
 
     <select id="selectCandidateId" resultType="long">
         SELECT tal_id

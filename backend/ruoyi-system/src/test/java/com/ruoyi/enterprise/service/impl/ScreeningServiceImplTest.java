@@ -11,7 +11,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.enterprise.service.screening.ScreeningAiEvaluator;
 import com.ruoyi.system.mapper.DashboardMapper;
@@ -31,6 +33,8 @@ class ScreeningServiceImplTest
     ScreeningAiEvaluator evaluator;
     PlatformTransactionManager transactions;
     TalStatusService talStatusService;
+    ApplicationStatusService applicationStatusService;
+    ApplicationStatusMapper applicationStatusMapper;
 
     @BeforeEach void setup()
     {
@@ -38,11 +42,15 @@ class ScreeningServiceImplTest
         mapper = mock(ScreeningMapper.class); dashboard = mock(DashboardMapper.class);
         evaluator = mock(ScreeningAiEvaluator.class); transactions = mock(PlatformTransactionManager.class);
         talStatusService = mock(TalStatusService.class);
+        applicationStatusService = mock(ApplicationStatusService.class);
+        applicationStatusMapper = mock(ApplicationStatusMapper.class);
         ReflectionTestUtils.setField(service, "screeningMapper", mapper);
         ReflectionTestUtils.setField(service, "dashboardMapper", dashboard);
         ReflectionTestUtils.setField(service, "evaluator", evaluator);
         ReflectionTestUtils.setField(service, "transactionManager", transactions);
         ReflectionTestUtils.setField(service, "talStatusService", talStatusService);
+        ReflectionTestUtils.setField(service, "applicationStatusService", applicationStatusService);
+        ReflectionTestUtils.setField(service, "applicationStatusMapper", applicationStatusMapper);
         when(transactions.getTransaction(any())).thenAnswer(call -> new SimpleTransactionStatus());
         when(dashboard.selectCompanyIdByUser(3L)).thenReturn(1L);
         when(mapper.selectPosition(1L, 7L)).thenReturn(Map.of("positionId", 7L, "title", "演示数据Java岗位", "positionVersion", "p1"));
@@ -285,34 +293,41 @@ class ScreeningServiceImplTest
         verify(mapper, never()).updateMatchedScore(anyLong(), any());
     }
 
-    @Test void manualScoreWithoutConclusionCreatesManualReportAndScreensApplication()
+    @Test void manualScoreSavesReportAndScoreWithoutChangingApplicationStatus()
     {
         when(mapper.selectOwnedCandidate(1L, 11L)).thenReturn(Map.of("talentId", 11L));
         when(mapper.selectApplicationResume(1L, 7L, 11L)).thenReturn(21L);
         when(mapper.countOwnedApplication(1L, 7L, 11L)).thenReturn(1);
-        when(mapper.updateApplicationByCandidate(eq(7L), eq(11L), anyDouble(), anyInt(), anyList())).thenReturn(1);
+        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(null);
 
         Map<String, Object> reply = service.reviewResult(3L, 11L, null, 72.0, 7L);
 
         assertNull(reply.get("approved"));
-        assertEquals(1, reply.get("applicationStatus"));
+        assertFalse(reply.containsKey("applicationStatus"));
+        // 无 AI 分析时创建人工评分报告，并回写适配度评分
         verify(mapper).saveAnalysis(argThat(row -> "manual".equals(row.get("source"))
                 && row.get("resultId").equals(11L) && row.get("resumeId").equals(21L)));
-        verify(mapper).updateApplicationByCandidate(7L, 11L, 72.0, 1, List.of(0, 1));
-        // 人工评分只判定投递结果，不推进候选人状态
+        verify(mapper).updateMatchedScore(11L, 72.0);
+        verify(mapper).updateApplicationScore(eq(7L), eq(11L), anyDouble(), anyList());
+        // 人工评分不触发状态机淘汰，也不推进候选人状态
+        verifyNoInteractions(applicationStatusService);
         verifyNoInteractions(talStatusService);
     }
 
-    @Test void manualScoreBelowThresholdRejectsApplicationOnly()
+    @Test void lowManualScoreNeverAutoRejectsApplication()
     {
         when(mapper.selectOwnedCandidate(1L, 11L)).thenReturn(Map.of("talentId", 11L));
+        when(mapper.selectApplicationResume(1L, 7L, 11L)).thenReturn(21L);
         when(mapper.countOwnedApplication(1L, 7L, 11L)).thenReturn(1);
-        when(mapper.updateApplicationByCandidate(eq(7L), eq(11L), anyDouble(), anyInt(), anyList())).thenReturn(1);
+        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(null);
 
         Map<String, Object> reply = service.reviewResult(3L, 11L, null, 55.0, 7L);
 
-        assertEquals(2, reply.get("applicationStatus"));
-        verify(mapper).updateApplicationByCandidate(7L, 11L, 55.0, 2, List.of(0, 1));
+        assertNull(reply.get("approved"));
+        // 低分只保存评分，绝不自动终止投递
+        verify(mapper).updateMatchedScore(11L, 55.0);
+        verify(mapper).updateApplicationScore(eq(7L), eq(11L), anyDouble(), anyList());
+        verifyNoInteractions(applicationStatusService);
         verifyNoInteractions(talStatusService);
     }
 
@@ -322,7 +337,7 @@ class ScreeningServiceImplTest
         when(mapper.countOwnedApplication(1L, 7L, 11L)).thenReturn(1);
 
         assertThrows(ServiceException.class, () -> service.reviewResult(3L, 11L, null, null, 7L));
-        verify(mapper, never()).updateApplicationByCandidate(anyLong(), anyLong(), any(), anyInt(), anyList());
+        verify(mapper, never()).updateApplicationScore(anyLong(), anyLong(), any(), anyList());
         verify(mapper, never()).saveAnalysis(anyMap());
     }
 
@@ -339,9 +354,10 @@ class ScreeningServiceImplTest
         Map<String, Object> reply = service.screenPendingApplications(3L, 7L);
 
         assertEquals(1, reply.get("writtenBackCount"));
-        verify(mapper).updateApplicationScreened(31L, 82.0, 1);
-        // 无 AI 分析结果（评估失败）的投递保持待筛选，等待人工评分
-        verify(mapper, never()).updateApplicationScreened(eq(32L), any(), anyInt());
+        // 有 AI 分析的投递按真实评分回写适配度（仅评分，不改 app_status）
+        verify(mapper, atLeastOnce()).updateApplicationMatchedScore(eq(31L), anyDouble());
+        // 无 AI 分析结果（评估失败）的投递不回写，等待人工评分
+        verify(mapper, never()).updateApplicationMatchedScore(eq(32L), any());
     }
 
     @Test void screenPendingApplicationsRequiresPosition()
@@ -360,7 +376,7 @@ class ScreeningServiceImplTest
         assertEquals(7L, result.get("positionId"));
         assertEquals("completed", result.get("state"));
         assertTrue(String.valueOf(result.get("message")).contains("暂无待初筛"));
-        verify(mapper, never()).updateApplicationScreened(anyLong(), any(), anyInt());
+        verify(mapper, never()).updateApplicationMatchedScore(anyLong(), any());
         verify(mapper, never()).saveAnalysis(anyMap());
         verifyNoInteractions(evaluator);
     }

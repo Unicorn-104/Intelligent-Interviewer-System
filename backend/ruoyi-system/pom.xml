@@ -83,6 +83,27 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Testcontainers 2.0.5：真实 MySQL8 并发集成测试（不使用 H2）。
+             Spring Boot 4.1 未 import 其 BOM，且 2.x 模块名带 testcontainers- 前缀，故显式指定版本 -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>2.0.5</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <version>2.0.5</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-mysql</artifactId>
+            <version>2.0.5</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <build>

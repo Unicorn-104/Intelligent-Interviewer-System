@@ -12,6 +12,10 @@ import com.ruoyi.enterprise.mapper.TalStatusMapper;
  * <p>业务约定（t_tal.tal_status）：0 新入库、1 初筛通过、2 面试中、3 已淘汰、4 已录用、
  * 5 待笔试、6 笔试中、7 笔试通过、8 笔试未通过、9 笔试缺考、10 待发 Offer。</p>
  *
+ * <p>解耦约定：tal_status 为人才库内部状态，不得把某一条 t_app_record 的 app_status 镜像成全局
+ * tal_status。某岗位终态（淘汰/录用）写入前会聚合该候选人全部投递：若其他岗位仍处于活跃投递
+ * （新六态 0/1/2/3），只收尾本岗位流程实例并留日志，不翻转全局 tal_status 为终态。</p>
+ *
  * @author enterprise
  */
 @Service
@@ -63,10 +67,31 @@ public class TalStatusService
             advanceProcessInstance(talId, positionId, toStatus);
             return true;
         }
+        // 终态聚合守卫：某一岗位被淘汰/录用时，若该候选人在其他岗位仍有活跃投递
+        // （新六态 0/1/2/3），不得把全局人才状态直接翻转为已淘汰/已录用；
+        // 仅收尾本岗位流程实例并记录日志，全局 tal_status 保持在进行态。
+        if ((toStatus == TAL_REJECTED || toStatus == TAL_OFFERED)
+                && hasOtherActiveApplications(talId, positionId))
+        {
+            String guardedReason = (reason == null ? "" : reason)
+                    + "（其他岗位仍在投递，全局人才状态未翻转为终态）";
+            talStatusMapper.insertStatusLog(talId, current, toStatus, guardedReason, operatorId);
+            advanceProcessInstance(talId, positionId, toStatus);
+            return true;
+        }
         if (talStatusMapper.updateTalStatus(talId, current, toStatus, examRecordId, archiveSource) == 0) return false;
         talStatusMapper.insertStatusLog(talId, current, toStatus, reason, operatorId);
         advanceProcessInstance(talId, positionId, toStatus);
         return true;
+    }
+
+    /** 该候选人除触发岗位外是否仍存在活跃投递（新六态 0/1/2/3）。positionId 为空时统计全部。 */
+    private boolean hasOtherActiveApplications(Long talId, Long positionId)
+    {
+        int active = positionId == null
+                ? talStatusMapper.countActiveApplications(talId)
+                : talStatusMapper.countActiveApplicationsExcludingPosition(talId, positionId);
+        return active > 0;
     }
 
     public boolean change(Long talId, int toStatus, Collection<Integer> allowedFrom, Long positionId,

@@ -6,6 +6,7 @@ import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listScreeningTasks, listScreeningResults, getScreeningReport, getScreeningGreeting, reviewScreeningResult } from '@/api/screening'
+import { APP_STATUS } from '@/views/enterprise/components/appStatus'
 
 const route = useRoute()
 const toast = ref('')
@@ -27,9 +28,12 @@ const reviewing = ref(false)
 const PASS_THRESHOLD = 60
 // 候选人状态映射（t_tal.tal_status）
 const statusMap = { 0: { text: '新入库', tone: 'gray' }, 1: { text: '初筛通过', tone: 'green' }, 2: { text: '面试中', tone: 'blue' }, 3: { text: '已淘汰', tone: 'red' }, 4: { text: '已录用', tone: 'purple' }, 5: { text: '待笔试', tone: 'orange' }, 6: { text: '笔试中', tone: 'orange' }, 7: { text: '笔试通过', tone: 'green' }, 8: { text: '笔试未通过', tone: 'red' }, 9: { text: '笔试缺考', tone: 'gray' }, 10: { text: '待发Offer', tone: 'orange' } }
-// 本岗位投递状态映射（t_app_record.app_status）：候选人可同时投递多个岗位，列表应展示本岗位状态
-const appStatusMap = { 0: { text: '待筛选', tone: 'gray' }, 1: { text: '初筛通过', tone: 'green' }, 2: { text: '初筛淘汰', tone: 'red' }, 3: { text: '已约面', tone: 'blue' }, 4: { text: '待笔试', tone: 'orange' }, 5: { text: '笔试中', tone: 'orange' }, 6: { text: '笔试通过', tone: 'green' }, 7: { text: '笔试未通过', tone: 'red' }, 8: { text: '笔试缺考', tone: 'gray' }, 9: { text: '已撤回', tone: 'gray' }, 10: { text: '待发Offer', tone: 'orange' }, 11: { text: '已录用', tone: 'green' }, 12: { text: 'Offer拒绝', tone: 'red' } }
-function rowStatus(row) { return appStatusMap[row.applicationStatus] || statusMap[row.status] || statusMap[0] }
+// 本岗位投递状态（t_app_record.app_status）：六态口径见 components/appStatus.js；候选人可同时投递多个岗位，列表展示本岗位状态
+function rowStatus(row) {
+  const apt = APP_STATUS[Number(row.applicationStatus)]
+  if (apt) return { text: apt[0], tone: apt[1] }
+  return statusMap[row.status] || statusMap[0]
+}
 // 与后端 ScreeningAiEvaluator.WEIGHTS 保持一致（合计 100%）
 const dimensions = [
   { key: 'skillMatch', label: '技能标签重合度', weight: '25%' },

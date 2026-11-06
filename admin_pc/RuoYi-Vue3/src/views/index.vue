@@ -463,12 +463,12 @@ function initDist(data) {
   if (!distChart) distChart = echarts.init(distChartRef.value)
   else distChart.clear()
   const colorMap = {
-    新候选人: '#909399',
-    已初筛: '#2F80ED',
-    面试中: '#F59E0B',
-    通过: '#22C55E',
-    淘汰: '#EF4444',
-    归档: '#C9CDD4',
+    已投递: '#909399',
+    招聘中: '#2F80ED',
+    待发Offer: '#F59E0B',
+    待确认Offer: '#E879F9',
+    已录用: '#22C55E',
+    未录用: '#EF4444',
     其他: '#BFBFBF'
   }
   const list = (data || []).map((d) => ({

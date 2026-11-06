@@ -164,7 +164,7 @@ const List<Map<String, dynamic>> mockPendingReviews = [
 ];
 
 /// Offer 列表（UC-12 步骤9 终面分支）。
-/// status: sent=已发送 / accepted=已接受 / rejected=已拒绝
+/// status: sent=待确认Offer / accepted=已录用 / rejected=未录用(Offer拒绝)
 const List<Map<String, dynamic>> mockOffers = [
   {
     'offerId': 901,

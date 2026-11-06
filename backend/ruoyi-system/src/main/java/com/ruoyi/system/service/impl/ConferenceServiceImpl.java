@@ -105,13 +105,20 @@ public class ConferenceServiceImpl implements IConferenceService
     @Autowired
     private AsrConfigResolver asrConfig;
 
-    /** 面试预约统一取消入口：重新发起面试时释放旧预约时段并恢复候选人/投递状态 */
+    /** 面试预约统一取消入口：重新发起面试时释放旧预约时段（不再回退投递状态） */
     @Autowired
     private IInterviewScheduleService scheduleService;
 
-    /** 面试预约口径的投递状态推进（重新发起后同步「已约面」） */
+    /** 面试预约口径的投递状态推进（旧「已约面」直接更新已废弃，保留字段仅为兼容） */
     @Autowired
     private ScreeningMapper screeningMapper;
+
+    /** 投递状态机：发起第一场正式面试时把「已投递」推进为「招聘中」 */
+    @Autowired
+    private com.ruoyi.enterprise.service.ApplicationStatusService applicationStatusService;
+
+    @Autowired
+    private com.ruoyi.enterprise.mapper.ApplicationStatusMapper applicationStatusMapper;
 
     /** 面试正常结束后发布事件，事务提交后异步生成报告 */
     @Autowired
@@ -302,13 +309,25 @@ public class ConferenceServiceImpl implements IConferenceService
         session.put("cascadeRound", stage == null || stage.get("sortOrder") == null ? 1 : toInt(stage.get("sortOrder")));
         conferenceMapper.insertSession(session);
 
-        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退
+        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退（tal_status 独立维度）
         if (!talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
                 List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
                         TalStatusService.TAL_EXAM_PASSED),
                 positionId, null, "发起视频面试", userId))
         {
             throw new ServiceException("候选人已淘汰或已录用，无法发起面试");
+        }
+        // HR 发起第一场正式面试：若投递仍为「已投递(0)」，经状态机进入「招聘中(1)」；
+        // 多轮/改期/补面/重新发起全程保持招聘中，不再写旧的「已约面」状态码。
+        Long appId = applicationStatusMapper.selectAppId(candidateId, positionId);
+        if (appId != null)
+        {
+            Map<String, Object> appRow = applicationStatusMapper.selectApplicationById(appId);
+            Object st = appRow == null ? null : appRow.get("status");
+            if (st != null && Integer.parseInt(String.valueOf(st)) == 0)
+            {
+                applicationStatusService.startRecruitment(appId, userId);
+            }
         }
 
         Long sessionId = toLong(session.get("sessionId"));

@@ -25,6 +25,8 @@ public class AgentApplication
     private Integer statusCode;
     private String status;
     private String statusText;
+    /** 候选人友好的终止原因文案（已脱敏，不暴露内部编码与 HR 备注）；非终态为空 */
+    private String endReasonText;
     private BigDecimal matchedScore;
     private Boolean duplicate;
     private Boolean canWithdraw;
@@ -64,6 +66,8 @@ public class AgentApplication
     public void setStatus(String status) { this.status = status; }
     public String getStatusText() { return statusText; }
     public void setStatusText(String statusText) { this.statusText = statusText; }
+    public String getEndReasonText() { return endReasonText; }
+    public void setEndReasonText(String endReasonText) { this.endReasonText = endReasonText; }
     public BigDecimal getMatchedScore() { return matchedScore; }
     public void setMatchedScore(BigDecimal matchedScore) { this.matchedScore = matchedScore; }
     public Boolean getDuplicate() { return duplicate; }

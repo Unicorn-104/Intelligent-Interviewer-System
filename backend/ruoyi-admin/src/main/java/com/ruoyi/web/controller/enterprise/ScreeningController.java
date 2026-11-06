@@ -122,7 +122,7 @@ public class ScreeningController extends BaseController
     }
 
     /**
-     * 历史数据补偿：按已有 AI 分析结果回写待筛选投递的评分与初筛状态
+     * 历史数据补偿：按已有 AI 分析结果回写投递的适配度评分（仅评分，不改动 app_status）
      */
     @PostMapping("/sync-applications")
     public AjaxResult syncApplications()

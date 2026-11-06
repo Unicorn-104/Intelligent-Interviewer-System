@@ -149,7 +149,7 @@
             <el-radio v-for="s in statusChangeOptions" :key="s.value" :value="s.value">{{ s.label }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="原因"><el-input v-model="statusForm.reason" type="textarea" :rows="3" placeholder="可选，如：面试未通过 / 复试通过" /></el-form-item>
+        <el-form-item label="原因"><el-input v-model="statusForm.reason" type="textarea" :rows="3" placeholder="转入未录用时必填终止原因，如：HR_REJECTED / CANDIDATE_WITHDRAWN / OFFER_REJECTED" /></el-form-item>
       </el-form>
       <template #footer>
         <div class="dialog-footer">
@@ -173,20 +173,19 @@ const { proxy } = getCurrentInstance()
 const SCORE_GOOD = 80
 const SCORE_PASS = 60
 
-// 数字状态 → 展示（详情历史用）
+// 投递状态六态（与后端 ApplicationStatus 一致）：0已投递 1招聘中 2待发Offer 3待确认Offer 4已录用 5未录用
 const CODE_MAP = {
-  0: '新候选人', 1: '已初筛', 2: '面试中', 3: '淘汰', 4: '通过',
-  5: '通过', 6: '归档', 7: '归档', 8: '淘汰', 9: '新候选人'
+  0: '已投递', 1: '招聘中', 2: '待发Offer', 3: '待确认Offer', 4: '已录用', 5: '未录用'
 }
-const CODE_TAG = { 0: 'info', 1: 'primary', 2: 'warning', 3: 'danger', 4: 'success', 5: 'success', 6: 'info', 7: 'info', 8: 'danger', 9: 'info' }
-// 字符串状态（列表SQL映射）→ 展示
-const STATUS_LABEL_MAP = { new: '新候选人', screened: '已初筛', interviewing: '面试中', passed: '通过', rejected: '淘汰', archived: '归档' }
-const STATUS_TAG_MAP = { new: 'info', screened: 'primary', interviewing: 'warning', passed: 'success', rejected: 'danger', archived: 'info' }
+const CODE_TAG = { 0: 'info', 1: 'primary', 2: 'warning', 3: 'warning', 4: 'success', 5: 'danger' }
+// 列表状态（与 CODE_MAP 同口径，兼容字符串码）
+const STATUS_LABEL_MAP = CODE_MAP
+const STATUS_TAG_MAP = CODE_TAG
 
-function statusLabel(v) { return STATUS_LABEL_MAP[v] || v || '-' }
-function statusTag(v) { return STATUS_TAG_MAP[v] || 'info' }
-function codeLabel(v) { return CODE_MAP[v] ?? '-' }
-function codeTag(v) { return CODE_TAG[v] || 'info' }
+function statusLabel(v) { return STATUS_LABEL_MAP[Number(v)] || v || '-' }
+function statusTag(v) { return STATUS_TAG_MAP[Number(v)] || 'info' }
+function codeLabel(v) { return CODE_MAP[Number(v)] ?? '-' }
+function codeTag(v) { return CODE_TAG[Number(v)] || 'info' }
 function scoreColor(v) {
   if (v === undefined || v === null || v === '') return '#909399'
   const n = Number(v)
@@ -220,19 +219,20 @@ const statusForm = reactive({ candidateId: undefined, userName: '', target: 1, r
 
 const tagOptions = ['技术能力强', '沟通表达佳', '经验匹配', '学历优质', '领导潜质']
 const statusOptions = [
-  { value: 'new', label: '新候选人' },
-  { value: 'screened', label: '已初筛' },
-  { value: 'interviewing', label: '面试中' },
-  { value: 'passed', label: '通过' },
-  { value: 'rejected', label: '淘汰' },
-  { value: 'archived', label: '归档' }
+  { value: 0, label: '已投递' },
+  { value: 1, label: '招聘中' },
+  { value: 2, label: '待发Offer' },
+  { value: 3, label: '待确认Offer' },
+  { value: 4, label: '已录用' },
+  { value: 5, label: '未录用' }
 ]
+// 变更目标：六态口径；转入未录用需在下方填写终止原因
 const statusChangeOptions = [
-  { value: 1, label: '已初筛' },
-  { value: 2, label: '面试中' },
-  { value: 4, label: '通过' },
-  { value: 3, label: '淘汰' },
-  { value: 6, label: '归档' }
+  { value: 1, label: '招聘中' },
+  { value: 2, label: '待发Offer' },
+  { value: 3, label: '待确认Offer' },
+  { value: 4, label: '已录用' },
+  { value: 5, label: '未录用（需填原因）' }
 ]
 
 /** 统计卡 */
@@ -243,9 +243,10 @@ const statCards = computed(() => {
   const avg = all ? (Object.values(m).reduce((a, x) => a + (x.avgScore || 0) * x.cnt, 0) / all).toFixed(1) : '0'
   return [
     { label: '候选人总数', value: all, color: '#409eff' },
-    { label: '面试中', value: sum([2]), color: '#F59E0B' },
-    { label: '通过', value: sum([4, 5]), color: '#22C55E' },
-    { label: '淘汰', value: sum([3, 8]), color: '#EF4444' },
+    { label: '招聘中', value: sum([1]), color: '#F59E0B' },
+    { label: 'Offer 阶段', value: sum([2, 3]), color: '#E879F9' },
+    { label: '已录用', value: sum([4]), color: '#22C55E' },
+    { label: '未录用', value: sum([5]), color: '#EF4444' },
     { label: '平均匹配分', value: avg, color: '#909399' }
   ]
 })
@@ -312,8 +313,9 @@ function submitTag() {
     .catch((err) => console.error('标签更新失败:', err))
 }
 
-/** 变更状态 */
+/** 变更状态（终态：已录用4/未录用5 不可再推进） */
 function handleStatus(row) {
+  if ([4, 5].includes(Number(row.status))) { proxy.$modal.msgWarning('已录用/未录用为终态，不可再推进'); return }
   statusForm.candidateId = row.candidateId
   statusForm.userName = row.userName
   statusForm.target = 1
@@ -321,6 +323,10 @@ function handleStatus(row) {
   statusOpen.value = true
 }
 function submitStatus() {
+  if (statusForm.target === 5 && !statusForm.reason.trim()) {
+    proxy.$modal.msgWarning('转入未录用必须填写终止原因（如 HR_REJECTED / OFFER_REJECTED）')
+    return
+  }
   updateCandidateStatus({ candidateId: statusForm.candidateId, status: statusForm.target, reason: statusForm.reason })
     .then(() => { statusOpen.value = false; proxy.$modal.msgSuccess('状态更新成功'); getList(); loadSummary() })
     .catch((err) => console.error('状态更新失败:', err))

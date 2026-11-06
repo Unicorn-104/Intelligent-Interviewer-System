@@ -23,7 +23,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by t.tal_id
     </select>
 
-    <!-- 可参与 AI 初筛的投递：仅停留在待筛选(0)、流程实例进行中的投递，避免重筛改写淘汰/约面/笔试/录用/撤回状态 -->
+    <!-- 可参与 AI 初筛的投递：待分析/已分析覆盖 app_status=0(已投递) 与 1(招聘中)、流程实例进行中；
+         不再以旧“初筛淘汰(2)”口径排除，AI 只分析评分，不回写 app_status -->
     <select id="selectScreenableCandidates" resultType="java.util.LinkedHashMap">
         select distinct t.tal_id as talentId, t.tal_status as status, r.rbs_id as resumeId, r.rbs_file_path as fileReference, r.rbs_user_id as resumeUserId, date_format(r.rbs_updated_at, '%Y-%m-%d %H:%i:%s') as resumeVersion
         from t_process_instance p
@@ -34,7 +35,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           and exists (select 1 from t_app_record a
                       where a.app_position_id = p.pin_position_id
                         and a.app_candidate_id = p.pin_candidate_id
-                        and a.app_status = 0)
+                        and a.app_status in (0, 1))
         order by t.tal_id
     </select>
 
@@ -170,31 +171,22 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where ast_company_id = #{companyId} and ast_position_id = #{positionId} and ast_run_id = #{runId}
     </update>
 
-    <!-- 某岗位待初筛的投递申请（尚未产生 AI 初筛结果） -->
+    <!-- 某岗位待分析/已分析的投递申请：app_status=0(已投递) 或 1(招聘中)；不再以旧“初筛淘汰(2)”口径判断 -->
     <select id="selectPendingApplications" resultType="java.util.LinkedHashMap">
         select a.app_id as applicationId, a.app_candidate_id as talentId
         from t_app_record a
-        where a.app_position_id = #{positionId} and a.app_status = 0
+        where a.app_position_id = #{positionId} and a.app_status in (0, 1)
         order by a.app_id
     </select>
 
-    <!-- 回写投递记录的初筛结果：1-初筛通过，2-初筛淘汰；仅待筛选(0)的投递可被回写 -->
-    <update id="updateApplicationScreened">
+    <!-- 按投递ID回写适配度评分：仅写 app_matched_score，绝不写 app_status；仅 0/1 态可写 -->
+    <update id="updateApplicationMatchedScore">
         update t_app_record
-        set app_matched_score = #{score}, app_status = #{status}, app_updated_at = now()
-        where app_id = #{applicationId} and app_status = 0
+        set app_matched_score = #{score}, app_updated_at = now()
+        where app_id = #{applicationId} and app_status in (0, 1)
     </update>
 
-    <!-- 按岗位 + 候选人回写投递评分与状态；仅当当前状态在 fromStatuses 内才更新，禁止覆盖已约面/笔试/录用/撤回 -->
-    <update id="updateApplicationByCandidate">
-        update t_app_record
-        set app_matched_score = #{score}, app_status = #{status}, app_updated_at = now()
-        where app_position_id = #{positionId} and app_candidate_id = #{talId}
-          and app_status in
-        <foreach collection="fromStatuses" item="s" open="(" separator="," close=")">#{s}</foreach>
-    </update>
-
-    <!-- 按岗位 + 候选人只更新投递评分；只在初筛段内允许写入，避免覆盖后续环节 -->
+    <!-- 按岗位 + 候选人只更新适配度评分（不写 app_status）；仅在 fromStatuses 内允许写入，避免覆盖后续环节 -->
     <update id="updateApplicationScore">
         update t_app_record
         set app_matched_score = #{score}, app_updated_at = now()
@@ -203,30 +195,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <foreach collection="fromStatuses" item="s" open="(" separator="," close=")">#{s}</foreach>
     </update>
 
-    <!-- 按岗位 + 候选人只更新投递状态；同样只在 fromStatuses 内允许变更 -->
-    <update id="updateApplicationStatusByCandidate">
-        update t_app_record
-        set app_status = #{status}, app_updated_at = now()
-        where app_position_id = #{positionId} and app_candidate_id = #{talId}
-          and app_status in
-        <foreach collection="fromStatuses" item="s" open="(" separator="," close=")">#{s}</foreach>
-    </update>
-
-    <!-- 流程环节推进时同步投递状态；只在投递尚未进入后续环节时更新，避免覆盖更靠后的状态 -->
-    <update id="advanceApplicationStatus">
-        update t_app_record
-        set app_status = #{status}, app_updated_at = now()
-        where app_position_id = #{positionId} and app_candidate_id = #{talId}
-          and app_status in
-        <foreach collection="fromStatuses" item="s" open="(" separator="," close=")">#{s}</foreach>
-    </update>
-
-    <!-- 本企业仍有待初筛投递的岗位 -->
+    <!-- 本企业仍有待分析/已分析投递（app_status in (0,1)）的岗位 -->
     <select id="selectPendingPositions" resultType="java.lang.Long">
         select distinct a.app_position_id
         from t_app_record a
         join t_pos p on p.pos_id = a.app_position_id
-        where p.pos_company_id = #{companyId} and a.app_status = 0
+        where p.pos_company_id = #{companyId} and a.app_status in (0, 1)
         order by a.app_position_id
     </select>
 

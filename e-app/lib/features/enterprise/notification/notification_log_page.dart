@@ -28,7 +28,7 @@ class _NotificationLogPageState extends State<NotificationLogPage> {
   bool _loading = true;
   int _sceneIndex = 0; // 0=全部场景
 
-  static const _scenes = ['全部场景', '简历投递成功', '面试邀约', '面试提醒', '评估完成', '初筛淘汰'];
+  static const _scenes = ['全部场景', '简历投递成功', '面试邀约', '面试提醒', '评估完成', '未录用通知'];
 
   @override
   void initState() {

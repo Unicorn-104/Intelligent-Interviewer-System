@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.ProcessStageInstanceMapper">
+
+    <resultMap id="nodeMap" type="com.ruoyi.enterprise.domain.ProcessStageInstance">
+        <id property="id" column="id"/>
+        <result property="instanceId" column="instanceId"/>
+        <result property="stageId" column="stageId"/>
+        <result property="nodeType" column="nodeType"/>
+        <result property="round" column="round"/>
+        <result property="status" column="status"/>
+        <result property="result" column="result"/>
+        <result property="refId" column="refId"/>
+        <result property="nodeName" column="nodeName"/>
+        <result property="operatorId" column="operatorId"/>
+        <result property="startAt" column="startAt"/>
+        <result property="endAt" column="endAt"/>
+        <result property="resultNote" column="resultNote"/>
+        <result property="createdAt" column="createdAt"/>
+    </resultMap>
+
+    <sql id="nodeColumns">
+        pis_id AS id, pis_instance_id AS instanceId, pis_stage_id AS stageId,
+        pis_node_type AS nodeType, pis_round AS round, pis_status AS status,
+        pis_result AS result, pis_ref_id AS refId, pis_node_name AS nodeName,
+        pis_operator_id AS operatorId, pis_start_at AS startAt, pis_end_at AS endAt,
+        pis_result_note AS resultNote, pis_created_at AS createdAt
+    </sql>
+
+    <!-- 父流程实例行锁：保证同实例下 selectNodeByRef/selectMaxRound/insertNode 全程串行，防止并发重复建节点 -->
+    <select id="lockProcessInstance" resultType="java.lang.Long">
+        select pin_id from t_process_instance where pin_id = #{instanceId} for update
+    </select>
+
+    <insert id="insertNode" useGeneratedKeys="true" keyProperty="id" keyColumn="pis_id">
+        insert into t_process_instance_stage (pis_instance_id, pis_stage_id, pis_node_type,
+            pis_round, pis_status, pis_result, pis_ref_id, pis_node_name, pis_operator_id,
+            pis_start_at, pis_end_at, pis_result_note)
+        values (#{instanceId}, #{stageId}, #{nodeType}, #{round}, #{status}, #{result},
+            #{refId}, #{nodeName}, #{operatorId}, #{startAt}, #{endAt}, #{resultNote})
+    </insert>
+
+    <update id="updateNodeStatus">
+        update t_process_instance_stage
+        set pis_status = #{toStatus}
+            <if test="startAt != null and startAt">, pis_start_at = now()</if>
+            <if test="endAt != null and endAt">, pis_end_at = now()</if>
+        where pis_id = #{id} and pis_status = #{fromStatus}
+    </update>
+
+    <update id="updateNodeResult">
+        update t_process_instance_stage
+        set pis_result = #{result}, pis_result_note = #{resultNote},
+            pis_status = 2, pis_end_at = now()
+        where pis_id = #{id} and pis_status in (0, 1)
+    </update>
+
+    <select id="selectNodeById" resultMap="nodeMap">
+        select <include refid="nodeColumns"/>
+        from t_process_instance_stage where pis_id = #{id}
+    </select>
+
+    <select id="selectNodeByRef" resultMap="nodeMap">
+        select <include refid="nodeColumns"/>
+        from t_process_instance_stage where pis_ref_id = #{refId}
+        limit 1
+    </select>
+
+    <select id="listNodesByInstance" resultMap="nodeMap">
+        select <include refid="nodeColumns"/>
+        from t_process_instance_stage
+        where pis_instance_id = #{instanceId}
+        order by pis_id
+    </select>
+
+    <!-- 当前节点：未结束节点优先，其次最近节点；保证由真实节点计算而非固定枚举 -->
+    <select id="selectCurrentNode" resultMap="nodeMap">
+        select <include refid="nodeColumns"/>
+        from t_process_instance_stage
+        where pis_instance_id = #{instanceId}
+        order by case when pis_status in (0, 1) then 0 else 1 end, pis_id desc
+        limit 1
+    </select>
+
+    <select id="selectMaxRound" resultType="java.lang.Integer">
+        select ifnull(max(pis_round), 0)
+        from t_process_instance_stage
+        where pis_instance_id = #{instanceId}
+          and pis_node_type in
+        <foreach collection="nodeTypes" item="t" open="(" separator="," close=")">#{t}</foreach>
+    </select>
+</mapper>

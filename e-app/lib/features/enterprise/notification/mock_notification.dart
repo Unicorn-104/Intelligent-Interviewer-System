@@ -20,7 +20,7 @@ const List<Map<String, dynamic>> mockNotificationLogs = [
   {'logId': 4, 'candidateName': '林晓雨', 'scene': '评估完成', 'channel': '邮件', 'status': 'failed', 'sentAt': '2026-10-08 17:15', 'opened': false, 'clicked': false},
   {'logId': 5, 'candidateName': '孙铭泽', 'scene': '简历投递成功', 'channel': '邮件', 'status': 'success', 'sentAt': '2026-10-08 11:30', 'opened': true, 'clicked': false},
   {'logId': 6, 'candidateName': '周雨桐', 'scene': '面试提醒', 'channel': 'APP 推送', 'status': 'success', 'sentAt': '2026-10-08 09:00', 'opened': true, 'clicked': true},
-  {'logId': 7, 'candidateName': '郑凯文', 'scene': '初筛淘汰', 'channel': '邮件', 'status': 'success', 'sentAt': '2026-10-07 16:20', 'opened': false, 'clicked': false},
+  {'logId': 7, 'candidateName': '郑凯文', 'scene': '未录用通知', 'channel': '邮件', 'status': 'success', 'sentAt': '2026-10-07 16:20', 'opened': false, 'clicked': false},
 ];
 
 /// 送达率/打开率/点击率统计（UC-16 E2）。

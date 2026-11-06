@@ -13,11 +13,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.common.enums.ApplicationEndReason;
+import com.ruoyi.common.enums.ApplicationStatus;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
+import com.ruoyi.enterprise.domain.ProcessStageInstance;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.InterviewReviewMapper;
-import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.IInterviewReviewService;
+import com.ruoyi.enterprise.service.ProcessStageInstanceService;
 import com.ruoyi.system.event.InterviewFinishedEvent;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.InterviewReportMapper;
@@ -60,10 +65,16 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     private TalStatusService talStatusService;
 
     @Autowired
-    private ScreeningMapper screeningMapper;
+    private InterviewReportMapper reportMapper;
 
     @Autowired
-    private InterviewReportMapper reportMapper;
+    private ApplicationStatusService applicationStatusService;
+
+    @Autowired
+    private ApplicationStatusMapper applicationStatusMapper;
+
+    @Autowired
+    private ProcessStageInstanceService stageInstanceService;
 
     @Autowired
     private ApplicationEventPublisher eventPublisher;
@@ -124,6 +135,11 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         // UC-12 步骤8：确认通过（HR 结论与评语随确认一同落库）
         reviewMapper.updateHrStatus(sessionId, HR_CONFIRMED,
                 recommendation == null ? 1 : recommendation, comment);
+        // 本轮面试节点按 HR 结论记结果（节点结果不等同投递结果，幂等）
+        completeInterviewNode(session,
+                (recommendation != null && recommendation == 0) ? ProcessStageInstance.RESULT_FAIL
+                        : ProcessStageInstance.RESULT_PASS,
+                comment);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", sessionId);
         result.put("hrStatus", HR_CONFIRMED);
@@ -165,6 +181,10 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         reviewMapper.updateHrStatus(sessionId, HR_ADJUSTED,
                 recommendation == null ? 1 : recommendation,
                 comment == null || comment.isBlank() ? "调整后通过" : comment);
+        completeInterviewNode(session,
+                (recommendation != null && recommendation == 0) ? ProcessStageInstance.RESULT_FAIL
+                        : ProcessStageInstance.RESULT_PASS,
+                comment);
         if (Boolean.TRUE.equals(isFinal))
         {
             // 终面调整后通过同样进入「待发 Offer」；非终面的级联由调用方单独触发
@@ -188,6 +208,15 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         if (!talStatusService.change(asLong(session.get("candidateId")), TalStatusService.TAL_REJECTED, List.of(2),
                 asLong(session.get("positionId")), 2, "面试未通过", userId))
             throw new ServiceException("候选人已淘汰或已录用，无法重复驳回");
+        // 本轮面试节点记未通过；HR 主动淘汰经状态机进入未录用（HR_REJECTED，必须记录操作人）
+        completeInterviewNode(session, ProcessStageInstance.RESULT_FAIL, reason);
+        Long appId = applicationStatusMapper.selectAppId(asLong(session.get("candidateId")),
+                asLong(session.get("positionId")));
+        if (appId != null)
+        {
+            applicationStatusService.terminate(appId, ApplicationEndReason.HR_REJECTED, userId,
+                    ApplicationStatusService.SOURCE_INTERVIEW, "面试未通过：" + reason);
+        }
         reviewMapper.insertMessage(Long.valueOf(String.valueOf(session.get("candidateUserId"))),
                 "感谢参与",
                 "感谢您参与「" + session.get("positionTitle") + "」的面试。很遗憾本次未能与您携手，"
@@ -272,10 +301,42 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         {
             throw new ServiceException("候选人已淘汰或已录用，无法进入待发 Offer");
         }
-        // 同步岗位投递状态为待发 Offer(10)，人才库按岗位展示时与候选人状态一致
-        screeningMapper.advanceApplicationStatus(asLong(session.get("positionId")),
-                asLong(session.get("candidateId")), 10,
-                List.of(1, 2, 3, 4, 5, 6, 7, 8, 10));
+        // 岗位投递经状态机：招聘中(1)→待发Offer(2)；尚未启动时先补启动，终态由状态机拦截
+        Long appId = applicationStatusMapper.selectAppId(asLong(session.get("candidateId")),
+                asLong(session.get("positionId")));
+        if (appId != null)
+        {
+            Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+            Integer cur = app == null ? null : toStatusInt(app.get("status"));
+            if (ApplicationStatus.fromCode(cur) == ApplicationStatus.APPLIED)
+            {
+                applicationStatusService.startRecruitment(appId, userId);
+            }
+            applicationStatusService.passToPendingOffer(appId, userId);
+        }
+    }
+
+    /** 按面试预约(apt_id)幂等定位并完成本轮面试节点；节点结果不等同投递结果。 */
+    private void completeInterviewNode(Map<String, Object> session, int result, String note)
+    {
+        Long appointmentId = asLong(session.get("appointmentId"));
+        if (appointmentId == null) return;
+        Long appId = applicationStatusMapper.selectAppId(asLong(session.get("candidateId")),
+                asLong(session.get("positionId")));
+        if (appId == null) return;
+        Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+        Object inst = app == null ? null : app.get("instanceId");
+        if (inst == null) return;
+        ProcessStageInstance node = stageInstanceService.getOrCreate(Long.valueOf(String.valueOf(inst)),
+                null, ProcessStageInstance.TYPE_HR_INTERVIEW, "HR综合面试", appointmentId, null);
+        stageInstanceService.complete(node.getId(), result, note);
+    }
+
+    private Integer toStatusInt(Object value)
+    {
+        if (value == null) return null;
+        try { return Integer.parseInt(String.valueOf(value)); }
+        catch (Exception e) { return null; }
     }
 
     private Map<String, Object> requireSession(Long userId, Long sessionId)

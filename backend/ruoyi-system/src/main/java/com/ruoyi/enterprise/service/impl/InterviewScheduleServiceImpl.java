@@ -17,12 +17,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
+import com.ruoyi.common.enums.ApplicationStatus;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.enterprise.domain.ProcessStageInstance;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
-import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
+import com.ruoyi.enterprise.service.ProcessStageInstanceService;
 import com.ruoyi.enterprise.service.RescheduleMessageService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
@@ -36,9 +40,11 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     @Autowired private InterviewScheduleMapper scheduleMapper;
     @Autowired private DashboardMapper dashboardMapper;
     @Autowired private EnterpriseJobMapper jobMapper;
-    @Autowired private ScreeningMapper screeningMapper;
     @Autowired private RescheduleMessageService rescheduleMessages;
     @Autowired private TalStatusService talStatusService;
+    @Autowired private ApplicationStatusService applicationStatusService;
+    @Autowired private ApplicationStatusMapper applicationStatusMapper;
+    @Autowired private ProcessStageInstanceService stageInstanceService;
 
     private Long company(Long userId)
     {
@@ -122,12 +128,11 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
                 Map<String, Object> stage = scheduleMapper.selectStageByIdForPosition(stageId, positionId);
                 if (stage == null) throw new ServiceException("招聘阶段已变更，请刷新后重新排期");
                 values.putAll(stage);
-                // 岗位流程中先有笔试阶段时，必须笔试通过才能安排后续面试
-                if (scheduleMapper.countExamStagesBefore(positionId, integer(stage.get("stageOrder"), 0)) > 0)
+                // 岗位流程中先有笔试阶段时，必须笔试节点通过才能安排后续面试（当前环节由真实节点计算）
+                if (scheduleMapper.countExamStagesBefore(positionId, integer(stage.get("stageOrder"), 0)) > 0
+                        && !hasPassedExamNode(candidateId, positionId))
                 {
-                    Integer appStatus = scheduleMapper.selectApplicationStatus(candidateId, positionId);
-                    if (appStatus == null || appStatus != 6)
-                        throw new ServiceException("该岗位流程中笔试阶段尚未通过，暂不能安排后续面试");
+                    throw new ServiceException("该岗位流程中笔试阶段尚未通过，暂不能安排后续面试");
                 }
             }
             else
@@ -162,17 +167,22 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             row.put("meetingUrl", "https://meeting.example.com/" + UUID.randomUUID());
             scheduleMapper.insertSlot(row);
             scheduleMapper.insertAppointment(row);
+            // 每轮面试建独立节点（按 apt_id 幂等），节点结果不等同投递结果
+            createInterviewNode(candidateId, positionId, row, userId);
             row.put("status", 0);
             row.put("message", "邀约已创建，等待候选人确认");
         }
-        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退
+        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退（tal_status 独立维度）
         if (!talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
                 List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
                         TalStatusService.TAL_EXAM_PASSED),
                 positionId, null, "安排面试", userId))
             throw new ServiceException("候选人已淘汰或已录用，无法安排面试");
-        // 同时把该岗位投递状态同步为「已约面」，投递详情/候选人列表立即可见
-        screeningMapper.advanceApplicationStatus(positionId, candidateId, 3, List.of(0, 1, 2));
+        // HR 安排第一场正式面试：若投递仍为「已投递(0)」，经状态机进入「招聘中(1)」；
+        // 多轮/改期/补面/重新面试全程保持招聘中，不写旧的「已约面(3)」。
+        Long appId = applicationStatusMapper.selectAppId(candidateId, positionId);
+        if (appId != null && integer(appStatusOf(appId), -1) == ApplicationStatus.APPLIED.getCode())
+            applicationStatusService.startRecruitment(appId, userId);
         return prepared;
     }
 
@@ -320,6 +330,8 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         {
             if (current == 2) throw new ServiceException("该面试安排已取消，无法确认");
             confirmOrThrow(appointmentId);
+            // 确认面试：节点 待开始→进行中（幂等，节点推进不回写投递状态）
+            startInterviewNode(row);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("appointmentId", appointmentId);
             result.put("status", status);
@@ -412,15 +424,16 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             slotReleased = true;
         }
         int remaining = scheduleMapper.countOtherValidAppointments(candidateId, positionId, appointmentId);
-        int[] restored = restoreCandidateAndApplication(candidateId, positionId, appointmentId);
+        // 取消只释放面试官时段与节点状态，不自动终止投递、不回退旧初筛态（投递状态一律经状态机）
+        cancelInterviewNode(candidateId, positionId, row);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("appointmentId", appointmentId);
         result.put("status", 2);
         result.put("message", "已取消该面试安排" + (slotReleased ? "，面试官时段已释放" : ""));
         result.put("slotReleased", slotReleased);
         result.put("remainingAppointments", remaining);
-        result.put("candidateStatusRestored", restored[0] == 1);
-        result.put("applicationStatusRestored", restored[1] == 1);
+        result.put("candidateStatusRestored", false);
+        result.put("applicationStatusRestored", false);
         return result;
     }
 
@@ -460,34 +473,83 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             throw new ServiceException("该面试安排状态已变化，请刷新后重试");
     }
 
-    /**
-     * 取消预约后按需把候选人/投递状态回退为「初筛通过」。
-     *
-     * <p>投递状态按岗位判定（该岗位无其他有效预约），候选人状态按全岗位判定（跨岗位无有效预约），
-     * 防止回退影响其他岗位正在进行的面试。仅当其余条件全部满足才回退，防止把已完成其他阶段
-     * 或笔试通过的候选人错误回退：招聘流程实例进行中、该岗位无已完成面试场次、候选人当前为
-     * 面试中(2)且投递为已约面(3)、状态日志中最近一次进入 2 的来源为 0/1（笔试态 5/6 等不回退），
-     * 满足时统一回退为「初筛通过(1)」。条件更新限定当前状态，不覆盖并发变更；日志缺失时保持现状不猜测。</p>
-     */
-    private int[] restoreCandidateAndApplication(Long candidateId, Long positionId, Long cancelledAppointmentId)
+    /** 读取投递当前 app_status（只读判断，不做变更）；无投递返回 null。 */
+    private Integer appStatusOf(Long appId)
     {
-        int[] restored = {0, 0};
-        Integer talStatus = scheduleMapper.selectTalStatus(candidateId);
-        if (talStatus == null || talStatus != 2) return restored;
-        Integer pinStatus = scheduleMapper.selectProcessInstanceStatus(candidateId, positionId);
-        if (pinStatus == null || pinStatus != 0) return restored;
-        if (scheduleMapper.countCompletedSessions(candidateId, positionId) > 0) return restored;
-        Integer appStatus = scheduleMapper.selectApplicationStatus(candidateId, positionId);
-        if (appStatus == null || appStatus != 3) return restored;
-        Integer prior = scheduleMapper.selectPriorTalStatus(candidateId);
-        if (prior == null || (prior != 0 && prior != 1)) return restored;
-        if (scheduleMapper.countValidAppointmentsExcluding(candidateId, cancelledAppointmentId) == 0
-                && scheduleMapper.restoreTalStatus(candidateId, TalStatusService.TAL_SCREENED) == 1)
-            restored[0] = 1;
-        if (scheduleMapper.countOtherValidAppointments(candidateId, positionId, cancelledAppointmentId) == 0
-                && scheduleMapper.restoreApplicationStatus(candidateId, positionId, TalStatusService.TAL_SCREENED) == 1)
-            restored[1] = 1;
-        return restored;
+        if (appId == null) return null;
+        Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+        Object v = app == null ? null : app.get("status");
+        if (v == null) return null;
+        try { return Integer.parseInt(String.valueOf(v)); }
+        catch (Exception e) { return null; }
+    }
+
+    /** 读取招聘流程实例ID（节点挂载点）；缺失则无法建节点，返回 null。 */
+    private Long instanceIdOf(Long appId)
+    {
+        if (appId == null) return null;
+        Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+        Object inst = app == null ? null : app.get("instanceId");
+        return inst == null ? null : Long.valueOf(String.valueOf(inst));
+    }
+
+    /** 由预约行推断面试节点类型：psg_type=2 记 AI 面试，其余记 HR 综合面试。 */
+    private int nodeTypeOf(Map<String, Object> row)
+    {
+        return integer(row.get("stageType"), 0) == ProcessStageInstance.TYPE_AI_INTERVIEW
+                ? ProcessStageInstance.TYPE_AI_INTERVIEW
+                : ProcessStageInstance.TYPE_HR_INTERVIEW;
+    }
+
+    private String nodeNameOf(Map<String, Object> row)
+    {
+        return row.get("stageName") == null ? "面试" : String.valueOf(row.get("stageName"));
+    }
+
+    /** 为一场面试建独立节点（按 apt_id 幂等），节点结果不等同投递结果。 */
+    private void createInterviewNode(Long candidateId, Long positionId, Map<String, Object> row, Long operatorId)
+    {
+        Long instanceId = instanceIdOf(applicationStatusMapper.selectAppId(candidateId, positionId));
+        if (instanceId == null) return;
+        stageInstanceService.getOrCreate(instanceId, nullableId(row.get("stageId")), nodeTypeOf(row),
+                nodeNameOf(row), requiredId(row.get("appointmentId")), operatorId);
+    }
+
+    /** 确认面试：节点 待开始→进行中（幂等）。 */
+    private void startInterviewNode(Map<String, Object> row)
+    {
+        Long instanceId = instanceIdOf(applicationStatusMapper.selectAppId(
+                requiredId(row.get("candidateId")), requiredId(row.get("positionId"))));
+        if (instanceId == null) return;
+        ProcessStageInstance node = stageInstanceService.getOrCreate(instanceId,
+                nullableId(row.get("stageId")), nodeTypeOf(row), nodeNameOf(row),
+                requiredId(row.get("appointmentId")), null);
+        stageInstanceService.start(node.getId(), null);
+    }
+
+    /** 取消面试：节点→已取消（幂等），不影响投递状态。 */
+    private void cancelInterviewNode(Long candidateId, Long positionId, Map<String, Object> row)
+    {
+        Long instanceId = instanceIdOf(applicationStatusMapper.selectAppId(candidateId, positionId));
+        if (instanceId == null) return;
+        ProcessStageInstance node = stageInstanceService.getOrCreate(instanceId,
+                nullableId(row.get("stageId")), nodeTypeOf(row), nodeNameOf(row),
+                requiredId(row.get("appointmentId")), null);
+        stageInstanceService.cancel(node.getId(), "面试安排取消");
+    }
+
+    /** 该流程实例是否已有「通过」的笔试节点（排期前置闸门，当前环节由真实节点计算）。 */
+    private boolean hasPassedExamNode(Long candidateId, Long positionId)
+    {
+        Long instanceId = instanceIdOf(applicationStatusMapper.selectAppId(candidateId, positionId));
+        if (instanceId == null) return false;
+        for (ProcessStageInstance n : stageInstanceService.listNodes(instanceId))
+        {
+            if (n.getNodeType() != null && n.getNodeType() == ProcessStageInstance.TYPE_EXAM
+                    && n.getResult() != null && n.getResult() == ProcessStageInstance.RESULT_PASS)
+                return true;
+        }
+        return false;
     }
 
     /** 从阶段配置 JSON（psg_interviewer_config_json）读取面试时长，缺失或越界时拒绝排期。 */
