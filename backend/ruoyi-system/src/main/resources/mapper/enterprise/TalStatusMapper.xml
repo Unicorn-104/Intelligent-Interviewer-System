@@ -28,4 +28,18 @@
         insert into t_tal_status_log (tsl_candidate_id, tsl_from_status, tsl_to_status, tsl_reason, tsl_operator_id)
         values (#{talId}, #{fromStatus}, #{toStatus}, #{reason}, #{operatorId})
     </insert>
+
+    <!-- 终态聚合守卫：活跃投递 = 新六态 0已投递/1招聘中/2待发Offer/3待确认Offer（4已录用/5未录用为终态） -->
+    <select id="countActiveApplications" resultType="int">
+        select count(*) from t_app_record
+        where app_candidate_id = #{talId}
+          and app_status in (0, 1, 2, 3)
+    </select>
+
+    <select id="countActiveApplicationsExcludingPosition" resultType="int">
+        select count(*) from t_app_record
+        where app_candidate_id = #{talId}
+          and app_position_id &lt;&gt; #{positionId}
+          and app_status in (0, 1, 2, 3)
+    </select>
 </mapper>

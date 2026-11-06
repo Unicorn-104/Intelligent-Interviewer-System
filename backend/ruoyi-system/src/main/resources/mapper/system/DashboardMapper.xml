@@ -36,19 +36,20 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectFunnel" parameterType="Long" resultType="java.util.HashMap">
-        <!-- 阶段按累计口径统计（进入过该阶段即计入），避免阶段性状态互斥导致靠前阶段为 0；
-             pendingInterview 为已通过初筛、待安排面试；hired 仅统计已录用(4)。
-             状态口径：0新入库 1初筛通过 2面试中 3已淘汰 4已录用 5待笔试 6笔试中 7笔试通过 8笔试未通过 9笔试缺考 -->
-        select
-            count(*) as applied,
-            ifnull(sum(case when tal_status != 0 then 1 else 0 end), 0) as screened,
-            ifnull(sum(case when tal_status in (2, 4) then 1 else 0 end), 0) as interviewing,
-            ifnull(sum(case when tal_status = 1 then 1 else 0 end), 0) as pendingInterview,
-            ifnull(sum(case when tal_status = 3 then 1 else 0 end), 0) as rejected,
-            ifnull(sum(case when tal_status = 4 then 1 else 0 end), 0) as hired
-        from t_tal
-        where tal_company_id = #{companyId}
-          and tal_created_at >= date_sub(now(), interval 30 day)
+        <!-- 阶段按投递当前所处阶段统计（新六态），来源 t_app_record 经 t_pos 限定企业近30天投递：
+             applied=全部投递；screened=已离开已投递(进入招聘流程及以后)；
+             interviewing=招聘中(1，含全部笔试/面试环节)；pendingInterview=待发/待确认Offer(2,3)；
+             rejected=未录用(5)；hired=已录用(4)。 -->
+        select count(*) as applied,
+               ifnull(sum(case when a.app_status != 0 then 1 else 0 end), 0) as screened,
+               ifnull(sum(case when a.app_status = 1 then 1 else 0 end), 0) as interviewing,
+               ifnull(sum(case when a.app_status in (2,3) then 1 else 0 end), 0) as pendingInterview,
+               ifnull(sum(case when a.app_status = 5 then 1 else 0 end), 0) as rejected,
+               ifnull(sum(case when a.app_status = 4 then 1 else 0 end), 0) as hired
+        from t_app_record a
+        join t_pos p on p.pos_id = a.app_position_id
+        where p.pos_company_id = #{companyId}
+          and a.app_created_at >= date_sub(now(), interval 30 day)
     </select>
 
     <select id="selectTodoPendingConfirm" parameterType="Long" resultType="java.util.HashMap">

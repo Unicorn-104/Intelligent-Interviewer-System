@@ -55,6 +55,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <select id="selectSessionBase" resultType="java.util.LinkedHashMap">
         select s.ses_id as sessionId, s.ses_candidate_id as candidateId,
                s.ses_position_id as positionId, s.ses_interviewer_id as interviewerId,
+               s.ses_appointment_id as appointmentId,
                s.ses_template_id as templateId, s.ses_cascade_round as round,
                e.evl_overall_score as overallScore,
                s.ses_report_status as reportStatus, s.ses_report_error as reportError,

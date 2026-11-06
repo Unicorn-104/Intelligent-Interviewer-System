@@ -97,29 +97,40 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                               where pi.pin_id = a.app_process_instance_id))
     </select>
 
+    <!-- 岗位招聘漏斗：以 t_app_record.app_status 新六态重算（不再读全局 tal_status）。
+         招聘中(1) 含全部笔试/面试环节；Offer 阶段=待发Offer(2)+待确认Offer(3)。 -->
     <select id="selectJobFunnel" resultType="java.util.LinkedHashMap">
         select count(*) as total,
-               sum(case when t.tal_status in (1,2,4,5,7,10) then 1 else 0 end) as passed,
-               sum(case when t.tal_status = 2 then 1 else 0 end) as interviewing,
-               sum(case when t.tal_status = 3 then 1 else 0 end) as rejected,
-               sum(case when t.tal_status = 4 then 1 else 0 end) as offered,
-               sum(case when t.tal_status = 5 then 1 else 0 end) as hired
-        from t_process_instance pi
-        join t_tal t on t.tal_id = pi.pin_candidate_id
-        where pi.pin_position_id = #{posId}
+               ifnull(sum(case when a.app_status in (1,2,3,4,5) then 1 else 0 end), 0) as passed,
+               ifnull(sum(case when a.app_status = 1 then 1 else 0 end), 0) as interviewing,
+               ifnull(sum(case when a.app_status = 5 then 1 else 0 end), 0) as rejected,
+               ifnull(sum(case when a.app_status in (2,3) then 1 else 0 end), 0) as offered,
+               ifnull(sum(case when a.app_status = 4 then 1 else 0 end), 0) as hired
+        from t_app_record a
+        where a.app_position_id = #{posId}
     </select>
 
+    <!-- 岗位候选人列表：一条投递一行，状态取该岗位投递的 app_status（新六态），不取全局 tal_status -->
     <select id="selectJobCandidates" resultType="java.util.LinkedHashMap">
         select pi.pin_id as instanceId, t.tal_id as talId, u.user_id as userId,
                ifnull(u.nick_name, u.user_name) as name,
                ifnull(t.tal_matched_score, 0) as matchScore,
-               (select dict_label from sys_dict_data where dict_type = 'candidate_status' and dict_value = cast(t.tal_status as char) collate utf8mb4_unicode_ci limit 1) as statusLabel,
-               t.tal_status as statusCode,
+               case a.app_status
+                   when 0 then '已投递'
+                   when 1 then '招聘中'
+                   when 2 then '待发Offer'
+                   when 3 then '待确认Offer'
+                   when 4 then '已录用'
+                   when 5 then '未录用'
+                   else '处理中' end as statusLabel,
+               a.app_status as statusCode,
                (select psg.psg_name from t_process_stage psg where psg.psg_id = pi.pin_current_stage_id) as currentStage
-        from t_process_instance pi
-        join t_tal t on t.tal_id = pi.pin_candidate_id
+        from t_app_record a
+        left join t_process_instance pi
+               on pi.pin_candidate_id = a.app_candidate_id and pi.pin_position_id = a.app_position_id
+        join t_tal t on t.tal_id = a.app_candidate_id
         join sys_user u on u.user_id = t.tal_user_id
-        where pi.pin_position_id = #{posId}
+        where a.app_position_id = #{posId}
         order by t.tal_matched_score desc
     </select>
 
