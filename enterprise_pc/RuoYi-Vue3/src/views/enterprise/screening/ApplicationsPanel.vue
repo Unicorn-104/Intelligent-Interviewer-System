@@ -10,6 +10,7 @@ import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { getTalentResume, listApplications, listUnscreenedPositions, screenUnscreenedApplicants } from '@/api/talent'
 import { screenAllPending } from '@/api/screening'
+import { APP_STATUS_OPTIONS, appStatusInfo, statusTextWithStage } from '@/views/enterprise/components/appStatus'
 
 const router = useRouter()
 const toast = ref('')
@@ -26,15 +27,8 @@ const total = ref(0)
 const pageNum = ref(1)
 const pageSize = 10
 
-// 投递状态（t_app_record.app_status）
-const APP_STATUS = {
-  0: ['待筛选', 'gray'], 1: ['初筛通过', 'green'], 2: ['初筛淘汰', 'red'], 3: ['已约面', 'blue'],
-  4: ['待笔试', 'orange'], 5: ['笔试中', 'orange'], 6: ['笔试通过', 'green'], 7: ['笔试未通过', 'red'], 8: ['笔试缺考', 'gray'],
-  9: ['已撤回', 'gray'], 10: ['待发Offer', 'orange'], 11: ['已录用', 'green'], 12: ['Offer拒绝', 'red']
-}
-// Offer 状态（t_off_offer.ofr_status），存在 Offer 时覆盖投递状态显示
-const OFFER_STATUS = { 0: ['Offer 已发送', 'purple'], 1: ['已录取', 'green'], 2: ['Offer 已拒绝', 'red'], 3: ['Offer 已过期', 'gray'], 4: ['Offer 草稿', 'gray'], 5: ['Offer 审批中', 'orange'], 6: ['Offer 已撤回', 'gray'] }
-const STATUS_OPTIONS = Object.keys(APP_STATUS).map(k => ({ value: Number(k), label: APP_STATUS[k][0] }))
+// 投递状态（t_app_record.app_status）六态口径见 components/appStatus.js；Offer 阶段已并入 app_status 2/3
+const STATUS_OPTIONS = APP_STATUS_OPTIONS
 
 // 简历解析详情
 const resumeOpen = ref(false)
@@ -47,8 +41,8 @@ const activePending = computed(() => (activePosition.value ? activePosition.valu
 const canScreen = computed(() => !screening.value && Number(activePending.value || 0) > 0)
 
 function displayStatus(row) {
-  if (row.offerStatus !== null && row.offerStatus !== undefined && OFFER_STATUS[row.offerStatus]) return OFFER_STATUS[row.offerStatus]
-  return APP_STATUS[row.appStatus] || ['待筛选', 'gray']
+  const [, tone] = appStatusInfo(row.appStatus)
+  return [statusTextWithStage(row), tone]
 }
 
 function scoreText(row) {

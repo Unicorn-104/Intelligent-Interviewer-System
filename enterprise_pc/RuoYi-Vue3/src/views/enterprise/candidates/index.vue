@@ -6,6 +6,7 @@ import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listApplications, listApplicationPositions, getTalentResume, updateApplicationStatus, batchTalentTags } from '@/api/talent'
+import { APP_STATUS_OPTIONS, appStatusInfo, statusTextWithStage, isTerminalAppStatus, END_REASON_OPTIONS, endReasonLabel } from '@/views/enterprise/components/appStatus'
 
 const router = useRouter()
 const toast = ref('')
@@ -20,23 +21,16 @@ const total = ref(0)
 const pageNum = ref(1)
 const pageSize = 10
 
-// 投递状态（t_app_record.app_status）
-const APP_STATUS = {
-  0: ['待筛选', 'gray'], 1: ['初筛通过', 'green'], 2: ['初筛淘汰', 'red'], 3: ['已约面', 'blue'],
-  4: ['待笔试', 'orange'], 5: ['笔试中', 'orange'], 6: ['笔试通过', 'green'], 7: ['笔试未通过', 'red'], 8: ['笔试缺考', 'gray'],
-  9: ['已撤回', 'gray'], 10: ['待发Offer', 'orange'], 11: ['已录用', 'green'], 12: ['Offer拒绝', 'red']
-}
-// Offer 状态（t_offer.ofr_status），存在 Offer 时覆盖投递状态显示
-const OFFER_STATUS = { 0: ['Offer 已发送', 'purple'], 1: ['已录取', 'green'], 2: ['Offer 已拒绝', 'red'], 3: ['Offer 已过期', 'gray'], 4: ['Offer 草稿', 'gray'], 5: ['Offer 审批中', 'orange'], 6: ['Offer 已撤回', 'gray'] }
-const STATUS_OPTIONS = Object.keys(APP_STATUS).map(k => ({ value: Number(k), label: APP_STATUS[k][0] }))
+// 投递状态（t_app_record.app_status）六态口径见 components/appStatus.js；Offer 阶段已并入 app_status 2/3，不再单独覆盖
+const STATUS_OPTIONS = APP_STATUS_OPTIONS
 
 const allSelected = computed(() => applications.value.length > 0 && selected.value.length === applications.value.length)
 // 加标签按人（t_tal），更新状态按投递（t_app_record）
 const selectedTalents = computed(() => [...new Set(applications.value.filter(a => selected.value.includes(a.applicationId)).map(a => a.talentId))])
 
 function displayStatus(row) {
-  if (row.offerStatus !== null && row.offerStatus !== undefined && OFFER_STATUS[row.offerStatus]) return OFFER_STATUS[row.offerStatus]
-  return APP_STATUS[row.appStatus] || ['未知', 'gray']
+  const [, tone] = appStatusInfo(row.appStatus)
+  return [statusTextWithStage(row), tone]
 }
 
 // 简历解析详情
@@ -117,14 +111,43 @@ async function submitTag() {
 }
 
 // 批量更新状态：只更新选中的投递，不影响同一候选人的其他岗位
+// 终态（已录用/未录用）不可再推进；转入未录用(5)必须确认并选择终止原因
 async function submitStatus() {
   if (!selected.value.length) return notify('请先选择投递记录')
   if (batchStatus.value === '') return notify('请选择要更新到的状态')
+  const target = Number(batchStatus.value)
+  const rows = applications.value.filter(a => selected.value.includes(a.applicationId))
+  if (rows.some(r => isTerminalAppStatus(r.appStatus))) return notify('所选投递已处于终态（已录用/未录用），不可再推进')
+  if (target === 5) {
+    rejectForm.value = { applicationIds: [...selected.value], endReason: 'HR_REJECTED' }
+    rejectOpen.value = true
+    return
+  }
+  await doUpdateStatus(selected.value, target)
+}
+
+async function doUpdateStatus(ids, status, endReason) {
   try {
-    const res = await updateApplicationStatus(selected.value, batchStatus.value)
+    const res = await updateApplicationStatus(ids, status, endReason)
     notify(res.data?.message || '投递状态已更新')
     await load()
   } catch (e) { /* 拦截器已提示 */ }
+}
+
+// HR 淘汰确认：需选择终止原因 end_reason
+const rejectOpen = ref(false)
+const rejectBusy = ref(false)
+const rejectForm = ref({ applicationIds: [], endReason: 'HR_REJECTED' })
+
+async function submitReject() {
+  if (!rejectForm.value.endReason) return notify('请选择淘汰原因')
+  rejectBusy.value = true
+  try {
+    await doUpdateStatus(rejectForm.value.applicationIds, 5, rejectForm.value.endReason)
+    rejectOpen.value = false
+  } finally {
+    rejectBusy.value = false
+  }
 }
 
 async function openResume(row) {
@@ -194,7 +217,10 @@ onMounted(() => {
           <span class="pos-cell"><BriefcaseBusiness :size="12" />{{ row.positionName || '—' }}</span>
           <span class="score">{{ row.matchedScore != null ? Number(row.matchedScore).toFixed(1) + ' 分' : '—' }}</span>
           <span class="stage-text">{{ row.currentStage || '—' }}</span>
-          <span class="pill" :class="displayStatus(row)[1]">{{ displayStatus(row)[0] }}</span>
+          <span class="status-cell">
+            <span class="pill" :class="displayStatus(row)[1]">{{ displayStatus(row)[0] }}</span>
+            <small v-if="Number(row.appStatus) === 5" class="end-note">{{ endReasonLabel(row.endReason) }}<template v-if="row.endTime"> · {{ row.endTime }}</template></small>
+          </span>
           <time>{{ row.updateTime || row.appliedAt || '—' }}</time>
           <div class="ops">
             <button @click="router.push(`/enterprise/candidates/${row.talentId}/process`)"><ArrowUpRight :size="13" />流程</button>
@@ -257,6 +283,19 @@ onMounted(() => {
       </template>
     </BaseModal>
 
+    <BaseModal v-if="rejectOpen" title="确认淘汰（转入未录用）" width="420px" @close="rejectOpen = false">
+      <div class="tag-body">
+        <p class="import-hint">将把已选 {{ rejectForm.applicationIds.length }} 条投递置为「未录用」终态，该操作不可再推进。请选择终止原因（end_reason）：</p>
+        <select v-model="rejectForm.endReason" class="select">
+          <option v-for="r in END_REASON_OPTIONS" :key="r.value" :value="r.value">{{ r.label }}</option>
+        </select>
+      </div>
+      <template #footer>
+        <button class="btn" @click="rejectOpen = false">取消</button>
+        <button class="btn primary" :disabled="rejectBusy" @click="submitReject">{{ rejectBusy ? '提交中…' : '确认淘汰' }}</button>
+      </template>
+    </BaseModal>
+
     <ToastMessage :message="toast" />
   </div>
 </template>
@@ -287,6 +326,9 @@ onMounted(() => {
 .stage-text{color:#5e718c}
 /* pill 作为 grid 项默认被拉伸占满整列导致文字偏移，改为收缩并与表头左对齐 */
 .table-row .pill{justify-self:start;width:max-content;max-width:100%}
+.status-cell{display:flex;flex-direction:column;gap:3px;justify-self:start;align-items:flex-start;max-width:100%}
+.status-cell .pill{justify-self:auto}
+.end-note{font-size:9px;color:#94a3b8}
 .table-row time{color:#8d9aae;font-size:9px}
 .ops{display:flex;flex-wrap:wrap;gap:6px}
 .ops button{border:0;background:transparent;color:#2563eb;font-size:9px;display:flex;gap:3px;align-items:center;padding:3px 0;cursor:pointer}

@@ -8,6 +8,7 @@ import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listTalents, getTalentDetail, getTalentResume, archiveTalent, reapplyTalent, careNotifyTalent, inviteInterview, listApplications } from '@/api/talent'
 import { listJobs } from '@/api/system/job'
 import { listMembers } from '@/api/system/settings'
+import { APP_STATUS as APP_STATUS_MAP, APP_STATUS_OPTIONS } from '@/views/enterprise/components/appStatus'
 
 const toast = ref('')
 const loading = ref(false)
@@ -29,14 +30,9 @@ watch(() => route.query.keyword, kw => {
 })
 // 归档来源：0-未归档，1-笔试淘汰，2-面试淘汰，3-主动归档，4-初筛淘汰，5-Offer拒绝
 const ARCHIVE = { 0: ['未归档', 'gray'], 1: ['笔试淘汰', 'orange'], 2: ['面试淘汰', 'red'], 3: ['主动归档', 'purple'], 4: ['初筛淘汰', 'blue'], 5: ['Offer拒绝', 'red'] }
-// 流程状态统一按岗位投递展示（t_app_record.app_status）
-const APP_STATUS = {
-  0: ['待筛选', 'gray'], 1: ['初筛通过', 'green'], 2: ['初筛淘汰', 'red'], 3: ['已约面', 'blue'],
-  4: ['待笔试', 'orange'], 5: ['笔试中', 'orange'], 6: ['笔试通过', 'green'], 7: ['笔试未通过', 'red'],
-  8: ['笔试缺考', 'gray'], 9: ['已撤回', 'gray'], 10: ['待发Offer', 'orange'], 11: ['已录用', 'green'],
-  12: ['Offer拒绝', 'red']
-}
-const STATUS_OPTIONS = Object.keys(APP_STATUS).map(k => ({ value: k, label: APP_STATUS[k][0] }))
+// 流程状态统一按岗位投递展示（t_app_record.app_status）六态口径见 components/appStatus.js
+const APP_STATUS = APP_STATUS_MAP
+const STATUS_OPTIONS = APP_STATUS_OPTIONS
 
 // 选中的候选人（用于批量关怀通知）
 const selectedIds = ref([])

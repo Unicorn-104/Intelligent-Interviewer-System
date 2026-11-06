@@ -986,6 +986,7 @@ for (let i = 1; i <= 30; i++) {
     experience: Math.floor(Math.random() * 10) + '年经验',
     completeness: [95, 88, 72, 100, 60][i % 5],
     status: ['completed', 'incomplete', 'reviewing'][i % 3],
+    statusCode: i % 6, // 投递六态：0已投递 1招聘中 2待发Offer 3待确认Offer 4已录用 5未录用
     uploadTime: '2026-09-0' + ((i % 9) + 1) + ' 10:00:00',
     tags: i % 3 === 0 ? ['优质', '急招'] : i % 2 === 0 ? ['优质'] : []
   })
@@ -1193,17 +1194,28 @@ route(/^\/biz\/interviewEval\/changeStatus$/, 'put', (p, q, b) => {
 route(/^\/biz\/interviewEval\/batchFinalize$/, 'post', () => ok())
 
 // ---------- 候选人管理 ----------
+// 投递六态：0已投递 1招聘中 2待发Offer 3待确认Offer 4已录用 5未录用
 const candidateData = []
 for (let i = 1; i <= 25; i++) {
   candidateData.push({
     candidateId: i,
     userId: i,
     userName: `候选人${i}`,
-    status: ['active', 'interviewing', 'offer', 'hired', 'rejected'][i % 5],
+    status: i % 6,
     tags: i % 3 === 0 ? ['优质', '急招'] : i % 2 === 0 ? ['VIP'] : [],
-    currentStage: ['简历筛选', '初试', '复试', '终试', 'Offer审批'][i % 5],
+    currentStage: ['', '第1轮面试', '第2轮笔试', '待HR发Offer', '候选人确认中', ''][i % 6],
+    jobName: ['前端工程师', 'Java开发', '产品经理', 'UI设计师', '数据分析师'][i % 5],
+    phonenumber: '138' + String(10000000 + i),
+    totalScore: 55 + ((i * 7) % 45),
+    currentRound: i % 6 === 1 || i % 6 === 2 ? (i % 3) + 1 : 0,
+    examScore: i % 6 === 2 ? 60 + (i % 30) : null,
+    examPass: i % 6 === 2 ? 1 : 0,
+    latestInterviewTime: i % 6 === 1 ? '2026-11-0' + ((i % 9) + 1) + ' 14:00:00' : null,
+    endReason: i % 6 === 5 ? ['HR_REJECTED', 'OFFER_REJECTED', 'OFFER_EXPIRED'][i % 3] : null,
+    endTime: i % 6 >= 4 ? '2026-11-0' + ((i % 9) + 1) + ' 18:00:00' : null,
     applyTime: '2026-09-0' + ((i % 9) + 1) + ' 10:00:00',
-    latestUpdate: '2026-09-0' + ((i % 9) + 1) + ' 14:00:00'
+    updateTime: '2026-11-0' + ((i % 9) + 1) + ' 14:00:00',
+    createTime: '2026-09-0' + ((i % 9) + 1) + ' 10:00:00'
   })
 }
 route(/^\/biz\/candidate\/list$/, 'get', (p, q) => ok(paginate(candidateData, q), '查询成功'))

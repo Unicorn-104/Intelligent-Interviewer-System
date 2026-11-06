@@ -34,10 +34,9 @@ const cityChart = ref(null)
 const trendChart = ref(null)
 const trendEmpty = ref(false)
 
+// 候选人状态分布按投递六态渲染：0已投递 1招聘中 2待发Offer 3待确认Offer 4已录用 5未录用
 const STATUS_MAP = {
-  0: '待筛选', 1: '初筛中', 2: '笔试中', 3: '面试中',
-  4: '待录用', 5: '已发Offer', 6: '已入职', 7: '已淘汰',
-  8: '笔试未过', 9: '已过期'
+  0: '已投递', 1: '招聘中', 2: '待发Offer', 3: '待确认Offer', 4: '已录用', 5: '未录用'
 }
 
 onMounted(async () => {

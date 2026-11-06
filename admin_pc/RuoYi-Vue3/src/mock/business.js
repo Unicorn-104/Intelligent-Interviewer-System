@@ -798,10 +798,10 @@ export const recruitmentOverview = {
     }
   ],
   funnel: [
-    { name: '简历投递', value: 3180 },
-    { name: '进入初筛', value: 2460 },
-    { name: '通过初筛', value: 942 },
-    { name: '完成面试', value: 286 },
-    { name: '通过终审', value: 74 }
+    { name: '已投递', value: 3180 },
+    { name: '招聘中', value: 2460 },
+    { name: '待发Offer', value: 942 },
+    { name: '待确认Offer', value: 286 },
+    { name: '已录用', value: 74 }
   ]
 }

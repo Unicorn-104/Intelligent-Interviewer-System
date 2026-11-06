@@ -138,7 +138,7 @@ async function submitApproval() {
 async function markResult(row, accepted) {
   const tip = accepted
     ? '确认候选人已接受该 Offer？候选人状态将更新为「已录用」。'
-    : '确认候选人拒绝该 Offer？候选人状态将被标记为「已淘汰」并归档人才库。'
+    : '确认候选人拒绝该 Offer？投递状态将转为「未录用」（终止原因：候选人拒绝 Offer）。'
   if (!window.confirm(tip)) return
   try {
     const action = accepted ? markOfferAccepted : markOfferRejected

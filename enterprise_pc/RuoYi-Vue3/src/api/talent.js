@@ -112,12 +112,12 @@ export function listApplicationPositions() {
   })
 }
 
-// 批量更新投递状态（只影响选中的投递，不串岗位）
-export function updateApplicationStatus(applicationIds, status) {
+// 批量更新投递状态（只影响选中的投递，不串岗位）；转入未录用(5)时传终止原因 endReason
+export function updateApplicationStatus(applicationIds, status, endReason) {
   return request({
     url: '/enterprise/talent/applications/status',
     method: 'put',
-    data: { applicationIds, status }
+    data: { applicationIds, status, endReason }
   })
 }
 

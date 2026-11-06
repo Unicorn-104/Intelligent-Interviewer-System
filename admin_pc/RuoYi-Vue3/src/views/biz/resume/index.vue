@@ -136,12 +136,11 @@ import { listResume, getResume, delResume, getResumeSummary } from '@/api/biz/re
 
 const { proxy } = getCurrentInstance()
 
-// ==================== 状态映射 ====================
+// ==================== 状态映射（投递六态：0已投递 1招聘中 2待发Offer 3待确认Offer 4已录用 5未录用） ====================
 const CODE_MAP = {
-  0: '新候选人', 1: '已初筛', 2: '面试中', 3: '淘汰', 4: '通过',
-  5: '通过', 6: '归档', 7: '归档', 8: '淘汰', 9: '新候选人'
+  0: '已投递', 1: '招聘中', 2: '待发Offer', 3: '待确认Offer', 4: '已录用', 5: '未录用'
 }
-const CODE_TAG = { 0: 'info', 1: 'primary', 2: 'warning', 3: 'danger', 4: 'success', 5: 'success', 6: 'info', 7: 'info', 8: 'danger', 9: 'info' }
+const CODE_TAG = { 0: 'info', 1: 'primary', 2: 'warning', 3: 'warning', 4: 'success', 5: 'danger' }
 const DEGREE_MAP = { 1: '大专', 2: '本科', 3: '硕士', 4: '博士' }
 const LEVEL_MAP = { 1: '初级', 2: '中级', 3: '高级' }
 
@@ -190,9 +189,10 @@ const statCards = computed(() => {
   const sum = (codes) => codes.reduce((a, c) => a + (m[c]?.cnt || 0), 0)
   return [
     { label: '简历总数', value: total.value, color: '#409eff' },
-    { label: '面试中', value: sum([2]), color: '#F59E0B' },
-    { label: '通过', value: sum([4, 5]), color: '#22C55E' },
-    { label: '淘汰', value: sum([3, 8]), color: '#EF4444' }
+    { label: '招聘中', value: sum([1]), color: '#F59E0B' },
+    { label: 'Offer 阶段', value: sum([2, 3]), color: '#E879F9' },
+    { label: '已录用', value: sum([4]), color: '#22C55E' },
+    { label: '未录用', value: sum([5]), color: '#EF4444' }
   ]
 })
 
