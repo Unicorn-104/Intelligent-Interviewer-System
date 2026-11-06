@@ -14,8 +14,8 @@ import 'evaluation_report_page.dart';
 /// 依据《业务功能分析》UC-12 步骤8-10 与 UC-15：
 /// - 确认通过：终面 → 自动触发 Offer 发送；非终面 → 级联自动创建下一轮预约任务
 /// - 调整后通过：HR 修改五维评分后确认
-/// - 驳回（淘汰）：候选人状态更新为"已淘汰-面试未通过"，
-///   简历自动归档至人才库并发送"感谢参与"邮件（记录淘汰原因）
+/// - 驳回（淘汰）：投递状态更新为「未录用」（HR淘汰，记录终止原因），
+///   简历自动归档至人才库并发送"感谢参与"邮件
 /// 数据来源：本地 Mock 数据（mock_execution.dart 的 mockPendingReviews），
 /// TODO: P7阶段替换为真实接口（lib/api/review_api.dart 的
 /// listPendingReviews / confirmReview / adjustReview / rejectReview）。
@@ -157,7 +157,7 @@ class _ReviewPageState extends State<ReviewPage> {
         icon: const Icon(Icons.archive_outlined, color: AppColors.muted),
         title: const Text('已完成淘汰归档'),
         content: const Text(
-          '候选人状态已更新为"已淘汰-面试未通过"；\n'
+          '候选人投递状态已更新为「未录用」（HR淘汰）；\n'
           '简历已自动归档至人才库（保留历史记录）；\n'
           '有温度的"感谢参与"邮件已发送。',
         ),

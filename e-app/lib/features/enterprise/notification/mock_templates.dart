@@ -2,7 +2,7 @@
 ///
 /// 依据《业务功能分析》UC-16（全流程状态通知与模板化管理）E1：
 /// HR 可新增/编辑通知模板，支持多语言版本管理；模板场景覆盖
-/// "简历投递成功/初筛通过/初筛淘汰/面试邀约/面试提醒/评估完成"等全流程节点。
+/// "简历投递成功/招聘中启动/面试邀约/面试提醒/待确认Offer/未录用告知"等六态流程节点。
 ///
 /// TODO: P7阶段替换为真实接口（lib/api/notification_api.dart 的
 /// listNotificationTemplates / addNotificationTemplate 等）。
@@ -27,8 +27,8 @@ const List<Map<String, dynamic>> mockNotificationTemplates = [
   },
   {
     'tplId': 302,
-    'name': '初筛通过通知',
-    'scene': '初筛通过',
+    'name': '招聘中启动通知',
+    'scene': '招聘中启动',
     'channels': ['邮件', '短信'],
     'languages': ['中文', '英文'],
     'enabled': true,
@@ -37,13 +37,13 @@ const List<Map<String, dynamic>> mockNotificationTemplates = [
   },
   {
     'tplId': 303,
-    'name': '初筛淘汰告知',
-    'scene': '初筛淘汰',
+    'name': '未录用告知',
+    'scene': '未录用通知',
     'channels': ['邮件'],
     'languages': ['中文'],
     'enabled': true,
     'updatedAt': '2026-10-06 10:24',
-    'placeholders': ['{{candidateName}}', '{{jobTitle}}'],
+    'placeholders': ['{{candidateName}}', '{{jobTitle}}', '{{endReason}}'],
   },
   {
     'tplId': 304,

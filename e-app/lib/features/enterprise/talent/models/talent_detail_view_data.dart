@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../../../core/constants/application_status.dart';
+
 class TalentJobContext {
   const TalentJobContext({
     required this.positionId,
@@ -47,13 +49,8 @@ List<Map<String, dynamic>> talentRows(Object? value, String field) {
   );
 }
 
-String talentStatus(Object? value) => switch (int.tryParse('$value')) {
-  0 => '已投递',
-  2 => '待面试',
-  3 => '已淘汰',
-  4 => '已录用',
-  _ => '状态未提供',
-};
+/// 投递状态（app_status）中文标签：统一走六态映射，禁止散落旧状态名。
+String talentStatus(Object? value) => ApplicationStatus.labelOf(value);
 
 String talentDegree(Object? value) => switch (int.tryParse('$value')) {
   1 => '中专',

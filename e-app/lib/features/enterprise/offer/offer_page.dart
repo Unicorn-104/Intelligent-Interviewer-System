@@ -25,7 +25,7 @@ class OfferPage extends StatefulWidget {
 class _OfferPageState extends State<OfferPage> {
   List<Map<String, dynamic>>? _offers;
   bool _loading = true;
-  int _filterIndex = 0; // 0=全部 1=已发送 2=已接受 3=已拒绝
+  int _filterIndex = 0; // 0=全部 1=待确认Offer 2=已录用 3=未录用
 
   @override
   void initState() {
@@ -116,7 +116,7 @@ class _OfferPageState extends State<OfferPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
               child: FilterChips(
-                labels: const ['全部', '已发送', '已接受', '已拒绝'],
+                labels: const ['全部', '待确认Offer', '已录用', '未录用'],
                 selectedIndex: _filterIndex,
                 onChanged: (index) {
                   setState(() => _filterIndex = index);
@@ -162,10 +162,11 @@ class _OfferCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = offer['status'] as String;
+    // Offer 生命周期与投递六态对齐：sent=待确认Offer / accepted=已录用 / rejected=未录用(Offer拒绝)
     final (statusLabel, statusColor, statusIcon) = switch (status) {
-      'accepted' => ('已接受', AppColors.green, Icons.check_circle_outline),
-      'rejected' => ('已拒绝', AppColors.red, Icons.cancel_outlined),
-      _ => ('已发送', AppColors.interactive, Icons.schedule_outlined),
+      'accepted' => ('已录用', AppColors.green, Icons.check_circle_outline),
+      'rejected' => ('未录用', AppColors.red, Icons.cancel_outlined),
+      _ => ('待确认Offer', AppColors.interactive, Icons.schedule_outlined),
     };
     return Card(
       child: Padding(

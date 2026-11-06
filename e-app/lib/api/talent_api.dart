@@ -118,3 +118,21 @@ Future<Uint8List> getTalentResumePdf(
     (client ?? EnterpriseApiClient()).getBytes(
       '/enterprise/talent/$talentId/resume/pdf',
     );
+/// HR 主动淘汰单条投递：经后端状态机终止为未录用并记录终止原因。
+/// 已对接：PUT /enterprise/talent/applications/terminate
+Future<Map<String, dynamic>> terminateTalentApplication({
+  required int candidateId,
+  required int positionId,
+  required String endReason,
+  EnterpriseApiClient? client,
+}) async {
+  final response = await (client ?? EnterpriseApiClient()).put(
+    '/enterprise/talent/applications/terminate',
+    body: {
+      'candidateId': candidateId,
+      'positionId': positionId,
+      'endReason': endReason,
+    },
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
