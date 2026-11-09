@@ -1,6 +1,7 @@
 package com.ruoyi.web.controller.candidate;
 
 import java.util.Map;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -29,9 +30,10 @@ public class ExamSubCameraController extends BaseController
     /** 副机位换取入会令牌：body {recordId, code} */
     @Anonymous
     @PostMapping("/join")
-    public AjaxResult join(@RequestBody Map<String, Object> body)
+    public AjaxResult join(@RequestBody Map<String, Object> body, HttpServletRequest request)
     {
-        return success(examMonitorService.subJoin(asLong(body.get("recordId")), asString(body.get("code"))));
+        return success(examMonitorService.subJoin(asLong(body.get("recordId")), asString(body.get("code")),
+                request.getServerName()));
     }
 
     /** 副机位心跳保活：body {recordId, code} */
