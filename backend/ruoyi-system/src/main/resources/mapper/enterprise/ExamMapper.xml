@@ -19,8 +19,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <!-- 题库（平台共享，无企业隔离列） -->
     <sql id="questionColumns">
-        select eqs_id as questionId, eqs_type as type, eqs_content as content,
+        select eqs_id as questionId, eqs_type as type, eqs_type_name as typeName,
+               eqs_content as content,
                eqs_options_json as optionsJson, eqs_answer as answer,
+               eqs_analysis as analysis,
                eqs_score as score, eqs_difficulty as difficulty,
                eqs_skill_tag as skillTag,
                date_format(eqs_created_at, '%Y-%m-%d %H:%i') as createdAt
@@ -52,9 +54,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <insert id="insertQuestion">
         insert into t_exam_question
-            (eqs_type, eqs_content, eqs_options_json, eqs_answer, eqs_score, eqs_difficulty, eqs_skill_tag)
+            (eqs_type, eqs_type_name, eqs_content, eqs_options_json, eqs_answer, eqs_analysis,
+             eqs_score, eqs_difficulty, eqs_skill_tag)
         values
-            (#{type}, #{content}, #{optionsJson}, #{answer}, #{score}, #{difficulty}, #{skillTag})
+            (#{type}, #{typeName}, #{content}, #{optionsJson}, #{answer}, #{analysis},
+             #{score}, #{difficulty}, #{skillTag})
     </insert>
 
     <select id="selectLastQuestionId" resultType="int">
@@ -63,8 +67,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <update id="updateQuestion">
         update t_exam_question
-        set eqs_type = #{type}, eqs_content = #{content}, eqs_options_json = #{optionsJson},
-            eqs_answer = #{answer}, eqs_score = #{score}, eqs_difficulty = #{difficulty},
+        set eqs_type = #{type}, eqs_type_name = #{typeName}, eqs_content = #{content},
+            eqs_options_json = #{optionsJson}, eqs_answer = #{answer}, eqs_analysis = #{analysis},
+            eqs_score = #{score}, eqs_difficulty = #{difficulty},
             eqs_skill_tag = #{skillTag}, eqs_updated_at = now()
         where eqs_id = #{id}
     </update>

@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Plus, Search, Pencil, Trash2, X, Eye, WandSparkles, Save, Timer, FileText, GraduationCap, CalendarClock, Bell, Mail, Send, ShieldCheck, FileCheck2 } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import {
-  listQuestions, createQuestion, updateQuestion, deleteQuestion,
+  listQuestions, createQuestion, updateQuestion, deleteQuestion, aiExamAnalysis,
   listPapers, getPaper, createPaper, updatePaper, deletePaper, drawPreview,
   listSchedules, createSchedule, updateSchedule, cancelSchedule,
   saveNotifyConfig, listNotifyTargets, sendExamNotify,
@@ -22,10 +22,12 @@ const initPositionId = route.query.positionId ? Number(route.query.positionId) :
 
 const TYPE_OPTIONS = [
   { code: 1, label: '单选题' }, { code: 2, label: '多选题' }, { code: 3, label: '判断题' },
-  { code: 4, label: '简答题' }, { code: 5, label: '编程题' }
+  { code: 4, label: '简答题' }, { code: 5, label: '编程题' }, { code: 6, label: '自定义题型' }
 ]
 const DIFF_OPTIONS = [{ code: 1, label: '简单' }, { code: 2, label: '中等' }, { code: 3, label: '困难' }]
-const typeLabel = (t) => (TYPE_OPTIONS.find(x => x.code === Number(t)) || {}).label || t
+const typeLabel = (t, typeName) => Number(t) === 6
+  ? (typeName || '自定义题型')
+  : ((TYPE_OPTIONS.find(x => x.code === Number(t)) || {}).label || t)
 const diffLabel = (d) => (DIFF_OPTIONS.find(x => x.code === Number(d)) || {}).label || d
 const STATUS_META = { 0: ['待生效', 'gray'], 1: ['进行中', 'green'], 2: ['已结束', 'orange'], 3: ['已取消', 'red'] }
 
@@ -57,28 +59,76 @@ async function loadQuestions() {
 }
 
 const qModal = reactive({ open: false, id: null, saving: false, form: blankQuestion() })
+const aiLoading = ref(false)
+const aiIssues = ref([])
 function blankQuestion() {
-  return { type: 1, content: '', options: ['', '', '', ''], answer: '', score: 5, difficulty: 2, skillTag: '' }
+  return { type: 1, typeName: '', content: '', options: ['', '', '', ''], answer: '', analysis: '', score: 5, difficulty: 2, skillTag: '' }
 }
 function openCreateQ() {
+  aiIssues.value = []
   Object.assign(qModal, { open: true, id: null, form: blankQuestion() })
 }
 function openEditQ(row) {
+  aiIssues.value = []
   qModal.open = true; qModal.id = row.questionId
   qModal.form = {
-    type: row.type, content: row.content,
+    type: row.type, typeName: row.typeName || '', content: row.content,
     options: Array.isArray(row.options) ? row.options.map(optText) : (row.type <= 3 ? ['', '', '', ''] : []),
-    answer: row.answer || '', score: Number(row.score), difficulty: row.difficulty, skillTag: row.skillTag || ''
+    answer: row.answer || '', analysis: row.analysis || '', score: Number(row.score), difficulty: row.difficulty, skillTag: row.skillTag || ''
   }
 }
 function addOption() { if (qModal.form.options.length < 8) qModal.form.options.push('') }
 function removeOption(i) { qModal.form.options.splice(i, 1) }
+function optLetter(i) { return String.fromCharCode(65 + i) }
+function isChoiceForm() {
+  const f = qModal.form
+  return f.type <= 2 || (f.type === 6 && f.options.some(o => String(o || '').trim()))
+}
+function isChoiceAnswer(i) {
+  const ans = String(qModal.form.answer || '').trim().toUpperCase()
+  if (qModal.form.type === 1) return ans === optLetter(i)
+  if (qModal.form.type === 2 || qModal.form.type === 6) return choiceKeys(ans).includes(optLetter(i))
+  return false
+}
+function pickChoiceAnswer(i) {
+  if (qModal.form.type === 1) { qModal.form.answer = optLetter(i); return }
+  const keys = new Set(choiceKeys(qModal.form.answer))
+  const k = optLetter(i)
+  keys.has(k) ? keys.delete(k) : keys.add(k)
+  qModal.form.answer = Array.from(keys).sort().join('')
+}
+function onTypeChange() {
+  if (qModal.form.type === 6) qModal.form.options = []
+  if (qModal.form.type === 1) qModal.form.answer = choiceKeys(qModal.form.answer).slice(0, 1).join('')
+}
+async function aiAnalyze() {
+  const f = qModal.form
+  if (!String(f.content || '').trim()) { notify('请先填写题干'); return }
+  if (!String(f.answer || '').trim()) { notify('请先填写标准答案'); return }
+  aiLoading.value = true
+  aiIssues.value = []
+  try {
+    const options = (f.type <= 3 || f.type === 6) ? f.options.filter(o => String(o || '').trim()) : []
+    const res = await aiExamAnalysis({
+      type: f.type, typeName: f.typeName, content: f.content, options,
+      answer: f.answer, difficulty: f.difficulty, skillTag: f.skillTag
+    })
+    const data = res?.data || {}
+    if (data.analysis) f.analysis = data.analysis
+    aiIssues.value = Array.isArray(data.issues) ? data.issues : []
+    notify(data.valid === false ? 'AI 已补全解析，但题目存在问题' : 'AI 已补全解析，题目校验通过')
+  } catch (e) { /* 拦截器已提示 */ } finally { aiLoading.value = false }
+}
 async function saveQuestion() {
+  if (qModal.form.type === 6 && !String(qModal.form.typeName || '').trim()) { notify('请填写自定义题型名称'); return }
+  if (isChoiceForm() && !String(qModal.form.answer || '').trim()) { notify('请选择标准答案'); return }
   qModal.saving = true
   try {
     const body = { ...qModal.form }
-    if (body.type > 3) delete body.options
-    else body.options = body.options.filter(o => o.trim())
+    if (qModal.form.type === 6) body.options = qModal.form.options.filter(o => String(o || '').trim())
+    else if (body.type > 3) delete body.options
+    else body.options = body.options.filter(o => String(o || '').trim())
+    if (!body.typeName) delete body.typeName
     if (qModal.id) await updateQuestion(qModal.id, body)
     else await createQuestion(body)
     qModal.open = false
@@ -410,7 +460,7 @@ onMounted(() => {
         <tbody>
           <tr v-for="row in qList" :key="row.questionId">
             <td>{{ row.questionId }}</td>
-            <td><span class="pill" :class="row.type <= 3 ? '' : 'purple'">{{ typeLabel(row.type) }}</span></td>
+            <td><span class="pill" :class="row.type <= 3 ? '' : 'purple'">{{ typeLabel(row.type, row.typeName) }}</span></td>
             <td class="wide ellipsis" :title="row.content">{{ row.content }}</td>
             <td>{{ diffLabel(row.difficulty) }}</td>
             <td><span v-if="row.skillTag" class="tag">{{ row.skillTag }}</span><span v-else class="muted">—</span></td>
@@ -561,9 +611,12 @@ onMounted(() => {
         <div class="body">
           <div class="form-grid">
             <div class="field"><label>题型</label>
-              <select class="select" v-model.number="qModal.form.type">
+              <select class="select" v-model.number="qModal.form.type" @change="onTypeChange">
                 <option v-for="t in TYPE_OPTIONS" :key="t.code" :value="t.code">{{ t.label }}</option>
               </select>
+            </div>
+            <div v-if="qModal.form.type === 6" class="field"><label>自定义题型名称</label>
+              <input class="input" v-model="qModal.form.typeName" placeholder="如：案例分析题、连线题"/>
             </div>
             <div class="field"><label>难度</label>
               <select class="select" v-model.number="qModal.form.difficulty">
@@ -571,17 +624,34 @@ onMounted(() => {
               </select>
             </div>
             <div class="field full"><label>题干</label><textarea class="textarea" v-model="qModal.form.content" placeholder="请输入题干内容"/></div>
-            <div v-if="qModal.form.type <= 3" class="field full">
-              <label>选项<span class="muted tiny">（判断题默认「对/错」，单选/多选按顺序对应 A、B、C…）</span></label>
+            <div v-if="qModal.form.type <= 3 || qModal.form.type === 6" class="field full">
+              <label>选项<span class="muted tiny">（判断题默认「对/错」；自定义题型可不填选项，即简答形式）</span></label>
               <div class="opt-row" v-for="(o, i) in qModal.form.options" :key="i">
+                <input v-if="qModal.form.type <= 2 || qModal.form.type === 6" class="opt-check"
+                       :type="qModal.form.type === 1 ? 'radio' : 'checkbox'"
+                       :checked="isChoiceAnswer(i)" @change="pickChoiceAnswer(i)"/>
                 <span class="opt-key">{{ String.fromCharCode(65 + i) }}</span>
                 <input class="input" v-model="qModal.form.options[i]" :placeholder="'选项 ' + String.fromCharCode(65 + i)"/>
-                <button class="icon-btn" title="删除选项" @click="removeOption(i)" :disabled="qModal.form.options.length <= 2"><Trash2 :size="13"/></button>
+                <button class="icon-btn" title="删除选项" @click="removeOption(i)"
+                        :disabled="qModal.form.type <= 3 && qModal.form.options.length <= 2"><Trash2 :size="13"/></button>
               </div>
               <button class="btn sm ghost-primary" @click="addOption"><Plus :size="13"/>添加选项</button>
             </div>
-            <div class="field full"><label>标准答案<span class="muted tiny">（单选如 A；多选如 ABD；判断填 对/错；简答/编程填参考答案）</span></label>
+            <div v-if="!isChoiceForm()" class="field full"><label>标准答案<span class="muted tiny">（判断题填 对/错；简答/编程/自定义简答填参考答案）</span></label>
               <textarea class="textarea short" v-model="qModal.form.answer" placeholder="请输入标准答案"/>
+            </div>
+            <div class="field full">
+              <div class="label-row">
+                <label>答案解析</label>
+                <button class="btn sm ghost-primary" :disabled="aiLoading" @click="aiAnalyze">
+                  <WandSparkles :size="13"/>{{ aiLoading ? 'AI 补全中…' : 'AI补全解析' }}
+                </button>
+              </div>
+              <textarea class="textarea" v-model="qModal.form.analysis" placeholder="解析正确答案与易错点；可点击「AI补全解析」自动生成并校验题目"/>
+              <div v-if="aiIssues.length" class="ai-issues">
+                <div class="ai-issues-title">AI 校验发现以下问题：</div>
+                <div v-for="(issue, i) in aiIssues" :key="i" class="ai-issue">· {{ issue }}</div>
+              </div>
             </div>
             <div class="field"><label>分值</label><input class="input" type="number" min="1" v-model.number="qModal.form.score"/></div>
             <div class="field"><label>技能标签</label><input class="input" v-model="qModal.form.skillTag" placeholder="如 Java 并发"/></div>
@@ -621,7 +691,7 @@ onMounted(() => {
               </div>
               <div class="pool">
                 <div v-for="q in paperModal.pool" :key="q.questionId" :class="['pool-item', { picked: paperModal.form.selected.some(s => s.questionId === q.questionId) }]" @click="togglePool(q)">
-                  <span class="pill sm">{{ typeLabel(q.type) }}</span>
+                  <span class="pill sm">{{ typeLabel(q.type, q.typeName) }}</span>
                   <span class="pool-text">{{ q.content }}</span>
                   <span class="muted tiny">{{ q.score }}分</span>
                 </div>
@@ -634,7 +704,7 @@ onMounted(() => {
                 <thead><tr><th>ID</th><th>题型</th><th class="wide">题干</th><th>分值</th><th v-if="!paperModal.view">操作</th></tr></thead>
                 <tbody>
                   <tr v-for="s in paperModal.form.selected" :key="s.questionId">
-                    <td>{{ s.questionId }}</td><td>{{ typeLabel(s.type) }}</td>
+                    <td>{{ s.questionId }}</td><td>{{ typeLabel(s.type, s.typeName) }}</td>
                     <td class="wide ellipsis">{{ s.content }}</td>
                     <td><input v-if="!paperModal.view" class="input tiny-input" type="number" min="1" v-model.number="s.score"/><span v-else>{{ s.score }}</span></td>
                     <td v-if="!paperModal.view"><button class="icon-btn danger" @click="togglePool(s)"><Trash2 :size="13"/></button></td>
@@ -666,7 +736,7 @@ onMounted(() => {
                 <thead><tr><th>ID</th><th>题型</th><th class="wide">题干</th><th>分值</th></tr></thead>
                 <tbody>
                   <tr v-for="q in paperModal.preview.questions" :key="q.questionId">
-                    <td>{{ q.questionId }}</td><td>{{ typeLabel(q.type) }}</td><td class="wide ellipsis">{{ q.content }}</td><td>{{ q.score }}</td>
+                    <td>{{ q.questionId }}</td><td>{{ typeLabel(q.type, q.typeName) }}</td><td class="wide ellipsis">{{ q.content }}</td><td>{{ q.score }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -818,7 +888,7 @@ onMounted(() => {
                 <div v-for="(a, i) in reportModal.data.answers" :key="a.eanId" class="qa-item">
                   <div class="qa-head">
                     <span class="qa-no">第 {{ i + 1 }} 题</span>
-                    <span class="pill sm" :class="a.type <= 3 ? '' : 'purple'">{{ typeLabel(a.type) }}</span>
+                    <span class="pill sm" :class="a.type <= 3 ? '' : 'purple'">{{ typeLabel(a.type, a.typeName) }}</span>
                     <span class="qa-score">
                       <template v-if="Number(a.type) > 3 && Number(reportModal.data.passStatus) === 2">
                         <input class="input tiny-input" type="number" :min="0" :max="Number(a.maxScore)" v-model="reportModal.scores[a.questionId]"/>
@@ -911,6 +981,11 @@ onMounted(() => {
 .textarea.short{min-height:64px}
 .opt-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
 .opt-key{width:24px;height:24px;border-radius:7px;background:#eaf1ff;color:var(--primary);display:grid;place-items:center;font-size:12px;font-weight:700;flex:none}
+.opt-check{width:15px;height:15px;flex:none;margin:0;accent-color:var(--primary);cursor:pointer}
+.label-row{display:flex;align-items:center;gap:8px}
+.ai-issues{margin-top:8px;padding:10px 12px;border-radius:8px;background:#fff7e6;border:1px solid #ffe0a3;font-size:12px;color:#9a6a00}
+.ai-issues-title{font-weight:600;margin-bottom:4px}
+.ai-issue{line-height:1.7}
 .sub-block{margin-top:16px}
 .sub-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;font-size:13px}
 .inline-search{display:flex;gap:6px}

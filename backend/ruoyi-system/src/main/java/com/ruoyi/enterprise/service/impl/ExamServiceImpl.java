@@ -36,9 +36,11 @@ import com.ruoyi.system.service.EmailService;
 @Service
 public class ExamServiceImpl implements IExamService
 {
-    /** 选择题题型（1-单选，2-多选，3-判断）：必须提供选项 */
+    /** 内置题型（1-单选，2-多选，3-判断，4-简答，5-编程，6-自定义） */
     private static final int TYPE_MIN = 1;
     private static final int TYPE_MAX = 5;
+    /** 自定义题型：题型名称由用户填写，是否客观题取决于是否配置了选项 */
+    private static final int TYPE_CUSTOM = 6;
 
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -125,10 +127,20 @@ public class ExamServiceImpl implements IExamService
         Integer type = asInt(body.get("type"), null);
         String content = asString(body.get("content"));
         String answer = asString(body.get("answer"));
+        String analysis = asString(body.get("analysis"));
+        String typeName = asString(body.get("typeName"));
         BigDecimal score = asDecimal(body.get("score"));
-        if (type == null || type < TYPE_MIN || type > TYPE_MAX)
+        if (type == null || type < TYPE_MIN || type > TYPE_CUSTOM)
         {
-            throw new ServiceException("题型无效（1-单选，2-多选，3-判断，4-简答，5-编程）");
+            throw new ServiceException("题型无效（1-单选，2-多选，3-判断，4-简答，5-编程，6-自定义）");
+        }
+        if (type == TYPE_CUSTOM && StringUtils.isEmpty(typeName))
+        {
+            throw new ServiceException("自定义题型必须填写题型名称");
+        }
+        if (type != TYPE_CUSTOM)
+        {
+            typeName = null;
         }
         if (StringUtils.isEmpty(content))
         {
@@ -152,9 +164,11 @@ public class ExamServiceImpl implements IExamService
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("id", id);
         params.put("type", type);
+        params.put("typeName", typeName);
         params.put("content", content);
         params.put("optionsJson", optionsJson);
         params.put("answer", answer);
+        params.put("analysis", analysis);
         params.put("score", score);
         params.put("difficulty", asInt(body.get("difficulty"), 2));
         params.put("skillTag", asString(body.get("skillTag")));

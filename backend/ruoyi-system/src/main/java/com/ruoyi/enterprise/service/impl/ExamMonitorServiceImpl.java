@@ -100,7 +100,7 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
         {
             return false;
         }
-        if (asInt(record.get("forceDualCamera"), 0) != 1)
+        if (asInt(record.get("forceDualCamera")) != 1)
         {
             return true;
         }
