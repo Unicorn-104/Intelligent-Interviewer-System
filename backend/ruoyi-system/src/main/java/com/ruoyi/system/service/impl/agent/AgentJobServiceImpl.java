@@ -34,6 +34,11 @@ public class AgentJobServiceImpl implements IAgentJobService
     {
         AgentJobQuery normalized = query == null ? new AgentJobQuery() : query;
         normalize(normalized);
+        if (normalized.getResumeId() != null && (normalized.getResumeId() <= 0
+                || jobMapper.countAvailableResume(normalized.getResumeId(), userId) == 0))
+        {
+            throw new ServiceException("所选简历不存在或不可用，请重新选择自己的有效简历");
+        }
         PageHelper.startPage(normalized.getPage(), normalized.getSize());
         List<AgentJob> jobs = jobMapper.selectJobList(normalized, userId);
         PageInfo<AgentJob> pageInfo = new PageInfo<>(jobs);

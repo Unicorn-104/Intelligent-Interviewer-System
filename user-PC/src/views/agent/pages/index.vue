@@ -65,23 +65,35 @@
 
       <section class="jobs-section" id="jobs" aria-labelledby="jobsHeading">
         <div class="section-heading">
-          <div><h2 id="jobsHeading">为你推荐的岗位</h2><p>根据默认简历技能、求职方向和城市偏好提供参考匹配</p></div>
-          <div class="jobs-controls"><select v-model="sort" class="filter-select" id="jobFilter" aria-label="岗位排序" @change="loadJobs"><option value="match">按匹配度排序</option><option value="salary">按薪资排序</option><option value="latest">按最新发布排序</option></select><button class="text-button" type="button" :disabled="loading" @click="loadJobs">刷新岗位 ↻</button></div>
+          <div><h2 id="jobsHeading">{{ resumes.length ? '为你推荐的岗位' : '在招岗位' }}</h2><p>{{ recommendationHint }}</p></div>
+          <div class="jobs-controls">
+            <label class="recommendation-resume-control" for="recommendationResume">
+              <span>推荐简历</span>
+              <select id="recommendationResume" v-model="selectedResumeId" class="filter-select recommendation-resume-select" :disabled="resumesLoading || !!resumesError || !resumes.length" @change="changeRecommendationResume">
+                <option v-if="!resumes.length" value="">{{ resumesLoading ? '正在读取简历…' : resumesError ? '简历加载失败' : '暂无简历' }}</option>
+                <option v-for="resume in resumes" :key="resume.id" :value="String(resume.id)">{{ resume.name || '未命名简历' }}{{ resume.isDefault ? '（默认）' : '' }}</option>
+              </select>
+            </label>
+            <select v-model="sort" class="filter-select" id="jobFilter" aria-label="岗位排序" :disabled="resumesLoading || !!resumesError" @change="loadJobs"><option value="match">按匹配度排序</option><option value="salary">按薪资排序</option><option value="latest">按最新发布排序</option></select>
+            <button class="text-button" type="button" :disabled="resumesLoading || loading" @click="loadRecommendationResumes">刷新岗位 ↻</button>
+          </div>
         </div>
+        <p v-if="!resumesLoading && !resumesError && !resumes.length" class="recommendation-empty">还没有简历，<a :href="appHref('/profile-resumes')">去创建或上传简历</a>，即可获得对应岗位的参考匹配。</p>
 
         <div class="jobs-grid" id="jobsGrid">
 
 
 
 
-          <div v-if="loading" class="empty-state visible">正在读取企业发布的岗位...</div>
+          <div v-if="resumesLoading || loading" class="empty-state visible">{{ resumesLoading ? '正在读取你的简历…' : selectedResume ? '正在根据所选简历读取岗位…' : '正在读取企业发布的岗位…' }}</div>
+          <div v-else-if="resumesError" class="empty-state visible">{{ resumesError }}<button class="text-button" type="button" @click="loadRecommendationResumes">重新读取简历</button></div>
           <div v-else-if="errorMessage" class="empty-state visible">{{ errorMessage }}<button class="text-button" type="button" @click="loadJobs">重新加载</button></div>
           <template v-else-if="jobs.length">
             <article v-for="job in jobs" :key="job.id" class="job-card" tabindex="0" role="link" :aria-label="`查看${job.title}详情`" @click="openJob(job.id)" @keydown.enter="openJob(job.id)" @keydown.space.prevent="openJob(job.id)">
               <div class="job-card-top"><div class="company-logo" :class="companyLogoClass(job.companyName)">{{ companyMark(job.companyName) }}</div><button class="bookmark-button" :class="{ saved: isSaved(job.id) }" type="button" :aria-label="isSaved(job.id) ? `取消收藏${job.title}岗位` : `收藏${job.title}岗位`" title="收藏岗位" @click.stop="toggleSaved(job.id)"><svg viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg></button></div>
               <h3>{{ job.title }}</h3><div class="job-card-company">{{ job.companyName }} · {{ job.workCity || '地点不限' }}</div>
               <div class="job-card-meta"><span class="meta-item"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z" /><circle cx="12" cy="9" r="2.2" /></svg>{{ job.experienceRequired || '经验不限' }}</span><span class="meta-item"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></svg>{{ job.educationText }}</span></div>
-              <div class="job-card-tags"><span class="match-tag" :title="job.matchScore != null ? '规则参考分：岗位技能覆盖占60%，求职方向占25%，城市偏好占15%；缺失信息不加分，不代表录用概率' : '请补充默认简历技能或求职方向后查看匹配度'">{{ job.matchScore != null ? `${job.matchScore}%参考匹配` : '完善资料后匹配' }}</span><span v-if="job.skills?.[0]" class="job-tag">{{ job.skills[0] }}</span><span v-if="job.jobTypeText" class="job-tag">{{ job.jobTypeText }}</span></div><div class="job-card-footer"><span class="salary">{{ job.salaryText }}</span><button class="apply-button" type="button" @click.stop="applyJob(job)">{{ job.appliedFlag ? '查看投递' : '立即投递' }}</button></div>
+              <div class="job-card-tags"><span class="match-tag" :title="selectedResume && job.matchScore != null ? '规则参考分：所选简历的岗位技能覆盖占60%，求职方向占25%，城市偏好占15%；不代表录用概率' : '请补充所选简历的技能或求职方向后查看匹配度'">{{ selectedResume ? job.matchScore != null ? `${job.matchScore}%参考匹配` : '完善简历后匹配' : '选择简历后匹配' }}</span><span v-if="job.skills?.[0]" class="job-tag">{{ job.skills[0] }}</span><span v-if="job.jobTypeText" class="job-tag">{{ job.jobTypeText }}</span></div><div class="job-card-footer"><span class="salary">{{ job.salaryText }}</span><button class="apply-button" type="button" @click.stop="applyJob(job)">{{ job.appliedFlag ? '查看投递' : '立即投递' }}</button></div>
             </article>
           </template>
           <div v-else class="empty-state visible">当前暂无企业发布的在招岗位。</div>
@@ -202,6 +214,7 @@ import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { listJobs } from '@/api/agent/job'
+import { getResumes } from '@/api/agent/resume'
 import { listApplications } from '@/api/agent/application'
 import { listCandidateSchedule } from '@/api/system/conference'
 import { listNoticeTop, markNoticeRead } from '@/api/system/notice'
@@ -213,6 +226,16 @@ const keyword = ref('')
 const sort = ref('match')
 const loading = ref(false)
 const errorMessage = ref('')
+const resumes = ref([])
+const resumesLoading = ref(true)
+const resumesError = ref('')
+const selectedResumeId = ref('')
+const selectedResume = computed(() => resumes.value.find(resume => String(resume.id) === selectedResumeId.value))
+const recommendationHint = computed(() => selectedResume.value
+  ? `根据「${selectedResume.value.name || '未命名简历'}」的技能、求职方向和城市偏好提供参考匹配`
+  : '选择你创建的简历，查看对应岗位的参考匹配')
+let resumeRequestId = 0
+let jobRequestId = 0
 const applications = ref([])
 const applicationLoading = ref(false)
 const applicationError = ref('')
@@ -301,17 +324,52 @@ const calendarCells = computed(() => {
 const selectedItems = computed(() => scheduleByDate.value[selectedDate.value] || [])
 const selectedDateLabel = computed(() => formatChineseDate(selectedDate.value))
 
+async function loadRecommendationResumes() {
+  const requestId = ++resumeRequestId
+  ++jobRequestId
+  resumesLoading.value = true
+  loading.value = false
+  resumesError.value = ''
+  jobs.value = []
+  try {
+    const response = await getResumes()
+    if (requestId !== resumeRequestId) return
+    if (!Array.isArray(response.data)) throw new Error('简历列表响应异常，请重新读取')
+    resumes.value = response.data
+    const current = resumes.value.find(resume => String(resume.id) === selectedResumeId.value)
+    const preferred = current || resumes.value.find(resume => resume.isDefault) || resumes.value[0]
+    selectedResumeId.value = preferred ? String(preferred.id) : ''
+  } catch (error) {
+    if (requestId !== resumeRequestId) return
+    resumes.value = []
+    selectedResumeId.value = ''
+    resumesError.value = error?.message || '简历列表暂时无法读取，请重试'
+  } finally {
+    if (requestId === resumeRequestId) resumesLoading.value = false
+  }
+  if (requestId === resumeRequestId && !resumesError.value) await loadJobs()
+}
+
+function changeRecommendationResume() {
+  sort.value = 'match'
+  return loadJobs()
+}
+
 async function loadJobs() {
+  if (resumesLoading.value || resumesError.value) return
+  const requestId = ++jobRequestId
   loading.value = true
   errorMessage.value = ''
   try {
-    const response = await listJobs({ keyword: keyword.value || undefined, sort: sort.value, page: 1, size: 6 })
+    const response = await listJobs({ keyword: keyword.value || undefined, sort: sort.value, resumeId: selectedResume.value?.id, page: 1, size: 6 })
+    if (requestId !== jobRequestId) return
     jobs.value = response.data?.items || []
   } catch (error) {
+    if (requestId !== jobRequestId) return
     jobs.value = []
     errorMessage.value = error?.message || '岗位数据暂时无法读取，请稍后重试'
   } finally {
-    loading.value = false
+    if (requestId === jobRequestId) loading.value = false
   }
 }
 
@@ -530,14 +588,14 @@ function toggleSaved(id) {
 }
 
 function openJob(id) {
-  window.__agentNavigate(`/job-detail?id=${encodeURIComponent(id)}`)
+  window.__agentNavigate(`/job-detail?id=${encodeURIComponent(id)}${selectedResume.value ? `&resumeId=${encodeURIComponent(selectedResume.value.id)}` : ''}`)
 }
 
 function applyJob(job) {
   if (job.appliedFlag && job.applicationId) {
     window.__agentNavigate(`/application-detail?id=${encodeURIComponent(job.applicationId)}`)
   } else {
-    window.__agentNavigate(`/resume-select?job=${encodeURIComponent(job.id)}`)
+    window.__agentNavigate(`/resume-select?job=${encodeURIComponent(job.id)}${selectedResume.value ? `&resumeId=${encodeURIComponent(selectedResume.value.id)}` : ''}`)
   }
 }
 
@@ -621,7 +679,7 @@ function showToast(message) {
 }
 
 onMounted(() => {
-  loadJobs()
+  loadRecommendationResumes()
   loadApplications()
   loadNotices()
   loadSchedule()
@@ -638,6 +696,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  ++resumeRequestId
+  ++jobRequestId
   window.clearInterval(todayTimer)
 })
 
@@ -863,10 +923,16 @@ onUnmounted(() => {
 
     /* 推荐岗位区域 */
     .jobs-section { margin-top: 3px; }
+    .jobs-section .section-heading { flex-wrap: wrap; align-items: center; }
+    .jobs-section .section-heading > :first-child { flex: 1 1 280px; min-width: 0; }
     .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin: 0 0 15px; }
     .section-heading h2 { margin: 0; color: var(--primary); font-size: 18px; }
     .section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
-    .jobs-controls { display: flex; align-items: center; gap: 10px; }
+    .jobs-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+    .jobs-section .recommendation-resume-control { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: 12px; }
+    .jobs-section .recommendation-resume-select { width: clamp(140px, 15vw, 220px); min-width: 0; text-overflow: ellipsis; }
+    .jobs-section .recommendation-empty { margin: 0 0 15px; color: var(--muted); font-size: 13px; }
+    .jobs-section .recommendation-empty a { color: var(--interactive); }
     .filter-select { height: 34px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #fff; font-size: 12px; }
     .jobs-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
     .job-card { position: relative; display: flex; min-height: 224px; flex-direction: column; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: 0 4px 14px rgba(26, 60, 110, .04); transition: transform .2s ease, box-shadow .2s ease, border .2s; cursor: pointer; }
@@ -966,7 +1032,9 @@ onUnmounted(() => {
       .panel-header { padding-right: 18px; padding-left: 18px; }
       .activity-list { padding-right: 18px; padding-left: 18px; }
       .section-heading { display: block; }
-      .jobs-controls { margin-top: 12px; }
+      .jobs-controls { margin-top: 12px; justify-content: flex-start; }
+      .jobs-section .recommendation-resume-control { flex-basis: 100%; }
+      .jobs-section .recommendation-resume-select { flex: 1; width: 0; }
       .jobs-grid { grid-template-columns: 1fr; }
       .job-card { min-height: 210px; }
       .notification-popover { top: 57px; right: 14px; width: min(320px, calc(100vw - 28px)); }

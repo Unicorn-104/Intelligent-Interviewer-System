@@ -12,6 +12,8 @@ public interface AgentJobMapper
 {
     List<AgentJob> selectJobList(@Param("query") AgentJobQuery query, @Param("userId") Long userId);
 
+    int countAvailableResume(@Param("resumeId") Long resumeId, @Param("userId") Long userId);
+
     List<String> selectJobCategories();
 
     List<String> selectJobCities();

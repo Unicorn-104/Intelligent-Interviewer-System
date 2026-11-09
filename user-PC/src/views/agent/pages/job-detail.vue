@@ -90,7 +90,8 @@ function apply() {
   if (job.value.appliedFlag && job.value.applicationId) {
     window.__agentNavigate(`/application-detail?id=${job.value.applicationId}`)
   } else {
-    window.__agentNavigate(`/resume-select?job=${job.value.id}`)
+    const resumeId = typeof route.query.resumeId === 'string' && /^\d+$/.test(route.query.resumeId) ? route.query.resumeId : ''
+    window.__agentNavigate(`/resume-select?job=${job.value.id}${resumeId ? `&resumeId=${encodeURIComponent(resumeId)}` : ''}`)
   }
 }
 

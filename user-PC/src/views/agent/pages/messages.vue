@@ -229,54 +229,7 @@
     </div>
   </div>
 
-  <section v-if="aiOpen" class="ai-assistant-panel" aria-label="AI 智能助手">
-    <header class="ai-assistant-head">
-      <div class="ai-assistant-brand">
-        <span class="ai-assistant-icon">AI</span>
-        <div>
-          <strong>AI 智能助手</strong>
-          <span>{{ aiSending ? (aiStatus || '正在回答') : '基于真实账户数据回答' }}</span>
-        </div>
-      </div>
-      <div class="ai-assistant-actions">
-        <button type="button" title="新建会话" aria-label="新建会话" @click="newAiSession">＋</button>
-        <button type="button" title="关闭助手" aria-label="关闭助手" @click="aiOpen = false">×</button>
-      </div>
-    </header>
-    <div v-if="aiSessions.length" class="ai-session-switcher">
-      <label for="ai-session-select">会话</label>
-      <select id="ai-session-select" :value="aiSessionId || ''" :disabled="aiSending" @change="changeAiSession">
-        <option value="">新建会话</option>
-        <option v-for="session in aiSessions" :key="session.id" :value="session.id">{{ session.title || '新对话' }}</option>
-      </select>
-    </div>
-    <div ref="aiMessagesContainer" class="ai-assistant-messages">
-      <div v-if="aiLoading" class="ai-assistant-state">正在读取 AI 会话...</div>
-      <div v-else-if="aiError && !aiMessages.length" class="ai-assistant-state ai-error">
-        <span>{{ aiError }}</span>
-        <button type="button" @click="loadAiAssistant(true)">重新加载</button>
-      </div>
-      <template v-else-if="aiMessages.length">
-        <div v-for="(message, index) in aiMessages" :key="`${message.runId || 'local'}-${index}`" class="ai-message" :class="message.role === 'user' ? 'is-user' : 'is-assistant'">
-          <span class="ai-message-avatar">{{ message.role === 'user' ? '我' : 'AI' }}</span>
-          <div class="ai-message-bubble">{{ message.content || (aiSending && index === aiMessages.length - 1 ? '正在生成回答…' : '暂无回答内容') }}</div>
-        </div>
-      </template>
-      <div v-else class="ai-assistant-welcome">
-        <strong>你好，我是求职 AI 助手</strong>
-        <span>可以帮你分析简历、查询投递进度、推荐岗位或解答求职问题。</span>
-      </div>
-    </div>
-    <p v-if="aiError && aiMessages.length" class="ai-assistant-error">{{ aiError }}</p>
-    <form class="ai-assistant-composer" @submit.prevent="sendAiMessage">
-      <input v-model="aiDraft" maxlength="4000" :disabled="aiSending || aiLoading" placeholder="输入你的求职问题" aria-label="输入 AI 问题" />
-      <button v-if="aiSending" type="button" title="停止生成" aria-label="停止生成" @click="stopAiMessage">■</button>
-      <button v-else type="submit" title="发送问题" aria-label="发送问题" :disabled="aiLoading || !aiDraft.trim()">↑</button>
-    </form>
-  </section>
-  <button class="ai-assistant-fab" type="button" :aria-expanded="aiOpen" aria-label="打开 AI 智能助手" @click="toggleAiAssistant">
-    <span>AI</span>
-  </button>
+  <AiAssistant />
   <div class="toast" :class="{ show: toastVisible }" role="status" aria-live="polite">{{ toastText }}</div>
   <Teleport to="body">
     <div v-if="previewImage" class="message-image-preview" role="dialog" aria-modal="true" aria-label="聊天图片预览" @click.self="closeImagePreview" @keydown.esc="closeImagePreview" @keydown.tab.prevent="previewCloseButton?.focus()">
@@ -292,7 +245,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
 import { listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
-import { cancelAiRun, createAiSession, listAiMessages, listAiSessions, startAiRun, streamAiRun } from '@/api/agent/ai'
+import AiAssistant from '@/components/agent/AiAssistant.vue'
 import { getToken } from '@/utils/auth'
 import { unreadBadge, unreadCount } from '@/utils/agentUnread'
 import { formatMessageTime, formatShortTime } from '@/utils/agentTime'
@@ -340,19 +293,6 @@ const messagesContainer = ref(null)
 const followLatestMessages = ref(true)
 const toastText = ref('')
 const toastVisible = ref(false)
-const aiOpen = ref(false)
-const aiInitialized = ref(false)
-const aiSessions = ref([])
-const aiSessionId = ref(null)
-const aiMessages = ref([])
-const aiDraft = ref('')
-const aiLoading = ref(false)
-const aiSending = ref(false)
-const aiStatus = ref('')
-const aiError = ref('')
-const aiRunId = ref(null)
-const aiMessagesContainer = ref(null)
-let aiAbortController = null
 let toastTimer
 let refreshTimer
 let refreshInFlight = false
@@ -742,157 +682,6 @@ async function refreshMessages() {
   }
 }
 
-function scrollAiMessages() {
-  nextTick(() => {
-    if (aiMessagesContainer.value) aiMessagesContainer.value.scrollTop = aiMessagesContainer.value.scrollHeight
-  })
-}
-
-async function loadAiMessages(sessionId, resume = true) {
-  if (!sessionId) {
-    aiMessages.value = []
-    return
-  }
-  const response = await listAiMessages(sessionId)
-  const data = response.data || {}
-  aiMessages.value = Array.isArray(data.items) ? data.items.map(item => ({
-    role: item.role,
-    content: item.content || '',
-    runId: item.runId,
-    runStatus: item.runStatus
-  })) : []
-  scrollAiMessages()
-  if (resume && data.activeRunId && !aiSending.value) await consumeAiRun(data.activeRunId)
-}
-
-async function loadAiAssistant(force = false) {
-  if (aiLoading.value || (aiInitialized.value && !force)) return
-  aiLoading.value = true
-  aiError.value = ''
-  try {
-    const response = await listAiSessions()
-    const data = response.data || {}
-    aiSessions.value = Array.isArray(data.items) ? data.items : []
-    if (!aiSessionId.value || !aiSessions.value.some(item => item.id === aiSessionId.value)) {
-      aiSessionId.value = aiSessions.value[0]?.id || null
-    }
-    await loadAiMessages(aiSessionId.value)
-    aiInitialized.value = true
-  } catch (error) {
-    aiError.value = error?.message || 'AI 会话加载失败'
-  } finally {
-    aiLoading.value = false
-  }
-}
-
-function toggleAiAssistant() {
-  aiOpen.value = !aiOpen.value
-  if (aiOpen.value) loadAiAssistant()
-}
-
-function newAiSession() {
-  if (aiSending.value) return
-  aiSessionId.value = null
-  aiMessages.value = []
-  aiDraft.value = ''
-  aiError.value = ''
-  aiStatus.value = ''
-  scrollAiMessages()
-}
-
-async function changeAiSession(event) {
-  if (aiSending.value) return
-  aiSessionId.value = event.target.value || null
-  aiError.value = ''
-  try {
-    await loadAiMessages(aiSessionId.value)
-  } catch (error) {
-    aiError.value = error?.message || 'AI 对话加载失败'
-  }
-}
-
-function newAiRequestId() {
-  if (window.crypto?.randomUUID) return window.crypto.randomUUID()
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-async function consumeAiRun(runId) {
-  aiRunId.value = runId
-  aiSending.value = true
-  aiError.value = ''
-  aiStatus.value = '正在准备回答'
-  aiAbortController = new AbortController()
-  if (!aiMessages.value.length || aiMessages.value.at(-1)?.role !== 'assistant') {
-    aiMessages.value.push({ role: 'assistant', content: '', runId })
-  }
-  const assistant = aiMessages.value.at(-1)
-  try {
-    await streamAiRun(runId, 0, event => {
-      if (event.type === 'status') aiStatus.value = event.data?.text || '正在处理'
-      if (event.type === 'delta' && assistant) assistant.content += event.data?.text || ''
-      if (event.type === 'done') aiStatus.value = event.data?.status === 'COMPLETED' ? '' : '回答未完成'
-      scrollAiMessages()
-    }, aiAbortController.signal)
-  } catch (error) {
-    if (error?.name !== 'AbortError') aiError.value = error?.message || 'AI 实时回答连接失败'
-  } finally {
-    aiAbortController = null
-    if (aiRunId.value === runId) {
-      aiRunId.value = null
-      aiSending.value = false
-      aiStatus.value = ''
-      if (aiSessionId.value) {
-        try {
-          await loadAiMessages(aiSessionId.value, false)
-        } catch (error) {
-          if (!aiError.value) aiError.value = error?.message || 'AI 回答刷新失败'
-        }
-      }
-    }
-  }
-}
-
-async function sendAiMessage() {
-  const content = aiDraft.value.trim()
-  if (!content || aiLoading.value || aiSending.value) return
-  aiError.value = ''
-  try {
-    if (!aiSessionId.value) {
-      const created = await createAiSession()
-      aiSessionId.value = created.data?.id || null
-      if (!aiSessionId.value) throw new Error('AI 会话创建失败')
-      aiSessions.value = [{ ...created.data, title: created.data.title || '新对话' }, ...aiSessions.value]
-    }
-    aiMessages.value.push({ role: 'user', content })
-    aiMessages.value.push({ role: 'assistant', content: '' })
-    aiDraft.value = ''
-    scrollAiMessages()
-    const response = await startAiRun(aiSessionId.value, {
-      content,
-      requestId: newAiRequestId(),
-      action: 'chat'
-    })
-    const runId = response.data?.id
-    if (!runId) throw new Error('AI 任务创建失败')
-    await consumeAiRun(runId)
-    const refreshed = await listAiSessions()
-    aiSessions.value = Array.isArray(refreshed.data?.items) ? refreshed.data.items : aiSessions.value
-  } catch (error) {
-    if (aiMessages.value.at(-1)?.role === 'assistant' && !aiMessages.value.at(-1).content) aiMessages.value.pop()
-    aiError.value = error?.message || 'AI 消息发送失败'
-  }
-}
-
-async function stopAiMessage() {
-  const runId = aiRunId.value
-  if (!runId) return
-  aiAbortController?.abort()
-  try {
-    await cancelAiRun(runId)
-  } catch (error) {
-    aiError.value = error?.message || '停止 AI 回答失败'
-  }
-}
 
 onMounted(() => {
   document.addEventListener('pointerdown', closeEmojiPicker)
@@ -906,7 +695,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeEmojiPicker)
   document.removeEventListener('visibilitychange', refreshMessages)
   if (refreshTimer) window.clearInterval(refreshTimer)
-  aiAbortController?.abort()
   clearTimeout(toastTimer)
 })
 </script>
@@ -941,11 +729,9 @@ onBeforeUnmount(() => {
 @media(max-width:1050px){.message-shell{width:calc(100% - 28px);grid-template-columns:250px minmax(0,1fr)}.detail-sidebar{display:none}}@media(max-width:700px){.message-shell{height:calc(100vh - 84px);min-height:580px;margin:10px auto;grid-template-columns:74px minmax(0,1fr)}.sidebar-head{padding:10px 8px}.sidebar-title span,.sidebar-title{font-size:0}.sidebar-title::after{content:"消息";font-size:13px}.search-box{display:none}.conversation-list{padding:0 6px}.conversation-item{grid-template-columns:38px;justify-content:center;padding:8px 5px}.conversation-copy,.conversation-meta{display:none}.unread{position:absolute;margin-left:28px}.system-mode{grid-template-columns:74px minmax(0,1fr)}.notification-card{grid-template-columns:7px minmax(0,1fr);gap:9px}.notice-tag,.notice-time{display:none}.bubble-wrap{max-width:84%}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
 .conversation-search{position:relative;display:block;width:100%;height:36px;margin-top:11px}.conversation-search svg{position:absolute;top:10px;left:11px;width:15px;height:15px;color:#8F9EAF;stroke:currentColor;fill:none;stroke-width:1.8;pointer-events:none}.conversation-search input{display:block;width:100%;height:36px;padding:0 12px 0 34px;border:1px solid transparent;border-radius:7px;outline:none;color:var(--text);background:#F2F5F9;font-size:11px;line-height:36px}.conversation-search input:focus{border-color:#B9D1F2;background:#fff;box-shadow:0 0 0 3px rgba(43,127,255,.1)}
 @media(max-width:700px){.conversation-search{display:none}}
-.ai-assistant-fab{position:fixed;right:24px;bottom:24px;z-index:75;width:52px;height:52px;border:0;border-radius:50%;color:#fff;background:linear-gradient(145deg,#2B7FFF,#1A3C6E);box-shadow:0 10px 24px rgba(26,60,110,.25);font-size:13px;font-weight:800}.ai-assistant-fab:hover{transform:translateY(-2px);box-shadow:0 13px 28px rgba(26,60,110,.3)}.ai-assistant-panel{position:fixed;right:24px;bottom:88px;z-index:74;display:flex;width:min(380px,calc(100vw - 32px));height:min(560px,calc(100vh - 120px));min-height:360px;flex-direction:column;overflow:hidden;border:1px solid #D8E4F2;border-radius:14px;background:#fff;box-shadow:0 18px 48px rgba(21,49,87,.2)}.ai-assistant-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#F4F8FF,#fff)}.ai-assistant-brand{display:flex;align-items:center;gap:9px;min-width:0}.ai-assistant-icon{display:grid;width:32px;height:32px;place-items:center;flex:0 0 auto;border-radius:10px;color:#fff;background:var(--blue);font-size:10px;font-weight:800}.ai-assistant-brand strong,.ai-assistant-brand span{display:block}.ai-assistant-brand strong{color:var(--primary);font-size:13px}.ai-assistant-brand span{margin-top:2px;overflow:hidden;color:var(--muted);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.ai-assistant-actions{display:flex;gap:4px}.ai-assistant-actions button{width:26px;height:26px;padding:0;border:0;border-radius:6px;color:var(--muted);background:transparent;font-size:18px;line-height:1}.ai-assistant-actions button:hover{color:var(--blue);background:var(--blue-soft)}.ai-session-switcher{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #EEF2F7;background:#FBFCFE}.ai-session-switcher label{color:var(--light);font-size:10px}.ai-session-switcher select{min-width:0;flex:1;padding:5px 7px;border:1px solid #DCE6F1;border-radius:6px;outline:none;color:var(--primary);background:#fff;font-size:10px}.ai-assistant-messages{min-height:0;flex:1;overflow-y:auto;padding:14px;background:#F7F9FC}.ai-assistant-state,.ai-assistant-welcome{display:grid;place-items:center;gap:7px;min-height:160px;padding:22px;color:var(--muted);font-size:11px;line-height:1.7;text-align:center}.ai-assistant-state button{padding:5px 9px;border:1px solid #C9D9EB;border-radius:6px;color:var(--blue);background:#fff;font-size:10px}.ai-error,.ai-assistant-error{color:var(--red)}.ai-assistant-welcome strong{color:var(--primary);font-size:13px}.ai-message{display:flex;align-items:flex-start;gap:7px;margin-bottom:12px}.ai-message.is-user{flex-direction:row-reverse}.ai-message-avatar{display:grid;width:24px;height:24px;place-items:center;flex:0 0 auto;border-radius:50%;color:#fff;background:var(--blue);font-size:8px;font-weight:800}.is-user .ai-message-avatar{background:#7894BE}.ai-message-bubble{max-width:78%;padding:8px 10px;border:1px solid #DDE5EF;border-radius:5px 10px 10px 10px;color:#3D526E;background:#fff;font-size:11px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}.is-user .ai-message-bubble{border-color:var(--blue);border-radius:10px 5px 10px 10px;color:#fff;background:var(--blue)}.ai-assistant-error{margin:0;padding:7px 12px;background:#FFF5F5;font-size:10px}.ai-assistant-composer{display:flex;align-items:center;gap:7px;padding:10px;border-top:1px solid var(--line);background:#fff}.ai-assistant-composer input{min-width:0;height:34px;flex:1;padding:0 10px;border:1px solid #D8E3EF;border-radius:7px;outline:none;color:var(--text);background:#F8FAFD;font-size:11px}.ai-assistant-composer input:focus{border-color:#AFC9EC;background:#fff}.ai-assistant-composer button{display:grid;width:34px;height:34px;place-items:center;padding:0;border:0;border-radius:7px;color:#fff;background:var(--blue);font-size:15px;font-weight:800}.ai-assistant-composer button:disabled{cursor:not-allowed;opacity:.45}.ai-assistant-composer button[type=button]{background:#6D7F99;font-size:10px}@media(max-width:700px){.ai-assistant-fab{right:16px;bottom:16px}.ai-assistant-panel{right:16px;bottom:78px;width:calc(100vw - 32px);height:min(560px,calc(100vh - 100px))}}
 </style>
 
 <style>
-.ai-assistant-panel{--primary:#1A3C6E;--blue:#2B7FFF;--blue-soft:#EAF2FF;--muted:#6B7A90;--light:#96A3B5;--line:#E6EBF2;--red:#D94B55}
 .person-card .mini-avatar{display:grid;place-items:center;flex:0 0 auto;overflow:hidden;color:var(--primary);background:var(--blue-soft);font-size:14px;line-height:1}
 .composer{align-items:stretch;flex-direction:column;gap:9px;padding:10px 16px 13px}.composer-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px}.composer-tool-list{display:flex;align-items:center;gap:7px}.composer-tool{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 7px;border:0;border-radius:6px;color:#60738D;background:transparent;font-size:10px}.composer-tool:hover:not(:disabled){color:var(--blue);background:var(--blue-soft)}.composer-tool:disabled{cursor:not-allowed;opacity:.45}.composer-tool svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8}.composer-hint{overflow:hidden;color:var(--light);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.composer-main{display:flex;align-items:center;gap:10px}.composer-main .composer-box{min-width:0}.composer-main .send-button{flex:0 0 auto;min-width:92px;justify-content:center}.attachment-actions{display:none}
 @media(max-width:700px){.composer{padding:9px 10px 11px}.composer-hint{display:none}.composer-main{gap:7px}.composer-main .send-button{min-width:72px;padding:0 10px}.composer-tool{padding:0 5px}}
