@@ -66,7 +66,8 @@ async function loadData() {
     const [jobResponse, resumeResponse] = await Promise.all([getJob(jobId), getResumeOptions(jobId)])
     job.value = jobResponse.data
     resumes.value = resumeResponse.data || []
-    selectedResumeId.value = resumes.value.find(item => item.recommended || item.isDefault)?.id || resumes.value[0]?.id || null
+    const requestedResume = resumes.value.find(item => String(item.id) === String(route.query.resumeId))
+    selectedResumeId.value = requestedResume?.id || resumes.value.find(item => item.recommended || item.isDefault)?.id || resumes.value[0]?.id || null
     document.title = `为 ${job.value.title} 选择简历 · 智聘 AI`
   } catch (error) {
     errorMessage.value = error?.message || '岗位或简历数据暂时无法读取'
