@@ -167,6 +167,7 @@ import { computed, defineComponent, h, onBeforeUnmount, onMounted, nextTick, ref
 import { useRoute } from 'vue-router'
 import { getCurrentSession, getSessionContext, getProgress, listCaptions, heartbeat, finishSession, updateMedia, getLiveKitToken } from '@/api/system/conference'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, savePreferredDevice } from '@/utils/media'
+import { resolveLivekitUrl } from '@/utils/livekitUrl'
 import { useRealtimeAsr } from './useRealtimeAsr'
 import { Room, RoomEvent, Track } from 'livekit-client'
 
@@ -387,7 +388,7 @@ async function connectLiveKit() {
     remoteScreen.value = null
   })
   try {
-    await room.connect(info.url, info.token)
+    await room.connect(resolveLivekitUrl(info.url), info.token)
     lkConnected.value = true
     await openCamera()
   } catch (error) {

@@ -21,6 +21,7 @@
             <div class="cam-title"><span>主机位（电脑摄像头）</span><i class="dot" :class="mainStatus === 'live' ? 'ok' : 'gray'"></i></div>
             <div class="cam-frame">
               <video v-show="mainStatus === 'live'" ref="mainVideo" class="cam-video" autoplay muted playsinline></video>
+              <FaceGuideOverlay :video-el="mainVideo" :active="mainStatus === 'live'" />
               <div v-if="mainStatus !== 'live'" class="cam-mask">
                 <span v-if="mainStatus === 'connecting'">摄像头连接中…</span>
                 <span v-else-if="mainStatus === 'error'">{{ mainError || '主机位连接失败' }}</span>
@@ -35,6 +36,7 @@
             <div class="cam-title"><span>副机位（手机扫码）</span><i class="dot" :class="subOnline ? 'ok' : 'gray'"></i></div>
             <div class="cam-frame">
               <video v-show="subVideoLive" ref="subVideo" class="cam-video" autoplay muted playsinline></video>
+              <FaceGuideOverlay :video-el="subVideo" :active="subVideoLive" model="blaze_face_full_range" :min-ratio="0.1" :max-ratio="0.45" />
               <div v-if="!subVideoLive" class="cam-mask">
                 <canvas v-show="subUrl" ref="subQr"></canvas>
                 <span v-if="subUrl">手机扫码后，画面会实时显示在这里</span>
@@ -67,9 +69,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Room, RoomEvent, Track } from 'livekit-client'
 import QRCode from 'qrcode'
+import FaceGuideOverlay from '@/views/agent/components/FaceGuideOverlay.vue'
 import { getExamEntry, getExamMonitor, prepareExam, startExam } from '@/api/agent/exam'
 import { appHref } from '@/utils/agentNavigation'
 import { userAppUrl } from '@/utils/appLink'
+import { resolveLivekitUrl } from '@/utils/livekitUrl'
 
 const route = useRoute()
 const router = useRouter()
@@ -118,7 +122,13 @@ async function load() {
   }
   if (loadError.value) return
   await nextTick()
+  await drawSubQr()
   startMainCamera()
+}
+
+async function drawSubQr() {
+  if (!subQr.value || !subUrl.value) return
+  await QRCode.toCanvas(subQr.value, subUrl.value, { width: 150, margin: 1 })
 }
 
 async function loadMonitor() {
@@ -128,10 +138,6 @@ async function loadMonitor() {
   subInfo.value = monitorInfo.value.sub || { subStatus: 0, subOnline: false }
   // 副机位地址按当前部署位置拼接，兼容 /user/ 子路径
   subUrl.value = userAppUrl(monitorInfo.value.subUrl || '')
-  await nextTick()
-  if (subQr.value && subUrl.value) {
-    await QRCode.toCanvas(subQr.value, subUrl.value, { width: 150, margin: 1 })
-  }
   if (!pollTimer) {
     // 手机端心跳每 15s 上报一次，这里 5s 轮询一次连接状态
     pollTimer = setInterval(async () => {
@@ -167,8 +173,9 @@ async function startMainCamera() {
   try {
     room = new Room()
     bindRemoteTracks()
-    await room.connect(monitorInfo.value.url, monitorInfo.value.token)
-    await room.localParticipant.setCameraEnabled(true)
+    await room.connect(resolveLivekitUrl(monitorInfo.value.url), monitorInfo.value.token)
+    await withTimeout(room.localParticipant.setCameraEnabled(true), 15000,
+      '摄像头开启超时：请在浏览器地址栏允许摄像头权限，或关闭其它占用摄像头的程序后重试')
     const track = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track
     if (track && mainVideo.value) track.attach(mainVideo.value)
     mainStatus.value = 'live'
@@ -176,6 +183,13 @@ async function startMainCamera() {
     mainStatus.value = 'error'
     mainError.value = e?.message || '摄像头连接失败'
   }
+}
+
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+  ])
 }
 
 async function begin() {

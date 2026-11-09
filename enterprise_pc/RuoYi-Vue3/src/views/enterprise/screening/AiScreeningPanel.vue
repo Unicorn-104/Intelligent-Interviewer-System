@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Search, FileText, UserRoundCheck, ShieldCheck, AlertTriangle, Lightbulb, Send, X, Check, ChevronRight, Target, Users, SlidersHorizontal } from '@/views/enterprise/components/icons'
+import { FileText, UserRoundCheck, ShieldCheck, AlertTriangle, Lightbulb, Send, X, Check, ChevronRight, Target, Users, SlidersHorizontal } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
@@ -249,7 +249,7 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
             <button class="drawer-close" @click="closeDrawer"><X :size="16" /></button>
           </header>
           <div class="drawer-body">
-            <div class="block-title"><Search :size="14" />维度评分明细（合计权重 100%）</div>
+            <div class="block-title"><Target :size="14" />维度评分明细（合计权重 100%）</div>
             <div v-if="drawer.totalScore == null" class="manual-tip">AI 评估未完成（评估失败），暂无维度明细；请直接填写人工评分，达到 {{ PASS_THRESHOLD }} 分即视为通过初筛。</div>
             <div v-else-if="report?.manual" class="manual-tip">当前分数由 HR 人工评分录入，无 AI 维度明细。</div>
             <div v-if="drawer.totalScore != null && !report?.manual" class="dim-grid">

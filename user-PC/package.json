@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",
+    "@mediapipe/tasks-vision": "^1.2.2",
     "@vueup/vue-quill": "1.2.0",
     "@vueuse/core": "14.1.0",
     "axios": "1.13.2",
@@ -40,6 +41,7 @@
     "vuedraggable": "4.1.0"
   },
   "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-vue": "5.2.4",
     "sass-embedded": "1.97.2",
     "unplugin-auto-import": "0.18.6",

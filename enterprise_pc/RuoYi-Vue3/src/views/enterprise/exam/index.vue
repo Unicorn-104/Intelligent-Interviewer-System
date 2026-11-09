@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Plus, Search, Pencil, Trash2, X, Eye, WandSparkles, Save, Timer, FileText, GraduationCap, CalendarClock, Bell, Mail, Send, ShieldCheck, FileCheck2 } from '@/views/enterprise/components/icons'
+import { Plus, Search, Pencil, Trash2, X, Eye, WandSparkles, Save, Timer, FileText, GraduationCap, CalendarClock, Bell, Mail, Send, ShieldCheck, FileCheck2, RotateCw } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import {
   listQuestions, createQuestion, updateQuestion, deleteQuestion, aiExamAnalysis,
@@ -489,7 +489,7 @@ onMounted(() => {
           <option value="">全部岗位</option>
           <option v-for="p in positions" :key="p.id" :value="p.id">{{ p.title }}</option>
         </select>
-        <button class="btn" @click="loadPapers()"><Search :size="15"/>刷新</button>
+        <button class="btn" @click="loadPapers()"><RotateCw :size="15"/>刷新</button>
         <button class="btn primary" @click="openCreatePaper"><Plus :size="15"/>新建试卷</button>
       </div>
       <table class="tbl">
@@ -528,7 +528,7 @@ onMounted(() => {
           <option value="0">待生效</option><option value="1">进行中</option>
           <option value="2">已结束</option><option value="3">已取消</option>
         </select>
-        <button class="btn" @click="loadSchedules()"><Search :size="15"/>刷新</button>
+        <button class="btn" @click="loadSchedules()"><RotateCw :size="15"/>刷新</button>
         <button class="btn primary" @click="openCreateSched"><Plus :size="15"/>新建考试安排</button>
       </div>
       <table class="tbl">
@@ -574,7 +574,7 @@ onMounted(() => {
           <option value="0">未通过</option>
           <option value="2">待主观题评分</option>
         </select>
-        <button class="btn" @click="loadResults()"><Search :size="15"/>刷新</button>
+        <button class="btn" @click="loadResults()"><RotateCw :size="15"/>刷新</button>
       </div>
       <table class="tbl">
         <thead><tr><th>候选人</th><th>岗位</th><th class="wide">试卷</th><th>交卷时间</th><th>客观分</th><th>主观分</th><th>总分</th><th>阈值</th><th>结果</th><th>操作</th></tr></thead>
@@ -729,7 +729,7 @@ onMounted(() => {
               </div>
               <div v-if="!paperModal.form.rules.length" class="empty">暂无规则组，点击「添加规则组」</div>
               <div class="preview-row">
-                <button class="btn sm" @click="previewDraw"><WandSparkles :size="14"/>预览抽题结果</button>
+                <button class="btn sm" @click="previewDraw"><Eye :size="14"/>预览抽题结果</button>
                 <span v-if="paperModal.preview" class="muted tiny">抽中 {{ paperModal.preview.questionCount }} 题 · 总分 {{ paperModal.preview.totalScore }}</span>
               </div>
               <table v-if="paperModal.preview" class="tbl inner">

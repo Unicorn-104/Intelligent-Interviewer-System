@@ -19,7 +19,10 @@
         <button type="button" @click="retry">重试</button>
       </div>
       <template v-else-if="state === 'live'">
-        <video ref="video" class="sub-video" autoplay muted playsinline></video>
+        <div class="sub-video-wrap">
+          <video ref="video" class="sub-video" autoplay muted playsinline></video>
+          <FaceGuideOverlay :video-el="video" :active="state === 'live'" model="blaze_face_full_range" :min-ratio="0.1" :max-ratio="0.45" />
+        </div>
         <div class="sub-status"><i class="dot"></i>副机位已连接，请保持手机置于侧后方拍摄全景</div>
       </template>
     </main>
@@ -32,7 +35,9 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Room, Track } from 'livekit-client'
+import { resolveLivekitUrl } from '@/utils/livekitUrl'
 import { subJoin, subLeave, subPing } from '@/api/agent/exam'
+import FaceGuideOverlay from '@/views/agent/components/FaceGuideOverlay.vue'
 
 const route = useRoute()
 const recordId = Number(route.query.recordId || 0)
@@ -48,18 +53,22 @@ let pingTimer = null
 let pingFails = 0
 
 async function join() {
+  if (state.value === 'connecting') return
   state.value = 'connecting'
   error.value = ''
   try {
     if (!recordId || !code) throw new Error('副机位链接不完整')
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error('当前地址不是 HTTPS 安全环境，浏览器已禁用摄像头。请改用 https://' + location.host + ' 打开，并在证书提示中继续访问')
+    }
     const res = await subJoin({ recordId, code })
     const d = res.data || {}
     info.value = d
     room = new Room()
-    await room.connect(d.url, d.token)
-    await room.localParticipant.setCameraEnabled(true, {
+    await room.connect(resolveLivekitUrl(d.url), d.token)
+    await withTimeout(room.localParticipant.setCameraEnabled(true, {
       camera: { facingMode: { ideal: 'environment' } }
-    })
+    }), 15000, '获取摄像头超时：请在浏览器地址栏允许摄像头权限，或更换为系统浏览器（Chrome/荣耀浏览器）打开')
     const track = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track
     // 先切到 live 让 video 节点渲染出来，再挂载画面，否则画面框为空
     state.value = 'live'
@@ -103,6 +112,13 @@ function leave() {
 
 function retry() { join() }
 
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+  ])
+}
+
 const hideHandler = () => leave()
 onMounted(() => {
   join()
@@ -127,7 +143,8 @@ onBeforeUnmount(() => {
 .sub-offline b{color:#FF6B74;font-size:13px}
 .sub-offline span{color:#D98C93}
 .sub-body{flex:1;display:grid;place-items:center;padding:16px}
-.sub-video{width:min(92vw,520px);aspect-ratio:1/1;border-radius:14px;background:#000;object-fit:cover}
+.sub-video-wrap{position:relative;width:min(92vw,520px);border-radius:14px;overflow:hidden}
+.sub-video{display:block;width:100%;aspect-ratio:1/1;background:#000;object-fit:cover}
 .sub-card{max-width:340px;padding:28px 22px;border:1px solid #223047;border-radius:14px;text-align:center;color:#8FA1B8;font-size:13px}
 .sub-card.err h2{margin:0 0 8px;color:#FF6B74;font-size:16px}
 .sub-card.err p{margin:0 0 16px}
