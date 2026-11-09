@@ -65,6 +65,72 @@ class AgentToolsTest
     }
 
     @Test
+    void chatPreloadsSelectedResumeBeforeCallingModel()
+    {
+        AppResume resume = new AppResume();
+        resume.setResumeId(7L);
+        resume.setJobDirection("synthetic direction");
+        when(resumes.selectResume(17L, 7L)).thenReturn(resume);
+        var context = tools.selectedContext(17L, 7L, null, "chat");
+        assertEquals(7L, ((Map<?, ?>) context.get("resume")).get("resumeId"));
+        assertEquals("synthetic direction", ((Map<?, ?>) context.get("resume")).get("direction"));
+        verify(resumes).selectResume(17L, 7L);
+        verifyNoInteractions(jobs, applications);
+    }
+
+    @Test
+    void chatRejectsInactiveApplicationResumeBeforeCallingModel()
+    {
+        AgentApplication application = new AgentApplication();
+        application.setId(91L);
+        application.setJobId(42L);
+        application.setResumeId(7L);
+        when(applications.selectApplication(17L, 91L)).thenReturn(application);
+        when(jobs.selectJob(42L, 17L)).thenReturn(new AgentJob());
+        when(resumes.selectResume(17L, 7L)).thenThrow(new ServiceException("unavailable"));
+        ServiceException failure = assertThrows(ServiceException.class,
+                () -> tools.selectedContext(17L, 7L, 91L, "chat"));
+        assertTrue(failure.getMessage().contains("该次投递关联的简历已删除"));
+        verify(resumes).selectResume(17L, 7L);
+    }
+
+    @Test
+    void everyExplicitResumeIsValidatedButUnselectedChatNeedsNoResume()
+    {
+        for (String action : List.of("chat", "writing_polish"))
+        {
+            assertFalse(tools.selectedContext(17L, null, null, action).containsKey("resume"));
+        }
+        verifyNoInteractions(resumes, jobs, applications);
+        when(resumes.selectResume(17L, 7L)).thenThrow(new ServiceException("not owned"));
+        for (String action : List.of("chat", "writing_polish", "resume_analysis", "job_recommendation"))
+        {
+            ServiceException failure = assertThrows(ServiceException.class,
+                    () -> tools.selectedContext(17L, 7L, null, action));
+            assertTrue(failure.getMessage().contains("请重新选择有效简历"));
+        }
+    }
+
+    @Test
+    void chatPreloadsApplicationResumeAndOwnedJob()
+    {
+        AgentApplication application = new AgentApplication();
+        application.setId(91L);
+        application.setJobId(42L);
+        application.setResumeId(7L);
+        AppResume resume = new AppResume();
+        resume.setResumeId(7L);
+        when(applications.selectApplication(17L, 91L)).thenReturn(application);
+        when(jobs.selectJob(42L, 17L)).thenReturn(new AgentJob());
+        when(resumes.selectResume(17L, 7L)).thenReturn(resume);
+        var context = tools.selectedContext(17L, null, 91L, "chat");
+        assertEquals(7L, context.get("resumeId"));
+        assertEquals(91L, context.get("applicationId"));
+        assertEquals(7L, ((Map<?, ?>) context.get("resume")).get("resumeId"));
+        verify(resumes).selectResume(17L, 7L);
+    }
+
+    @Test
     void interviewContextRejectsMissingApplicationResumeOrMismatchedResume()
     {
         AgentApplication application = new AgentApplication();
