@@ -86,6 +86,9 @@ class AppAiServiceTest
             invocation.<Consumer<String>>getArgument(3).accept("synthetic answer");
             return reply("{\"role\":\"assistant\",\"content\":\"synthetic answer\"}");
         });
+        when(model.complete(any(), any(), any(), any(), anyLong(), anyInt())).thenAnswer(invocation ->
+                model.complete(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2),
+                        invocation.getArgument(3), invocation.getArgument(4)));
     }
 
     @AfterEach
@@ -157,6 +160,36 @@ class AppAiServiceTest
                 .when(model).complete(any(), any(), any(), any(), anyLong());
         String runId = service.start(17L, session(), request("request-0000000001")).get("id").toString();
         assertEquals("TIMEOUT", await(runId).get("errorCode"));
+        verify(model, times(1)).complete(any(), any(), any(), any(), anyLong(), anyInt());
+    }
+
+    @Test
+    void answerLimitsAndWatchdogStayWithinRunBudget() throws Exception
+    {
+        assertEquals(1536, AppAiService.answerTokenLimit("chat"));
+        assertEquals(2048, AppAiService.answerTokenLimit("job_recommendation"));
+        assertEquals(2048, AppAiService.answerTokenLimit("writing_polish"));
+        assertEquals(3072, AppAiService.answerTokenLimit("resume_analysis"));
+        assertEquals(3072, AppAiService.answerTokenLimit("interview_preparation"));
+        assertTrue(AgentModelClient.CALL_TIMEOUT_SECONDS < AppAiService.RUN_TIMEOUT_SECONDS);
+        assertTrue(AppAiService.RUN_TIMEOUT_SECONDS < AppAiService.STALE_RUN_SECONDS);
+        String runId = service.start(17L, session(), request("request-0000000001")).get("id").toString();
+        assertEquals("COMPLETED", await(runId).get("status"));
+        verify(model).complete(any(), any(), any(), any(), anyLong(), eq(1536));
+    }
+
+    @Test
+    void timeoutAfterPartialOutputKeepsFailureAndDoesNotResubmit() throws Exception
+    {
+        doAnswer(invocation -> {
+            invocation.<Consumer<String>>getArgument(3).accept("synthetic unfinished answer");
+            throw new java.net.http.HttpTimeoutException("synthetic timeout");
+        }).when(model).complete(any(), any(), any(), any(), anyLong(), anyInt());
+        String id = session();
+        String runId = service.start(17L, id, request("request-0000000001")).get("id").toString();
+        assertEquals("TIMEOUT", await(runId).get("errorCode"));
+        verify(model, times(1)).complete(any(), any(), any(), any(), anyLong(), anyInt());
+        assertEquals(1, ((List<?>) service.messages(17L, id, null).get("items")).size());
     }
 
     @Test
@@ -172,6 +205,36 @@ class AppAiServiceTest
         String runId = service.start(17L, id, request("request-0000000001")).get("id").toString();
         assertEquals("COMPLETED", await(runId).get("status"));
         var messages = (List<Map<String, Object>>)service.messages(17L, id, null).get("items");
+        assertEquals(content, messages.get(messages.size() - 1).get("content"));
+    }
+
+    @Test
+    void smallModelDeltasAreBatchedAndFinalTailPrecedesDoneEvent() throws Exception
+    {
+        String content = "synthetic text".repeat(80);
+        doAnswer(invocation -> {
+            Consumer<String> output = invocation.getArgument(3);
+            for (int index = 0; index < content.length(); index++) output.accept(content.substring(index, index + 1));
+            return reply("{\"role\":\"assistant\",\"content\":\"synthetic text\"}");
+        }).when(model).complete(any(), any(), any(), any(), anyLong(), anyInt());
+        String id = session();
+        String runId = service.start(17L, id, request("request-0000000001")).get("id").toString();
+        assertEquals("COMPLETED", await(runId).get("status"));
+        var events = mapper.events(runId, 17L, 0);
+        StringBuilder streamed = new StringBuilder();
+        int deltas = 0;
+        for (var event : events)
+        {
+            if ("delta".equals(event.get("type")))
+            {
+                streamed.append(json.readTree(event.get("data").toString()).path("text").asText());
+                deltas++;
+            }
+        }
+        assertTrue(deltas > 0 && deltas < 10);
+        assertEquals(content, streamed.toString());
+        assertEquals("done", events.get(events.size() - 1).get("type"));
+        var messages = (List<Map<String, Object>>) service.messages(17L, id, null).get("items");
         assertEquals(content, messages.get(messages.size() - 1).get("content"));
     }
 
@@ -287,8 +350,11 @@ class AppAiServiceTest
     }
 
     @Test
-    void freeChatDoesNotPrefetchSelectedResume() throws Exception
+    void freeChatPassesValidatedResumeToModelWithoutAnotherToolRead() throws Exception
     {
+        when(tools.selectedContext(17L, 5L, null, "chat"))
+                .thenReturn(AgentTools.fields("action", "chat", "resumeId", 5L,
+                        "resume", Map.of("resumeId", 5L, "direction", "synthetic-resume-direction")));
         String id = session();
         String runId = service.start(17L, id,
                 new AgentRunRequest("request-0000000001", "Hello, explain recursion", 5L)).get("id").toString();
@@ -297,6 +363,24 @@ class AppAiServiceTest
         var context = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.node.ArrayNode.class);
         verify(model).complete(any(), context.capture(), any(), any(), anyLong());
         assertTrue(context.getValue().path(0).path("content").asText().contains("自由对话"));
+        assertTrue(context.getValue().path(1).path("content").asText().contains("synthetic-resume-direction"));
+        verify(tools).selectedContext(17L, 5L, null, "chat");
+    }
+
+    @Test
+    void unavailableChatResumeDoesNotPersistMessagesOrCallModel() throws Exception
+    {
+        String id = session();
+        when(tools.selectedContext(eq(17L), eq(5L), any(), eq("chat")))
+                .thenThrow(new ServiceException("所选简历已失效，请重新选择", 400));
+        for (Long applicationId : java.util.Arrays.asList(null, 91L))
+        {
+            assertThrows(ServiceException.class, () -> service.start(17L, id,
+                    new AgentRunRequest("request-0000000001", "synthetic question", 5L, applicationId, "chat")));
+        }
+        assertTrue(mapper.messages(id, 17L, null, 30).isEmpty());
+        verify(model, never()).resolve();
+        verify(model, never()).complete(any(), any(), any(), any(), anyLong());
     }
 
     @Test

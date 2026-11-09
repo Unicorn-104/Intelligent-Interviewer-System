@@ -16,7 +16,10 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -32,6 +35,8 @@ public class AgentModelClient
 {
     private static final int MAX_OUTPUT_TOKENS = 8192;
     private static final int MAX_OUTPUT_CHARS = 32768;
+    static final int CALL_TIMEOUT_SECONDS = 180;
+    static final int IDLE_TIMEOUT_SECONDS = 45;
     public record Reply(JsonNode message, int tokens) { }
     static final class OutputLimitException extends IllegalStateException
     {
@@ -109,7 +114,8 @@ public class AgentModelClient
         if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
                 || uri.getUserInfo() != null || uri.getFragment() != null)
             throw new ServiceException("AI 服务地址配置无效", 503);
-        long remaining = Math.min(90000, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
+        long remaining = Math.min(TimeUnit.SECONDS.toMillis(CALL_TIMEOUT_SECONDS),
+                TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
         if (remaining <= 0) throw new java.util.concurrent.TimeoutException();
         long callDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(remaining);
         String model = provider.getMppModelName();
@@ -125,7 +131,8 @@ public class AgentModelClient
         body.putObject("stream_options").put("include_usage", true);
         body.put("temperature", 0.2);
         body.put("max_tokens", Math.max(128, Math.min(MAX_OUTPUT_TOKENS, maxOutputTokens)));
-        HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofMillis(remaining))
+        HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofMillis(
+                Math.min(remaining, TimeUnit.SECONDS.toMillis(IDLE_TIMEOUT_SECONDS))))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + provider.getMppApiKey())
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body))).build();
@@ -133,15 +140,20 @@ public class AgentModelClient
         try (InputStream input = response.body())
         {
             if (response.statusCode() != 200) throw new IllegalStateException("MODEL_HTTP_" + response.statusCode());
-            long bodyTime = Math.max(1, TimeUnit.NANOSECONDS.toMillis(callDeadline - System.nanoTime()));
-            var timeout = timer.schedule(() -> { try { input.close(); } catch (Exception ignored) { } }, bodyTime, TimeUnit.MILLISECONDS);
+            StreamBudget budget = new StreamBudget(callDeadline, System::nanoTime);
+            var timeout = timer.scheduleAtFixedRate(() -> {
+                if (budget.expired())
+                {
+                    try { input.close(); } catch (Exception ignored) { }
+                }
+            }, 1, 1, TimeUnit.SECONDS);
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8)))
             {
-                return readStream(reader, messages, tools, delta, callDeadline);
+                return readStream(reader, messages, tools, delta, callDeadline, budget::progress);
             }
-            catch (java.io.IOException error)
+            catch (Exception error)
             {
-                if (System.nanoTime() >= callDeadline)
+                if (!(error instanceof InterruptedException) && budget.expired())
                     throw new java.net.http.HttpTimeoutException("MODEL_TIMEOUT");
                 throw error;
             }
@@ -151,6 +163,12 @@ public class AgentModelClient
 
     Reply readStream(BufferedReader reader, ArrayNode messages, JsonNode tools,
             Consumer<String> delta, long deadlineNanos) throws Exception
+    {
+        return readStream(reader, messages, tools, delta, deadlineNanos, () -> { });
+    }
+
+    Reply readStream(BufferedReader reader, ArrayNode messages, JsonNode tools,
+            Consumer<String> delta, long deadlineNanos, Runnable progress) throws Exception
     {
         StringBuilder content = new StringBuilder();
         Map<Integer, Call> calls = new LinkedHashMap<>();
@@ -173,6 +191,10 @@ public class AgentModelClient
             String finish = choice.path("finish_reason").asText("");
             if (finish.equals("stop") || finish.equals("tool_calls")) finished = true;
             JsonNode part = choice.path("delta");
+            if (!part.path("content").asText("").isEmpty()
+                    || !part.path("reasoning_content").asText("").isEmpty()
+                    || !part.path("tool_calls").isEmpty() || finished)
+                progress.run();
             if (part.path("content").isTextual())
             {
                 String value = part.path("content").asText();
@@ -192,6 +214,7 @@ public class AgentModelClient
                 if (target.arguments.length() > 6000 || target.name.length() > 80 || target.id.length() > 100)
                     throw new IllegalStateException("TOOL_ARGUMENT_LIMIT");
             }
+            if (finished) break;
         }
         if (!finished) throw new IllegalStateException("MODEL_STREAM_INCOMPLETE");
         var message = json.createObjectNode().put("role", "assistant").put("content", content.toString());
@@ -209,6 +232,31 @@ public class AgentModelClient
         int estimated = json.writeValueAsString(messages).length() + json.writeValueAsString(tools).length()
                 + content.length() + calls.values().stream().mapToInt(c -> c.arguments.length()).sum();
         return new Reply(message, tokens > 0 ? tokens : estimated);
+    }
+
+    static final class StreamBudget
+    {
+        private final long deadlineNanos;
+        private final LongSupplier clock;
+        private final AtomicLong lastProgressNanos;
+        private final AtomicBoolean timedOut = new AtomicBoolean();
+
+        StreamBudget(long deadlineNanos, LongSupplier clock)
+        {
+            this.deadlineNanos = deadlineNanos;
+            this.clock = clock;
+            this.lastProgressNanos = new AtomicLong(clock.getAsLong());
+        }
+
+        void progress() { lastProgressNanos.set(clock.getAsLong()); }
+
+        boolean expired()
+        {
+            long now = clock.getAsLong();
+            if (now >= deadlineNanos || now - lastProgressNanos.get() >= TimeUnit.SECONDS.toNanos(IDLE_TIMEOUT_SECONDS))
+                timedOut.set(true);
+            return timedOut.get();
+        }
     }
 
     private static class Call
