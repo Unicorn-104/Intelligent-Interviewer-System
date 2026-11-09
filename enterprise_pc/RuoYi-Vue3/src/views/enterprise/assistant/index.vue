@@ -1,6 +1,8 @@
 <script setup>
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { Sparkles, Plus, Trash2, Send, CirclePause, MessageSquareText } from '@/views/enterprise/components/icons'
 import { listSessions, createSession, listMessages, createRun, getRun, cancelRun, deleteSession, genRequestId, openRunEvents } from '@/api/assistant'
 
@@ -42,6 +44,12 @@ function fmtTime(s) {
 
 function scrollToBottom() {
   nextTick(() => { if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight })
+}
+
+// AI 回答按 Markdown 渲染：marked 解析后经 DOMPurify 清洗，过滤脚本与危险标签
+marked.use({ gfm: true, breaks: true })
+function renderMarkdown(text) {
+  return DOMPurify.sanitize(marked.parse(String(text || '')))
 }
 
 function closeSse() {
@@ -262,7 +270,10 @@ onBeforeUnmount(closeSse)
         <p v-if="loading" class="stream-loading">加载中…</p>
         <p v-else-if="!messages.length && !streaming" class="stream-loading">开始一段新对话吧</p>
         <div v-for="msg in messages" :key="msg.id || 'pending'" :class="['message-row', msg.role === 'user' ? 'me' : 'other']">
-          <span class="bubble">{{ msg.content }}<em v-if="msg.pending && streaming" class="caret"></em></span>
+          <div v-if="msg.role === 'user'" class="bubble">{{ msg.content }}<em v-if="msg.pending && streaming" class="caret"></em></div>
+          <div v-else class="bubble md">
+            <div class="md-body" v-html="renderMarkdown(msg.content)"></div><em v-if="msg.pending && streaming" class="caret"></em>
+          </div>
         </div>
         <p v-if="streaming && progress" class="run-progress"><CirclePause :size="13"/>{{ progress }}</p>
       </div>
@@ -310,6 +321,24 @@ onBeforeUnmount(closeSse)
 .message-row.me{align-items:flex-end}
 .bubble{max-width:76%;padding:11px 13px;border-radius:5px 13px 13px 13px;background:white;border:1px solid #dce5f0;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
 .message-row.me .bubble{background:#2563eb;border-color:#2563eb;color:white;border-radius:13px 5px 13px 13px}
+.message-row.other .bubble{max-width:88%}
+.bubble.md{white-space:normal}
+.bubble :deep(.md-body > *:first-child){margin-top:0}
+.bubble :deep(.md-body > *:last-child){margin-bottom:0}
+.bubble :deep(.md-body p){margin:0 0 8px}
+.bubble :deep(.md-body h1),.bubble :deep(.md-body h2),.bubble :deep(.md-body h3),.bubble :deep(.md-body h4){font-size:13px;font-weight:600;margin:10px 0 6px;line-height:1.4}
+.bubble :deep(.md-body ul),.bubble :deep(.md-body ol){margin:0 0 8px;padding-left:18px}
+.bubble :deep(.md-body li){margin:2px 0}
+.bubble :deep(.md-body code){background:#f1f5fb;border-radius:4px;padding:1px 4px;font-family:Consolas,Menlo,monospace;font-size:11.5px}
+.bubble :deep(.md-body pre){background:#f7fafd;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:6px 0;overflow:auto}
+.bubble :deep(.md-body pre code){background:none;padding:0}
+.bubble :deep(.md-body table){border-collapse:collapse;width:100%;margin:6px 0;font-size:11.5px}
+.bubble :deep(.md-body th),.bubble :deep(.md-body td){border:1px solid #e2e8f0;padding:5px 8px;text-align:left;vertical-align:top}
+.bubble :deep(.md-body th){background:#f4f7fc;font-weight:600}
+.bubble :deep(.md-body a){color:#2563eb;text-decoration:underline}
+.bubble :deep(.md-body blockquote){margin:6px 0;padding:4px 10px;border-left:3px solid #d7e3f5;color:#5c6f89}
+.bubble :deep(.md-body hr){border:0;border-top:1px solid #e2e8f0;margin:8px 0}
+.bubble :deep(.md-body img){max-width:100%}
 .caret{display:inline-block;width:2px;height:14px;background:#2563eb;margin-left:3px;vertical-align:-2px;animation:blink 1s step-end infinite}
 @keyframes blink{50%{opacity:0}}
 .run-progress{display:flex;align-items:center;gap:6px;color:#8392a7;font-size:10px;margin:0 0 14px}
