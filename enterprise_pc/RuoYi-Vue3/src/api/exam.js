@@ -40,6 +40,15 @@ export function deleteQuestion(questionId) {
   })
 }
 
+/** AI 补全答案解析，并校验题目是否正确 */
+export function aiExamAnalysis(data) {
+  return request({
+    url: '/enterprise/exam/questions/ai-analysis',
+    method: 'post',
+    data
+  })
+}
+
 // ==================== 试卷 ====================
 
 export function listPapers(positionId) {

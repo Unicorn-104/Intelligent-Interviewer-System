@@ -118,7 +118,7 @@ public class ExamGradeServiceImpl implements IExamGradeService
         boolean hasSubjective = false;
         for (Map<String, Object> answer : answers)
         {
-            if (asInt(answer.get("type"), 0) <= 3)
+            if (isObjective(answer))
             {
                 continue;
             }
@@ -200,7 +200,7 @@ public class ExamGradeServiceImpl implements IExamGradeService
             {
                 max = BigDecimal.ZERO;
             }
-            if (type <= 3)
+            if (isObjective(answer))
             {
                 boolean correct = matches(type, asString(answer.get("content")),
                         asString(answer.get("stdAnswer")));
@@ -385,6 +385,20 @@ public class ExamGradeServiceImpl implements IExamGradeService
 
     // ==================== 客观题比对 ====================
 
+    /**
+     * 客观题口径：内置 1-3 恒为客观题；自定义题型（6）是否客观题取决于是否配置了选项。
+     */
+    private boolean isObjective(Map<String, Object> answer)
+    {
+        if (asInt(answer.get("type"), 0) <= 3)
+        {
+            return true;
+        }
+        Object raw = answer.get("optionsJson");
+        String json = raw == null ? "" : raw.toString().trim();
+        return !json.isEmpty() && !"[]".equals(json) && !"null".equals(json);
+    }
+
     private boolean matches(int type, String content, String std)
     {
         String c = normalize(content);
@@ -393,7 +407,7 @@ public class ExamGradeServiceImpl implements IExamGradeService
         {
             return false;
         }
-        if (type == 2)
+        if (type == 2 || type > 3 && letterCount(s) > 1)
         {
             c = sortLetters(c);
             s = sortLetters(s);
@@ -404,6 +418,20 @@ public class ExamGradeServiceImpl implements IExamGradeService
             s = mapJudge(s);
         }
         return c.equals(s);
+    }
+
+    /** 选项字母个数：用于识别自定义选择题是单选还是多选 */
+    private int letterCount(String value)
+    {
+        int count = 0;
+        for (char ch : value.toCharArray())
+        {
+            if (ch >= 'A' && ch <= 'Z')
+            {
+                count++;
+            }
+        }
+        return count;
     }
 
     private String normalize(String value)

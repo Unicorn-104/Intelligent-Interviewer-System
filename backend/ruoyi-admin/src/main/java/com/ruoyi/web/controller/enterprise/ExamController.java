@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
+import com.ruoyi.enterprise.service.IExamAiService;
 import com.ruoyi.enterprise.service.IExamGradeService;
 import com.ruoyi.enterprise.service.IExamMonitorService;
 import com.ruoyi.enterprise.service.IExamService;
@@ -39,6 +40,9 @@ public class ExamController extends BaseController
 
     @Autowired
     private IExamGradeService examGradeService;
+
+    @Autowired
+    private IExamAiService examAiService;
 
     // ==================== 题库 ====================
 
@@ -83,6 +87,13 @@ public class ExamController extends BaseController
     {
         examService.deleteQuestion(questionId);
         return success("删除成功");
+    }
+
+    /** AI 补全答案解析，并同步校验题目是否正确 */
+    @PostMapping("/questions/ai-analysis")
+    public AjaxResult aiAnalysis(@RequestBody Map<String, Object> body)
+    {
+        return success(examAiService.analyzeQuestion(body));
     }
 
     // ==================== 试卷 ====================
