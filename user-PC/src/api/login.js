@@ -1,5 +1,7 @@
 import request from '@/utils/request'
 
+const AUTH_REQUEST_TIMEOUT = 30000
+
 // 登录方法
 export function login(username, password, code, uuid) {
   const data = {
@@ -10,6 +12,7 @@ export function login(username, password, code, uuid) {
   }
   return request({
     url: '/login',
+    timeout: AUTH_REQUEST_TIMEOUT,
     headers: {
       isToken: false,
       repeatSubmit: false
@@ -23,6 +26,7 @@ export function login(username, password, code, uuid) {
 export function loginByAccountPassword(account, password) {
   return request({
     url: '/login',
+    timeout: AUTH_REQUEST_TIMEOUT,
     headers: {
       isToken: false,
       repeatSubmit: false
@@ -40,6 +44,7 @@ export function loginByAccountPassword(account, password) {
 export function loginBySms(phone, smsCode) {
   return request({
     url: '/login',
+    timeout: AUTH_REQUEST_TIMEOUT,
     headers: {
       isToken: false,
       repeatSubmit: false
@@ -85,6 +90,7 @@ export function sendSmsCode(phone, scene) {
 export function getInfo() {
   return request({
     url: '/getInfo',
+    timeout: AUTH_REQUEST_TIMEOUT,
     method: 'get'
   })
 }
