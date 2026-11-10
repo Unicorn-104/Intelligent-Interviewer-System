@@ -33,6 +33,25 @@ function loginPage(overrides = {}) {
   return new Function(...Object.keys(dependencies), `${source}\nreturn { handleSubmit, form, loading, error }`)(...Object.values(dependencies))
 }
 
+test('登录和登录后身份读取使用独立的有限超时，保留鉴权参数且不延长所有接口', () => {
+  const source = fs.readFileSync(new URL('../src/api/login.js', import.meta.url), 'utf8')
+    .replace(/^import .*$/gm, '').replace(/^export /gm, '')
+  const api = new Function('request', `${source}\nreturn { login, loginByAccountPassword, loginBySms, getInfo, logout }`)(config => config)
+  const requests = [api.login('test-account', 'test-password', 'code', 'uuid'), api.loginByAccountPassword('test-account', 'test-password'), api.loginBySms('13800000000', '123456')]
+  for (const config of requests) {
+    assert.equal(config.url, '/login')
+    assert.equal(config.method, 'post')
+    assert.equal(config.timeout, 30000)
+    assert.equal(config.headers.isToken, false)
+    assert.equal(config.headers.repeatSubmit, false)
+  }
+  assert.equal(requests[1].data.loginType, 'account_password')
+  assert.equal(requests[2].data.loginType, 'sms')
+  assert.equal(api.getInfo().timeout, 30000)
+  assert.equal(api.getInfo().headers?.isToken, undefined)
+  assert.equal(api.logout().timeout, undefined)
+})
+
 test('请求超时保留输入并解除按钮忙碌状态，等待期间重复点击只发一次登录请求', async () => {
   let rejectLogin
   let calls = 0
