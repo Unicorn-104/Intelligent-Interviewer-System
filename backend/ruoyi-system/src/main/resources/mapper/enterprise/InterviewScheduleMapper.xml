@@ -37,6 +37,16 @@
         <if test="candidateId != null">and a.apt_candidate_id = #{candidateId}</if>
         order by a.apt_start_time, a.apt_id
     </select>
+    <select id="selectInterviewersBySessionIds" resultType="java.util.LinkedHashMap">
+        select si.isi_session_id as sessionId, si.isi_user_id as userId,
+               si.isi_is_primary as isPrimary, si.isi_accept_status as acceptStatus,
+               ifnull(u.nick_name, u.user_name) as userName
+        from t_int_session_interviewer si
+        left join sys_user u on u.user_id = si.isi_user_id
+        where si.isi_session_id in
+        <foreach collection="sessionIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        order by si.isi_is_primary desc, si.isi_id asc
+    </select>
     <select id="selectAppointmentById" resultType="java.util.LinkedHashMap">
         select <include refid="appointmentColumns"/> <include refid="appointmentJoins"/>
         where a.apt_id = #{appointmentId}

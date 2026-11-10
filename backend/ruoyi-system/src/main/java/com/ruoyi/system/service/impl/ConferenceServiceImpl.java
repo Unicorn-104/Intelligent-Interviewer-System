@@ -25,7 +25,6 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
-import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.ITalentPoolService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.asr.AsrConfigResolver;
@@ -105,9 +104,9 @@ public class ConferenceServiceImpl implements IConferenceService
     @Autowired
     private AsrConfigResolver asrConfig;
 
-    /** 面试预约统一取消入口：重新发起面试时释放旧预约时段（不再回退投递状态） */
+    /** 面试邀约 / 冲突通知通过站内消息投递给主面试官与面试官 */
     @Autowired
-    private IInterviewScheduleService scheduleService;
+    private com.ruoyi.system.service.IImService imService;
 
     /** 面试预约口径的投递状态推进（旧「已约面」直接更新已废弃，保留字段仅为兼容） */
     @Autowired
@@ -244,10 +243,10 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("岗位不存在或无权访问");
         }
-        // 初筛淘汰/已撤回的投递不允许再发起面试
+        // 已进入终态（已录用/未录用）的投递不允许再发起面试
         if (conferenceMapper.countSchedulableApplication(candidateId, positionId) == 0)
         {
-            throw new ServiceException("该投递已初筛淘汰或已撤回，无法发起面试");
+            throw new ServiceException("该投递已进入终态（已录用或未录用），无法发起面试");
         }
         // 面试阶段可空；传了就必须属于该岗位的流程模板
         Map<String, Object> stage = findStage(positionId, companyId, stageId);
@@ -276,14 +275,12 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("候选人不存在，无法发起面试");
         }
-        // 每次发起都新建场次并签发新的随机链接：先把该候选人此前尚未结束的场次与待面试预约清理掉，
-        // 保证同一候选人同一时间只有一个活跃场次，且日历上不残留重复的「待面试」。
-        // 旧预约逐个经面试调度服务的统一取消逻辑处理：释放关联时段、恢复候选人/投递状态；
-        // 已取消/已完成的历史预约由该入口静默跳过，不阻断会议创建。
-        conferenceMapper.abortActiveSessionsByCandidate(candidateId, companyId);
-        for (Long oldAppointmentId : conferenceMapper.selectPendingAppointmentIds(candidateId, companyId))
+        // 同一候选人同一岗位若已有未开始的面试安排，直接拦截并提示岗位，不再静默顶掉旧安排
+        Map<String, Object> active = conferenceMapper.selectActiveAppointment(candidateId, positionId, companyId);
+        if (active != null)
         {
-            scheduleService.cancelForRelaunch(userId, oldAppointmentId);
+            throw new ServiceException("该候选人在「" + active.get("positionTitle") + "」还有未开始的面试安排（"
+                    + active.get("startTime") + "），请先改期或取消后再发起");
         }
 
         // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
@@ -309,14 +306,12 @@ public class ConferenceServiceImpl implements IConferenceService
         session.put("cascadeRound", stage == null || stage.get("sortOrder") == null ? 1 : toInt(stage.get("sortOrder")));
         conferenceMapper.insertSession(session);
 
-        // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退（tal_status 独立维度）
-        if (!talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
+        // 能否发起面试只看「所选岗位」的投递状态（上方 countSchedulableApplication），
+        // 候选人全局人才状态已在其他岗位进入终态时不再阻断本岗位面试，仅不再回退推进
+        talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
                 List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
                         TalStatusService.TAL_EXAM_PASSED),
-                positionId, null, "发起视频面试", userId))
-        {
-            throw new ServiceException("候选人已淘汰或已录用，无法发起面试");
-        }
+                positionId, null, "发起视频面试", userId);
         // HR 发起第一场正式面试：若投递仍为「已投递(0)」，经状态机进入「招聘中(1)」；
         // 多轮/改期/补面/重新发起全程保持招聘中，不再写旧的「已约面」状态码。
         Long appId = applicationStatusMapper.selectAppId(candidateId, positionId);
@@ -550,7 +545,9 @@ public class ConferenceServiceImpl implements IConferenceService
     }
 
     /**
-     * 面试官回应邀约：接受（1）或拒绝（2）被指派
+     * 面试官回应邀约：接受（1）或拒绝（2）被指派。
+     * 接受前先检测本人已确认的其他面试是否与本场时间重叠，冲突时不写入接受状态，
+     * 由前端提示面试官是否通知主面试官改期或换人。
      */
     @Override
     public Map<String, Object> respondInterviewNotice(Long userId, Long sessionId, boolean accept)
@@ -559,12 +556,215 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("您不是本场次面试官，无法回应邀约");
         }
-        int acceptStatus = accept ? 1 : 2;
-        conferenceMapper.updateInterviewerAcceptStatus(sessionId, userId, acceptStatus);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", sessionId);
+        result.put("conflict", false);
+        if (accept)
+        {
+            List<Map<String, Object>> conflicts = conferenceMapper.selectInterviewerConflicts(sessionId, userId);
+            if (!conflicts.isEmpty())
+            {
+                result.put("conflict", true);
+                result.put("conflicts", conflicts);
+                return result;
+            }
+        }
+        int acceptStatus = accept ? 1 : 2;
+        conferenceMapper.updateInterviewerAcceptStatus(sessionId, userId, acceptStatus);
         result.put("acceptStatus", acceptStatus);
         return result;
+    }
+
+    /**
+     * 面试官把时间冲突反馈给主面试官（主面试官据此改期或更换面试官）
+     */
+    @Override
+    public Map<String, Object> notifyPrimaryConflict(Long userId, Long sessionId, String remark)
+    {
+        if (!isAssignedInterviewer(userId, sessionId))
+        {
+            throw new ServiceException("您不是本场次面试官，无法提交冲突反馈");
+        }
+        Long primaryId = conferenceMapper.selectPrimaryInterviewerId(sessionId);
+        if (primaryId == null)
+        {
+            throw new ServiceException("本场面试暂未指定主面试官，无法通知");
+        }
+        if (primaryId.equals(userId))
+        {
+            throw new ServiceException("您是本场主面试官，请直接改期或更换面试官");
+        }
+        Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);
+        if (ctx == null || ctx.isEmpty())
+        {
+            throw new ServiceException("面试场次不存在");
+        }
+        StringBuilder text = new StringBuilder();
+        text.append("【面试时间冲突】面试官 ").append(interviewerName(sessionId, userId))
+                .append(" 反馈「").append(ctx.get("positionTitle")).append("」的面试（")
+                .append(ctx.get("appointmentStartAt")).append("，候选人：")
+                .append(ctx.get("candidateName")).append("）与其已有安排冲突，请改期或更换面试官。");
+        for (Map<String, Object> conflict : conferenceMapper.selectInterviewerConflicts(sessionId, userId))
+        {
+            text.append("\n冲突场次：").append(conflict.get("positionTitle"))
+                    .append("（").append(conflict.get("startTime")).append("-")
+                    .append(conflict.get("endTime")).append("）");
+        }
+        if (!StringUtils.isEmpty(remark))
+        {
+            text.append("\n说明：").append(remark.trim());
+        }
+        sendNotice(userId, primaryId, text.toString());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("primaryInterviewerId", primaryId);
+        result.put("message", "已通知主面试官处理时间冲突");
+        return result;
+    }
+
+    /**
+     * 主面试官更换本场面试官：按提交名单增删，新加入的面试官重新收到担任面试官的确认邀约
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> replaceSessionInterviewers(Long userId, Long sessionId, List<Long> interviewerIds)
+    {
+        Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);
+        if (ctx == null || ctx.isEmpty())
+        {
+            throw new ServiceException("面试场次不存在");
+        }
+        if (!canManageSchedule(userId, ctx, sessionId))
+        {
+            throw new ServiceException("仅主面试官或本企业 HR 可更换面试官");
+        }
+        if (toInt(ctx.get("status")) >= 2)
+        {
+            throw new ServiceException("本场面试已结束，无法更换面试官");
+        }
+        List<Long> selected = normalizeInterviewers(interviewerIds);
+        validateInterviewerCount(toInt(ctx.get("mode")), selected.size());
+        validateInterviewerScope(userId, selected);
+
+        LinkedHashSet<Long> keeping = new LinkedHashSet<>(selected);
+        for (Map<String, Object> item : conferenceMapper.selectSessionInterviewers(sessionId))
+        {
+            Long oldId = toLong(item.get("userId"));
+            if (oldId != null && !keeping.contains(oldId))
+            {
+                conferenceMapper.deleteSessionInterviewer(sessionId, oldId);
+            }
+        }
+        List<Long> added = new ArrayList<>();
+        for (int i = 0; i < selected.size(); i++)
+        {
+            Long id = selected.get(i);
+            if (!isAssignedInterviewer(id, sessionId))
+            {
+                added.add(id);
+            }
+            Map<String, Object> link = new HashMap<>();
+            link.put("sessionId", sessionId);
+            link.put("userId", id);
+            link.put("isPrimary", i == 0 ? 1 : 0);
+            conferenceMapper.insertSessionInterviewer(link);
+        }
+        // 纯 AI 模式没有面试官，只需清空名单
+        if (!selected.isEmpty())
+        {
+            conferenceMapper.updateSessionPrimaryInterviewer(sessionId, selected.get(0));
+            conferenceMapper.updateAppointmentInterviewer(toLong(ctx.get("appointmentId")), selected.get(0));
+            for (Long id : selected)
+            {
+                if (!id.equals(selected.get(0)))
+                {
+                    sendNotice(userId, id, interviewNoticeText(ctx));
+                }
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("message", added.isEmpty() ? "面试官已更新" : "已更换面试官并发送确认邀约");
+        result.put("interviewers", conferenceMapper.selectSessionInterviewers(sessionId));
+        return result;
+    }
+
+    /**
+     * 主面试官改期后重新通知面试官确认新时间（重置接受状态）
+     */
+    @Override
+    public Map<String, Object> remindSessionInterviewers(Long userId, Long sessionId)
+    {
+        Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);
+        if (ctx == null || ctx.isEmpty())
+        {
+            throw new ServiceException("面试场次不存在");
+        }
+        if (!canManageSchedule(userId, ctx, sessionId))
+        {
+            throw new ServiceException("仅主面试官或本企业 HR 可通知面试官");
+        }
+        if (toInt(ctx.get("status")) >= 2)
+        {
+            throw new ServiceException("本场面试已结束，无法通知面试官");
+        }
+        conferenceMapper.resetInterviewerAcceptStatus(sessionId, userId);
+        int notified = 0;
+        for (Map<String, Object> item : conferenceMapper.selectSessionInterviewers(sessionId))
+        {
+            Long id = toLong(item.get("userId"));
+            if (id != null && !id.equals(userId))
+            {
+                sendNotice(userId, id, interviewNoticeText(ctx));
+                notified++;
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("notified", notified);
+        result.put("message", notified == 0 ? "本场没有其他面试官需要通知" : "已通知 " + notified + " 位面试官确认面试时间");
+        return result;
+    }
+
+    /** 面试官确认邀约的提示文案（含岗位、候选人、时间） */
+    private String interviewNoticeText(Map<String, Object> ctx)
+    {
+        return "【面试邀约】您被安排为「" + ctx.get("positionTitle") + "」的面试官，候选人："
+                + ctx.get("candidateName") + "，时间：" + ctx.get("appointmentStartAt")
+                + "，请在消息中心「面试预约通知」中确认是否担任面试官。";
+    }
+
+    /** 以当前用户身份给指定用户发送一条站内文本消息 */
+    private void sendNotice(Long senderId, Long receiverId, String text)
+    {
+        com.ruoyi.system.domain.ImMessage message = new com.ruoyi.system.domain.ImMessage();
+        message.setType(1);
+        message.setContent(text.length() > 1000 ? text.substring(0, 1000) : text);
+        imService.sendMessage(message, senderId, receiverId);
+    }
+
+    /** 场次内某面试官的展示名称 */
+    private String interviewerName(Long sessionId, Long userId)
+    {
+        for (Map<String, Object> item : conferenceMapper.selectSessionInterviewers(sessionId))
+        {
+            if (userId.equals(toLong(item.get("userId"))))
+            {
+                return String.valueOf(item.get("userName"));
+            }
+        }
+        return "该面试官";
+    }
+
+    /** 是否可管理本场面试安排：主面试官本人或该场次所属企业的 HR */
+    private boolean canManageSchedule(Long userId, Map<String, Object> ctx, Long sessionId)
+    {
+        if (isPrimaryInterviewer(ctx, userId, sessionId))
+        {
+            return true;
+        }
+        Long companyId = conferenceMapper.selectCompanyIdByUser(userId);
+        return companyId != null && companyId.equals(toLong(ctx.get("companyId")));
     }
 
     @Override

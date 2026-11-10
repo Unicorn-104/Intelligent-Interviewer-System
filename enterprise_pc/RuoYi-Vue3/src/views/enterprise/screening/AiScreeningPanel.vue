@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { FileText, UserRoundCheck, ShieldCheck, AlertTriangle, Lightbulb, Send, X, Check, ChevronRight, Target, Users, SlidersHorizontal } from '@/views/enterprise/components/icons'
+import { FileText, UserRoundCheck, ShieldCheck, AlertTriangle, Lightbulb, Send, X, Check, ChevronRight, Target, Users, SlidersHorizontal, Search } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listScreeningTasks, listScreeningResults, getScreeningReport, getScreeningGreeting, reviewScreeningResult } from '@/api/screening'
 import { APP_STATUS } from '@/views/enterprise/components/appStatus'
+import { talStatusInfo } from '@/views/enterprise/components/talStatus'
 
 const route = useRoute()
 const toast = ref('')
@@ -14,7 +15,8 @@ const tasks = ref([])
 const activeTaskId = ref(null)
 const results = ref([])
 const loadingResults = ref(false)
-const group = ref('passed') // passed=通过初筛 / rejected=未通过初筛
+const group = ref('scored') // scored=已评分 / pending=待人工评分
+const keyword = ref('')
 
 // 复核抽屉
 const drawer = ref(null)
@@ -25,15 +27,21 @@ const greeting = ref(null)
 const adjustScore = ref('')
 const reviewing = ref(false)
 
-const PASS_THRESHOLD = 60
-// 候选人状态映射（t_tal.tal_status）
-const statusMap = { 0: { text: '新入库', tone: 'gray' }, 1: { text: '初筛通过', tone: 'green' }, 2: { text: '面试中', tone: 'blue' }, 3: { text: '已淘汰', tone: 'red' }, 4: { text: '已录用', tone: 'purple' }, 5: { text: '待笔试', tone: 'orange' }, 6: { text: '笔试中', tone: 'orange' }, 7: { text: '笔试通过', tone: 'green' }, 8: { text: '笔试未通过', tone: 'red' }, 9: { text: '笔试缺考', tone: 'gray' }, 10: { text: '待发Offer', tone: 'orange' } }
 // 本岗位投递状态（t_app_record.app_status）：六态口径见 components/appStatus.js；候选人可同时投递多个岗位，列表展示本岗位状态
 function rowStatus(row) {
-  const apt = APP_STATUS[Number(row.applicationStatus)]
-  if (apt) return { text: apt[0], tone: apt[1] }
-  return statusMap[row.status] || statusMap[0]
+  const [text, tone] = APP_STATUS[Number(row.applicationStatus)] || talStatusInfo(row.status)
+  return { text, tone }
 }
+// 综合分仅在「投递进行中 + 候选人未进入后续流程」时可调整，返回空串表示可调整
+const scoreLockReason = computed(() => {
+  if (!drawer.value) return ''
+  const appStatus = Number(drawer.value.applicationStatus)
+  if (appStatus === 5) return '该候选人本岗位投递已结束（未录用），综合分不可再调整'
+  if (appStatus === 4) return '该候选人已被录用，综合分不可再调整'
+  const talStatus = Number(drawer.value.status)
+  if (talStatus >= 2) return `候选人当前状态为「${talStatusInfo(talStatus)[0]}」，已不在初筛阶段，综合分不可再调整`
+  return ''
+})
 // 与后端 ScreeningAiEvaluator.WEIGHTS 保持一致（合计 100%）
 const dimensions = [
   { key: 'skillMatch', label: '技能标签重合度', weight: '25%' },
@@ -45,13 +53,15 @@ const dimensions = [
 ]
 
 const activeTask = computed(() => tasks.value.find(t => String(t.taskId) === String(activeTaskId.value)))
-const passedRows = computed(() => results.value.filter(r => isPassed(r)))
-// AI 评估失败（无分数）的候选人尚未完成初筛，单独归入待人工评分，不进入未通过初筛
+const filteredTasks = computed(() => {
+  const k = keyword.value.trim().toLowerCase()
+  return k ? tasks.value.filter(t => (t.positionName || '').toLowerCase().includes(k)) : tasks.value
+})
+// AI 评估失败（无分数）的候选人尚未完成评分，单独归入待人工评分
 const unanalyzedRows = computed(() => results.value.filter(r => r.totalScore == null))
-const rejectedRows = computed(() => results.value.filter(r => r.totalScore != null && !isPassed(r)))
-const displayList = computed(() => (group.value === 'passed' ? passedRows.value : group.value === 'pending' ? unanalyzedRows.value : rejectedRows.value))
+const scoredRows = computed(() => results.value.filter(r => r.totalScore != null))
+const displayList = computed(() => (group.value === 'pending' ? unanalyzedRows.value : scoredRows.value))
 
-function isPassed(row) { return row.totalScore != null && Number(row.totalScore) >= (row.threshold || PASS_THRESHOLD) }
 function notify(v) { toast.value = v; setTimeout(() => (toast.value = ''), 2200) }
 function fmtScore(v) { return v == null ? '—' : Number(v).toFixed(1) }
 function skillList(row) { return (row.skills || '').split(',').map(s => s.trim()).filter(Boolean) }
@@ -181,44 +191,51 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
 <template>
   <div class="ai-panel">
     <div class="screening-layout">
-      <!-- 左：初筛任务（按岗位聚合） -->
+      <!-- 左：评分任务（按岗位聚合） -->
       <aside class="card task-card">
-        <div class="section-title"><span><span class="title-icon"><Target :size="16" /></span>初筛任务</span><em>{{ tasks.length }}</em></div>
-        <div v-if="!tasks.length && !loadingResults" class="empty-tip">暂无初筛任务，请先到「投递详情」发起 AI 初筛</div>
-        <article v-for="t in tasks" :key="t.taskId" class="task-item" :class="{ on: String(activeTaskId) === String(t.taskId) }" @click="selectTask(t.taskId)">
+        <div class="section-title"><span><span class="title-icon"><Target :size="16" /></span>评分任务</span></div>
+        <div class="task-search">
+          <Search :size="13" />
+          <input v-model="keyword" type="text" placeholder="搜索岗位名称" />
+          <button v-if="keyword" class="clear" title="清空" @click="keyword = ''"><X :size="11" /></button>
+        </div>
+        <div v-if="!filteredTasks.length && !loadingResults" class="empty-tip">{{ keyword.trim() ? '没有匹配的岗位' : '暂无评分任务，请先到「投递详情」发起 AI 评分' }}</div>
+        <article v-for="t in filteredTasks" :key="t.taskId" class="task-item" :class="{ on: String(activeTaskId) === String(t.taskId) }" @click="selectTask(t.taskId)">
           <div class="task-top"><b>{{ t.positionName }}</b><ChevronRight :size="14" /></div>
-          <div class="task-meta"><span><Users :size="12" />候选人 {{ t.candidateCount }}</span><span><ShieldCheck :size="12" />阈值 {{ PASS_THRESHOLD }} 分</span></div>
+          <div class="task-meta"><span><Users :size="12" />候选人 {{ t.candidateCount }}</span></div>
         </article>
       </aside>
 
-      <!-- 右：通过/未通过初筛 -->
+      <!-- 右：AI 评分结果与人工复核 -->
       <section class="card result-card">
         <div class="result-head">
-          <div class="section-title"><span>{{ activeTask ? activeTask.positionName : 'AI 初筛详情' }}</span></div>
-          <span class="threshold-tip">通过阈值：综合分 ≥ {{ PASS_THRESHOLD }} 分</span>
+          <div class="section-title"><span>{{ activeTask ? activeTask.positionName : 'AI 评分详情' }}</span></div>
+        </div>
+        <div class="rule-tip">
+          <ShieldCheck :size="14" />
+          <span>AI 只依据简历证据给出参考评分，不会自动淘汰候选人，也不会自动推进投递状态。如需淘汰，请点「驳回」（本岗位投递终止为未录用）或到「投递详情」操作。</span>
         </div>
         <div class="stat-row">
           <div class="stat"><label>候选人池</label><strong>{{ results.length }}</strong></div>
-          <div class="stat ok"><label>通过初筛</label><strong>{{ passedRows.length }}</strong></div>
-          <div class="stat warn"><label>未通过初筛</label><strong>{{ rejectedRows.length }}</strong></div>
+          <div class="stat ok"><label>已评分</label><strong>{{ scoredRows.length }}</strong></div>
           <div class="stat pending"><label>待人工评分</label><strong>{{ unanalyzedRows.length }}</strong></div>
         </div>
         <div class="view-tabs">
-          <button :class="{ active: group === 'passed' }" @click="group = 'passed'">通过初筛（{{ passedRows.length }}）</button>
-          <button :class="{ active: group === 'rejected' }" @click="group = 'rejected'">未通过初筛（{{ rejectedRows.length }}）</button>
+          <button :class="{ active: group === 'scored' }" @click="group = 'scored'">已评分（{{ scoredRows.length }}）</button>
           <button :class="{ active: group === 'pending' }" @click="group = 'pending'">待人工评分（{{ unanalyzedRows.length }}）</button>
         </div>
-        <div v-if="!activeTask" class="empty-tip big">请选择左侧岗位任务查看初筛结果</div>
+        <div v-if="!activeTask" class="empty-tip big">请选择左侧岗位任务查看评分结果</div>
         <template v-else>
-          <div v-if="loadingResults" class="empty-tip big">初筛结果加载中…</div>
+          <div v-if="loadingResults" class="empty-tip big">评分结果加载中…</div>
           <div v-else-if="!displayList.length" class="empty-tip big">
-            {{ group === 'passed' ? '暂无通过初筛的候选人，可到「投递详情」发起 AI 初筛' : '暂无未通过初筛的候选人' }}
+            {{ group === 'scored' ? '暂无已评分的候选人，可到「投递详情」发起 AI 评分' : '暂无待人工评分的候选人' }}
           </div>
           <template v-else>
+            <div class="table-scroll">
             <div class="table-head"><span>候选人</span><span>技能标签</span><span>综合分</span><span>状态</span><span>操作</span></div>
             <article v-for="(row, i) in displayList" :key="row.resultId" class="result-row">
               <div class="person">
-                <span class="rank" :class="{ top3: group === 'passed' && i < 3 }">{{ i + 1 }}</span>
+                <span class="rank" :class="{ top3: group === 'scored' && i < 3 }">{{ i + 1 }}</span>
                 <MiniAvatar :name="row.name || '候选人'" :size="32" :color="['#635bff', '#1d8cf8', '#2667ff', '#f59e0b', '#0b9c6c'][i % 5]" />
                 <div><b>{{ row.name || '未命名候选人' }}</b><small>{{ row.phone || '—' }}</small></div>
               </div>
@@ -232,6 +249,7 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
               <span class="pill" :class="rowStatus(row).tone">{{ rowStatus(row).text }}</span>
               <div class="ops"><button @click="openDrawer(row)"><FileText :size="13" />{{ row.totalScore == null ? '人工评分' : '报告复核' }}</button></div>
             </article>
+            </div>
           </template>
         </template>
       </section>
@@ -245,12 +263,18 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
             <MiniAvatar :name="drawer.name || '候选人'" :size="40" color="#2563eb" />
             <div class="dh-info"><h3>{{ drawer.name || '未命名候选人' }}</h3><p>{{ drawer.phone || '—' }} · 综合评分 {{ fmtScore(drawer.totalScore) }}</p></div>
             <span v-if="drawer.totalScore == null" class="pill gray">待人工评分</span>
-            <span v-else class="pill" :class="isPassed(drawer) ? 'green' : 'orange'">{{ isPassed(drawer) ? '通过初筛' : '未通过初筛' }}</span>
+            <span v-else class="pill green">已评分</span>
             <button class="drawer-close" @click="closeDrawer"><X :size="16" /></button>
           </header>
           <div class="drawer-body">
+            <div class="block-title"><ShieldCheck :size="14" />投递与候选人状态</div>
+            <div class="status-box">
+              <div><label>本岗位投递状态</label><span class="pill" :class="rowStatus(drawer).tone">{{ rowStatus(drawer).text }}</span></div>
+              <div><label>候选人状态</label><span class="pill" :class="talStatusInfo(drawer.status)[1]">{{ talStatusInfo(drawer.status)[0] }}</span></div>
+            </div>
+
             <div class="block-title"><Target :size="14" />维度评分明细（合计权重 100%）</div>
-            <div v-if="drawer.totalScore == null" class="manual-tip">AI 评估未完成（评估失败），暂无维度明细；请直接填写人工评分，达到 {{ PASS_THRESHOLD }} 分即视为通过初筛。</div>
+            <div v-if="drawer.totalScore == null" class="manual-tip">AI 评估未完成（评估失败），暂无维度明细；请直接填写 0–100 的人工评分。</div>
             <div v-else-if="report?.manual" class="manual-tip">当前分数由 HR 人工评分录入，无 AI 维度明细。</div>
             <div v-if="drawer.totalScore != null && !report?.manual" class="dim-grid">
               <div v-for="d in dimensions" :key="d.key" class="dim">
@@ -281,18 +305,24 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
             <div v-else class="empty-tip">暂无招呼语（仅短名单 Top 3 自动生成）</div>
           </div>
           <footer class="drawer-footer">
-            <div class="adjust">
+            <div v-if="scoreLockReason" class="score-locked">
+              <AlertTriangle :size="13" />
+              <span>{{ scoreLockReason }}</span>
+            </div>
+            <div v-else class="adjust">
               <label>{{ drawer.totalScore == null ? '人工评分' : '调整综合分' }}</label>
               <input v-model="adjustScore" class="input" type="number" min="0" max="100" step="0.1" :placeholder="drawer.totalScore == null ? '必填' : '可选'" />
-              <small>调整到 ≥{{ PASS_THRESHOLD }} 即视为通过初筛</small>
+              <small>0–100</small>
             </div>
-            <template v-if="drawer.totalScore == null">
-              <button class="btn primary" :disabled="reviewing" @click="submitManualScore"><Check :size="14" />保存人工评分</button>
-            </template>
-            <template v-else>
-              <button class="btn danger-ghost" :disabled="reviewing" @click="submitReview(false)"><X :size="14" />驳回</button>
-              <button class="btn primary" :disabled="reviewing" @click="submitReview(true)"><Check :size="14" />确认通过</button>
-            </template>
+            <div class="footer-actions">
+              <template v-if="drawer.totalScore == null">
+                <button class="btn primary" :disabled="reviewing || !!scoreLockReason" @click="submitManualScore"><Check :size="14" />保存人工评分</button>
+              </template>
+              <template v-else>
+                <button class="btn danger-ghost" :disabled="reviewing || !!scoreLockReason" @click="submitReview(false)"><X :size="14" />驳回</button>
+                <button class="btn primary" :disabled="reviewing || !!scoreLockReason" @click="submitReview(true)"><Check :size="14" />确认通过</button>
+              </template>
+            </div>
           </footer>
         </aside>
       </div>
@@ -303,11 +333,16 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
 </template>
 
 <style scoped>
-.screening-layout{display:grid;grid-template-columns:290px minmax(680px,1fr);gap:15px}
+.screening-layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:15px}
 .task-card{padding:16px;height:max-content;max-height:calc(100vh - 250px);overflow-y:auto}
 .title-icon{width:29px;height:29px;border-radius:8px;background:#eaf1ff;color:#2563eb;display:inline-grid;place-items:center;margin-right:7px;vertical-align:middle}
 .section-title{display:flex;align-items:center;font-size:13px;color:#1e293b;font-weight:600}
-.section-title em{font-style:normal;color:#2563eb;background:#edf4ff;border-radius:10px;font-size:10px;padding:3px 7px;margin-left:5px}
+.task-search{display:flex;align-items:center;gap:6px;margin-top:11px;padding:0 10px;height:32px;border:1px solid #e2e8f0;border-radius:9px;background:#f7f9fc;color:#94a3b8;transition:border-color .15s,background .15s,color .15s}
+.task-search:focus-within{border-color:#2563eb;background:#fff;color:#2563eb}
+.task-search input{flex:1;min-width:0;border:0;outline:none;background:transparent;font-size:11px;color:#334155}
+.task-search input::placeholder{color:#a9b6c8}
+.task-search .clear{display:grid;place-items:center;width:16px;height:16px;flex:none;padding:0;border:0;border-radius:50%;background:#e2e8f0;color:#64748b;cursor:pointer}
+.task-search .clear:hover{background:#cbd5e1;color:#334155}
 .task-item{margin-top:10px;padding:11px 12px;border:1px solid #e2e8f0;border-radius:10px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
 .task-item:hover{border-color:#bfdbfe}
 .task-item.on{border-color:#2563eb;background:#f5f9ff;box-shadow:0 2px 8px rgba(37,99,235,.08)}
@@ -317,21 +352,22 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
 .task-item.on .task-top svg{color:#2563eb}
 .task-meta{display:flex;gap:12px;margin-top:7px;color:#64748b;font-size:10px}
 .task-meta span{display:flex;align-items:center;gap:4px}
-.result-card{padding:17px;min-height:calc(100vh - 250px)}
+.result-card{padding:17px;min-height:calc(100vh - 250px);min-width:0}
 .result-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.threshold-tip{font-size:10px;color:#52657f;background:#f1f5fb;border-radius:999px;padding:4px 10px}
+.rule-tip{display:flex;gap:7px;align-items:flex-start;margin-top:11px;padding:9px 12px;border-radius:9px;background:#eef4ff;color:#3b5b8c;font-size:10px;line-height:1.7}
+.rule-tip svg{flex:none;margin-top:2px;color:#2563eb}
 .view-tabs{display:flex;background:#eef2f7;border-radius:8px;padding:3px;margin-top:12px;width:max-content}
 .view-tabs button{height:29px;border:0;border-radius:6px;background:transparent;color:#64748b;font-size:11px;cursor:pointer;padding:0 15px}
 .view-tabs button.active{background:#2563eb;color:white}
-.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
 .stat{padding:12px 14px;border-radius:10px;background:#f6f8fb}
 .stat label{display:block;font-size:10px;color:#7f8ea3}
 .stat strong{display:block;font-size:22px;color:#2563eb;margin-top:4px}
 .stat.ok strong{color:#0b9c6c}
-.stat.warn strong{color:#ed8506}
 .stat.pending strong{color:#718096}
+.table-scroll{overflow-x:auto;margin-top:6px}
 .table-head,.result-row{display:grid;grid-template-columns:minmax(170px,1.3fr) minmax(150px,1.2fr) 110px 84px 92px;gap:10px;align-items:center}
-.table-head{height:34px;padding:0 10px;background:#f6f8fb;color:#8593a7;font-size:10px;border-radius:7px;margin-top:6px}
+.table-head{height:34px;padding:0 10px;background:#f6f8fb;color:#8593a7;font-size:10px;border-radius:7px}
 .result-row{min-height:64px;padding:9px 10px;border-bottom:1px solid #e8edf4;font-size:11px}
 .person{display:flex;align-items:center;gap:8px;min-width:0}
 .rank{width:20px;height:20px;border-radius:6px;background:#eef2f7;color:#8a9ab0;display:grid;place-items:center;font-size:10px;flex:none}
@@ -375,6 +411,9 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
 .hard-box{display:flex;gap:7px;align-items:flex-start;padding:10px 12px;border-radius:9px;background:#e4f8ef;color:#0b9c6c;font-size:11px;line-height:1.5}
 .hard-box.fail{background:#fff4df;color:#ed8506}
 .hard-box svg{flex:none;margin-top:2px}
+.status-box{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.status-box > div{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;border:1px solid #e8edf4;border-radius:9px}
+.status-box label{font-size:10px;color:#7f8ea3}
 .drawer-loading{font-size:11px;color:#9aa8ba;padding:10px 0}
 .point-group{padding:10px 12px;border-radius:9px;margin-bottom:8px;font-size:11px}
 .point-group b{display:flex;align-items:center;gap:5px;font-size:11px}
@@ -387,10 +426,15 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
 .greeting-box{padding:12px;border-radius:9px;background:#edf4ff;font-size:11px;color:#2c4a7c;line-height:1.6}
 .greeting-box p{margin:0}
 .greeting-box small{display:block;color:#7d93b5;margin-top:7px}
-.drawer-footer{padding:13px 18px;border-top:1px solid #e2e8f0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.adjust{display:flex;align-items:center;gap:6px;margin-right:auto;font-size:11px;color:#64748b}
-.adjust input{width:76px;height:32px}
-.adjust small{font-size:9px;color:#94a3b8}
+.drawer-footer{padding:14px 18px;border-top:1px solid #e2e8f0;display:flex;flex-direction:column;gap:11px}
+.adjust{display:flex;align-items:center;gap:8px;font-size:11px;color:#64748b}
+.adjust label{flex:none;font-weight:600;color:#334155}
+.adjust input{flex:1;min-width:0;height:32px}
+.adjust small{flex:none;font-size:10px;color:#94a3b8}
+.score-locked{display:flex;align-items:flex-start;gap:7px;padding:10px 12px;border:1px dashed #dbe3ee;border-radius:9px;background:#f6f8fb;color:#64748b;font-size:10px;line-height:1.6}
+.score-locked svg{flex:none;margin-top:1px;color:#94a3b8}
+.footer-actions{display:flex;gap:10px}
+.footer-actions .btn{flex:1}
 .drawer-enter-active,.drawer-leave-active{transition:opacity .2s}
 .drawer-enter-active .drawer,.drawer-leave-active .drawer{transition:transform .25s}
 .drawer-enter-from,.drawer-leave-to{opacity:0}

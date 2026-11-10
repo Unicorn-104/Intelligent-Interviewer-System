@@ -68,7 +68,34 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     {
         Long companyId = company(userId);
         PageUtils.startPage(pageNum, pageSize);
-        return scheduleMapper.selectAppointments(companyId, status, from, to, candidateId);
+        List<Map<String, Object>> rows = scheduleMapper.selectAppointments(companyId, status, from, to, candidateId);
+        attachInterviewers(rows);
+        return rows;
+    }
+
+    /** 批量补上本场次的面试官及确认状态（一次查询，避免逐条 N+1） */
+    private void attachInterviewers(List<Map<String, Object>> rows)
+    {
+        if (rows == null || rows.isEmpty()) return;
+        List<Long> sessionIds = new ArrayList<>();
+        for (Map<String, Object> row : rows)
+        {
+            Long sessionId = nullableId(row.get("sessionId"));
+            if (sessionId != null && !sessionIds.contains(sessionId)) sessionIds.add(sessionId);
+        }
+        Map<Long, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
+        if (!sessionIds.isEmpty())
+        {
+            for (Map<String, Object> item : scheduleMapper.selectInterviewersBySessionIds(sessionIds))
+            {
+                grouped.computeIfAbsent(requiredId(item.get("sessionId")), k -> new ArrayList<>()).add(item);
+            }
+        }
+        for (Map<String, Object> row : rows)
+        {
+            Long sessionId = nullableId(row.get("sessionId"));
+            row.put("interviewers", sessionId == null ? new ArrayList<>() : grouped.getOrDefault(sessionId, new ArrayList<>()));
+        }
     }
 
     @Override
@@ -110,9 +137,9 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         if (candidateId == null || scheduleMapper.lockCandidate(candidateId) == null
                 || scheduleMapper.countApplication(candidateId, positionId) == 0)
             throw new ServiceException("候选人未投递当前岗位");
-        // 初筛淘汰/已撤回的投递不允许再安排面试
+        // 已进入终态（已录用/未录用）的投递不允许再安排面试
         if (scheduleMapper.countSchedulableApplication(candidateId, positionId) == 0)
-            throw new ServiceException("该投递已初筛淘汰或已撤回，无法安排面试");
+            throw new ServiceException("该投递已进入终态（已录用或未录用），无法安排面试");
         Set<Long> interviewerIds = new TreeSet<>();
         for (Map<String, Object> row : stages) interviewerIds.add(requiredId(row.get("interviewerId")));
         for (Long id : interviewerIds) lockInterviewer(userId, companyId, id);
@@ -173,11 +200,12 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             row.put("message", "邀约已创建，等待候选人确认");
         }
         // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退（tal_status 独立维度）
-        if (!talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
+        // 能否安排面试只看「所选岗位」的投递状态（上方 countSchedulableApplication），
+        // 候选人全局人才状态已在其他岗位进入终态时不再阻断本岗位面试，仅不再回退推进
+        talStatusService.change(candidateId, TalStatusService.TAL_INTERVIEWING,
                 List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
                         TalStatusService.TAL_EXAM_PASSED),
-                positionId, null, "安排面试", userId))
-            throw new ServiceException("候选人已淘汰或已录用，无法安排面试");
+                positionId, null, "安排面试", userId);
         // HR 安排第一场正式面试：若投递仍为「已投递(0)」，经状态机进入「招聘中(1)」；
         // 多轮/改期/补面/重新面试全程保持招聘中，不写旧的「已约面(3)」。
         Long appId = applicationStatusMapper.selectAppId(candidateId, positionId);
