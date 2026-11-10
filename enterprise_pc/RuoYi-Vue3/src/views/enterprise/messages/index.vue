@@ -2,12 +2,12 @@
 import { resolveResourceUrl } from "@/utils/resourceUrl"
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Video, Play, Zap, Smile, Paperclip, Camera, Send, Settings2, FileText, Bell, Copy, MessageSquareText } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import { listSessions, listMessages, sendMessage, readSession, readAll, uploadAttachment, listQuickReplies, saveQuickReply, deleteQuickReply } from '@/api/system/im'
 import { candidateAppBase } from '@/utils/appLink'
-import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice } from '@/api/system/conference'
+import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice, notifyPrimaryConflict } from '@/api/system/conference'
 import { listSurveyTemplates, sendSurvey } from '@/api/survey'
 import { listPapers, listSchedules, createSchedule } from '@/api/exam'
 import { refreshUnread, totalUnread } from '@/views/enterprise/store/unread'
@@ -246,7 +246,21 @@ loadNotices()
 
 async function respondNotice(n, accept) {
   try {
-    await respondInterviewNotice(n.sessionId, accept)
+    const res = await respondInterviewNotice(n.sessionId, accept)
+    // 与本人已确认的其他面试时间冲突：不写入接受状态，由面试官决定是否通知主面试官
+    if(accept && res.data?.conflict){
+      const list = (res.data.conflicts || []).map(c => `${c.positionTitle}（${c.startTime}-${c.endTime}）`).join('\n')
+      try{
+        await ElMessageBox.confirm(
+          `接受该邀约与您已确认的面试时间冲突：\n${list}\n\n是否通知主面试官改期或更换面试官？`,
+          '时间冲突',
+          { confirmButtonText: '通知主面试官', cancelButtonText: '暂不通知', type: 'warning' }
+        )
+        const notified = await notifyPrimaryConflict(n.sessionId, '')
+        ElMessage.success(notified.data?.message || '已通知主面试官')
+      }catch(e){ /* 选择暂不通知 */ }
+      return
+    }
     ElMessage.success(accept ? '已接受面试邀约' : '已拒绝面试邀约')
     await loadNotices()
   } catch (e) {

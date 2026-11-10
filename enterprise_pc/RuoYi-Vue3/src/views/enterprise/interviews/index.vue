@@ -7,8 +7,12 @@ import CalendarGrid from '@/views/enterprise/components/CalendarGrid.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listInterviews, rescheduleInterview, remindInterview, updateInterviewStatus, listInterviewerSlots, saveInterviewerSlots } from '@/api/interview'
+import { listInterviewers, respondInterviewNotice, notifyPrimaryConflict, replaceSessionInterviewers, notifySessionInterviewers } from '@/api/system/conference'
+import useUserStore from '@/store/modules/user'
 
 const router = useRouter()
+const userStore = useUserStore()
+const myUserId = Number(userStore.id) || null
 const calendar = ref()
 const dayModal = ref(false)
 const freeModal = ref(false)
@@ -27,6 +31,24 @@ const dayNames = ['周一','周二','周三','周四','周五','周六','周日'
 // apt_status：0-待确认，1-已确认，2-已取消，3-已完成
 const STATUS_MAP = { 0:'pending', 1:'confirmed', 2:'cancelled', 3:'completed' }
 const statusText = { pending:'待确认', confirmed:'已确认', completed:'已完成', conflict:'冲突', cancelled:'已取消' }
+
+// 面试官接受状态（t_int_session_interviewer.isi_accept_status）
+const ACCEPT_TEXT = { 0:'待确认', 1:'已确认', 2:'已拒绝' }
+function acceptText(v){ return ACCEPT_TEXT[Number(v)] ?? '待确认' }
+function acceptClass(iv){
+  if(Number(iv.acceptStatus) === 1) return 'iv-ok'
+  if(Number(iv.acceptStatus) === 2) return 'iv-no'
+  return 'iv-wait'
+}
+function myInterviewer(item){
+  return (item?.interviewers || []).find(iv => Number(iv.userId) === myUserId) || null
+}
+
+const conflictModal = ref(false)
+const conflicts = ref([])
+const ivPickModal = ref(false)
+const ivOptions = ref([])
+const ivPicked = ref([])
 
 const all = ref([])
 const weekStart = ref(mondayOf(new Date()))
@@ -66,6 +88,7 @@ function rebuildBlocks(){
       candidate: a.candidateName || '未知候选人',
       position: a.positionTitle || '—',
       interviewer: a.interviewerName || '待定',
+      interviewers: Array.isArray(a.interviewers) ? a.interviewers : [],
       status: STATUS_MAP[a.status] || 'pending',
       meetingUrl: a.meetingUrl || '',
       sessionId: a.sessionId || null,
@@ -167,6 +190,80 @@ async function cancelInterview(){
     drawer.value = null
     notify('已取消该面试安排')
     await load()
+  }catch(e){ /* 拦截器已提示 */ }
+}
+
+// 刷新列表后按原 id 重新打开抽屉，避免抽屉显示旧状态
+async function reloadAndReopen(appointmentId){
+  await load()
+  rebuildBlocks()
+  drawer.value = blocks.value.find(b => b.id === appointmentId) || null
+}
+
+// 面试官接受邀约：与本人已确认的其他面试冲突时不写入接受状态，改为提示通知主面试官
+async function acceptNotice(){
+  const item = drawer.value
+  if(!item?.sessionId) return
+  try{
+    const res = await respondInterviewNotice(item.sessionId, true)
+    if(res.data?.conflict){
+      conflicts.value = res.data.conflicts || []
+      conflictModal.value = true
+      return
+    }
+    notify('已接受面试邀约')
+    await reloadAndReopen(item.appointmentId)
+  }catch(e){ /* 拦截器已提示 */ }
+}
+async function rejectNotice(){
+  const item = drawer.value
+  if(!item?.sessionId) return
+  try{
+    await respondInterviewNotice(item.sessionId, false)
+    notify('已拒绝面试邀约')
+    await reloadAndReopen(item.appointmentId)
+  }catch(e){ /* 拦截器已提示 */ }
+}
+async function notifyPrimary(){
+  const item = drawer.value
+  if(!item?.sessionId) return
+  try{
+    const res = await notifyPrimaryConflict(item.sessionId, '')
+    conflictModal.value = false
+    notify(res.data?.message || '已通知主面试官')
+  }catch(e){ /* 拦截器已提示 */ }
+}
+
+// 更换面试官：主面试官/HR 勾选本企业面试官，保存后新加入的面试官重新收到确认邀约
+async function openInterviewerPick(){
+  const item = drawer.value
+  if(!item?.sessionId) return
+  try{
+    const res = await listInterviewers()
+    ivOptions.value = res.data || []
+    ivPicked.value = (item.interviewers || []).map(iv => Number(iv.userId))
+    ivPickModal.value = true
+  }catch(e){ /* 拦截器已提示 */ }
+}
+async function saveInterviewerPick(){
+  const item = drawer.value
+  if(!item?.sessionId) return
+  if(!ivPicked.value.length){ notify('请至少选择一位面试官'); return }
+  try{
+    const res = await replaceSessionInterviewers(item.sessionId, ivPicked.value)
+    ivPickModal.value = false
+    notify(res.data?.message || '面试官已更新')
+    await reloadAndReopen(item.appointmentId)
+  }catch(e){ /* 拦截器已提示 */ }
+}
+// 改期后重新通知面试官确认新时间
+async function remindInterviewers(){
+  const item = drawer.value
+  if(!item?.sessionId) return
+  try{
+    const res = await notifySessionInterviewers(item.sessionId)
+    notify(res.data?.message || '已通知面试官')
+    await reloadAndReopen(item.appointmentId)
   }catch(e){ /* 拦截器已提示 */ }
 }
 
@@ -341,7 +438,10 @@ onMounted(load)
                 <small>{{ item.position }}</small>
               </div>
             </div>
-            <div class="rec-slot"><Clock3 :size="11"/>{{ item.dayName }} {{ item.time }} · {{ item.interviewer }}</div>
+            <div class="rec-slot"><Clock3 :size="11"/>{{ item.dayName }} {{ item.time }}</div>
+            <div v-if="item.interviewers.length" class="rec-ivs">
+              <span v-for="iv in item.interviewers" :key="iv.userId" class="iv-tag" :class="acceptClass(iv)">{{ iv.userName }}<i v-if="Number(iv.isPrimary) === 1">主</i>{{ acceptText(iv.acceptStatus) }}</span>
+            </div>
             <div class="rec-foot">
               <div class="rec-btns"><button class="btn sm ghost-primary" @click.stop="openAdjust(item)">调整</button><button class="btn sm primary" @click.stop="drawer=item">详情</button></div>
             </div>
@@ -358,7 +458,10 @@ onMounted(load)
                   <small>{{ item.position }}</small>
                 </div>
               </div>
-              <div class="rec-slot"><Clock3 :size="11"/>{{ item.dayName }} {{ item.time }} · {{ item.interviewer }}</div>
+              <div class="rec-slot"><Clock3 :size="11"/>{{ item.dayName }} {{ item.time }}</div>
+            <div v-if="item.interviewers.length" class="rec-ivs">
+              <span v-for="iv in item.interviewers" :key="iv.userId" class="iv-tag" :class="acceptClass(iv)">{{ iv.userName }}<i v-if="Number(iv.isPrimary) === 1">主</i>{{ acceptText(iv.acceptStatus) }}</span>
+            </div>
               <div class="rec-foot" v-if="item.status !== 'cancelled'">
                 <div class="rec-btns"><button class="btn sm ghost-primary" @click.stop="openAdjust(item)">调整</button><button class="btn sm primary" @click.stop="drawer=item">详情</button></div>
               </div>
@@ -414,10 +517,28 @@ onMounted(load)
           </header>
           <div class="drawer-body">
             <div class="detail-row"><Clock3 :size="14"/><div><label>面试时间</label><b>{{ drawer.dayName }} {{ drawer.dateLabel }} {{ drawer.time }}</b></div></div>
-            <div class="detail-row"><UserRound :size="14"/><div><label>面试官</label><b>{{ drawer.interviewer }}</b></div></div>
+            <div class="detail-row"><UserRound :size="14"/><div><label>面试官</label>
+              <div v-if="drawer.interviewers.length" class="iv-list">
+                <span v-for="iv in drawer.interviewers" :key="iv.userId" class="iv-tag" :class="acceptClass(iv)">{{ iv.userName }}<i v-if="Number(iv.isPrimary) === 1">主</i>{{ acceptText(iv.acceptStatus) }}</span>
+              </div>
+              <b v-else>{{ drawer.interviewer }}</b>
+            </div></div>
             <div class="detail-row"><Clock3 :size="14"/><div><label>面试方式</label><b>{{ drawer.meetingUrl ? '视频面试' : '线下面试' }}</b></div></div>
             <div class="detail-row"><Link2 :size="14"/><div><label>会议链接</label><b v-if="drawer.meetingUrl" class="link">{{ drawer.meetingUrl }}</b><b v-else>暂无</b></div></div>
             <div class="detail-row"><FileText :size="14"/><div><label>面试评估</label><button v-if="drawer.sessionId && drawer.status === 'completed'" class="eval-link" @click="openEvaluation">查看评估报告</button><b v-else>面试结束后可查看</b></div></div>
+            <!-- 本人被指派为面试官且待确认：确认是否担任，接受时自动检测时间冲突 -->
+            <div v-if="myInterviewer(drawer) && Number(myInterviewer(drawer).acceptStatus) === 0 && drawer.sessionId && drawer.status !== 'completed' && drawer.status !== 'cancelled'" class="iv-confirm">
+              <p>您被安排为本场面试官，请确认是否担任；接受前会自动检测与您已有安排是否冲突。</p>
+              <div>
+                <button class="btn sm" @click="rejectNotice">拒绝</button>
+                <button class="btn sm primary" @click="acceptNotice">接受邀约</button>
+              </div>
+            </div>
+            <!-- 主面试官 / HR：更换面试官、改期后重新通知面试官 -->
+            <div v-if="drawer.sessionId && drawer.status !== 'completed' && drawer.status !== 'cancelled'" class="iv-actions">
+              <button class="btn sm" @click="openInterviewerPick">更换面试官</button>
+              <button class="btn sm" @click="remindInterviewers">重新通知面试官</button>
+            </div>
           </div>
           <footer class="drawer-footer">
             <button class="btn danger-ghost" @click="cancelInterview">取消面试</button>
@@ -463,6 +584,32 @@ onMounted(load)
         <button class="btn primary" @click="saveAdjust()">确认调整</button>
       </template>
     </BaseModal>
+    <BaseModal v-if="conflictModal" title="时间冲突" width="430px" @close="conflictModal=false">
+      <div class="conflict-box">
+        <p>接受该邀约会与您已确认的面试时间重叠：</p>
+        <ul>
+          <li v-for="c in conflicts" :key="c.sessionId">{{ c.positionTitle }}（{{ c.startTime }} - {{ c.endTime }}），候选人：{{ c.candidateName }}</li>
+        </ul>
+        <p class="tip">可选择通知主面试官，由主面试官改期或更换面试官后再通知您确认。</p>
+      </div>
+      <template #footer>
+        <button class="btn" @click="conflictModal=false">暂不通知</button>
+        <button class="btn primary" @click="notifyPrimary">通知主面试官</button>
+      </template>
+    </BaseModal>
+
+    <BaseModal v-if="ivPickModal" title="更换面试官" width="430px" @close="ivPickModal=false">
+      <div class="iv-pick">
+        <label v-for="u in ivOptions" :key="u.userId">
+          <input v-model="ivPicked" type="checkbox" :value="Number(u.userId)"/>{{ u.userName }}
+        </label>
+      </div>
+      <template #footer>
+        <button class="btn" @click="ivPickModal=false">取消</button>
+        <button class="btn primary" @click="saveInterviewerPick">保存并通知</button>
+      </template>
+    </BaseModal>
+
     <ToastMessage :message="toast"/>
   </div>
 </template>
@@ -488,6 +635,15 @@ onMounted(load)
 .rec-name-row b{font-size:13px}
 .rec-main small{display:block;color:#64748b;font-size:10px;margin-top:1px}
 .rec-slot{display:flex;align-items:center;gap:5px;color:#64748b;font-size:10px;margin:8px 0 6px}
+
+/* 多面试官：一行展示名单与确认状态 */
+.rec-ivs{display:flex;gap:4px;overflow:hidden;margin:-2px 0 6px}
+.iv-tag{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:5px;font-size:9px;white-space:nowrap;background:#f1f5f9;color:#64748b}
+.iv-tag i{font-style:normal;font-size:8px;line-height:1.4;padding:0 3px;border-radius:3px;background:#2563eb;color:#fff}
+.iv-tag.iv-ok{background:#dcfce7;color:#166534}
+.iv-tag.iv-wait{background:#fef3c7;color:#92400e}
+.iv-tag.iv-no{background:#fee2e2;color:#991b1b;text-decoration:line-through}
+.iv-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
 .rec-foot{display:flex;align-items:center;justify-content:flex-end}
 .rec-btns{display:flex;gap:6px;align-items:center}
 
@@ -579,4 +735,15 @@ onMounted(load)
 .adj-preview{margin-top:16px;padding:10px 12px;background:#f0f5ff;border-radius:8px;font-size:12px;color:#2563eb;text-align:center}
 .adj-conflict{margin-top:10px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#dc2626;text-align:center}
 .adj-warning{margin-top:10px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;text-align:center}
+
+/* 面试官确认 / 更换 */
+.iv-confirm{margin-top:14px;padding:12px;border:1px solid #dbeafe;background:#f8fbff;border-radius:10px}
+.iv-confirm p{font-size:12px;color:#475569;line-height:1.6;margin:0 0 10px}
+.iv-confirm>div{display:flex;gap:8px;justify-content:flex-end}
+.iv-actions{display:flex;gap:8px;margin-top:12px}
+.iv-pick{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:260px;overflow-y:auto}
+.iv-pick label{display:flex;align-items:center;gap:6px;font-size:12px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px}
+.conflict-box p{font-size:12px;color:#475569;margin:0 0 8px}
+.conflict-box ul{margin:0 0 10px;padding-left:16px;font-size:12px;color:#1e293b;line-height:1.7}
+.conflict-box .tip{color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin:0}
 </style>
