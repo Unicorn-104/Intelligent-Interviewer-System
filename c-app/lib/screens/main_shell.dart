@@ -7,9 +7,15 @@ import 'profile_screen.dart';
 import 'resume_screen.dart';
 
 class MainShell extends StatefulWidget {
-  const MainShell({super.key, required this.session, required this.onLogout});
+  const MainShell({
+    super.key,
+    this.session,
+    required this.onLogin,
+    required this.onLogout,
+  });
 
-  final AuthSession session;
+  final AuthSession? session;
+  final VoidCallback onLogin;
   final Future<void> Function() onLogout;
 
   @override
@@ -22,43 +28,80 @@ class _MainShellState extends State<MainShell> {
   int _messageRefreshVersion = 0;
   int _profileRefreshVersion = 0;
 
+  @override
+  void didUpdateWidget(covariant MainShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != null && widget.session == null && _index != 0) {
+      _index = 0;
+    }
+  }
+
   void _selectTab(int index) => setState(() {
+    if (widget.session == null && index != 0) {
+      _showLoginRequired();
+      return;
+    }
     _index = index;
     if (index == 2) _messageRefreshVersion++;
     if (index == 3) _profileRefreshVersion++;
   });
+
+  Future<void> _showLoginRequired() async {
+    final login = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('请先登录'),
+        content: const Text('登录后才可以查看简历、投递、面试和个人中心。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('不了'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('登录'),
+          ),
+        ],
+      ),
+    );
+    if (login == true && mounted) widget.onLogin();
+  }
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomeScreen(
         session: widget.session,
+        onLoginRequired: _showLoginRequired,
         onOpenMessages: () => _selectTab(2),
         unreadCount: _messageUnreadCount,
       ),
-      ResumeScreen(session: widget.session),
-      MessagesScreen(
-        session: widget.session,
-        refreshVersion: _messageRefreshVersion,
-        onUnreadChanged: (count) {
-          if (_messageUnreadCount != count) {
-            setState(() => _messageUnreadCount = count);
-          }
-        },
-      ),
-      ProfileScreen(
-        session: widget.session,
-        onLogout: widget.onLogout,
-        refreshVersion: _profileRefreshVersion,
-      ),
+      if (widget.session != null) ResumeScreen(session: widget.session!),
+      if (widget.session != null)
+        MessagesScreen(
+          session: widget.session!,
+          refreshVersion: _messageRefreshVersion,
+          onUnreadChanged: (count) {
+            if (_messageUnreadCount != count) {
+              setState(() => _messageUnreadCount = count);
+            }
+          },
+        ),
+      if (widget.session != null)
+        ProfileScreen(
+          session: widget.session!,
+          onLogout: widget.onLogout,
+          refreshVersion: _profileRefreshVersion,
+        ),
     ];
+    final visibleIndex = _index < pages.length ? _index : 0;
     return Scaffold(
       body: SafeArea(
         bottom: false,
-        child: IndexedStack(index: _index, children: pages),
+        child: IndexedStack(index: visibleIndex, children: pages),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
+        selectedIndex: visibleIndex,
         onDestinationSelected: _selectTab,
         destinations: [
           const NavigationDestination(

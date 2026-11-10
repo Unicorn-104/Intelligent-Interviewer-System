@@ -43,7 +43,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       widget.favoriteApi ?? JobFavoriteApi(_client),
       widget.session.token,
       job.positionId,
-    )..load();
+    );
+    if (widget.session.token.isNotEmpty) _favorite.load();
   }
 
   @override
@@ -64,38 +65,39 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       appBar: AppBar(
         title: const Text('职位详情'),
         actions: [
-          IconButton(
-            tooltip: !_favorite.loaded
-                ? '重试加载收藏状态'
-                : _favorite.favorited
-                ? '取消收藏职位'
-                : '收藏职位',
-            isSelected: _favorite.loaded && _favorite.favorited,
-            onPressed: _favorite.loading || _favorite.saving
-                ? null
-                : !_favorite.loaded
-                ? _favorite.load
-                : _toggleFavorite,
-            selectedIcon: const Icon(
-              Icons.bookmark,
-              color: AppColors.interactive,
+          if (widget.session.token.isNotEmpty)
+            IconButton(
+              tooltip: !_favorite.loaded
+                  ? '重试加载收藏状态'
+                  : _favorite.favorited
+                  ? '取消收藏职位'
+                  : '收藏职位',
+              isSelected: _favorite.loaded && _favorite.favorited,
+              onPressed: _favorite.loading || _favorite.saving
+                  ? null
+                  : !_favorite.loaded
+                  ? _favorite.load
+                  : _toggleFavorite,
+              selectedIcon: const Icon(
+                Icons.bookmark,
+                color: AppColors.interactive,
+              ),
+              icon: _favorite.loading || _favorite.saving
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.bookmark_border),
             ),
-            icon: _favorite.loading || _favorite.saving
-                ? const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.bookmark_border),
-          ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
         children: [
-          if (_favorite.error case final error?)
+          if (widget.session.token.isNotEmpty && _favorite.error != null)
             AsyncStateCard(
               title: '收藏状态加载失败',
-              message: error,
+              message: _favorite.error!,
               onRetry: _favorite.load,
             ),
           if (!job.available)
@@ -171,7 +173,10 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           const SizedBox(height: 24),
           Card(
             child: ListTile(
-              onTap: job.companyId != null && job.companyId! > 0
+              onTap:
+                  widget.session.token.isNotEmpty &&
+                      job.companyId != null &&
+                      job.companyId! > 0
                   ? () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => CompanyScreen(
@@ -196,30 +201,35 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-        child: FilledButton(
-          onPressed:
-              _applied || _applying || !job.available || widget.onApply == null
-              ? null
-              : _apply,
-          child: _applying
-              ? const SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : Text(
-                  _applied
-                      ? '已投递'
-                      : !job.available
-                      ? '暂不可投递'
-                      : '立即投递',
-                ),
-        ),
-      ),
+      bottomNavigationBar: widget.session.token.isEmpty
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+              child: FilledButton(
+                onPressed:
+                    _applied ||
+                        _applying ||
+                        !job.available ||
+                        widget.onApply == null
+                    ? null
+                    : _apply,
+                child: _applying
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        _applied
+                            ? '已投递'
+                            : !job.available
+                            ? '暂不可投递'
+                            : '立即投递',
+                      ),
+              ),
+            ),
     );
   }
 

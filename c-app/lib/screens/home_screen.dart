@@ -22,13 +22,15 @@ import 'search_screen.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
-    required this.session,
+    this.session,
     required this.onOpenMessages,
+    required this.onLoginRequired,
     required this.unreadCount,
   });
 
-  final AuthSession session;
+  final AuthSession? session;
   final VoidCallback onOpenMessages;
+  final VoidCallback onLoginRequired;
   final int unreadCount;
 
   @override
@@ -45,6 +47,13 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _filter;
   int? _applyingPositionId;
 
+  static const _guestSession = AuthSession(
+    token: '',
+    userId: 0,
+    userName: '游客',
+    nickName: '游客',
+  );
+
   static const _filters = <(String, String?)>[
     ('推荐', null),
     ('最新发布', 'latest'),
@@ -60,8 +69,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _api = JobApi(_client);
     _interviews = InterviewController(
       InterviewApi(_client),
-      widget.session.token,
-    )..load();
+      widget.session?.token ?? '',
+    );
+    if (widget.session != null) {
+      _interviews.load();
+    }
     _load();
   }
 
@@ -82,9 +94,23 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       setState(() => _error = null);
     }
+    // 游客首页只展示公开入口；个性化推荐需要登录，岗位浏览通过“筛选全部岗位”进入。
+    if (widget.session == null) {
+      if (mounted) {
+        setState(() {
+          _feed = const HomeFeed(
+            newOpportunityCount: 0,
+            highMatchCount: 0,
+            jobs: [],
+            applications: [],
+          );
+        });
+      }
+      return;
+    }
     try {
       final feed = await _api.fetchHome(
-        widget.session.token,
+        widget.session!.token,
         filter: filter ?? _filter,
       );
       if (mounted) setState(() => _feed = feed);
@@ -97,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SearchScreen(
-          session: widget.session,
+          session: widget.session ?? _guestSession,
           initialKeyword: keyword,
           openFilters: openFilters,
         ),
@@ -106,42 +132,54 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _refreshAll() async {
-    await Future.wait([_load(), _interviews.load()]);
+    await Future.wait([
+      _load(),
+      if (widget.session != null) _interviews.load(),
+    ]);
   }
 
   Future<void> _openApplications() async {
+    if (widget.session == null) return widget.onLoginRequired();
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => ApplicationScreen(session: widget.session),
+        builder: (_) => ApplicationScreen(session: widget.session!),
       ),
     );
     if (mounted) await _load();
   }
 
   Future<void> _openApplication(int id) async {
+    if (widget.session == null) return widget.onLoginRequired();
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) =>
-            ApplicationDetailScreen(session: widget.session, applicationId: id),
+        builder: (_) => ApplicationDetailScreen(
+          session: widget.session!,
+          applicationId: id,
+        ),
       ),
     );
     if (mounted) await _load();
   }
 
   Future<void> _openInterview(InterviewSchedule item) async {
+    if (widget.session == null) return widget.onLoginRequired();
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) =>
-            InterviewDetailScreen(session: widget.session, appointment: item),
+            InterviewDetailScreen(session: widget.session!, appointment: item),
       ),
     );
     if (mounted) await _interviews.load();
   }
 
   Future<bool> _apply(Job job) async {
+    if (widget.session == null) {
+      widget.onLoginRequired();
+      return false;
+    }
     final resumeId = await chooseApplicationResume(
       context,
-      token: widget.session.token,
+      token: widget.session?.token ?? '',
       job: job,
     );
     if (!mounted || resumeId == null) return false;
@@ -149,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _applyingPositionId = job.positionId);
     try {
       await _api.apply(
-        widget.session.token,
+        widget.session?.token ?? '',
         job.positionId,
         resumeId: resumeId,
       );
@@ -194,7 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
             sliver: SliverList.list(
               children: [
                 _Header(
-                  name: widget.session.nickName,
+                  name: widget.session?.nickName ?? '游客',
                   onOpenMessages: widget.onOpenMessages,
                   unreadCount: widget.unreadCount,
                 ),
@@ -202,6 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _SearchEntry(onTap: _openSearch),
                 const SizedBox(height: 16),
                 _AiHero(
+                  guest: widget.session == null,
                   opportunityCount: _feed?.newOpportunityCount,
                   highMatchCount: _feed?.highMatchCount,
                   onView: _scrollToRecommendations,
@@ -223,7 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 12),
                 ..._buildRecommendationContent(),
-                ...[
+                if (widget.session != null) ...[
                   const SizedBox(height: 16),
                   SectionHeader(
                     title: '我的投递',
@@ -242,10 +281,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ],
                 const SizedBox(height: AppSpacing.xxl),
-                InterviewCalendar(
-                  controller: _interviews,
-                  onOpen: _openInterview,
-                ),
+                if (widget.session != null)
+                  InterviewCalendar(
+                    controller: _interviews,
+                    onOpen: _openInterview,
+                  ),
               ],
             ),
           ),
@@ -255,6 +295,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<Widget> _buildRecommendationContent() {
+    if (widget.session == null) {
+      return [_GuestRecommendationCard(onLogin: widget.onLoginRequired)];
+    }
     if (_error != null) {
       return [
         AsyncStateCard(
@@ -288,13 +331,47 @@ class _HomeScreenState extends State<HomeScreen> {
       for (final job in _feed!.jobs) ...[
         JobCard(
           job: job,
-          session: widget.session,
+          session: widget.session ?? _guestSession,
           onApply: _apply,
           applying: _applyingPositionId == job.positionId,
         ),
         const SizedBox(height: 12),
       ],
     ];
+  }
+}
+
+class _GuestRecommendationCard extends StatelessWidget {
+  const _GuestRecommendationCard({required this.onLogin});
+
+  final VoidCallback onLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+        child: Column(
+          children: [
+            const Icon(Icons.lock_outline, size: 30),
+            const SizedBox(height: 12),
+            Text(
+              '登录后 AI 推荐',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '登录后即可获得基于简历和求职意向的个性化岗位推荐。',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            TextButton(onPressed: onLogin, child: const Text('登录')),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -391,10 +468,12 @@ class _AiHero extends StatelessWidget {
     required this.opportunityCount,
     required this.highMatchCount,
     required this.onView,
+    required this.guest,
   });
   final int? opportunityCount;
   final int? highMatchCount;
   final VoidCallback onView;
+  final bool guest;
 
   @override
   Widget build(BuildContext context) {
@@ -433,7 +512,9 @@ class _AiHero extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            opportunityCount == null
+            guest
+                ? '登录后 AI 推荐'
+                : opportunityCount == null
                 ? '正在寻找适合你的\n新机会'
                 : '已为你匹配 $opportunityCount 个\n新机会',
             style: const TextStyle(
@@ -446,7 +527,9 @@ class _AiHero extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            highMatchCount == null
+            guest
+                ? '登录后根据你的简历和求职意向推荐岗位。'
+                : highMatchCount == null
                 ? 'AI 正在根据你的简历和求职意向进行匹配。'
                 : '其中 $highMatchCount 个岗位匹配度超过 90%，AI 结果仅供求职参考。',
             style: TextStyle(
