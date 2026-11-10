@@ -95,4 +95,32 @@ RAG 依赖文件存储、MySQL、Embedding、Qdrant 和模型服务；知识库�
 
 ## 本轮交付验证记录
 
-本节在交付分支完成验证后补充。未执行、失败及环境限制必须分别标注，不把原工作区结果写成当前分支验收。
+验证基线为最新 `origin/dev` 的 `7ac6016`；创建 PR 前再次 fetch 确认基线未变化。
+以下结果均区分交付分支自动验证与原开发环境运行结果。
+
+| 项目 | 本轮结果 |
+| --- | --- |
+| 后端编译 | `mvn -B -ntp -pl ruoyi-admin -am "-Dmaven.test.skip=true" compile`，7 个模块 BUILD SUCCESS；本机用临时 settings 读取已有仓库缓存和 Maven Central，不修改 POM 或全局配置 |
+| 后端针对性测试 | JDK 21 对交付分支的 6 个测试类重新编译，使用已缓存测试依赖及 JUnit Platform 6.0.3 直接执行；65 项通过，0 跳过、0 失败 |
+| 常规 Maven 测试 | 已尝试相关类的 Maven test，受最新 dev 引入的 Testcontainers 2.0.5 依赖下载阻塞，离线运行也确认缺少该依赖；不能记为 Maven test 已通过 |
+| Flutter 全量测试 | `flutter test --no-pub`：168 项通过；包括新知识库、公开请求契约、游客收藏隔离和会话切换回归 |
+| Flutter 静态检查 | `flutter analyze --no-pub` 无问题；本次改动的 21 个 Dart 文件格式检查通过 |
+| Android Debug 构建 | `flutter build apk --debug --no-pub` 成功；构建产物不提交 |
+| 提交范围与文档 | 仅 backend/、c-app/ 和 AGENTS 本轮增量；相对链接、敏感信息模式扫描及 diff 检查通过 |
+
+后端直接执行的测试类为 `KnowledgeServiceTest`、`AppAiServiceTest`、`AgentToolsTest`、
+`AppRecommendSecurityTest`、`AppJobControllerTest` 和 `GuestJobSecurityTest`。
+前四者使用合成数据及 H2/替身；路由测试使用实际 SecurityConfig 和匿名过滤链，
+不连接真实账号或生产数据库。该直接 JUnit 结果不等同 Maven 全量测试通过。
+网络依赖就绪后应在 CI 执行上述测试类的常规 Maven test，并补充后端打包。
+
+原开发工作区曾在本地后端验证验证码、匿名岗位响应、知识库开关、512 维 Embedding，
+并在模拟器看到面试日程恢复正常。这些结果不作为本交付分支的服务器或设备闭环验收。
+本轮没有用交付分支替换正在运行的后端和客户端，没有执行生产迁移。
+
+待验收：常规 Maven 测试与后端打包、真实 MySQL 迁移和回滚、RAG 上传到来源回答及删除的完整闭环、
+跨账号隔离、交付分支与新公开路由的设备联调、服务器、iOS/真机、CI 和人工 Review。
+因此 PR 保持 Draft，不推进 dev 到 main。
+
+部署参考 [知识库配置示例](../backend/doc/capp_knowledge_config.example.yml)、
+[个人知识库说明](../backend/doc/capp_knowledge_rag.md) 和 [游客公开接口](../backend/doc/capp_guest_browse.md)。
