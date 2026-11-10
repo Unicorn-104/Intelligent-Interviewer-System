@@ -6,8 +6,8 @@ import AiScreeningPanel from './AiScreeningPanel.vue'
   <div class="page ai-screening-page">
     <div class="page-heading">
       <div>
-        <h1>AI 初筛详情</h1>
-        <p>按综合分 60 分阈值展示通过、未通过与待人工评分的候选人，可查看报告或人工评分</p>
+        <h1>AI 评分详情</h1>
+        <p>AI 评分仅作参考、不会自动淘汰：可查看报告或人工评分</p>
       </div>
     </div>
 

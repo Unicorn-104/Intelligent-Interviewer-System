@@ -60,10 +60,10 @@ async function loadPositions() {
     const res = await listUnscreenedPositions()
     positions.value = res.data?.rows || []
     candidateCount.value = Number(res.data?.candidateCount || 0)
-    // 刷新后同步选中岗位的最新待初筛人数
+    // 岗位下所有候选人都已评分后该岗位不再返回，回到「全部岗位」
     if (activePosition.value) {
       const latest = positions.value.find(p => p.positionId === activePosition.value.positionId)
-      activePosition.value = latest || { ...activePosition.value, pendingCount: 0 }
+      activePosition.value = latest || null
     }
   } catch (e) {
     positions.value = []
@@ -102,7 +102,9 @@ function applyFilter() {
 }
 
 async function refresh() {
-  await Promise.all([loadPositions(), loadApplicants()])
+  // 先刷新岗位列表（可能清空选中岗位），再按最终筛选条件拉投递
+  await loadPositions()
+  await loadApplicants()
 }
 
 function step(delta) {
@@ -135,17 +137,17 @@ async function triggerScreening() {
   try {
     if (activePosition.value) {
       await screenUnscreenedApplicants({ positionId: activePosition.value.positionId })
-      notify('已提交 AI 初筛，正在后台分析，结果见「AI 初筛详情」')
+      notify('已提交 AI 评分，正在后台分析，结果见「AI 评分详情」')
     } else {
       const res = await screenAllPending()
       const data = res.data || {}
-      notify(`已提交 ${data.queuedPositions || 0} 个岗位的 AI 初筛，正在后台分析，结果见「AI 初筛详情」`)
+      notify(`已提交 ${data.queuedPositions || 0} 个岗位的 AI 评分，正在后台分析，结果见「AI 评分详情」`)
     }
     pageNum.value = 1
     await refresh()
     startPolling()
   } catch (e) {
-    notify(e?.response?.data?.msg || e?.message || 'AI 初筛提交失败，请稍后重试')
+    notify(e?.response?.data?.msg || e?.message || 'AI 评分提交失败，请稍后重试')
   } finally {
     screening.value = false
   }
@@ -172,7 +174,7 @@ onBeforeUnmount(stopPolling)
       <aside class="card pos-panel">
         <div class="pos-head">
           <div class="pos-head-main"><b>岗位</b><em>{{ positionCount }}</em></div>
-          <small>{{ positionCount }} 个岗位存在待初筛投递</small>
+          <small>{{ positionCount }} 个岗位存在待评分投递</small>
         </div>
         <div v-if="positionsLoading" class="empty sm">加载中…</div>
         <div v-else class="pos-list">
@@ -195,7 +197,7 @@ onBeforeUnmount(stopPolling)
           </button>
           <div v-if="!positions.length" class="empty sm">
             <CircleCheckBig :size="22" />
-            <p>所有投递均已完成 AI 初筛</p>
+            <p>所有投递均已完成 AI 评分</p>
           </div>
         </div>
       </aside>
@@ -204,7 +206,7 @@ onBeforeUnmount(stopPolling)
         <div class="toolbar">
           <div class="current">
             <b>{{ activeTitle }}</b>
-            <span>待初筛 {{ activePending }} 位 · 共 {{ total }} 条投递</span>
+            <span>待评分 {{ activePending }} 位 · 共 {{ total }} 条投递</span>
           </div>
           <label class="status-filter">
             <SlidersHorizontal :size="14" />
@@ -215,7 +217,7 @@ onBeforeUnmount(stopPolling)
           </label>
           <button class="filter-btn" @click="refresh">刷新</button>
           <button class="btn primary screen-btn" :disabled="!canScreen" @click="triggerScreening">
-            <Sparkles :size="15" />{{ screening ? '提交中…' : '发起 AI 初筛' }}
+            <Sparkles :size="15" />{{ screening ? '提交中…' : '发起 AI 评分' }}
           </button>
         </div>
 

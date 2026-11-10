@@ -200,7 +200,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_tal set tal_archive_source = #{archiveSource} where tal_id = #{talId}
     </update>
 
-    <!-- 待初筛岗位：投递仍为已投递(0)、HR 尚未启动招聘流程的投递；按人去重计数 -->
+    <!-- 待初筛岗位：投递仍为已投递(0)、HR 尚未启动招聘流程，且该候选人在本岗位还没有 AI 分析结果；按人去重计数 -->
     <select id="selectUnscreenedPositions" resultType="java.util.LinkedHashMap">
         select p.pos_id as positionId, p.pos_title as positionName, p.pos_work_city as city,
                count(distinct t.tal_id) as pendingCount
@@ -209,6 +209,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         join t_tal t on t.tal_id = a.app_candidate_id
         where p.pos_company_id = #{companyId}
           and a.app_status = 0
+          and not exists (
+              select 1 from t_ai_candidate_analysis x
+              where x.asr_company_id = #{companyId}
+                and x.asr_position_id = p.pos_id
+                and x.asr_candidate_id = t.tal_id
+          )
         group by p.pos_id, p.pos_title, p.pos_work_city
         order by pendingCount desc, p.pos_id desc
     </select>
@@ -272,6 +278,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         join t_tal t on t.tal_id = a.app_candidate_id
         where p.pos_company_id = #{companyId}
           and a.app_status = 0
+          and not exists (
+              select 1 from t_ai_candidate_analysis x
+              where x.asr_company_id = #{companyId}
+                and x.asr_position_id = a.app_position_id
+                and x.asr_candidate_id = t.tal_id
+          )
     </select>
 
     <!-- 待初筛投递人选：按岗位与关键词检索，分页由服务层 startPage 控制 -->
@@ -288,6 +300,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join t_res_base r on r.rbs_id = a.app_resume_id
         where p.pos_company_id = #{companyId}
           and a.app_status = 0
+          and not exists (
+              select 1 from t_ai_candidate_analysis x
+              where x.asr_company_id = #{companyId}
+                and x.asr_position_id = a.app_position_id
+                and x.asr_candidate_id = t.tal_id
+          )
         <if test="positionId != null">
             and a.app_position_id = #{positionId}
         </if>
