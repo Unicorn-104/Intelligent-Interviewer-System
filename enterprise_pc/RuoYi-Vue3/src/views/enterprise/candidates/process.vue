@@ -9,6 +9,7 @@ import { getTalentDetail, getTalentResume, updateTalentStatus, inviteInterview }
 import { listInterviews } from '@/api/interview'
 import { listJobs } from '@/api/system/job'
 import { listMembers } from '@/api/system/settings'
+import { TAL_STATUS_OPTIONS, talStatusInfo } from '@/views/enterprise/components/talStatus'
 
 const router = useRouter()
 const route = useRoute()
@@ -19,15 +20,9 @@ const detail = ref(null)
 const resume = ref(null)
 const interviews = ref([])
 
-const STATUS = {
-  0: ['新入库', 'gray'], 1: ['初筛通过', 'green'], 2: ['面试中', 'purple'], 3: ['已淘汰', 'red'],
-  4: ['已录用', 'green'], 5: ['待笔试', 'orange'], 6: ['笔试中', 'orange'], 7: ['笔试通过', 'green'],
-  8: ['笔试未通过', 'red'], 9: ['笔试缺考', 'gray'], 10: ['待发Offer', 'orange']
-}
 const APT_STATUS = { 0: ['待确认', 'gray'], 1: ['已确认', 'green'], 2: ['已取消', 'gray'], 3: ['已完成', 'purple'] }
-const STATUS_OPTIONS = Object.keys(STATUS).map(k => ({ value: Number(k), label: STATUS[k][0] }))
 
-const statusInfo = computed(() => STATUS[detail.value?.status] || ['未知', 'gray'])
+const statusInfo = computed(() => talStatusInfo(detail.value?.status))
 const mainPosition = computed(() => interviews.value.find(i => i.positionTitle)?.positionTitle || detail.value?.jobDirection || '—')
 
 // 时间线：真实面试预约，按开始时间升序；最近一场视为当前环节
@@ -157,7 +152,7 @@ onMounted(load)
         </div>
         <div class="head-actions">
           <button class="btn" @click="resumeOpen = true"><FileText :size="15"/>查看简历</button>
-          <button class="btn" @click="router.push('/enterprise/screening')"><Sparkles :size="15"/>AI 初筛</button>
+          <button class="btn" @click="router.push('/enterprise/screening')"><Sparkles :size="15"/>AI 评分</button>
           <button class="btn primary" @click="openInvite"><CalendarPlus :size="15"/>安排当前阶段</button>
         </div>
       </section>
@@ -304,7 +299,7 @@ onMounted(load)
         <label>目标阶段</label>
         <select v-model="nextStatus" class="input">
           <option value="">请选择目标阶段</option>
-          <option v-for="s in STATUS_OPTIONS" :key="s.value" :value="String(s.value)">{{ s.label }}</option>
+          <option v-for="s in TAL_STATUS_OPTIONS" :key="s.value" :value="String(s.value)">{{ s.label }}</option>
         </select>
       </div>
       <template #footer>
