@@ -31,8 +31,11 @@ class _MainShellState extends State<MainShell> {
   @override
   void didUpdateWidget(covariant MainShell oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.session != null && widget.session == null && _index != 0) {
+    if (oldWidget.session?.token != widget.session?.token) {
       _index = 0;
+      _messageUnreadCount = 0;
+      _messageRefreshVersion = 0;
+      _profileRefreshVersion = 0;
     }
   }
 
@@ -71,6 +74,8 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomeScreen(
+        // Recreate controllers and discard pending data when authentication changes.
+        key: ObjectKey(widget.session),
         session: widget.session,
         onLoginRequired: _showLoginRequired,
         onOpenMessages: () => _selectTab(2),
