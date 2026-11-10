@@ -90,6 +90,7 @@ class AiApi {
     int? resumeId,
     int? applicationId,
     String action = 'chat',
+    List<String> knowledgeBaseIds = const [],
   }) async => _data(
     await client.post(
       '/app/ai/sessions/$id/runs',
@@ -100,6 +101,7 @@ class AiApi {
         'resumeId': resumeId,
         'applicationId': applicationId,
         'action': action,
+        'knowledgeBaseIds': knowledgeBaseIds,
       },
       timeout: const Duration(seconds: 40),
     ),
