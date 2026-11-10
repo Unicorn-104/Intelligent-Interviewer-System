@@ -10,12 +10,17 @@ public record AgentRunRequest(
         @NotBlank @Size(max = 4000) String content,
         @Positive Long resumeId,
         @Positive Long applicationId,
-        @Pattern(regexp = "chat|job_recommendation|resume_analysis|interview_preparation|writing_polish") String action)
+        @Pattern(regexp = "chat|job_recommendation|resume_analysis|interview_preparation|writing_polish") String action,
+        @Size(max = 5) java.util.List<String> knowledgeBaseIds)
 {
     public AgentRunRequest
     {
         if (action == null) action = "chat";
+        knowledgeBaseIds = knowledgeBaseIds == null ? java.util.List.of() : java.util.List.copyOf(knowledgeBaseIds);
     }
+
+    public AgentRunRequest(String requestId, String content, Long resumeId, Long applicationId, String action)
+    { this(requestId, content, resumeId, applicationId, action, java.util.List.of()); }
 
     public AgentRunRequest(String requestId, String content, Long resumeId)
     { this(requestId, content, resumeId, null, "chat"); }
