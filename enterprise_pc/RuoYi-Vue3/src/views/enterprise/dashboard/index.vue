@@ -54,8 +54,8 @@ const bars = computed(() => {
   const max = f.applied || 1
   const items = [
     { label: '已投递', value: f.applied ?? 0 },
-    { label: '招聘中', value: f.screened ?? 0 },
-    { label: '笔试/面试环节', value: f.interviewing ?? 0 },
+    { label: '招聘中', value: f.interviewing ?? 0 },
+    { label: 'Offer 阶段', value: f.pendingInterview ?? 0 },
     { label: '已录用', value: f.hired ?? 0 }
   ]
   // 0 值不画柱（避免 min-height 造成“有数据”的错觉），非 0 值保底 8% 保证可见
