@@ -49,7 +49,7 @@
                         and ar.app_position_id = p.pos_id) as applied
         from t_pos p
         join t_cmp c on c.cmp_id = p.pos_company_id and c.cmp_status = 1
-        join sys_user u on u.user_id = #{userId}
+        left join sys_user u on u.user_id = #{userId}
         left join t_pos_skill ps on ps.psk_position_id = p.pos_id
         left join t_res_base rb on rb.rbs_user_id = #{userId} and rb.rbs_status = 1
         left join t_res_skill rs on rs.skl_resume_id = rb.rbs_id and rs.skl_name = ps.psk_name
