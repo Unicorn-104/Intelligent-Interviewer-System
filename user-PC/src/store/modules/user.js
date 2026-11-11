@@ -46,9 +46,9 @@ const useUserStore = defineStore(
         })
       },
       // 获取用户信息
-      getInfo() {
+      getInfo(options) {
         return new Promise((resolve, reject) => {
-          getInfo().then(res => {
+          getInfo(options).then(res => {
             const user = res.user
             const avatar = resolveResourceUrl(user.avatar, import.meta.env.VITE_APP_BASE_API) || defAva
             if (res.roles && res.roles.length > 0) { // 验证返回的roles是否是一个非空数组

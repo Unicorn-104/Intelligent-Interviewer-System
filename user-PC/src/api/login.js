@@ -87,10 +87,11 @@ export function sendSmsCode(phone, scene) {
 }
 
 // 获取用户详细信息
-export function getInfo() {
+export function getInfo(options = {}) {
   return request({
     url: '/getInfo',
     timeout: AUTH_REQUEST_TIMEOUT,
+    silentAuth: options.silentAuth === true,
     method: 'get'
   })
 }
