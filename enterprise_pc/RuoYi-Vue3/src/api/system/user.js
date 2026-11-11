@@ -87,6 +87,31 @@ export function updateUserProfile(data) {
   })
 }
 
+// 查询本人最近登录记录
+export function getLoginRecords() {
+  return request({
+    url: '/system/user/profile/loginRecords',
+    method: 'get'
+  })
+}
+
+// 查询本人通知设置
+export function getNoticePref() {
+  return request({
+    url: '/system/user/profile/noticePref',
+    method: 'get'
+  })
+}
+
+// 保存本人通知设置
+export function updateNoticePref(data) {
+  return request({
+    url: '/system/user/profile/noticePref',
+    method: 'put',
+    data: data
+  })
+}
+
 // 用户密码重置
 export function updateUserPwd(oldPassword, newPassword) {
   return request({
