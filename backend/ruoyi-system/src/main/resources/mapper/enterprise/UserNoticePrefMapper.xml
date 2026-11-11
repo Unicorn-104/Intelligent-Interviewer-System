@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.UserNoticePrefMapper">
+    <select id="select" resultType="com.ruoyi.enterprise.domain.NoticePref">
+        select pref_interview as interview, pref_resume as resume,
+               pref_message as message, pref_system as `system`
+        from t_user_notice_pref where pref_user_id = #{userId}
+    </select>
+    <insert id="upsert">
+        insert into t_user_notice_pref(pref_user_id,pref_interview,pref_resume,pref_message,pref_system,pref_update_time)
+        values(#{userId},#{pref.interview},#{pref.resume},#{pref.message},#{pref.system},now())
+        on duplicate key update pref_interview=#{pref.interview},pref_resume=#{pref.resume},
+            pref_message=#{pref.message},pref_system=#{pref.system},pref_update_time=now()
+    </insert>
+</mapper>

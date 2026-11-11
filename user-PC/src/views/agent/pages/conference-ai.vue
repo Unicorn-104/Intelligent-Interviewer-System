@@ -25,16 +25,27 @@
     </div>
 
     <section class="ca-stage">
-      <div ref="stageRef" class="ca-video">
+      <div ref="stageRef" class="ca-video" :class="{ spot: enlargedKey }">
         <!-- 屏幕共享画面：覆盖主视频区，由 LiveKit 原生 ScreenShare 轨驱动 -->
         <div v-if="activeScreenStream" class="ca-screen">
           <video ref="screenEl" autoplay playsinline muted />
           <span class="ca-screen-tag"><Icon name="share" :size="14" />{{ screenLabel }}</span>
         </div>
 
-        <!-- 面试官宫格：多位面试官画面并排占据主区，本人画面仍以小窗独立呈现；纯 AI 面试没有人工面试官，不渲染宫格 -->
-        <div v-if="interviewMode !== 1" class="ca-grid" :class="`g${Math.min(interviewers.length || 1, 6)}`">
-          <div v-for="p in interviewers" :key="p.userId" class="ca-tile">
+        <!-- 面试官宫格：面试官画面并排占据主区，本人在最后独立成格；纯 AI 面试没有人工面试官，不渲染宫格 -->
+        <div
+          v-if="interviewMode !== 1"
+          class="ca-grid"
+          :class="[`g${Math.min(tileCount || 1, 6)}`, { 'is-spot': enlargedKey }]"
+          :style="{ '--spot-rows': spotRows }"
+        >
+          <div
+            v-for="p in interviewers"
+            :key="p.userId"
+            class="ca-tile"
+            :class="{ big: enlargedKey === String(p.userId) }"
+            @click="toggleEnlarge(String(p.userId))"
+          >
             <video
               v-show="tileStream(p.userId)"
               :ref="(el) => setTileEl(p.userId, el)"
@@ -47,7 +58,25 @@
               <span>等待 {{ p.name }} 画面…</span>
             </div>
             <span v-if="tileStream(p.userId)" class="ca-tile-tag"><i />{{ p.name }} · {{ p.roleLabel }}</span>
+            <span v-if="canEnlarge" class="ca-tile-zoom">{{ enlargedKey === String(p.userId) ? '还原' : '放大' }}</span>
           </div>
+
+          <!-- 本人画面：与企业端一致，作为最后一个 tile 进入宫格 -->
+          <div
+            v-if="showSelfTile"
+            class="ca-tile self"
+            :class="{ big: enlargedKey === SELF_KEY }"
+            @click="toggleEnlarge(SELF_KEY)"
+          >
+            <video v-show="camOn" ref="selfVideo" class="ca-tile-video mirror" autoplay playsinline muted />
+            <div v-if="!camOn" class="ca-tile-waiting">
+              <Icon name="video" :size="18" />
+              <span>摄像头已关闭</span>
+            </div>
+            <span v-if="camOn" class="ca-tile-tag"><i />我</span>
+            <span v-if="canEnlarge" class="ca-tile-zoom">{{ enlargedKey === SELF_KEY ? '还原' : '放大' }}</span>
+          </div>
+
           <div v-if="!interviewers.length" class="ca-grid-empty">
             <Icon name="video" :size="30" />
             <span>等待面试官进入…</span>
@@ -80,13 +109,13 @@
           <p class="ca-q-text">{{ questionText || (interviewMode === 1 ? 'AI 面试官正在准备题目…' : '等待面试官出题…') }}</p>
         </div>
 
-        <div class="ca-self" :style="selfStyle" @mousedown.prevent="startDrag">
+        <div v-if="interviewMode === 1" class="ca-self" :style="selfStyle" @mousedown.prevent="startDrag">
           <video v-show="camOn" ref="selfVideo" autoplay playsinline muted />
           <div v-if="!camOn" class="ca-self-fallback"><Icon name="video" :size="20" /><span>摄像头未开启</span></div>
           <span class="ca-self-name">我</span>
           <button class="ca-self-hide" title="隐藏我的画面" @mousedown.stop @click.stop="selfVisible = false">×</button>
         </div>
-        <button v-if="!selfVisible" class="ca-self-restore" @click="selfVisible = true">显示我的画面</button>
+        <button v-if="interviewMode === 1 && !selfVisible" class="ca-self-restore" @click="selfVisible = true">显示我的画面</button>
 
         <div v-if="sharing" class="ca-share-tip"><Icon name="share" :size="14" />正在向面试官共享屏幕</div>
 
@@ -114,6 +143,9 @@
       </button>
       <button class="ca-ctl" :class="{ on: sharing }" @click="toggleShare">
         <Icon name="share" :size="20" /><span>{{ sharing ? '停止共享' : '共享屏幕' }}</span>
+      </button>
+      <button class="ca-ctl" :class="{ on: !enlargedKey }" :disabled="!canEnlarge" @click="enlargedKey = null">
+        <Icon name="grid" :size="20" /><span>宫格视图</span>
       </button>
       <button class="ca-ctl" @click="openSettings">
         <Icon name="settings" :size="20" /><span>设置</span>
@@ -178,6 +210,7 @@ const PATHS = {
   caption: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', 'M16 8H8', 'M13 12H8'],
   settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.18V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 11 3V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 16.9 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 21.4 9v.09a1.65 1.65 0 0 0 1.51 1z'],
   share: ['M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'M8 21h8', 'M12 17v4', 'M12 13V8', 'm9 11 3-3 3 3'],
+  grid: ['M3 3h7v7H3z', 'M14 3h7v7h-7z', 'M14 14h7v7h-7z', 'M3 14h7v7H3z'],
   phoneOff: ['m2 2 20 20', 'M16 14v-1c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1.5c0 1.38-1.12 2.5-2.5 2.5C10.61 18 6 13.39 6 6.5 6 5.12 7.12 4 8.5 4H10c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1H9']
 }
 
@@ -207,6 +240,22 @@ const peerStreams = ref({})
 const interviewers = ref([])
 // 面试模式（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
 const interviewMode = ref(2)
+// 宫格聚焦放大：null=宫格，非空=该 tile（面试官或本人）放大，其余缩为右侧竖排
+const SELF_KEY = 'self'
+const enlargedKey = ref(null)
+// 纯 AI 模式没有人工面试官，主画面是 AI orb，本人仍用角标小窗，不进入宫格
+const showSelfTile = computed(() => interviewMode.value !== 1)
+// 宫格 tile 总数 = 面试官数 + 本人
+const tileCount = computed(() => interviewers.value.length + (showSelfTile.value ? 1 : 0))
+const canEnlarge = computed(() => tileCount.value > 1)
+// 右列缩略条行数 = tile 总数 - 放大的那一个
+const spotRows = computed(() => Math.max(tileCount.value - 1, 1))
+
+// 点击 tile 放大 / 还原（与企业端一致）
+function toggleEnlarge(key) {
+  if (!canEnlarge.value) return
+  enlargedKey.value = enlargedKey.value === key ? null : key
+}
 // 企业端是否正在录制（由面试官通过信令同步，未收到即为未录制）
 const recording = ref(false)
 // 面试官是否已打断接管：接管期间 AI 暂停出题，由面试官主导提问
@@ -260,9 +309,11 @@ const selfStyle = computed(() =>
   selfPos.value.x === null ? { right: '16px', bottom: '16px' } : { left: `${selfPos.value.x}px`, top: `${selfPos.value.y}px` }
 )
 
-// AI 画中画位置
+// AI 画中画位置：聚焦模式下左移，避开右侧缩略条
 const aiStyle = computed(() =>
-  aiPos.value.x === null ? { right: '16px', bottom: '160px' } : { left: `${aiPos.value.x}px`, top: `${aiPos.value.y}px` }
+  aiPos.value.x === null
+    ? (enlargedKey.value ? { right: '184px', bottom: '160px' } : { right: '16px', bottom: '160px' })
+    : { left: `${aiPos.value.x}px`, top: `${aiPos.value.y}px` }
 )
 // 面试模式展示文案（1-纯AI，2-AI+单面试官，3-AI+多面试官，4-无AI纯人工）
 const modeLabel = computed(() => {
@@ -510,6 +561,21 @@ function applySessionContext(ctx) {
     roleLabel: Number(it.isPrimary) === 1 ? '主面试官' : '面试官'
   }))
 }
+
+// 面试官离开或切到纯 AI 模式时退出聚焦，避免放大不存在的画面
+watch([interviewers, interviewMode], () => {
+  if (interviewMode.value === 1) {
+    enlargedKey.value = null
+    return
+  }
+  if (
+    enlargedKey.value &&
+    enlargedKey.value !== SELF_KEY &&
+    !interviewers.value.some((p) => String(p.userId) === enlargedKey.value)
+  ) {
+    enlargedKey.value = null
+  }
+})
 
 // 重新拉取场次上下文（面试官列表可能变化）
 async function refreshContext() {
@@ -838,22 +904,33 @@ onBeforeUnmount(() => {
 .ca-screen video { width: 100%; height: 100%; object-fit: contain; display: block; }
 .ca-screen-tag { position: absolute; left: 12px; top: 12px; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(9, 14, 24, .72); border: 1px solid var(--line); color: #cfe0ff; font-size: 12px; }
 
-/* 面试官宫格：多位面试官画面并排占据主区；格子保持 16:9 并整体垂直居中，避免出现大面积黑边 */
-.ca-grid { position: absolute; inset: 0; padding: 8px; display: grid; gap: 8px; align-content: center; }
+/* 面试官宫格：与企业端一致，格子铺满可用区域；5/6 人时首格占 2×2 */
+.ca-grid { position: absolute; inset: 0; padding: 8px; display: grid; gap: 8px; grid-auto-rows: 1fr; grid-auto-flow: dense; }
 .ca-grid.g1 { grid-template-columns: 1fr; }
 .ca-grid.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.ca-grid.g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ca-grid.g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
 .ca-grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ca-grid.g5, .ca-grid.g6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ca-grid.g5:not(.is-spot) .ca-tile:first-child,
+.ca-grid.g6:not(.is-spot) .ca-tile:first-child { grid-column: span 2; grid-row: span 2; }
+/* 聚焦模式：放大的画面占左列全部行，其余缩为右侧 168px 竖排 */
+.ca-grid.is-spot { grid-template-columns: 1fr 168px; grid-template-rows: repeat(var(--spot-rows, 2), minmax(0, 1fr)); }
+.ca-grid.is-spot .ca-tile.big { grid-column: 1; grid-row: 1 / -1; }
+.ca-grid.is-spot .ca-tile:not(.big) { grid-column: 2; }
 /* contain：完整显示画面不裁切（cover 会把摄像头画面放大裁掉边缘） */
-.ca-tile { position: relative; min-width: 0; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #05070c; border: 1px solid var(--line); }
+.ca-tile { position: relative; min-width: 0; min-height: 0; border-radius: 12px; overflow: hidden; background: #05070c; border: 1px solid var(--line); cursor: pointer; }
+.ca-tile.big { border-color: var(--b); }
 .ca-tile-video { width: 100%; height: 100%; object-fit: contain; display: block; background: #05070c; }
+/* 本人画面镜像，只影响本地预览，不影响发布轨道 */
+.ca-tile-video.mirror { transform: scaleX(-1); }
 .ca-tile-waiting { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; }
 .ca-tile-waiting svg { color: #4A5768; }
-.ca-grid-empty { grid-column: 1 / -1; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; }
+.ca-grid-empty { position: absolute; inset: 0; z-index: 2; display: grid; place-content: center; justify-items: center; gap: 10px; color: #6E7C90; font-size: 13px; pointer-events: none; }
 .ca-grid-empty svg { color: #4A5768; }
 .ca-tile-tag { position: absolute; left: 10px; bottom: 8px; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: rgba(6, 9, 14, .62); backdrop-filter: blur(6px); color: #fff; font-size: 12px; }
 .ca-tile-tag i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.ca-tile-zoom { position: absolute; right: 8px; top: 8px; height: 22px; padding: 0 9px; display: inline-flex; align-items: center; border-radius: 999px; background: rgba(9, 14, 24, .62); backdrop-filter: blur(6px); color: #9FB0C8; font-size: 10px; opacity: 0; transition: opacity .15s; }
+.ca-tile:hover .ca-tile-zoom { opacity: 1; }
 
 /* AI 画中画：无AI 纯人工模式隐藏 */
 .ca-ai-pip { position: absolute; width: 150px; padding: 12px; border-radius: 12px; background: rgba(12, 17, 26, .74); border: 1px solid var(--line); backdrop-filter: blur(8px); text-align: center; cursor: move; }
@@ -882,6 +959,8 @@ onBeforeUnmount(() => {
 
 /* 当前题目：右上角浮动，避开左侧面试官列表 */
 .ca-question { position: absolute; right: 18px; top: 16px; width: min(520px, 56%); padding: 14px 16px; border-radius: 12px; background: rgba(12, 17, 26, .72); border: 1px solid var(--line); backdrop-filter: blur(8px); }
+/* 聚焦模式：题目卡左移，避开右侧缩略条 */
+.ca-video.spot .ca-question { right: 184px; width: min(520px, calc(100% - 240px)); }
 .ca-q-head { display: flex; align-items: center; gap: 12px; }
 .ca-q-index { font-size: 12px; color: #8FB8FF; font-weight: 600; white-space: nowrap; }
 .ca-q-bar { flex: 1; height: 5px; border-radius: 999px; background: rgba(255, 255, 255, .14); }
@@ -889,7 +968,7 @@ onBeforeUnmount(() => {
 .ca-q-text { margin-top: 10px; font-size: 14px; line-height: 1.7; color: #E4EBF5; }
 
 .ca-self { position: absolute; width: 160px; height: 90px; border-radius: 10px; overflow: hidden; border: 2px solid rgba(255, 255, 255, .8); background: #0B0F16; cursor: move; box-shadow: 0 12px 28px rgba(0, 0, 0, .5); }
-.ca-self video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.ca-self video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; transform: scaleX(-1); }
 .ca-self-fallback { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 5px; color: #6E7C90; font-size: 11px; }
 .ca-self-fallback svg { color: #4A5768; }
 .ca-self-name { position: absolute; left: 7px; bottom: 5px; font-size: 10px; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); pointer-events: none; }
@@ -898,6 +977,8 @@ onBeforeUnmount(() => {
 .ca-share-tip { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 6; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; background: rgba(43, 127, 255, .92); color: #fff; font-size: 12px; }
 
 .ca-captions { position: absolute; left: 0; right: 0; bottom: 0; max-height: 148px; padding: 12px 18px 14px; background: linear-gradient(180deg, rgba(6, 9, 14, 0), rgba(6, 9, 14, .86) 42%); display: flex; flex-direction: column; transition: .2s; }
+/* 聚焦模式：字幕只在放大画面范围内显示，不盖住右侧缩略条 */
+.ca-video.spot .ca-captions { right: 184px; }
 .ca-captions:not(.live) { opacity: .3; }
 .ca-cap-tag { font-size: 11px; color: #7F8CA1; margin-bottom: 6px; }
 .ca-cap-list { overflow-y: auto; display: grid; gap: 6px; padding-right: 6px; }
@@ -913,6 +994,8 @@ onBeforeUnmount(() => {
 .ca-ctl span { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border-radius: 7px; background: #05080E; border: 1px solid var(--line); color: #EDF1F7; font-size: 11px; white-space: nowrap; opacity: 0; pointer-events: none; transition: .16s; }
 .ca-ctl:hover span { opacity: 1; }
 .ca-ctl:hover { border-color: var(--b); }
+.ca-ctl:disabled { opacity: .4; cursor: not-allowed; }
+.ca-ctl:disabled:hover { border-color: var(--line); }
 .ca-ctl.off { background: var(--rec); border-color: transparent; }
 .ca-ctl.on { background: var(--b); border-color: transparent; }
 .ca-ctl.hang { background: var(--rec); border-color: transparent; }
