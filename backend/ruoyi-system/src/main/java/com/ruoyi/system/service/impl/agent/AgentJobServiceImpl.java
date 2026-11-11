@@ -34,7 +34,7 @@ public class AgentJobServiceImpl implements IAgentJobService
     {
         AgentJobQuery normalized = query == null ? new AgentJobQuery() : query;
         normalize(normalized);
-        if (normalized.getResumeId() != null && (normalized.getResumeId() <= 0
+        if (normalized.getResumeId() != null && (userId == null || normalized.getResumeId() <= 0
                 || jobMapper.countAvailableResume(normalized.getResumeId(), userId) == 0))
         {
             throw new ServiceException("所选简历不存在或不可用，请重新选择自己的有效简历");
@@ -42,7 +42,7 @@ public class AgentJobServiceImpl implements IAgentJobService
         PageHelper.startPage(normalized.getPage(), normalized.getSize());
         List<AgentJob> jobs = jobMapper.selectJobList(normalized, userId);
         PageInfo<AgentJob> pageInfo = new PageInfo<>(jobs);
-        pageInfo.getList().forEach(this::decorate);
+        pageInfo.getList().forEach(job -> decorate(job, userId));
         return new AgentPage<>(pageInfo.getList(), normalized.getPage(), normalized.getSize(), pageInfo.getTotal());
     }
 
@@ -78,7 +78,7 @@ public class AgentJobServiceImpl implements IAgentJobService
         {
             throw new ServiceException("岗位不存在或已下线");
         }
-        decorate(job);
+        decorate(job, userId);
         return job;
     }
 
@@ -102,7 +102,7 @@ public class AgentJobServiceImpl implements IAgentJobService
         }
     }
 
-    private void decorate(AgentJob job)
+    private void decorate(AgentJob job, Long userId)
     {
         job.setSalaryText(formatSalary(job.getSalaryMin(), job.getSalaryMax()));
         job.setEducationText(educationText(job.getEducationRequired()));
@@ -116,6 +116,14 @@ public class AgentJobServiceImpl implements IAgentJobService
         if (job.getSkills() == null)
         {
             job.setSkills(Collections.emptyList());
+        }
+        if (userId == null)
+        {
+            job.setMatchScore(null);
+            job.setApplicationId(null);
+            job.setAppliedFlag(0);
+            job.setJdJson(null);
+            job.setCompanyDetails(null);
         }
     }
 
