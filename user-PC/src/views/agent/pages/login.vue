@@ -51,7 +51,7 @@
         <button class="primary" :disabled="loading" type="submit">{{ loading ? '登录中...' : '登录' }}</button>
       </form>
 
-      <div class="footer-link">还没有账号？ <a :href="appHref('/register')">立即注册</a></div>
+      <div class="footer-link">还没有账号？ <a :href="appHref(`/register?redirect=${encodeURIComponent(candidateRedirect(route.query.redirect))}`)">立即注册</a> · <a :href="appHref('/index')">先逛逛</a></div>
     </section>
   </main>
 </template>

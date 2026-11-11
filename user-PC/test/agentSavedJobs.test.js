@@ -9,6 +9,7 @@ function jobsPage(overrides = {}) {
     .match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
   const storage = new Map([['zhipin-ai-saved-jobs', '[1,2,999]']])
   const dependencies = {
+    hasCandidateAccessToken: () => true, requireCandidateLogin: () => true,
     ref, computed, reactive, loadSavedJobItems, normalizeSavedJobIds, sortSavedJobItems,
     onMounted() {}, onBeforeUnmount() {},
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) },
@@ -19,6 +20,20 @@ function jobsPage(overrides = {}) {
   const page = new Function(...Object.keys(dependencies), `${script}\nreturn { loadJobs, jobs, savedJobs, savedOnly, savedJobCount, visibleJobs, toggleSaved, syncSavedJobs, errorMessage, keyword, filters, hotTags, selectHotTag, clearFilter, activeFilterLabels }`)(...Object.values(dependencies))
   return { page, storage }
 }
+
+test('游客浏览不读取之前账号的收藏，点击收藏只提示登录不写入数据', async () => {
+  let prompts = 0
+  const { page, storage } = jobsPage({ hasCandidateAccessToken: () => false, requireCandidateLogin: () => { prompts++; return false }, listJobs: async query => {
+    assert.equal(query.sort, 'latest')
+    return { data: { items: [], total: 0 } }
+  } })
+  await page.loadJobs()
+  assert.equal(page.savedJobs.value.size, 0)
+  page.toggleSaved(26)
+  assert.equal(prompts, 1)
+  assert.equal(page.savedJobs.value.size, 0)
+  assert.equal(storage.get('zhipin-ai-saved-jobs'), '[1,2,999]')
+})
 
 test('收藏 ID 去重并排除空值、对象、非正数及超出数据库范围的值', () => {
   assert.deepEqual(normalizeSavedJobIds([1, '1', ' 2 ', '002', null, {}, -1, 0, 'NaN', '', '9223372036854775808']), ['1', '2'])

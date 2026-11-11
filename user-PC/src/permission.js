@@ -11,6 +11,7 @@ import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
 import usePermissionStore from '@/store/modules/permission'
 import { clearCandidateSession, hasCandidateAccessToken } from '@/utils/agentSession'
+import { isPublicCandidatePage, requestCandidateLogin } from '@/utils/agentAccess'
 
 NProgress.configure({ showSpinner: false })
 
@@ -72,11 +73,15 @@ router.beforeEach(async (to, from) => {
       const userStore = useUserStore()
       if (!userStore.name) {
         try {
-          await userStore.getInfo()
+          await userStore.getInfo({ silentAuth: isPublicCandidatePage(to.path) })
         } catch {
           removeToken()
           clearCandidateSession()
           userStore.$reset()
+          if (isPublicCandidatePage(to.path)) {
+            NProgress.done()
+            return true
+          }
           ElMessage.error('登录状态已失效，请重新登录')
           NProgress.done()
           return { path: '/login', query: { redirect: to.fullPath }, replace: true }
@@ -91,7 +96,9 @@ router.beforeEach(async (to, from) => {
       return true
     }
     NProgress.done()
-    return { path: '/login', query: { redirect: to.fullPath }, replace: true }
+    if (isPublicCandidatePage(to.path)) return true
+    const loginRoute = await requestCandidateLogin(to.fullPath)
+    return loginRoute || (from.matched.length ? false : { path: '/index', replace: true })
   }
   if (getToken()) {
     to.meta.title && useSettingsStore().setTitle(to.meta.title)

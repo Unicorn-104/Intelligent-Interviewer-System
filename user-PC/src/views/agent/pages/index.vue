@@ -1,5 +1,5 @@
 <template>
-<div class="app-shell">
+<div class="app-shell" :class="{ 'guest-mode': !isLoggedIn }">
     <AgentTopbar active="index" />
 
     <main class="main-content" id="dashboard">
@@ -22,7 +22,8 @@
             <div><h2 class="panel-title">我的投递进度摘要</h2><p class="panel-caption">持续跟进每一个值得期待的机会</p></div>
             <button class="text-button" id="viewAllApplications" type="button" @click="openApplications">查看全部 →</button>
           </div>
-          <div v-if="applicationLoading" class="dashboard-state">正在读取真实投递数据...</div>
+          <div v-if="!isLoggedIn" class="dashboard-state"><span>登录后查看你的投递进展</span><button class="text-button" type="button" @click="openApplications">登录 / 注册 →</button></div>
+          <div v-else-if="applicationLoading" class="dashboard-state">正在读取真实投递数据...</div>
           <div v-else-if="applicationError" class="dashboard-state error-state">
             <span>{{ applicationError }}</span>
             <button class="text-button" type="button" @click="loadApplications">重新加载</button>
@@ -54,7 +55,8 @@
 
         <article class="panel activity-panel">
           <div class="panel-header"><div><h2 class="panel-title">系统通知与平台动态</h2><p class="panel-caption">来自后端通知中心的最新消息</p></div><button class="text-button" type="button" @click="openMessages">查看全部 →</button></div>
-          <div v-if="noticesLoading" class="dashboard-state">正在读取真实通知...</div>
+          <div v-if="!isLoggedIn" class="dashboard-state"><span>登录后查看消息与通知</span><button class="text-button" type="button" @click="openMessages">登录 / 注册 →</button></div>
+          <div v-else-if="noticesLoading" class="dashboard-state">正在读取真实通知...</div>
           <div v-else-if="noticesError" class="dashboard-state error-state"><span>通知暂时无法读取</span><button class="text-button" type="button" @click="loadNotices">重新加载</button></div>
           <ul v-else-if="noticeItems.length" class="activity-list">
             <li v-for="item in noticeItems" :key="item.noticeId" class="activity-item" :class="{ 'activity-unread': !item.isRead }" role="button" tabindex="0" @click="openNotice(item)" @keydown.enter="openNotice(item)" @keydown.space.prevent="openNotice(item)"><span class="activity-dot"></span><div class="activity-body"><div class="activity-company">{{ item.noticeTitle || '系统通知' }} <span>{{ item.noticeType === '1' ? '通知' : '公告' }}</span></div><p class="activity-content">{{ noticePreview(item.noticeContent) || '暂无通知内容' }}</p><div class="activity-time">{{ formatRelativeTime(item.createTime) }}</div></div></li>
@@ -67,18 +69,20 @@
         <div class="section-heading">
           <div><h2 id="jobsHeading">{{ resumes.length ? '为你推荐的岗位' : '在招岗位' }}</h2><p>{{ recommendationHint }}</p></div>
           <div class="jobs-controls">
-            <label class="recommendation-resume-control" for="recommendationResume">
+            <a v-if="!isLoggedIn" class="text-button" :href="appHref('/profile-resumes')">登录后选择简历推荐</a>
+            <label v-else class="recommendation-resume-control" for="recommendationResume">
               <span>推荐简历</span>
               <select id="recommendationResume" v-model="selectedResumeId" class="filter-select recommendation-resume-select" :disabled="resumesLoading || !!resumesError || !resumes.length" @change="changeRecommendationResume">
                 <option v-if="!resumes.length" value="">{{ resumesLoading ? '正在读取简历…' : resumesError ? '简历加载失败' : '暂无简历' }}</option>
                 <option v-for="resume in resumes" :key="resume.id" :value="String(resume.id)">{{ resume.name || '未命名简历' }}{{ resume.isDefault ? '（默认）' : '' }}</option>
               </select>
             </label>
-            <select v-model="sort" class="filter-select" id="jobFilter" aria-label="岗位排序" :disabled="resumesLoading || !!resumesError" @change="loadJobs"><option value="match">按匹配度排序</option><option value="salary">按薪资排序</option><option value="latest">按最新发布排序</option></select>
+            <select v-model="sort" class="filter-select" id="jobFilter" aria-label="岗位排序" :disabled="resumesLoading || !!resumesError" @change="loadJobs"><option v-if="isLoggedIn" value="match">按匹配度排序</option><option value="salary">按薪资排序</option><option value="latest">按最新发布排序</option></select>
             <button class="text-button" type="button" :disabled="resumesLoading || loading" @click="loadRecommendationResumes">刷新岗位 ↻</button>
           </div>
         </div>
-        <p v-if="!resumesLoading && !resumesError && !resumes.length" class="recommendation-empty">还没有简历，<a :href="appHref('/profile-resumes')">去创建或上传简历</a>，即可获得对应岗位的参考匹配。</p>
+        <p v-if="!isLoggedIn" class="recommendation-empty">当前展示企业发布的真实岗位；登录并选择简历后可获取个性化推荐。</p>
+        <p v-else-if="!resumesLoading && !resumesError && !resumes.length" class="recommendation-empty">还没有简历，<a :href="appHref('/profile-resumes')">去创建或上传简历</a>，即可获得对应岗位的参考匹配。</p>
 
         <div class="jobs-grid" id="jobsGrid">
 
@@ -149,7 +153,8 @@
                 <div><span class="details-kicker">SELECTED DATE</span><h3>{{ selectedDateLabel }}</h3></div>
                 <span v-if="scheduleLoading" class="loading-label">读取中...</span>
               </div>
-              <div v-if="scheduleError" class="schedule-state error-state">
+              <div v-if="!isLoggedIn" class="schedule-state"><span>登录后查看个人面试安排</span><a class="outline-button" :href="appHref('/interview-schedule')">登录 / 注册</a></div>
+              <div v-else-if="scheduleError" class="schedule-state error-state">
                 <strong>面试安排加载失败</strong>
                 <span>{{ scheduleError }}</span>
                 <button class="outline-button" type="button" @click="loadSchedule()">重新加载</button>
@@ -219,11 +224,14 @@ import { listApplications } from '@/api/agent/application'
 import { listCandidateSchedule } from '@/api/system/conference'
 import { listNoticeTop, markNoticeRead } from '@/api/system/notice'
 import useUserStore from '@/store/modules/user'
+import { hasCandidateAccessToken } from '@/utils/agentSession'
+import { requireCandidateLogin } from '@/utils/agentAccess'
 
 const userStore = useUserStore()
+const isLoggedIn = hasCandidateAccessToken()
 const jobs = ref([])
 const keyword = ref('')
-const sort = ref('match')
+const sort = ref(isLoggedIn ? 'match' : 'latest')
 const loading = ref(false)
 const errorMessage = ref('')
 const resumes = ref([])
@@ -231,7 +239,7 @@ const resumesLoading = ref(true)
 const resumesError = ref('')
 const selectedResumeId = ref('')
 const selectedResume = computed(() => resumes.value.find(resume => String(resume.id) === selectedResumeId.value))
-const recommendationHint = computed(() => selectedResume.value
+const recommendationHint = computed(() => !isLoggedIn ? '无需登录即可搜索和浏览岗位，登录后可获取个性化推荐' : selectedResume.value
   ? `根据「${selectedResume.value.name || '未命名简历'}」的技能、求职方向和城市偏好提供参考匹配`
   : '选择你创建的简历，查看对应岗位的参考匹配')
 let resumeRequestId = 0
@@ -259,7 +267,7 @@ const copiedLink = ref(false)
 let toastTimer
 let todayTimer
 
-const displayName = computed(() => userStore.nickName || userStore.name || '求职者')
+const displayName = computed(() => isLoggedIn ? userStore.nickName || userStore.name || '求职者' : '欢迎来到智聘 AI')
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour < 6) return '晚上好'
@@ -325,6 +333,10 @@ const selectedItems = computed(() => scheduleByDate.value[selectedDate.value] ||
 const selectedDateLabel = computed(() => formatChineseDate(selectedDate.value))
 
 async function loadRecommendationResumes() {
+  if (!isLoggedIn) {
+    resumesLoading.value = false
+    return loadJobs()
+  }
   const requestId = ++resumeRequestId
   ++jobRequestId
   resumesLoading.value = true
@@ -374,6 +386,7 @@ async function loadJobs() {
 }
 
 async function loadApplications() {
+  if (!isLoggedIn) return
   applicationLoading.value = true
   applicationError.value = ''
   try {
@@ -388,6 +401,7 @@ async function loadApplications() {
 }
 
 async function loadNotices() {
+  if (!isLoggedIn) return
   noticesLoading.value = true
   noticesError.value = false
   try {
@@ -402,6 +416,7 @@ async function loadNotices() {
 }
 
 async function loadSchedule() {
+  if (!isLoggedIn) return
   scheduleLoading.value = true
   scheduleError.value = ''
   const monthStart = startOfMonth(calendarDate.value)
@@ -561,6 +576,7 @@ function clearSearch() {
 }
 
 function readSavedJobs() {
+  if (!isLoggedIn) return []
   try {
     const saved = JSON.parse(localStorage.getItem('zhipin-ai-saved-jobs') || '[]')
     return Array.isArray(saved) ? saved.map(String) : []
@@ -574,6 +590,7 @@ function isSaved(id) {
 }
 
 function toggleSaved(id) {
+  if (!requireCandidateLogin(`/job-detail?id=${encodeURIComponent(id)}`)) return
   const next = new Set(savedJobs.value)
   const key = String(id)
   if (next.has(key)) {
@@ -1141,6 +1158,8 @@ onUnmounted(() => {
 
 <style scoped>
 .dashboard-grid{align-items:start}
+.guest-mode .dashboard-grid .panel{min-height:0}
+.guest-mode .dashboard-state{min-height:110px;flex-wrap:wrap}
 .activity-list{max-height:none;overflow:visible;padding-bottom:22px}
 .activity-item{display:grid;grid-template-columns:9px minmax(0,1fr);width:100%;min-height:78px;align-items:start}
 .activity-body{width:100%;min-width:0}

@@ -18,7 +18,8 @@
             <div class="hero-tags"><span class="hero-tag salary">{{ job.salaryText }}</span><span class="hero-tag">{{ job.educationText }}</span><span class="hero-tag">{{ job.experienceRequired || '经验不限' }}</span><span class="hero-tag">{{ job.jobTypeText }}</span><span v-for="skill in job.skills" :key="skill" class="hero-tag job-detail-skill-tag">{{ skill }}</span></div>
           </section>
 
-          <section class="panel match-banner"><div class="match-score"><strong>{{ job.matchScore || 0 }}%</strong><span>综合匹配度</span></div><div class="match-copy"><h2>AI 匹配度分析 <span class="fit-pill">{{ Number(job.matchScore || 0) >= 80 ? '高度契合' : '建议完善简历' }}</span></h2><p>匹配结果基于当前简历方向、岗位技能和学历要求计算，投递时仍可重新选择简历。</p><div class="match-chips"><span class="match-chip">技能匹配 {{ job.matchScore || 0 }}%</span><span class="match-chip">岗位状态 {{ job.statusText }}</span></div></div></section>
+          <section v-if="isLoggedIn" class="panel match-banner"><div class="match-score"><strong>{{ job.matchScore || 0 }}%</strong><span>综合匹配度</span></div><div class="match-copy"><h2>AI 匹配度分析 <span class="fit-pill">{{ Number(job.matchScore || 0) >= 80 ? '高度契合' : '建议完善简历' }}</span></h2><p>匹配结果基于当前简历方向、岗位技能和学历要求计算，投递时仍可重新选择简历。</p><div class="match-chips"><span class="match-chip">技能匹配 {{ job.matchScore || 0 }}%</span><span class="match-chip">岗位状态 {{ job.statusText }}</span></div></div></section>
+          <section v-else class="panel match-banner"><div class="match-copy"><h2>找到适合你的机会</h2><p>登录并完善简历后，即可查看岗位匹配分析、投递简历或与 HR 沟通。</p><a :href="appHref('/profile-resumes')">登录 / 注册</a></div></section>
 
           <section class="panel content-panel"><div class="section-heading"><h2>职位描述</h2><span class="section-note">{{ job.jobTypeText }} · {{ job.statusText }}</span></div><p class="intro-copy">{{ job.companyIntro || '该岗位暂无额外职位介绍，请结合岗位职责和任职要求了解机会。' }}</p><ul class="bullet-list"><li v-for="item in job.responsibilities" :key="item">{{ item }}</li><li v-if="!job.responsibilities?.length">暂无职位职责说明</li></ul></section>
           <section class="panel content-panel"><div class="section-heading"><h2>任职要求</h2></div><ul class="bullet-list"><li v-for="item in job.requirements" :key="item">{{ item }}</li><li v-if="!job.requirements?.length">暂无任职要求说明</li></ul></section>
@@ -43,8 +44,11 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getJob } from '@/api/agent/job'
+import { hasCandidateAccessToken } from '@/utils/agentSession'
+import { requireCandidateLogin } from '@/utils/agentAccess'
 
 const route = useRoute()
+const isLoggedIn = hasCandidateAccessToken()
 const job = ref(null)
 const loading = ref(false)
 const errorMessage = ref('')
@@ -69,6 +73,7 @@ async function loadJob() {
 }
 
 function readSavedJobs() {
+  if (!hasCandidateAccessToken()) return []
   try {
     const value = JSON.parse(localStorage.getItem('zhipin-ai-saved-jobs') || '[]')
     return Array.isArray(value) ? value.map(String) : []
@@ -78,6 +83,7 @@ function readSavedJobs() {
 }
 
 function toggleSaved() {
+  if (!requireCandidateLogin(route.fullPath)) return
   const savedJobs = new Set(readSavedJobs())
   const id = String(job.value.id)
   saved.value = !saved.value
@@ -96,6 +102,7 @@ function apply() {
 }
 
 function startConversation() {
+  if (!requireCandidateLogin(route.fullPath)) return
   const publisherId = Number(job.value?.publisherId)
   if (!Number.isInteger(publisherId) || publisherId <= 0) {
     showToast('该岗位暂未配置 HR 联系人')
