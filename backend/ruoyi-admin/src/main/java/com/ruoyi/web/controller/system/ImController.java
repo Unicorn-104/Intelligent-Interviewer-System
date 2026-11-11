@@ -27,6 +27,7 @@ import com.ruoyi.framework.config.ServerConfig;
 import com.ruoyi.system.domain.ImMessage;
 import com.ruoyi.system.domain.ImSession;
 import com.ruoyi.system.service.IImService;
+import com.ruoyi.system.service.ImQuickReplyAiService;
 import com.ruoyi.system.service.storage.PublicUploadStorage;
 
 /**
@@ -53,6 +54,9 @@ public class ImController extends BaseController
 
     @Autowired
     private PublicUploadStorage uploadStorage;
+
+    @Autowired
+    private ImQuickReplyAiService quickReplyAiService;
 
     /**
      * 当前用户的会话列表
@@ -207,6 +211,21 @@ public class ImController extends BaseController
     public AjaxResult deleteQuickReply(@PathVariable Long id)
     {
         return toAjax(imService.deleteQuickReply(id));
+    }
+
+    /**
+     * 结合当前会话上下文生成快捷回复建议
+     */
+    @PostMapping("/quick-replies/suggest")
+    @PreAuthorize("@ss.hasAnyRoles('biz_1,biz_2,biz_3')")
+    public AjaxResult suggestQuickReply(@RequestBody Map<String, Object> body)
+    {
+        Object id = body.get("sessionId");
+        if (id == null)
+        {
+            return error("缺少会话ID");
+        }
+        return success(quickReplyAiService.suggest(Long.valueOf(id.toString()), getUserId()));
     }
 
     private String str(Map<String, Object> body, String key)

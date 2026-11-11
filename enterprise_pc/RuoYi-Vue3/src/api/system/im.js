@@ -74,6 +74,15 @@ export function deleteQuickReply(id) {
   })
 }
 
+// 结合当前会话上下文生成快捷回复建议
+export function suggestQuickReplies(sessionId) {
+  return request({
+    url: '/system/im/quick-replies/suggest',
+    method: 'post',
+    data: { sessionId }
+  })
+}
+
 // 上传聊天附件（图片/文件，10MB 内），返回 url、fileName、originalFilename 等
 export function uploadAttachment(data) {
   return request({
