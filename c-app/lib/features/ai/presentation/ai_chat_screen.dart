@@ -15,6 +15,7 @@ import 'ai_chat_controller.dart';
 import 'ai_markdown_content.dart';
 import 'ai_sessions_panel.dart';
 import 'ai_application_picker.dart';
+import 'knowledge_screen.dart';
 
 class AiChatScreen extends StatefulWidget {
   const AiChatScreen({
@@ -135,6 +136,14 @@ class _AiChatScreenState extends State<AiChatScreen> {
       return;
     }
     _switchConversation(conversation);
+  }
+
+  Future<void> _openKnowledge() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => KnowledgeScreen(token: widget.session.token),
+      ),
+    );
   }
 
   Future<bool> _chooseResume() async {
@@ -353,6 +362,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                             size: 20,
                           ),
                         const Spacer(),
+                        const SizedBox(width: 52),
                         IconButton(
                           tooltip: '新对话',
                           onPressed:
@@ -363,6 +373,13 @@ class _AiChatScreenState extends State<AiChatScreen> {
                               ? null
                               : () => _switchConversation(null),
                           icon: const Icon(Icons.add_comment_outlined),
+                        ),
+                        IconButton(
+                          tooltip: '知识库',
+                          onPressed: _chat.busy || _chat.loading
+                              ? null
+                              : _openKnowledge,
+                          icon: const Icon(Icons.folder_open_outlined),
                         ),
                         IconButton(
                           tooltip: '历史会话',
@@ -766,6 +783,49 @@ class _AiChatScreenState extends State<AiChatScreen> {
             Text(
               message.runStatus == 'CANCELLED' ? '本次回答已停止' : '本次回答未完成',
               style: const TextStyle(color: AppColors.muted, fontSize: 12),
+            ),
+          if (!user && message.sources.isNotEmpty)
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final source in message.sources)
+                  ActionChip(
+                    label: Text(
+                      '[${source['citation']}] ${source['fileName']}',
+                    ),
+                    onPressed: () => showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (context) => SafeArea(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                source['fileName'] as String? ?? '资料来源',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                source['page'] == null
+                                    ? '${source['section'] ?? ''}'
+                                    : '第 ${source['page']} 页',
+                              ),
+                              const SizedBox(height: 16),
+                              SelectableText(
+                                source['unavailable'] == true
+                                    ? '该来源已删除或更新，当前无法查看原文。'
+                                    : source['content'] as String? ?? '',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           for (final job in message.cards)
             Padding(

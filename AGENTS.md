@@ -1,5 +1,15 @@
 # Project Memory
 
+## RAG 与游客登录联合交付（2026-11-10）
+
+- 用户指定功能为「RAG 和游客登录」，姓名缩写 `MZR`；两个功能共用 `feature/capp-rag-guest-login-MZR`，从最新 `origin/dev` 创建，每个子功能单独 Conventional Commit，完整功能统一一个 PR 到 dev。
+- 交付范围仅 backend/、c-app/ 的本轮相关代码、测试、迁移、文档及本段项目 memory；排除长期记忆管理界面、面试增量、其他端、历史 SQL 删除、私有配置、真实数据、日志和构建产物。
+- 详细范围、子功能划分、接口、验证、发布与回滚见 [RAG 与游客登录交付规范](c-app/RAG与游客登录交付.md)，实现见 [个人知识库 RAG](backend/doc/capp_knowledge_rag.md)。
+- 使用同一功能分支的独立 worktree 保留原工作区全部修改；只迁移相关增量，逐项保留最新 dev 的无关实现，不用旧目录整体覆盖。
+- 知识库默认关闭，迁移及依赖就绪后显式启用；游客只访问必要公开 GET，私人功能强制鉴权，会话变化后更新首页与面试日程凭据。
+- 授权包含创建、提交、推送该 feature 分支及统一创建到 dev 的 PR；不包含代替人工 Review 合并、直接推送 dev/main、推进 main、打标签、生产发布或生产数据迁移。验收门禁未完成时保持 Draft，分别记录交付分支验证与历史开发环境结果。
+
+
 ## 接入 RustFS 交付（2026-11-02）
 
 - 本轮完整功能为「接入 RustFS」，姓名缩写由用户指定为 `MZR`；从交付时最新 `origin/dev` 创建 `feature/storage-rustfs-MZR`，统一按 `feature/* -> dev -> main` 单向流转。

@@ -14,7 +14,9 @@ class JobSearchApi {
   }) async {
     final parameters = Uri(queryParameters: query.parameters(page, size)).query;
     final response = await client.get(
-      '/agent/v1/jobs?$parameters',
+      token.isEmpty
+          ? '/app/jobs/search?$parameters'
+          : '/agent/v1/jobs?$parameters',
       token: token,
     );
     final data = response['data'];
@@ -24,7 +26,9 @@ class JobSearchApi {
 
   Future<JobFilterOptions> filterOptions(String token) async {
     final response = await client.get(
-      '/agent/v1/jobs/filter-options',
+      token.isEmpty
+          ? '/app/jobs/filter-options'
+          : '/agent/v1/jobs/filter-options',
       token: token,
     );
     final data = response['data'];

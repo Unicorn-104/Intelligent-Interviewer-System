@@ -80,10 +80,22 @@ class _IntelligentInterviewerAppState extends State<IntelligentInterviewerApp> {
           _authController.session?.token == token) {
         _navigatorKey.currentState?.popUntil((route) => route.isFirst);
         await _authController.signOut();
+        if (mounted) {
+          await _navigatorKey.currentState?.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => LoginScreen(controller: _authController),
+            ),
+          );
+        }
       }
     } finally {
       _handlingUnauthorized = false;
     }
+  }
+
+  Future<void> _logoutToBrowseHome() async {
+    _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    await _authController.signOut();
   }
 
   @override
@@ -108,10 +120,15 @@ class _IntelligentInterviewerAppState extends State<IntelligentInterviewerApp> {
             return const AuthSplashScreen();
           }
           final session = _authController.session;
-          if (session == null) {
-            return LoginScreen(controller: _authController);
-          }
-          return MainShell(session: session, onLogout: _authController.signOut);
+          return MainShell(
+            session: session,
+            onLogin: () => _navigatorKey.currentState?.push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => LoginScreen(controller: _authController),
+              ),
+            ),
+            onLogout: _logoutToBrowseHome,
+          );
         },
       ),
     );

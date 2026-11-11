@@ -570,6 +570,61 @@ class AppAiServiceTest
     }
 
     @Test
+    void selectedKnowledgeIsRetrievedBeforeModelAndCitationsArePersisted() throws Exception
+    {
+        var knowledge = mock(com.ruoyi.system.service.app.knowledge.KnowledgeService.class);
+        service.setKnowledge(knowledge);
+        String base = java.util.UUID.randomUUID().toString();
+        when(knowledge.scope(eq(17L), anyList())).thenReturn(List.of(base));
+        var source = new java.util.LinkedHashMap<String, Object>(Map.of("chunkId", "synthetic-chunk", "content", "Redis 用于缓存", "fileName", "notes.md"));
+        when(knowledge.search(eq(17L), eq(List.of(base)), anyString(), anyLong())).thenReturn(List.of(source));
+        doAnswer(inv -> {
+            assertTrue(inv.getArgument(1).toString().contains("Redis 用于缓存"));
+            assertTrue(inv.getArgument(2).toString().contains("search_knowledge"));
+            inv.<Consumer<String>>getArgument(3).accept("缓存 [K1] [K999]");
+            return reply("{\"role\":\"assistant\",\"content\":\"缓存 [K1] [K999]\"}");
+        }).when(model).complete(any(), any(), any(), any(), anyLong());
+        String session=session();
+        String run=service.start(17L,session,new AgentRunRequest("request-knowledge-001","Redis 做什么",null,null,"chat",List.of(base))).get("id").toString();
+        assertEquals("COMPLETED",await(run).get("status"));
+        verify(knowledge).saveScope(17L,session,run,List.of(base));
+        verify(knowledge).saveSources(eq(17L),eq(run),anyList(),eq("缓存 [K1] "));
+        assertFalse(mapper.messages(session,17L,null,10).get(0).get("content").toString().contains("K999"));
+    }
+
+    @Test
+    void knowledgeFailureDoesNotFallBackToUnattributedModelAnswer() throws Exception
+    {
+        var knowledge=mock(com.ruoyi.system.service.app.knowledge.KnowledgeService.class);
+        service.setKnowledge(knowledge);
+        String base=java.util.UUID.randomUUID().toString();
+        when(knowledge.scope(eq(17L),anyList())).thenReturn(List.of(base));
+        when(knowledge.search(anyLong(),anyList(),anyString(),anyLong())).thenThrow(new java.io.IOException());
+        String run=service.start(17L,session(),new AgentRunRequest("request-knowledge-002","资料问题",null,null,"chat",List.of(base))).get("id").toString();
+        assertEquals("KNOWLEDGE_UNAVAILABLE",await(run).get("errorCode"));
+        verify(model,never()).complete(any(),any(),any(),any(),anyLong());
+    }
+
+    @Test
+    void automaticRetrievalNeedsNoClientScopeAndEmptyResultsDoNotBlockChat() throws Exception
+    {
+        var knowledge=mock(com.ruoyi.system.service.app.knowledge.KnowledgeService.class);
+        service.setKnowledge(knowledge);
+        String base=java.util.UUID.randomUUID().toString();
+        when(knowledge.automaticScope(17L)).thenReturn(List.of(base));
+        when(knowledge.search(anyLong(),anyList(),anyString(),anyLong())).thenReturn(List.of());
+        String session=session();
+        var request=new AgentRunRequest("request-automatic-001","你好",null);
+        String run=service.start(17L,session,request).get("id").toString();
+        assertEquals("COMPLETED",await(run).get("status"));
+        verify(knowledge).search(eq(17L),eq(List.of(base)),eq("你好"),anyLong());
+        verify(knowledge).saveScope(17L,session,run,List.of(base));
+        // Uploading another document must not turn an ambiguous network retry into a different request.
+        when(knowledge.automaticScope(17L)).thenReturn(List.of(base,java.util.UUID.randomUUID().toString()));
+        assertEquals(run,service.start(17L,session,request).get("id"));
+    }
+
+    @Test
     void lateSummaryCannotResurrectMemoryAfterCancelAndClear() throws Exception
     {
         String id = session();

@@ -41,7 +41,12 @@ class JobApi {
   }
 
   Future<Job> fetchSharedJob(String token, int positionId) async {
-    final json = await _client.get('/agent/v1/jobs/$positionId', token: token);
+    final json = await _client.get(
+      token.isEmpty
+          ? '/app/jobs/public/$positionId'
+          : '/agent/v1/jobs/$positionId',
+      token: token,
+    );
     final raw = json['data'];
     if (raw is! Map || int.tryParse('${raw['id']}') != positionId) {
       throw const ApiException('岗位详情不匹配，请重新打开');

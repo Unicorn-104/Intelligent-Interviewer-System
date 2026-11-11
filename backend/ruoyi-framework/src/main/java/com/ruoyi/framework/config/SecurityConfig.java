@@ -101,6 +101,7 @@ public class SecurityConfig
                 permitAllUrl.getUrls().forEach(url -> requests.requestMatchers(url).permitAll());
                 // 对于登录、注册、图形验证码、短信验证码和刷新令牌允许匿名访问
                 requests.requestMatchers("/login", "/register", "/captchaImage", "/sms/code", "/auth/refresh").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/app/jobs", "/app/jobs/search", "/app/jobs/filter-options", "/app/jobs/public/{positionId}").permitAll()
                     // 静态资源，可匿名访问
                     .requestMatchers(HttpMethod.GET, "/", "/*.html", "/**.html", "/**.css", "/**.js", "/profile/**").permitAll()
                     .requestMatchers(

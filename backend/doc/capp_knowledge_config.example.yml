@@ -1,0 +1,17 @@
+# Merge into a private deployment configuration after applying the knowledge migration.
+# Loopback addresses below apply to a host JAR. Use Docker service names for container networking.
+# Credentials and file-storage settings must be injected separately by the deployment environment.
+app:
+  ai:
+    knowledge:
+      enabled: false # Enable only after the five tables and dependent services are ready.
+      collection: capp_knowledge_bge_small_zh_v1
+      max-bases: 20
+      max-documents: 100
+      max-user-size-mb: 200
+    memory:
+      vector:
+        embedding-url: http://127.0.0.1:8091/v1/embeddings
+        embedding-model: BAAI/bge-small-zh-v1.5
+        dimension: 512
+        qdrant-url: http://127.0.0.1:6333
