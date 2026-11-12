@@ -139,7 +139,10 @@ public class ScreeningController extends BaseController
         Boolean approved = body.get("approved") == null ? null : Boolean.valueOf(String.valueOf(body.get("approved")));
         Double adjustScore = body.get("adjustScore") == null ? null : Double.valueOf(String.valueOf(body.get("adjustScore")));
         Long positionId = asLong(body.get("positionId"));
-        return success(screeningService.reviewResult(getUserId(), resultId, approved, adjustScore, positionId));
+        // 当前投递ID由调用方显式传入，后端不再按 candidate+position 反查猜测
+        Long applicationId = asLong(body.get("applicationId"));
+        return success(screeningService.reviewResult(getUserId(), resultId, approved, adjustScore, positionId,
+                applicationId));
     }
 
     private Long asLong(Object v)

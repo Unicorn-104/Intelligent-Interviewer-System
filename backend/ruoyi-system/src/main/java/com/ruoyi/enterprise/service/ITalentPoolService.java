@@ -90,11 +90,11 @@ public interface ITalentPoolService
             Integer status, String endReason);
 
     /**
-     * 单条投递 HR 主动淘汰：按候选人+岗位定位投递，经 ApplicationStatusService 状态机
-     * 终止为未录用并记录原因（默认 HR_REJECTED），供企业端快捷淘汰按钮调用。
+     * 单条投递 HR 主动淘汰：由调用方明确传入当前投递 applicationId，经 ApplicationStatusService
+     * 状态机终止为未录用并记录原因（默认 HR_REJECTED），供企业端快捷淘汰按钮调用。
      */
     public Map<String, Object> terminateApplication(Long userId, Long candidateId,
-            Long positionId, String endReason);
+            Long positionId, Long applicationId, String endReason);
 
     /**
      * 待初筛岗位：各岗位下尚未经过 AI 初筛的投递数量

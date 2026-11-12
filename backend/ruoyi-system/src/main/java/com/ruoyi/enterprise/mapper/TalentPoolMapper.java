@@ -47,9 +47,12 @@ public interface TalentPoolMapper
     /** 校验候选人是否已投递该岗位（返回 app_id 或 null） */
     public Integer selectApplicationExists(@Param("talId") Long talId, @Param("positionId") Long positionId);
 
-    /** 为候选人创建投递记录（一键转投递） */
-    public int insertApplication(@Param("talId") Long talId, @Param("positionId") Long positionId,
-            @Param("resumeId") Long resumeId);
+    /**
+     * 为候选人创建投递记录（一键转投递）。
+     * 参数为 Map（talId/positionId/resumeId），useGeneratedKeys 把本次插入主键回填到键 appId，
+     * 调用方据此精确关联本次投递，不再用 selectAppId 反查（重复投递下不唯一）。
+     */
+    public int insertApplication(Map<String, Object> application);
 
     /** 写入落选关怀系统消息（t_msg） */
     public int insertCareMessage(@Param("receiverId") Long receiverId, @Param("title") String title,

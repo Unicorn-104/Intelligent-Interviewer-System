@@ -223,13 +223,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                     from t_ai_candidate_analysis x
                     where x.asr_company_id = #{companyId} and x.asr_position_id = a.app_position_id
                       and x.asr_candidate_id = t.tal_id
-                    order by x.asr_updated_at desc limit 1) as matchedScore,
+                    order by x.asr_created_at desc, x.asr_updated_at desc, x.asr_id desc limit 1) as matchedScore,
                date_format(a.app_created_at, '%Y-%m-%d %H:%i') as appliedAt,
                date_format(a.app_updated_at, '%Y-%m-%d %H:%i') as updateTime,
                p.pos_id as positionId, p.pos_title as positionName, p.pos_work_city as city,
                c.cmp_name as companyName,
                u.user_id as userId, u.nick_name as name, u.phonenumber as phone,
-               r.rbs_job_direction as jobDirection,
+               s.ers_job_direction as jobDirection,
                (select o.ofr_status from t_off_offer o where o.ofr_candidate_id = t.tal_id
                     and o.ofr_position_id = a.app_position_id order by o.ofr_id desc limit 1) as offerStatus,
                (select ps.psg_name from t_process_instance pi
@@ -241,7 +241,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         join t_tal t on t.tal_id = a.app_candidate_id and t.tal_company_id = #{companyId}
         left join t_cmp c on c.cmp_id = p.pos_company_id
         left join sys_user u on u.user_id = t.tal_user_id
-        left join t_res_base r on r.rbs_id = a.app_resume_id
+        left join t_ent_resume_snapshot s on s.ers_app_id = a.app_id
         where 1 = 1
         <if test="talentId != null">
             and t.tal_id = #{talentId}
@@ -280,12 +280,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                a.app_position_id as positionId, p.pos_title as positionName,
                date_format(a.app_created_at, '%Y-%m-%d %H:%i') as appliedAt,
                u.nick_name as name, u.phonenumber as phone,
-               r.rbs_job_direction as jobDirection
+               s.ers_job_direction as jobDirection
         from t_app_record a
         join t_pos p on p.pos_id = a.app_position_id
         join t_tal t on t.tal_id = a.app_candidate_id
         left join sys_user u on u.user_id = t.tal_user_id
-        left join t_res_base r on r.rbs_id = a.app_resume_id
+        left join t_ent_resume_snapshot s on s.ers_app_id = a.app_id
         where p.pos_company_id = #{companyId}
           and a.app_status = 0
         <if test="positionId != null">
@@ -322,7 +322,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where app_candidate_id = #{talId} and app_position_id = #{positionId} limit 1
     </select>
 
-    <insert id="insertApplication">
+    <!-- useGeneratedKeys 回填本次插入主键到 Map.appId，精确识别本次投递，避免重复投递下反查不唯一 -->
+    <insert id="insertApplication" parameterType="java.util.Map"
+            useGeneratedKeys="true" keyProperty="appId" keyColumn="app_id">
         insert into t_app_record (app_candidate_id, app_position_id, app_resume_id, app_status)
         values (#{talId}, #{positionId}, #{resumeId}, 0)
     </insert>

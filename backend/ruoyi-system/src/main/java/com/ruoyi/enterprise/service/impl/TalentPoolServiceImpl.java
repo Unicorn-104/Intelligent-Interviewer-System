@@ -63,6 +63,9 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     @Autowired
     private ApplicationStatusMapper applicationStatusMapper;
 
+    @Autowired
+    private com.ruoyi.enterprise.service.EntResumeSnapshotService entResumeSnapshotService;
+
     @Override
     public List<Map<String, Object>> listTalents(Long userId, String keyword, String tag,
             String direction, Integer archiveSource, Integer status, Integer pageNum, Integer pageSize)
@@ -207,8 +210,29 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         {
             throw new ServiceException("候选人暂无关联简历，无法转投递");
         }
-        talentPoolMapper.insertApplication(talId, positionId, resumeId);
-        // 与求职者自主投递一致，同步创建流程实例供企业端岗位详情/漏斗/筛选使用
+        // Map 承载本次插入，useGeneratedKeys 精确回填主键 appId，不再用 selectAppId 反查（重复投递下不唯一）
+        Map<String, Object> newApplication = new LinkedHashMap<>();
+        newApplication.put("talId", talId);
+        newApplication.put("positionId", positionId);
+        newApplication.put("resumeId", resumeId);
+        int inserted = talentPoolMapper.insertApplication(newApplication);
+        // 先校验 INSERT 影响行数与 useGeneratedKeys 回填的原始 appId，再做 Long 转换，避免对空值转换的异常路径不清晰
+        Object rawAppId = newApplication.get("appId");
+        if (inserted <= 0 || rawAppId == null)
+        {
+            throw new ServiceException("创建投递记录失败，请重试");
+        }
+        Long newAppId = Long.valueOf(String.valueOf(rawAppId));
+        // 与求职者自主投递一致：为该投递创建企业快照，保证企业端读取与 AI 分析基于不可变原件
+        Long candidateUserId = talent.get("userId") == null ? null
+                : Long.valueOf(String.valueOf(talent.get("userId")));
+        if (candidateUserId == null)
+        {
+            throw new ServiceException("候选人用户信息缺失，无法创建投递快照");
+        }
+        entResumeSnapshotService.createForApplication(
+                newAppId, candidateUserId, talId, companyId, positionId, resumeId);
+        // 同步创建流程实例供企业端岗位详情/漏斗/筛选使用
         enterpriseJobService.ensureProcessInstance(companyId, talId, positionId);
         // 转投递是显式重建投递流程：允许从任意状态（含已淘汰/已录用终态）重置为待筛选，并清空旧归档来源
         if (!talStatusService.change(talId, TalStatusService.TAL_NEW,
@@ -338,6 +362,9 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         result.put("integrity", filled * 20);
         result.put("missingFields", missingFields);
         result.put("fileName", resumeFileName(resumeId));
+        // 无岗位上下文：此处为人才库当前简历，不等同于某岗位投递原件，前端须明确区分
+        result.put("resumeScope", "current_talent_resume");
+        result.put("resumeScopeLabel", "人才库当前简历（非岗位投递原件）");
         return result;
     }
 
@@ -469,17 +496,17 @@ public class TalentPoolServiceImpl implements ITalentPoolService
 
     @Override
     public Map<String, Object> terminateApplication(Long userId, Long candidateId,
-            Long positionId, String endReason)
+            Long positionId, Long applicationId, String endReason)
     {
         resolveCompanyId(userId);
         if (candidateId == null || positionId == null)
         {
             throw new ServiceException("候选人或岗位信息缺失，无法淘汰");
         }
-        Long applicationId = applicationStatusMapper.selectAppId(candidateId, positionId);
-        if (applicationId == null)
+        // 当前投递ID由调用方明确传入，禁止用 LIMIT 1 无 ORDER BY 反查猜测
+        if (applicationId == null || applicationId <= 0)
         {
-            throw new ServiceException("岗位投递记录不存在，无法淘汰");
+            throw new ServiceException("缺少当前投递ID，无法淘汰");
         }
         ApplicationEndReason reason = ApplicationEndReason.fromCode(endReason);
         if (reason == null)
