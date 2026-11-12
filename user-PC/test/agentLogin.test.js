@@ -48,6 +48,8 @@ test('登录和登录后身份读取使用独立的有限超时，保留鉴权�
   assert.equal(requests[1].data.loginType, 'account_password')
   assert.equal(requests[2].data.loginType, 'sms')
   assert.equal(api.getInfo().timeout, 30000)
+  assert.equal(api.getInfo().silentAuth, false)
+  assert.equal(api.getInfo({ silentAuth: true }).silentAuth, true)
   assert.equal(api.getInfo().headers?.isToken, undefined)
   assert.equal(api.logout().timeout, undefined)
 })

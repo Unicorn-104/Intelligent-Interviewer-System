@@ -17,6 +17,7 @@ function homePage(overrides = {}) {
   const navigations = []
   const unmounted = []
   const dependencies = {
+    hasCandidateAccessToken: () => true, requireCandidateLogin: () => true,
     computed, ref, onMounted() {}, onUnmounted: callback => unmounted.push(callback),
     useUserStore: () => ({ nickName: '测试用户' }),
     localStorage: { getItem: () => null },
@@ -25,9 +26,32 @@ function homePage(overrides = {}) {
     listJobs: async params => { requests.push(params); return { data: { items: [{ id: params.resumeId, matchScore: 80 }] } } },
     ...overrides
   }
-  const page = new Function(...Object.keys(dependencies), `${source}\nreturn { loadRecommendationResumes, changeRecommendationResume, loadJobs, resumes, selectedResumeId, selectedResume, recommendationHint, resumesLoading, resumesError, jobs, loading, errorMessage, sort, keyword, openJob, applyJob }`)(...Object.values(dependencies))
+  const page = new Function(...Object.keys(dependencies), `${source}\nreturn { loadRecommendationResumes, changeRecommendationResume, loadJobs, resumes, selectedResumeId, selectedResume, recommendationHint, resumesLoading, resumesError, jobs, loading, errorMessage, sort, keyword, openJob, applyJob, loadApplications, loadNotices, loadSchedule, toggleSaved, savedJobs }`)(...Object.values(dependencies))
   return { page, requests, navigations, unmounted }
 }
+
+test('游客首页只读取公开岗位，不读取个人数据或本地收藏，收藏操作先提示登录', async () => {
+  let prompts = 0
+  const privateRequest = () => { throw new Error('游客不应调用个人接口') }
+  const { page, requests } = homePage({
+    hasCandidateAccessToken: () => false,
+    requireCandidateLogin: () => { prompts++; return false },
+    getResumes: privateRequest, listApplications: privateRequest,
+    listNoticeTop: privateRequest, listCandidateSchedule: privateRequest,
+    localStorage: { getItem: privateRequest, setItem: privateRequest }
+  })
+  await page.loadRecommendationResumes()
+  await page.loadApplications()
+  await page.loadNotices()
+  await page.loadSchedule()
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].sort, 'latest')
+  assert.equal(requests[0].resumeId, undefined)
+  assert.equal(page.resumesLoading.value, false)
+  page.toggleSaved(26)
+  assert.equal(prompts, 1)
+  assert.equal(page.savedJobs.value.size, 0)
+})
 
 test('首页先读取本人简历，自动选择默认简历并携带 ID 请求真实岗位接口', async () => {
   const { page, requests } = homePage()

@@ -153,19 +153,19 @@
       <section>
         <div class="list-toolbar">
           <div>
-            <h2 class="list-title">{{ savedOnly ? '收藏的岗位' : keyword || hasFilters ? '搜索结果' : '推荐岗位' }}</h2>
+            <h2 class="list-title">{{ savedOnly ? '收藏的岗位' : keyword || hasFilters ? '搜索结果' : isLoggedIn ? '推荐岗位' : '在招岗位' }}</h2>
             <p class="list-subtitle">{{ errorMessage || '岗位数据来自招聘数据库，可直接进入详情和投递流程' }}</p>
           </div>
           <div class="list-controls">
             <label class="sort-control">
               <span>排序</span>
               <select v-model="sort" class="sort-select" aria-label="岗位排序" @change="loadJobs">
-                <option value="match">匹配度优先</option>
+                <option v-if="isLoggedIn" value="match">匹配度优先</option>
                 <option value="latest">最新发布</option>
                 <option value="salary">薪资优先</option>
               </select>
             </label>
-            <button class="saved-filter" type="button" :class="{ active: savedOnly }" :aria-pressed="savedOnly" title="当前搜索及筛选条件下可查看的收藏岗位数量" @click="savedOnly = !savedOnly">
+            <button class="saved-filter" type="button" :class="{ active: savedOnly }" :aria-pressed="savedOnly" title="当前搜索及筛选条件下可查看的收藏岗位数量" @click="toggleSavedOnly">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg>
               <span>收藏</span><span class="saved-count">{{ savedJobCount ?? '—' }}</span>
             </button>
@@ -230,10 +230,13 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { listJobFilterOptions, listJobs } from '@/api/agent/job'
 import { loadSavedJobItems, normalizeSavedJobIds, sortSavedJobItems } from '@/utils/agentSavedJobs'
+import { hasCandidateAccessToken } from '@/utils/agentSession'
+import { requireCandidateLogin } from '@/utils/agentAccess'
 
+const isLoggedIn = hasCandidateAccessToken()
 const jobs = ref([])
 const keyword = ref('')
-const sort = ref('match')
+const sort = ref(isLoggedIn ? 'match' : 'latest')
 const loading = ref(false)
 const errorMessage = ref('')
 const savedOnly = ref(false)
@@ -656,6 +659,7 @@ function clearAllFilters() {
 }
 
 function readSavedJobs() {
+  if (!hasCandidateAccessToken()) return []
   try {
     const saved = JSON.parse(localStorage.getItem('zhipin-ai-saved-jobs') || '[]')
     return normalizeSavedJobIds(saved)
@@ -677,6 +681,7 @@ function isSaved(id) {
 }
 
 function toggleSaved(id) {
+  if (!requireCandidateLogin(`/job-detail?id=${encodeURIComponent(id)}`)) return
   const next = new Set(savedJobs.value)
   const key = String(id)
   if (next.has(key)) {
@@ -692,6 +697,11 @@ function toggleSaved(id) {
   persistSavedJobs()
 }
 
+function toggleSavedOnly() {
+  if (!requireCandidateLogin('/jobs')) return
+  savedOnly.value = !savedOnly.value
+}
+
 function openJob(id) {
   window.__agentNavigate(`/job-detail?id=${encodeURIComponent(id)}`)
 }
@@ -705,6 +715,7 @@ function applyJob(job) {
 }
 
 function startConversation(job) {
+  if (!requireCandidateLogin(`/job-detail?id=${encodeURIComponent(job.id)}`)) return
   const publisherId = Number(job?.publisherId)
   if (!Number.isInteger(publisherId) || publisherId <= 0) {
     showToast('该岗位暂未配置 HR 联系人')

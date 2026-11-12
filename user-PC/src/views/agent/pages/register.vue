@@ -56,13 +56,13 @@
         <button class="primary" :disabled="loading" type="submit">{{ loading ? '注册中...' : '注册' }}</button>
       </form>
 
-      <div class="footer-link">已有账号？ <a :href="appHref('/login')">返回登录</a></div>
+      <div class="footer-link">已有账号？ <a :href="appHref(`/login?redirect=${encodeURIComponent(candidateRedirect(route.query.redirect))}`)">返回登录</a> · <a :href="appHref('/index')">先逛逛</a></div>
     </section>
   </main>
 </template>
 
 <script setup>
-import { appHref } from '@/utils/agentNavigation'
+import { appHref, candidateRedirect } from '@/utils/agentNavigation'
 import { onBeforeUnmount, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { register, sendSmsCode } from '@/api/login'
@@ -142,7 +142,7 @@ async function handleSubmit() {
       : { username: form.username, password: form.password, registerType: 'account_password' }
     await register(payload)
     ElMessage.success(mode.value === 'phone' ? '注册成功，请使用短信验证码登录' : '注册成功，请使用账号密码登录')
-    await router.push({ path: '/login', query: mode.value === 'account' ? { mode: 'account' } : {} })
+    await router.push({ path: '/login', query: { redirect: candidateRedirect(route.query.redirect), ...(mode.value === 'account' ? { mode: 'account' } : {}) } })
   } catch (requestError) {
     error.value = requestError?.message || '注册失败，请检查填写内容后重试'
   } finally {

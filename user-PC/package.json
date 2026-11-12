@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test:unit": "node --test test/agentValidation.test.js test/agentMessage.test.js test/agentNavigation.test.js test/agentUnread.test.js test/agentResume.test.js test/agentSavedJobs.test.js test/resourceUrl.test.js test/agentTime.test.js test/agentRecommendation.test.js test/agentAi.test.js test/agentLogin.test.js test/applicationProgress.test.js",
+    "test:unit": "node --test test/agentValidation.test.js test/agentMessage.test.js test/agentNavigation.test.js test/agentUnread.test.js test/agentResume.test.js test/agentSavedJobs.test.js test/resourceUrl.test.js test/agentTime.test.js test/agentRecommendation.test.js test/agentAi.test.js test/agentLogin.test.js test/applicationProgress.test.js test/agentAccess.test.js",
     "check": "npm run test:unit && npm run build:prod",
     "build:prod": "vite build",
     "build:stage": "vite build --mode staging",

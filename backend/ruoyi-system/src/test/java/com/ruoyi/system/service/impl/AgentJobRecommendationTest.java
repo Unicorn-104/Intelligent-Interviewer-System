@@ -3,6 +3,7 @@ package com.ruoyi.system.service.impl;
 import com.github.pagehelper.PageHelper;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.domain.agent.AgentJobQuery;
+import com.ruoyi.system.domain.agent.AgentJob;
 import com.ruoyi.system.mapper.agent.AgentJobMapper;
 import com.ruoyi.system.service.impl.agent.AgentJobServiceImpl;
 import org.junit.jupiter.api.AfterEach;
@@ -25,6 +26,38 @@ class AgentJobRecommendationTest
     void clearPagination()
     {
         PageHelper.clearPage();
+    }
+
+    @Test
+    void anonymousRequestsCannotUseAnyResumeOrQueryItsOwnership()
+    {
+        AgentJobQuery query = new AgentJobQuery();
+        query.setResumeId(20L);
+        assertThrows(ServiceException.class, () -> service.selectJobs(query, null));
+        verifyNoInteractions(mapper);
+        assertNull(PageHelper.getLocalPage());
+    }
+
+    @Test
+    void anonymousListAndDetailDoNotExposePersonalizedMatchScores()
+    {
+        AgentJob listed = new AgentJob();
+        listed.setMatchScore(java.math.BigDecimal.valueOf(88));
+        listed.setApplicationId(123L);
+        listed.setAppliedFlag(1);
+        listed.setJdJson("{\"responsibilities\":[\"公开职责\"],\"internal\":\"test-only\"}");
+        listed.setCompanyDetails(java.util.Map.of("internal", "test-only"));
+        when(mapper.selectJobList(any(), isNull())).thenReturn(java.util.List.of(listed));
+        assertNull(service.selectJobs(new AgentJobQuery(), null).getItems().get(0).getMatchScore());
+        assertNull(listed.getApplicationId());
+        assertEquals(0, listed.getAppliedFlag());
+        assertNull(listed.getJdJson());
+        assertNull(listed.getCompanyDetails());
+        assertEquals(java.util.List.of("公开职责"), listed.getResponsibilities());
+        AgentJob detail = new AgentJob();
+        detail.setMatchScore(java.math.BigDecimal.valueOf(77));
+        when(mapper.selectJobById(26L, null)).thenReturn(detail);
+        assertNull(service.selectJob(26L, null).getMatchScore());
     }
 
     @Test
