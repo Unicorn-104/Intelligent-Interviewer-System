@@ -372,6 +372,12 @@ public class EntResumeSnapshotService
         result.put("missingFields", missingFields);
         result.put("integrity", filled * 100 / 3);
         result.put("fileName", snapshot.getFileName());
+        // 是否存在可读取的原始 PDF：路径非空且文件大小有效；前端据此决定是否展示入口，不再依赖 fileName
+        boolean hasOriginalPdf = snapshot.getFilePath() != null
+                && !snapshot.getFilePath().isBlank()
+                && snapshot.getFileSize() != null
+                && snapshot.getFileSize() > 0L;
+        result.put("hasOriginalPdf", hasOriginalPdf);
         // 标记为投递快照口径，前端据此与人才库当前简历区分
         result.put("resumeScope", "application_snapshot");
         result.put("resumeScopeLabel", "岗位投递简历快照");

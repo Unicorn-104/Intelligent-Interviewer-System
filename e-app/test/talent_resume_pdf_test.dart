@@ -141,7 +141,9 @@ void main() {
     });
 
     testWidgets('已保存原始 PDF 时展示入口并跳转到预览页', (tester) async {
-      final source = TalentFakeSource()..resume['fileName'] = '个人简历.pdf';
+      final source = TalentFakeSource()
+        ..resume['fileName'] = '个人简历.pdf'
+        ..resume['hasOriginalPdf'] = true;
       await pumpTalentWidget(
         tester,
         TalentDetailPage(
@@ -161,6 +163,41 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.byType(TalentResumePdfPage), findsNothing);
+    });
+
+    testWidgets('fileName 缺失但 hasOriginalPdf 为真时仍展示入口并使用默认名',
+        (tester) async {
+      final source = TalentFakeSource()..resume['hasOriginalPdf'] = true;
+      await pumpTalentWidget(
+        tester,
+        TalentDetailPage(
+          talent: const {'talentId': 11, 'name': '合成候选人'},
+          source: source,
+        ),
+      );
+      expect(find.text('原始简历'), findsOneWidget);
+      await tester.tap(find.text('原始简历'));
+      await tester.pumpAndSettle();
+      final page = tester.widget<TalentResumePdfPage>(
+        find.byType(TalentResumePdfPage),
+      );
+      expect(page.fileName, 'resume.pdf');
+      expect(find.text('resume.pdf'), findsOneWidget);
+    });
+
+    testWidgets('hasOriginalPdf 为假时即使存在 fileName 也不展示入口',
+        (tester) async {
+      final source = TalentFakeSource()
+        ..resume['fileName'] = '个人简历.pdf'
+        ..resume['hasOriginalPdf'] = false;
+      await pumpTalentWidget(
+        tester,
+        TalentDetailPage(
+          talent: const {'talentId': 11, 'name': '合成候选人'},
+          source: source,
+        ),
+      );
+      expect(find.text('原始简历'), findsNothing);
     });
   });
 

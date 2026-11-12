@@ -255,13 +255,18 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
     );
   }
 
-  /// 「原始简历」入口：仅当已保存原始 PDF（简历数据返回 fileName）时展示。
+  /// 「原始简历」入口：仅当后端确认存在可读取的原始 PDF（hasOriginalPdf）时展示，不再依赖 fileName。
   Widget _originalResumeAction(BuildContext context) {
-    final fileName = _resume.data?['fileName'];
     final id = _id;
-    if (fileName is! String || fileName.isEmpty || id == null) {
+    final hasOriginalPdf = _resume.data?['hasOriginalPdf'] == true;
+    if (!hasOriginalPdf || id == null) {
       return const SizedBox.shrink();
     }
+    // 文件名缺失时使用默认展示名 resume.pdf
+    final rawName = _resume.data?['fileName'];
+    final displayName = rawName is String && rawName.isNotEmpty
+        ? rawName
+        : 'resume.pdf';
     // 投递场景以 applicationId 读取企业 PDF；为 null（人才库）时 PDF 页内部走 talId 默认加载
     final applicationId = widget.jobContext?.applicationId;
     return Padding(
@@ -280,7 +285,7 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
             MaterialPageRoute<void>(
               builder: (_) => TalentResumePdfPage(
                 talentId: id,
-                fileName: fileName,
+                fileName: displayName,
                 loader: applicationId == null
                     ? null
                     : () => widget.source.loadApplicationPdfBytes(applicationId),
