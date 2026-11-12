@@ -6,6 +6,7 @@ import 'models/talent_detail_view_data.dart';
 import 'talent_resume_pdf_page.dart';
 import 'widgets/talent_candidate_actions.dart';
 import 'widgets/talent_interview_section.dart';
+import 'widgets/talent_manual_score_section.dart';
 import 'widgets/talent_match_analysis_section.dart';
 import 'widgets/talent_recommendation_section.dart';
 import 'widgets/talent_resume_section.dart';
@@ -17,10 +18,14 @@ class TalentDetailPage extends StatefulWidget {
     required this.talent,
     this.jobContext,
     this.source = const TalentDetailDataSource(),
+    this.chatPageBuilder,
   });
   final Map<String, dynamic> talent;
   final TalentJobContext? jobContext;
   final TalentDetailDataSource source;
+
+  /// 「打招呼」聊天页构建器（可注入以隔离网络，测试用）；透传给候选人操作组件。
+  final Widget Function(Map<String, dynamic> session)? chatPageBuilder;
   @override
   State<TalentDetailPage> createState() => _TalentDetailPageState();
 }
@@ -68,8 +73,47 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
     }
   }
 
+  /// 不依赖 talId 的分区加载：投递场景以 applicationId 自行取数，复用请求序号与状态管理。
+  Future<void> _loadWith<T>(
+    TalentSectionState<T> section,
+    Future<T?> Function() fetch,
+  ) async {
+    final request = ++section.request;
+    setState(() {
+      section.loading = true;
+      section.error = null;
+    });
+    try {
+      final data = await fetch();
+      if (!mounted || request != section.request) {
+        return;
+      }
+      setState(() => section.data = data);
+    } catch (error) {
+      if (mounted && request == section.request) {
+        setState(() => section.error = talentError(error));
+      }
+    } finally {
+      if (mounted && request == section.request) {
+        setState(() => section.loading = false);
+      }
+    }
+  }
+
   Future<void> _loadDetail() => _load(_detail, widget.source.loadDetail);
-  Future<void> _loadResume() => _load(_resume, widget.source.loadResume);
+
+  /// 简历加载：有 applicationId 走投递级企业快照，无 applicationId（人才库）保留 talId 口径。
+  Future<void> _loadResume() async {
+    final applicationId = widget.jobContext?.applicationId;
+    if (applicationId == null) {
+      return _load(_resume, widget.source.loadResume);
+    }
+    return _loadWith(
+      _resume,
+      () => widget.source.loadApplicationResume(applicationId),
+    );
+  }
+
   Future<void> _loadReport() => _load(_report, widget.source.loadReport);
   Future<void> _loadMatch() async {
     final job = widget.jobContext;
@@ -201,21 +245,25 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
                     positionId: widget.jobContext!.positionId,
                     title: widget.jobContext!.title,
                     currentStage: stage,
+                    applicationId: widget.jobContext!.applicationId,
                   ),
             onInvited: () => setState(() => _interviewRevision++),
+            chatPageBuilder: widget.chatPageBuilder,
           ),
         ],
       ),
     );
   }
 
-  /// 「原始简历」入口：仅当候选人已保存原始 PDF（解析接口返回 fileName）时展示。
+  /// 「原始简历」入口：仅当已保存原始 PDF（简历数据返回 fileName）时展示。
   Widget _originalResumeAction(BuildContext context) {
     final fileName = _resume.data?['fileName'];
     final id = _id;
     if (fileName is! String || fileName.isEmpty || id == null) {
       return const SizedBox.shrink();
     }
+    // 投递场景以 applicationId 读取企业 PDF；为 null（人才库）时 PDF 页内部走 talId 默认加载
+    final applicationId = widget.jobContext?.applicationId;
     return Padding(
       padding: const EdgeInsets.only(left: 8),
       child: OutlinedButton.icon(
@@ -230,8 +278,13 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
         onPressed: () {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) =>
-                  TalentResumePdfPage(talentId: id, fileName: fileName),
+              builder: (_) => TalentResumePdfPage(
+                talentId: id,
+                fileName: fileName,
+                loader: applicationId == null
+                    ? null
+                    : () => widget.source.loadApplicationPdfBytes(applicationId),
+              ),
             ),
           );
         },
@@ -319,6 +372,11 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
                 ),
               ],
             ),
+          ),
+          TalentManualScoreSection(
+            result: widget.jobContext == null
+                ? _report.data
+                : _match.data?.result,
           ),
           TalentInterviewSection(
             candidateId: _id,

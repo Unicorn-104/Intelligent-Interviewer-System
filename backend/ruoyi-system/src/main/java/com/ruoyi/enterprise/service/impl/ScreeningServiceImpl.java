@@ -24,12 +24,12 @@ import com.ruoyi.common.utils.PageUtils;
 import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.ApplicationStatusService;
+import com.ruoyi.enterprise.service.EnterpriseResumeStorage;
 import com.ruoyi.enterprise.service.IScreeningService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.enterprise.service.screening.ScreeningAiEvaluator;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.service.app.pdf.ResumePdfParser;
-import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
 
 /** Real, evidence-based AI evaluation. Running tasks never hold a database transaction across HTTP calls. */
 @Service
@@ -42,11 +42,11 @@ public class ScreeningServiceImpl implements IScreeningService
     @Autowired private TalStatusService talStatusService;
     @Autowired private DashboardMapper dashboardMapper;
     @Autowired private ScreeningAiEvaluator evaluator;
-    @Autowired private ResumePdfStorage pdfStorage;
     @Autowired private ResumePdfParser pdfParser;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private ApplicationStatusService applicationStatusService;
     @Autowired private ApplicationStatusMapper applicationStatusMapper;
+    @Autowired private EnterpriseResumeStorage enterpriseStorage;
     private final ExecutorService workers = Executors.newFixedThreadPool(2);
     private final Semaphore capacity = new Semaphore(2);
 
@@ -154,10 +154,11 @@ public class ScreeningServiceImpl implements IScreeningService
         int scored = 0;
         try
         {
-            // Each request contains exactly one resume; previous scores/ranks are never model input.
+            // Each request contains exactly one resume snapshot; previous scores/ranks are never model input.
             for (Map<String, Object> candidate : candidates)
             {
                 if (Thread.currentThread().isInterrupted()) throw new ServiceException("AI筛选任务已中断");
+                long applicationId = Long.parseLong(candidate.get("applicationId").toString());
                 Map<String, Object> analysis = evaluator.evaluate(job, List.of(resumeEvidence(candidate))).get(0);
                 int nextCompleted = completed + 1;
                 int nextScored = scored + (analysis.get("totalScore") == null ? 0 : 1);
@@ -167,21 +168,28 @@ public class ScreeningServiceImpl implements IScreeningService
                     Map<String, Object> currentJob = requirePosition(companyId, positionId);
                     if (!java.util.Objects.equals(job.get("positionVersion"), currentJob.get("positionVersion")))
                         throw new ServiceException("分析期间岗位发生变化，请重试；已完成结果已保留");
-                    long id = Long.parseLong(candidate.get("talentId").toString());
-                    Map<String, Object> latest = screeningMapper.selectCandidatesByPosition(positionId).stream()
-                            .filter(c -> Long.parseLong(c.get("talentId").toString()) == id).findFirst().orElse(null);
-                    if (latest == null || !java.util.Objects.equals(candidate.get("resumeId"), latest.get("resumeId"))
-                            || !java.util.Objects.equals(candidate.get("resumeVersion"), latest.get("resumeVersion")))
-                        throw new ServiceException("分析期间求职者或简历发生变化，请重试；已完成结果已保留");
+                    // 快照不可变：确认该投递快照仍存在且内容哈希未变，防止读取到被生命周期清理的对象
+                    Map<String, Object> latestSnapshot = screeningMapper.selectSnapshotByApp(applicationId);
+                    if (latestSnapshot == null
+                            || !java.util.Objects.equals(candidate.get("snapshotId"), latestSnapshot.get("snapshotId"))
+                            || !java.util.Objects.equals(candidate.get("contentHash"), latestSnapshot.get("contentHash")))
+                        throw new ServiceException("分析期间投递快照不可用，请重试；已完成结果已保留");
                     // The run lease and task lock prevent concurrent writers to this company/job pair.
                     analysis.put("positionId", positionId);
                     analysis.put("positionTitle", job.get("title"));
+                    analysis.put("applicationId", applicationId);
+                    analysis.put("snapshotId", candidate.get("snapshotId"));
                     analysis.put("resumeId", candidate.get("resumeId"));
+                    analysis.put("contentHash", candidate.get("contentHash"));
                     analysis.put("positionVersion", job.get("positionVersion"));
-                    analysis.put("resumeVersion", candidate.get("resumeVersion"));
+                    analysis.put("resumeVersion", candidate.get("snapshotAt"));
                     analysis.put("analysisMode", fullAnalysis ? "full" : "incremental");
                     Map<String, Object> row = new LinkedHashMap<>(analysis);
                     row.put("companyId", companyId);
+                    row.put("resultId", candidate.get("talentId"));
+                    row.put("applicationId", applicationId);
+                    row.put("snapshotId", candidate.get("snapshotId"));
+                    row.put("contentHash", candidate.get("contentHash"));
                     row.put("report", JSON.toJSONString(analysis));
                     screeningMapper.saveAnalysis(row);
                     // AI 初筛完成后只回写适配度评分（app_matched_score），绝不写 app_status；
@@ -189,7 +197,8 @@ public class ScreeningServiceImpl implements IScreeningService
                     Double totalScore = asDouble(analysis.get("totalScore"));
                     if (totalScore != null)
                     {
-                        screeningMapper.updateApplicationScore(positionId, id, totalScore, List.of(0, 1));
+                        screeningMapper.updateApplicationScore(positionId,
+                                Long.parseLong(candidate.get("talentId").toString()), totalScore, List.of(0, 1));
                     }
                     // Result and progress commit together. No HTTP/model call inside this transaction.
                     String state = nextCompleted == candidates.size() ? "completed" : "processing";
@@ -219,22 +228,23 @@ public class ScreeningServiceImpl implements IScreeningService
     private Map<String, Object> resumeEvidence(Map<String, Object> candidate)
     {
         Long id = Long.valueOf(candidate.get("talentId").toString());
-        Long resumeId = candidate.get("resumeId") == null ? null : Long.valueOf(candidate.get("resumeId").toString());
+        Long snapshotId = Long.valueOf(candidate.get("snapshotId").toString());
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("candidateId", id);
-        evidence.put("skills", resumeId == null ? List.of() : screeningMapper.selectCandidateSkills(id));
-        evidence.put("education", resumeId == null ? List.of() : screeningMapper.selectEducationEvidence(resumeId));
-        evidence.put("workAndInternships", resumeId == null ? List.of() : screeningMapper.selectWorkEvidence(resumeId));
-        evidence.put("projects", resumeId == null ? List.of() : screeningMapper.selectProjectEvidence(resumeId));
+        // 结构化证据全部来自该投递快照，不读 C-App 当前简历
+        evidence.put("skills", screeningMapper.selectSnapshotSkills(snapshotId));
+        evidence.put("education", screeningMapper.selectSnapshotEducation(snapshotId));
+        evidence.put("workAndInternships", screeningMapper.selectSnapshotWork(snapshotId));
+        evidence.put("projects", screeningMapper.selectSnapshotProject(snapshotId));
         List<String> warnings = new ArrayList<>();
         Object reference = candidate.get("fileReference");
-        if (reference != null && !reference.toString().isBlank() && candidate.get("resumeUserId") != null)
+        if (reference != null && !reference.toString().isBlank())
         {
             try
             {
                 byte[] bytes;
-                try (InputStream input = pdfStorage.readResource(
-                        Long.valueOf(candidate.get("resumeUserId").toString()), reference.toString()).getInputStream())
+                // 企业 PDF 经独立存储读取，权限由调用方保证，无需 userId
+                try (InputStream input = enterpriseStorage.read(reference.toString()).getInputStream())
                 {
                     bytes = input.readNBytes(10 * 1024 * 1024 + 1);
                 }
@@ -332,7 +342,9 @@ public class ScreeningServiceImpl implements IScreeningService
         for (Map<String, Object> application : screeningMapper.selectPendingApplications(positionId))
         {
             Long talId = Long.valueOf(String.valueOf(application.get("talentId")));
-            Map<String, Object> analysis = readAnalysis(screeningMapper.selectAnalysis(companyId, positionId, talId));
+            Long appId = Long.valueOf(String.valueOf(application.get("applicationId")));
+            Map<String, Object> analysis = readAnalysis(
+                    screeningMapper.selectAnalysis(companyId, positionId, appId, talId));
             Double score = analysis == null ? null : asDouble(analysis.get("totalScore"));
             if (score == null)
             {
@@ -434,14 +446,50 @@ public class ScreeningServiceImpl implements IScreeningService
         for (Map<String, Object> candidate : candidates)
         {
             Long id = Long.valueOf(candidate.get("resultId").toString());
-            Map<String, Object> analysis = readAnalysis(screeningMapper.selectAnalysis(companyId, taskId, id));
+            Long applicationId = candidate.get("applicationId") == null ? null
+                    : Long.valueOf(candidate.get("applicationId").toString());
+            // 当前投递快照（权威）：先取，用于技能口径与 AI 分析的 snapshot_id/content_hash 一致性校验
+            Map<String, Object> brief = applicationId == null ? null
+                    : screeningMapper.selectSnapshotByApp(applicationId);
+            Long currentSnapshotId = brief == null || brief.get("snapshotId") == null ? null
+                    : Long.valueOf(brief.get("snapshotId").toString());
+            String currentContentHash = brief == null || brief.get("contentHash") == null ? null
+                    : brief.get("contentHash").toString();
+            Map<String, Object> analysis = readAnalysis(
+                    screeningMapper.selectAnalysis(companyId, taskId, applicationId, id));
             // Old rule-based scores must never be presented as a completed AI evaluation.
             candidate.put("totalScore", null);
             for (String key : ScreeningAiEvaluator.WEIGHTS.keySet()) candidate.put(key, null);
             candidate.put("source", "not_analyzed");
-            if (analysis != null) candidate.putAll(analysis);
+            if (analysis != null)
+            {
+                // 一致性校验：分析绑定的 snapshot_id 与 content_hash 必须与当前投递快照匹配
+                Long boundSnapshotId = analysis.get("snapshotId") == null ? null
+                        : Long.valueOf(analysis.get("snapshotId").toString());
+                Object boundContentHash = analysis.get("contentHash");
+                boolean snapshotMatched = java.util.Objects.equals(currentSnapshotId, boundSnapshotId)
+                        && java.util.Objects.equals(currentContentHash,
+                                boundContentHash == null ? null : boundContentHash.toString());
+                analysis.put("snapshotMatched", snapshotMatched);
+                if (!snapshotMatched)
+                {
+                    // 分析属于历史版本：标注未核实，不冒充当前快照匹配结果
+                    analysis.put("versionStatus", "UNVERIFIED");
+                }
+                candidate.putAll(analysis);
+            }
+            // HR 人工评分独立挂载，不覆盖 AI 六维字段，前端独立展示
+            Map<String, Object> manual = readAnalysis(
+                    screeningMapper.selectManualAnalysis(companyId, taskId, applicationId, id));
+            if (manual != null) candidate.put("manualAnalysis", manual);
             Double totalScore = asDouble(candidate.get("totalScore"));
-            List<String> missingSkills = missingSkills(requiredSkills, screeningMapper.selectCandidateSkills(id));
+            // 硬过滤技能口径改为该投递快照技能，不再读 t_tal 当前简历
+            List<String> snapshotSkills = List.of();
+            if (currentSnapshotId != null)
+            {
+                snapshotSkills = screeningMapper.selectSnapshotSkills(currentSnapshotId);
+            }
+            List<String> missingSkills = missingSkills(requiredSkills, snapshotSkills);
             candidate.put("threshold", PASS_THRESHOLD);
             candidate.put("passed", totalScore != null && totalScore >= PASS_THRESHOLD);
             candidate.put("requiredSkills", requiredSkills);
@@ -489,6 +537,9 @@ public class ScreeningServiceImpl implements IScreeningService
         requireCandidate(companyId, resultId);
         Map<String, Object> report = readAnalysis(screeningMapper.selectLatestAnalysis(companyId, resultId));
         if (report == null) throw new ServiceException("该候选人暂无 AI 推荐报告（请先在岗位中运行AI辅助筛选）");
+        // 无岗位上下文：明确标注为当前人才库分析，不冒充某条历史投递的快照分析
+        report.put("analysisScope", "current_talent_pool");
+        report.put("analysisScopeLabel", "当前人才库分析");
         return report;
     }
 
@@ -529,6 +580,10 @@ public class ScreeningServiceImpl implements IScreeningService
         if (adjusted != null) report.put("totalScore", adjusted);
         report.putIfAbsent("adjustedTotalScore", adjusted);
         report.putIfAbsent("hrAdjusted", adjusted != null);
+        // 透传该条分析绑定的快照/哈希/版本状态，供读取侧与当前投递快照做一致性校验
+        report.put("snapshotId", row.get("snapshotId"));
+        report.put("contentHash", row.get("contentHash"));
+        report.put("versionStatus", row.get("versionStatus"));
         report.put("generatedAt", row.get("generatedAt"));
         report.put("content", report.get("recommendation"));
         List<String> points = new ArrayList<>();
@@ -559,7 +614,7 @@ public class ScreeningServiceImpl implements IScreeningService
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore,
-            Long positionId)
+            Long positionId, Long applicationId)
     {
         Long companyId = resolveCompanyId(userId);
         requireCandidate(companyId, resultId);
@@ -570,6 +625,9 @@ public class ScreeningServiceImpl implements IScreeningService
         if (positionId != null)
         {
             requirePosition(companyId, positionId);
+            // 岗位上下文必须由调用方明确传入当前投递ID，禁止用 LIMIT 1 无 ORDER BY 反查猜测
+            if (applicationId == null || applicationId <= 0)
+                throw new ServiceException("缺少当前投递ID，无法复核");
             // 复核必须落在该候选人真实投递过的岗位上，避免跨岗位改写投递记录
             if (screeningMapper.countOwnedApplication(companyId, positionId, resultId) == 0)
                 throw new ServiceException("该候选人未投递当前岗位，无法复核");
@@ -588,14 +646,16 @@ public class ScreeningServiceImpl implements IScreeningService
             // HR 调整后的分数写回 AI 分析报告，列表与报告统一按调整后总分展示
             if (positionId != null)
             {
-                writeAdjustedReport(companyId, positionId, resultId, rounded);
+                writeAdjustedReport(companyId, positionId, resultId, applicationId, rounded);
                 // 同步投递记录的匹配度，人才库/投递列表与报告展示同一分数
                 screeningMapper.updateApplicationScore(positionId, resultId, rounded, List.of(0, 1));
             }
         }
         else if (positionId != null)
         {
-            Map<String, Object> analysis = readAnalysis(screeningMapper.selectAnalysis(companyId, positionId, resultId));
+            // 只读分支：直接用调用方传入的当前投递ID，不再反查
+            Map<String, Object> analysis = readAnalysis(
+                    screeningMapper.selectAnalysis(companyId, positionId, applicationId, resultId));
             currentScore = analysis == null ? null : asDouble(analysis.get("totalScore"));
         }
         if (approved == null)
@@ -620,11 +680,10 @@ public class ScreeningServiceImpl implements IScreeningService
             // HR 驳回：唯一合法淘汰路径是经状态机 terminate → 未录用(5)，由状态机写日志与流程实例收尾
             if (positionId != null)
             {
-                Long appId = applicationStatusMapper.selectAppId(resultId, positionId);
-                if (appId == null) throw new ServiceException("岗位投递记录不存在，无法驳回");
-                applicationStatusService.terminate(appId, ApplicationEndReason.HR_REJECTED, userId,
+                // applicationId 已在方法入口校验非空，直接按当前投递终止，不再反查
+                applicationStatusService.terminate(applicationId, ApplicationEndReason.HR_REJECTED, userId,
                         ApplicationStatusService.SOURCE_HR, "HR 初筛复核驳回");
-                result.put("applicationId", appId);
+                result.put("applicationId", applicationId);
             }
             // tal_status 由 TalStatusService 独立维护，调用方式不变
             if (!talStatusService.change(resultId, TalStatusService.TAL_REJECTED, List.of(0, 1), positionId,
@@ -637,32 +696,40 @@ public class ScreeningServiceImpl implements IScreeningService
         return result;
     }
 
-    /** 把 HR 调整后的总分写入该岗位该候选人的 AI 分析报告，维度明细保持不变。 */
-    private void writeAdjustedReport(Long companyId, Long positionId, Long talId, double score)
+    /** HR 人工评分独立追加（source=manual），不覆盖 AI 六维；绑定该岗位投递快照。 */
+    private void writeAdjustedReport(Long companyId, Long positionId, Long talId, Long applicationId, double score)
     {
-        Map<String, Object> row = screeningMapper.selectAnalysis(companyId, positionId, talId);
-        if (row == null || row.get("report") == null)
+        // applicationId 由调用方明确传入，不再 selectAppId 反查
+        Long snapshotId = null;
+        String contentHash = null;
+        if (applicationId != null)
         {
-            // AI 评估失败（无分析记录）时创建人工评分记录，让 HR 打分有据可查
-            Map<String, Object> manual = new LinkedHashMap<>();
-            manual.put("resultId", talId);
-            manual.put("positionId", positionId);
-            manual.put("resumeId", screeningMapper.selectApplicationResume(companyId, positionId, talId));
-            manual.put("source", "manual");
-            manual.put("manual", true);
-            manual.put("totalScore", score);
-            manual.put("adjustedTotalScore", score);
-            manual.put("hrAdjusted", true);
-            manual.put("recommendation", "该候选人未完成 AI 评估，当前分数由 HR 人工评分录入");
-            manual.put("companyId", companyId);
-            manual.put("report", JSON.toJSONString(manual));
-            screeningMapper.saveAnalysis(manual);
-            return;
+            Map<String, Object> brief = screeningMapper.selectSnapshotByApp(applicationId);
+            if (brief != null)
+            {
+                snapshotId = Long.valueOf(brief.get("snapshotId").toString());
+                contentHash = brief.get("contentHash") == null ? null : brief.get("contentHash").toString();
+            }
         }
-        com.alibaba.fastjson2.JSONObject report = JSON.parseObject(row.get("report").toString());
-        report.put("adjustedTotalScore", score);
-        report.put("hrAdjusted", true);
-        screeningMapper.updateAnalysisReport(companyId, positionId, talId, JSON.toJSONString(report));
+        Map<String, Object> manual = new LinkedHashMap<>();
+        manual.put("source", "manual");
+        manual.put("manual", true);
+        manual.put("totalScore", score);
+        manual.put("adjustedTotalScore", score);
+        manual.put("hrAdjusted", true);
+        manual.put("generatedAt", java.time.LocalDateTime.now().format(
+                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        manual.put("recommendation", "该候选人未完成 AI 评估，当前分数由 HR 人工评分录入");
+        manual.put("companyId", companyId);
+        manual.put("positionId", positionId);
+        manual.put("resultId", talId);
+        manual.put("applicationId", applicationId);
+        manual.put("snapshotId", snapshotId);
+        manual.put("contentHash", contentHash);
+        manual.put("versionStatus", null);
+        manual.put("resumeId", screeningMapper.selectApplicationResume(companyId, positionId, talId));
+        manual.put("report", JSON.toJSONString(manual));
+        screeningMapper.saveManualAnalysis(manual);
     }
 
     private Map<String, Object> requirePosition(Long companyId, Long positionId)

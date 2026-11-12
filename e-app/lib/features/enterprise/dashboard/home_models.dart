@@ -65,6 +65,13 @@ class HomeInterview {
     return id != null && id > 0 ? id : null;
   }
 
+  /// 关联投递ID：后端按候选人+岗位+业务时间+六态唯一确定；
+  /// 无法唯一确定（撤回重投/重复投递）时为 null，前端据此隐藏投递原件入口
+  int? get applicationId {
+    final id = int.tryParse('${raw['applicationId']}');
+    return id != null && id > 0 ? id : null;
+  }
+
   String get candidate => homeText(raw['candidateName'], '候选人信息未提供');
   String get position => homeText(raw['positionTitle'], '岗位信息未提供');
   String get id =>

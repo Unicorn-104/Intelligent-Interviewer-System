@@ -27,6 +27,9 @@ public interface AgentApplicationMapper
 
     AgentResumeDetail selectResumeDetail(@Param("userId") Long userId, @Param("resumeId") Long resumeId);
 
+    /** 显式锁定简历主表行（FOR UPDATE），与快照创建的行锁互斥，保证子表替换在持锁后执行。 */
+    Long lockResumeBase(@Param("userId") Long userId, @Param("resumeId") Long resumeId);
+
     int countActiveResumes(@Param("userId") Long userId);
 
     @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "rbs_id")

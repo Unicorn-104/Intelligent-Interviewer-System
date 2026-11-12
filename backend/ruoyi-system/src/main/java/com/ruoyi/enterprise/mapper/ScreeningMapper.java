@@ -28,6 +28,13 @@ public interface ScreeningMapper
     /** 候选人技能标签（简历解析产物） */
     public List<String> selectCandidateSkills(@Param("talId") Long talId);
 
+    /** 以下四个方法从企业快照子表读取结构化证据，AI 分析不再读 C-App 表 */
+    List<Map<String, Object>> selectSnapshotEducation(@Param("snapshotId") Long snapshotId);
+    List<Map<String, Object>> selectSnapshotWork(@Param("snapshotId") Long snapshotId);
+    List<Map<String, Object>> selectSnapshotProject(@Param("snapshotId") Long snapshotId);
+    List<String> selectSnapshotSkills(@Param("snapshotId") Long snapshotId);
+    Map<String, Object> selectSnapshotByApp(@Param("appId") Long appId);
+
     /** 更新匹配度综合评分（UC-05 步骤4 落库） */
     public int updateMatchedScore(@Param("talId") Long talId, @Param("score") Double score);
 
@@ -45,12 +52,18 @@ public interface ScreeningMapper
     List<Map<String, Object>> selectEducationEvidence(@Param("resumeId") Long resumeId);
     List<Map<String, Object>> selectWorkEvidence(@Param("resumeId") Long resumeId);
     List<Map<String, Object>> selectProjectEvidence(@Param("resumeId") Long resumeId);
+    /** 按投递(app_id)精确取最新一条 AI(llm) 分析，重复投递不串用 */
     Map<String, Object> selectAnalysis(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
-            @Param("talId") Long talId);
+            @Param("applicationId") Long applicationId, @Param("talId") Long talId);
+    /** 按投递(app_id)精确取最新一条 HR 人工(manual) 评分，不串用其他投递 */
+    Map<String, Object> selectManualAnalysis(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
+            @Param("applicationId") Long applicationId, @Param("talId") Long talId);
     Map<String, Object> selectLatestAnalysis(@Param("companyId") Long companyId, @Param("talId") Long talId);
     /** 企业和岗位隔离的增量去重查询，不作为模型输入。 */
     List<Map<String, Object>> selectAnalyzedCandidates(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
     int saveAnalysis(Map<String, Object> analysis);
+    /** 追加式保存 HR 人工评分 */
+    int saveManualAnalysis(Map<String, Object> analysis);
     int initTask(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
     int claimTask(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
             @Param("runId") String runId, @Param("candidateCount") int candidateCount);
@@ -82,7 +95,9 @@ public interface ScreeningMapper
     public Long selectApplicationResume(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
             @Param("talId") Long talId);
 
-    /** 回写 HR 复核调整后的 AI 分析报告 */
-    public int updateAnalysisReport(@Param("companyId") Long companyId, @Param("positionId") Long positionId,
-            @Param("talId") Long talId, @Param("report") String report);
+    /**
+     * 按单列主键 asr_id 精确定位回写报告（多版本下禁止按非唯一三元组更新）。
+     * 当前无生产调用方，防御性保留；调用前须先取得目标记录 asr_id。
+     */
+    public int updateAnalysisReport(@Param("id") Long id, @Param("report") String report);
 }

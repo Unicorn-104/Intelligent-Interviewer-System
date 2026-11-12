@@ -110,7 +110,7 @@ public class TalentPoolController extends BaseController
     }
 
     /**
-     * 单条投递 HR 主动淘汰（企业端快捷淘汰按钮）：按候选人+岗位定位，经状态机终止为未录用。
+     * 单条投递 HR 主动淘汰（企业端快捷淘汰按钮）：由调用方传入当前投递 applicationId，经状态机终止为未录用。
      */
     @PutMapping("/applications/terminate")
     public AjaxResult terminateApplication(@RequestBody Map<String, Object> body)
@@ -119,10 +119,13 @@ public class TalentPoolController extends BaseController
                 : Long.valueOf(String.valueOf(body.get("candidateId")));
         Long positionId = body.get("positionId") == null ? null
                 : Long.valueOf(String.valueOf(body.get("positionId")));
+        // 当前投递ID由调用方显式传入，后端不再按 candidate+position 反查猜测
+        Long applicationId = body.get("applicationId") == null ? null
+                : Long.valueOf(String.valueOf(body.get("applicationId")));
         String endReason = body.get("endReason") == null ? null
                 : String.valueOf(body.get("endReason"));
         return success(talentPoolService.terminateApplication(
-                getUserId(), candidateId, positionId, endReason));
+                getUserId(), candidateId, positionId, applicationId, endReason));
     }
 
     /**
