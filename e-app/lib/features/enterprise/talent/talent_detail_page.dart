@@ -255,46 +255,72 @@ class _TalentDetailPageState extends State<TalentDetailPage> {
     );
   }
 
-  /// 「原始简历」入口：仅当后端确认存在可读取的原始 PDF（hasOriginalPdf）时展示，不再依赖 fileName。
+  /// 简历附件入口，按后端字段三态展示：
+  /// 1) hasOriginalPdf：存在可读取的企业 PDF，可点击查看；
+  /// 2) 快照无 PDF 但源简历有文件（sourceHasFile）：置灰「简历附件暂不可用」；
+  /// 3) 源简历也无文件：置灰「未提供简历附件」。
   Widget _originalResumeAction(BuildContext context) {
     final id = _id;
     final hasOriginalPdf = _resume.data?['hasOriginalPdf'] == true;
-    if (!hasOriginalPdf || id == null) {
-      return const SizedBox.shrink();
-    }
+    final sourceHasFile = _resume.data?['sourceHasFile'] == true;
     // 文件名缺失时使用默认展示名 resume.pdf
     final rawName = _resume.data?['fileName'];
     final displayName = rawName is String && rawName.isNotEmpty
         ? rawName
         : 'resume.pdf';
-    // 投递场景以 applicationId 读取企业 PDF；为 null（人才库）时 PDF 页内部走 talId 默认加载
-    final applicationId = widget.jobContext?.applicationId;
+
+    // 态 1：存在可读取的企业 PDF，保持可点击入口
+    if (hasOriginalPdf && id != null) {
+      // 投递场景以 applicationId 读取企业 PDF；为 null（人才库）时 PDF 页内部走 talId 默认加载
+      final applicationId = widget.jobContext?.applicationId;
+      return Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.interactive,
+            side: const BorderSide(color: AppColors.interactive),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            textStyle: const TextStyle(fontSize: 12),
+          ),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => TalentResumePdfPage(
+                  talentId: id,
+                  fileName: displayName,
+                  loader: applicationId == null
+                      ? null
+                      : () => widget.source.loadApplicationPdfBytes(applicationId),
+                ),
+              ),
+            );
+          },
+          icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+          label: const Text('原始简历'),
+        ),
+      );
+    }
+
+    // 态 2/3：无可读取 PDF，统一置灰、不可点击；文案区分历史快照缺失与求职者未上传
+    final String unavailableLabel =
+        sourceHasFile ? '简历附件暂不可用' : '未提供简历附件';
     return Padding(
       padding: const EdgeInsets.only(left: 8),
       child: OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.interactive,
-          side: const BorderSide(color: AppColors.interactive),
+          foregroundColor: AppColors.muted,
+          side: BorderSide(color: AppColors.muted),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           minimumSize: Size.zero,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           textStyle: const TextStyle(fontSize: 12),
         ),
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => TalentResumePdfPage(
-                talentId: id,
-                fileName: displayName,
-                loader: applicationId == null
-                    ? null
-                    : () => widget.source.loadApplicationPdfBytes(applicationId),
-              ),
-            ),
-          );
-        },
+        // onPressed 置 null：按钮进入禁用态，不响应点击
+        onPressed: null,
         icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-        label: const Text('原始简历'),
+        label: Text(unavailableLabel),
       ),
     );
   }

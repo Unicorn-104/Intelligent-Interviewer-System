@@ -378,6 +378,19 @@ public class EntResumeSnapshotService
                 && snapshot.getFileSize() != null
                 && snapshot.getFileSize() > 0L;
         result.put("hasOriginalPdf", hasOriginalPdf);
+        // 源简历是否存在有效文件：快照缺失 PDF 时，前端据此区分「求职者未上传」与「历史快照未复制」。
+        // 快照本身有 PDF 即说明源有文件，无需再查；查询不限制简历状态，避免软删但有文件的简历被误判。
+        boolean sourceHasFile = hasOriginalPdf;
+        if (!hasOriginalPdf && snapshot.getSourceResumeId() != null)
+        {
+            AppResume sourceResume = appResumeMapper.selectResumeFileById(snapshot.getSourceResumeId());
+            sourceHasFile = sourceResume != null
+                    && sourceResume.getFilePath() != null
+                    && !sourceResume.getFilePath().isBlank()
+                    && sourceResume.getFileSize() != null
+                    && sourceResume.getFileSize() > 0L;
+        }
+        result.put("sourceHasFile", sourceHasFile);
         // 标记为投递快照口径，前端据此与人才库当前简历区分
         result.put("resumeScope", "application_snapshot");
         result.put("resumeScopeLabel", "岗位投递简历快照");

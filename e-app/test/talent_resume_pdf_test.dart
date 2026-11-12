@@ -128,7 +128,7 @@ void main() {
   });
 
   group('资料卡原始简历入口', () {
-    testWidgets('候选人未保存原始 PDF 时不展示入口', (tester) async {
+    testWidgets('求职者未上传简历时展示禁用态「未提供简历附件」', (tester) async {
       final source = TalentFakeSource();
       await pumpTalentWidget(
         tester,
@@ -137,7 +137,12 @@ void main() {
           source: source,
         ),
       );
+      expect(find.text('未提供简历附件'), findsOneWidget);
       expect(find.text('原始简历'), findsNothing);
+      // 禁用态点击不应进入预览页
+      await tester.tap(find.text('未提供简历附件'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TalentResumePdfPage), findsNothing);
     });
 
     testWidgets('已保存原始 PDF 时展示入口并跳转到预览页', (tester) async {
@@ -185,7 +190,7 @@ void main() {
       expect(find.text('resume.pdf'), findsOneWidget);
     });
 
-    testWidgets('hasOriginalPdf 为假时即使存在 fileName 也不展示入口',
+    testWidgets('hasOriginalPdf 为假时即使存在 fileName 也展示未提供而非可点入口',
         (tester) async {
       final source = TalentFakeSource()
         ..resume['fileName'] = '个人简历.pdf'
@@ -197,7 +202,29 @@ void main() {
           source: source,
         ),
       );
+      expect(find.text('未提供简历附件'), findsOneWidget);
       expect(find.text('原始简历'), findsNothing);
+    });
+
+    testWidgets('源简历有文件但快照缺失时展示禁用态「简历附件暂不可用」',
+        (tester) async {
+      final source = TalentFakeSource()
+        ..resume['hasOriginalPdf'] = false
+        ..resume['sourceHasFile'] = true;
+      await pumpTalentWidget(
+        tester,
+        TalentDetailPage(
+          talent: const {'talentId': 11, 'name': '合成候选人'},
+          source: source,
+        ),
+      );
+      expect(find.text('简历附件暂不可用'), findsOneWidget);
+      expect(find.text('原始简历'), findsNothing);
+      expect(find.text('未提供简历附件'), findsNothing);
+      // 禁用态点击不应进入预览页
+      await tester.tap(find.text('简历附件暂不可用'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TalentResumePdfPage), findsNothing);
     });
   });
 
