@@ -182,6 +182,8 @@ class HomePageState extends State<HomePage> {
     final candidateId = interview.candidateId;
     if (candidateId == null) return;
     final positionId = interview.positionId;
+    // 无法唯一确定投递时 applicationId 为 null，详情页自动回退 talId 口径并隐藏投递原件入口
+    final applicationId = interview.applicationId;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => TalentDetailPage(
@@ -191,6 +193,7 @@ class HomePageState extends State<HomePage> {
               : TalentJobContext(
                   positionId: positionId,
                   title: interview.position,
+                  applicationId: applicationId,
                 ),
         ),
       ),

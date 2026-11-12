@@ -94,7 +94,8 @@ public class ResumePdfStorage
             catch (IOException error) { throw new ServiceException("原始 PDF 无法读取"); }
         }
         Path path = resolve(userId, reference);
-        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) throw new ServiceException("原始 PDF 不存在");
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+            throw new ServiceException("原始 PDF 不存在", S3FileStorage.NOT_FOUND_CODE);
         ensureContained(path);
         return path;
     }

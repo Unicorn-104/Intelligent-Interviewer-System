@@ -18,7 +18,24 @@
         (select e.evl_hr_status from t_int_session s
            join t_int_evaluation e on e.evl_session_id = s.ses_id
           where s.ses_appointment_id = a.apt_id
-          order by s.ses_id desc limit 1) as hrStatus
+          order by s.ses_id desc limit 1) as hrStatus,
+        <!-- 投递关联：t_sch_appointment 无 app_id，按候选人+岗位+业务时间(投递不晚于面试开始)
+             并结合六态唯一确定；非终态(0-3在招)优先，撤回/重投/重复不简单取最新，
+             无法唯一确定时返回 null，由前端隐藏该日程的投递原件入口 -->
+        (
+          select case
+                   when count(case when ar.app_status not in (4, 5) then 1 end) = 1
+                     then max(case when ar.app_status not in (4, 5) then ar.app_id end)
+                   when count(case when ar.app_status not in (4, 5) then 1 end) = 0
+                        and count(*) = 1
+                     then max(ar.app_id)
+                   else null
+                 end
+          from t_app_record ar
+          where ar.app_candidate_id = a.apt_candidate_id
+            and ar.app_position_id = a.apt_position_id
+            and ar.app_created_at &lt;= a.apt_start_time
+        ) as applicationId
     </sql>
     <sql id="appointmentJoins">
         from t_sch_appointment a

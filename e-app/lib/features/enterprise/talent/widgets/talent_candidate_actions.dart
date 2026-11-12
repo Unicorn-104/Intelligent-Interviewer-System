@@ -32,6 +32,7 @@ class TalentCandidateActions extends StatefulWidget {
     this.workflowRevision = 0,
     this.keyPrefix = 'talent',
     this.appStatusCode,
+    this.chatPageBuilder,
   });
 
   final int? candidateId;
@@ -47,6 +48,9 @@ class TalentCandidateActions extends StatefulWidget {
 
   /// 投递状态码（t_app_record.app_status），后端候选人记录的 statusCode 字段。
   final Object? appStatusCode;
+
+  /// 「打招呼」打开的聊天页（可注入以隔离网络/轮询，测试用）；默认构建真实 ChatPage。
+  final Widget Function(Map<String, dynamic> session)? chatPageBuilder;
 
   @override
   State<TalentCandidateActions> createState() => _TalentCandidateActionsState();
@@ -73,10 +77,14 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
       'peerName': widget.name,
       'fromTalentDiscovery': true,
     };
+    final builder = widget.chatPageBuilder ?? _defaultChatPage;
     await Navigator.of(context, rootNavigator: true).push<void>(
-      MaterialPageRoute(builder: (_) => ChatPage(session: session)),
+      MaterialPageRoute(builder: (_) => builder(session)),
     );
   }
+
+  static Widget _defaultChatPage(Map<String, dynamic> session) =>
+      ChatPage(session: session);
 
   /// 邀请面试：打开分阶段邀约面板（保留原有流程）。
   Future<void> _openInvite() async {
@@ -154,10 +162,18 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
     if (ok != true || !mounted) return;
     final positionId = widget.job?.positionId;
     final candidateId = widget.candidateId;
+    final applicationId = widget.job?.applicationId;
     if (positionId == null || candidateId == null) {
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(content: Text('岗位信息缺失，无法淘汰')));
+      return;
+    }
+    // 必须有精确投递ID，缺失时明确报错，不让后端猜测
+    if (applicationId == null) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('当前投递ID缺失，无法淘汰，请刷新后重试')));
       return;
     }
     setState(() => _busy = true);
@@ -165,6 +181,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
       await terminateTalentApplication(
         candidateId: candidateId,
         positionId: positionId,
+        applicationId: applicationId,
         endReason: reason.code,
       );
       if (!mounted) return;

@@ -111,10 +111,17 @@ Future<void> reviewScreeningResult(
   int resultId, {
   required bool approved,
   double? adjustScore,
+  int? positionId,
+  int? applicationId,
 }) async {
   await EnterpriseApiClient().put(
     '/enterprise/screening/results/$resultId/review',
-    body: {'approved': approved, 'adjustScore': adjustScore},
+    body: {
+      'approved': approved,
+      'adjustScore': adjustScore,
+      'positionId': positionId,
+      'applicationId': applicationId,
+    },
   );
 }
 
