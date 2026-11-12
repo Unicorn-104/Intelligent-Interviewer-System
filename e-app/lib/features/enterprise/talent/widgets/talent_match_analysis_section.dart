@@ -241,11 +241,22 @@ class TalentMatchAnalysisSection extends StatelessWidget {
             ],
           ),
           TalentMatchRadar(result: result ?? const {}),
-          if (analyzed)
+          if (analyzed) ...[
             const Text(
               '未提供相关材料的维度按0分计入综合分',
               style: TextStyle(fontSize: 11, color: AppColors.muted),
             ),
+            if (result?['generatedAt'] != null)
+              Text(
+                '分析时间：${talentText(result?['generatedAt'])}',
+                style: const TextStyle(fontSize: 11, color: AppColors.muted),
+              ),
+            if (result?['versionStatus'] != null)
+              Text(
+                '版本状态：${result?['versionStatus']}',
+                style: const TextStyle(fontSize: 11, color: AppColors.muted),
+              ),
+          ],
         ],
       ),
     );

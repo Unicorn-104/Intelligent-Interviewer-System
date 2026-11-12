@@ -55,8 +55,9 @@ class _RescheduleReviewPageState extends State<RescheduleReviewPage> {
         _nextPage = 1;
       });
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = RescheduleReviewDataSource.errorMessage(error));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

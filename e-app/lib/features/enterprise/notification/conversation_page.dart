@@ -275,17 +275,22 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       return;
     }
     final job = _selectedJob;
+    // null 检查后固化为非空 final 变量，便于在路由闭包内保持类型提升
+    final Map<String, dynamic> resolvedTalent = talent;
+    // 候选人行已含 applicationId（来自岗位候选人查询），取出用于投递级快照读取；无法解析时保持 null
+    final applicationId = talentId(resolvedTalent['applicationId']);
     await Navigator.push(
       context,
       MaterialPageRoute<void>(
         builder: (_) => TalentDetailPage(
-          talent: talent!,
+          talent: resolvedTalent,
           jobContext: job == null
               ? null
               : TalentJobContext(
                   positionId: job.id,
                   title: job.title,
                   currentStage: messageText(job.talent['currentStage'], ''),
+                  applicationId: applicationId,
                 ),
           source: widget.source.candidateDetailsSource,
         ),

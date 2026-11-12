@@ -7,10 +7,13 @@ class TalentJobContext {
     required this.positionId,
     required this.title,
     this.currentStage,
+    this.applicationId,
   });
   final int positionId;
   final String title;
   final String? currentStage;
+  // 当前投递ID；岗位候选人列表等有投递上下文的场景必传，无上下文入口可为空
+  final int? applicationId;
 }
 
 class TalentSectionState<T> {
