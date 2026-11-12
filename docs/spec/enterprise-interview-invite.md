@@ -26,7 +26,7 @@
 
 ## 配置
 
-- `CANDIDATE_APP_URL`：候选人端入口地址，默认 `http://localhost:5180`，与 PC 端 `VITE_CANDIDATE_APP_URL` 一致；服务器包需显式传入（如 `https://114.55.175.79:8445`）。
+- `CANDIDATE_APP_URL`：候选人端入口地址，默认 `http://localhost:5180`，与 PC 端 `VITE_CANDIDATE_APP_URL` 一致；服务器包需显式传入（如 `https://121.196.111.230:8445`）。
 
 ## 验证与验收
 
