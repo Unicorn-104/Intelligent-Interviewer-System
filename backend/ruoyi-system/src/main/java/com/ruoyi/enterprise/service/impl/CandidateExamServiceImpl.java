@@ -392,13 +392,14 @@ public class CandidateExamServiceImpl implements ICandidateExamService
     /** 开考快照：随机卷按规则抽题，人工卷按试卷选题 */
     private void snapshotQuestions(Long paperId, Object rule, Long recordId)
     {
+        Long companyId = examMapper.selectRecordCompanyId(recordId);
         List<Map<String, Object>> picked = new ArrayList<>();
         if (rule instanceof Map && !((Map<?, ?>) rule).containsKey("rules"))
         {
             for (Map.Entry<String, Integer> entry : LEGACY_TYPE_KEYS.entrySet())
             {
                 picked.addAll(drawByGroup(entry.getValue(), null, null,
-                        asInt(((Map<?, ?>) rule).get(entry.getKey()), 0), null));
+                        asInt(((Map<?, ?>) rule).get(entry.getKey()), 0), null, companyId));
             }
         }
         else if (rule != null)
@@ -406,7 +407,8 @@ public class CandidateExamServiceImpl implements ICandidateExamService
             for (Map<String, Object> item : ruleList(rule))
             {
                 picked.addAll(drawByGroup(asInt(item.get("type"), null), asInt(item.get("difficulty"), null),
-                        asString(item.get("skillTag")), asInt(item.get("count"), 0), asDecimal(item.get("score"))));
+                        asString(item.get("skillTag")), asInt(item.get("count"), 0), asDecimal(item.get("score")),
+                        companyId));
             }
         }
         else
@@ -422,14 +424,15 @@ public class CandidateExamServiceImpl implements ICandidateExamService
 
     /** 按规则分组抽题；score 为空时沿用题目自身分值 */
     private List<Map<String, Object>> drawByGroup(Integer type, Integer difficulty, String skillTag,
-            int count, BigDecimal score)
+            int count, BigDecimal score, Long companyId)
     {
         List<Map<String, Object>> result = new ArrayList<>();
         if (count <= 0)
         {
             return result;
         }
-        List<Map<String, Object>> drawn = examMapper.drawQuestions(type, difficulty, skillTag, null, count);
+        List<Map<String, Object>> drawn = examMapper.drawQuestions(type, difficulty, skillTag, null, count,
+                companyId);
         if (drawn.size() < count)
         {
             throw new ServiceException("题库题目不足，请联系招聘方");

@@ -10,21 +10,24 @@ import java.util.Map;
  */
 public interface IExamService
 {
-    /** 题库列表（题型/难度/技能标签/关键词过滤） */
+    /** 题库列表（平台题库 + 本企业题库，可按 scope 过滤：platform/enterprise） */
     public List<Map<String, Object>> listQuestions(Integer type, Integer difficulty,
-            String skillTag, String keyword, Integer pageNum, Integer pageSize);
+            String skillTag, String keyword, String scope, Long userId, Integer pageNum, Integer pageSize);
 
     /** 题目详情 */
     public Map<String, Object> getQuestion(Long questionId);
 
-    /** 新增题目，返回 questionId */
-    public Long saveQuestion(Map<String, Object> body);
+    /** 新增题目（归属当前企业），返回 questionId */
+    public Long saveQuestion(Map<String, Object> body, Long userId);
 
-    /** 修改题目 */
-    public void updateQuestion(Long questionId, Map<String, Object> body);
+    /** 修改题目（仅限本企业题目） */
+    public void updateQuestion(Long questionId, Map<String, Object> body, Long userId);
 
-    /** 删除题目 */
-    public void deleteQuestion(Long questionId);
+    /** 删除题目（仅限本企业题目） */
+    public void deleteQuestion(Long questionId, Long userId);
+
+    /** 补全空解析（平台题库与企业题库均可，已有解析不覆盖） */
+    public void fillQuestionAnalysis(Long questionId, String analysis, Long userId);
 
     /** 试卷列表（按岗位过滤，企业隔离） */
     public List<Map<String, Object>> listPapers(Long userId, Long positionId);
@@ -42,7 +45,7 @@ public interface IExamService
     public void deletePaper(Long userId, Long paperId);
 
     /** 随机抽题规则预览（返回抽中题目与预计总分） */
-    public Map<String, Object> previewDraw(Map<String, Object> rule);
+    public Map<String, Object> previewDraw(Map<String, Object> rule, Long userId);
 
     /** 考试安排列表（时长/次数/起止时间/交卷规则） */
     public List<Map<String, Object>> listSchedules(Long userId, Long positionId, Integer status,
