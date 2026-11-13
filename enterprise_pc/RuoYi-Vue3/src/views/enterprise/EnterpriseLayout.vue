@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import AppSidebar from '@/views/enterprise/components/AppSidebar.vue'
 import AppTopbar from '@/views/enterprise/components/AppTopbar.vue'
 import AiAssistantBall from '@/views/enterprise/components/AiAssistantBall.vue'
+import WelcomeGuide from '@/views/enterprise/components/WelcomeGuide.vue'
 
 const route = useRoute()
 const title = computed(() => route.meta.title || 'TalentFlow')
@@ -15,6 +16,7 @@ const title = computed(() => route.meta.title || 'TalentFlow')
     <AppTopbar :title="title" />
     <main><RouterView /></main>
     <AiAssistantBall />
+    <WelcomeGuide />
   </div>
 </template>
 
