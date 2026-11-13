@@ -24,7 +24,8 @@ public interface ExamMapper
 
     public List<Map<String, Object>> selectQuestionList(@Param("type") Integer type,
             @Param("difficulty") Integer difficulty, @Param("skillTag") String skillTag,
-            @Param("keyword") String keyword);
+            @Param("keyword") String keyword, @Param("scope") String scope,
+            @Param("companyId") Long companyId);
 
     public Map<String, Object> selectQuestionById(@Param("id") Long id);
 
@@ -34,16 +35,23 @@ public interface ExamMapper
 
     public int updateQuestion(Map<String, Object> params);
 
-    public int deleteQuestion(@Param("id") Long id);
+    public int deleteQuestion(@Param("id") Long id, @Param("companyId") Long companyId);
 
-    /** 按条件随机抽题（排除已选题目ID） */
+    /** 仅补全空解析 */
+    public int updateQuestionAnalysis(@Param("id") Long id, @Param("analysis") String analysis);
+
+    /** 按条件随机抽题（只含平台题目与本企业题目，排除已选题目ID） */
     public List<Map<String, Object>> drawQuestions(@Param("type") Integer type,
             @Param("difficulty") Integer difficulty, @Param("skillTag") String skillTag,
-            @Param("excludeIds") List<Long> excludeIds, @Param("limit") Integer limit);
+            @Param("excludeIds") List<Long> excludeIds, @Param("limit") Integer limit,
+            @Param("companyId") Long companyId);
 
     /** 满足抽题条件的可用题目数 */
     public int countDrawQuestions(@Param("type") Integer type, @Param("difficulty") Integer difficulty,
-            @Param("skillTag") String skillTag);
+            @Param("skillTag") String skillTag, @Param("companyId") Long companyId);
+
+    /** 投递记录所属企业 */
+    public Long selectRecordCompanyId(@Param("recordId") Long recordId);
 
     // ==================== 试卷 ====================
 

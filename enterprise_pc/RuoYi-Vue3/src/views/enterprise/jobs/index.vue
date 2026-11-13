@@ -6,7 +6,7 @@ import JobCard from '@/views/enterprise/components/JobCard.vue'
 import PublishJobModal from '@/views/enterprise/components/PublishJobModal.vue'
 import ShareJobModal from '@/views/enterprise/components/ShareJobModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { listJobs, jobDepartments, changeJobStatus, jobDetail, duplicateJob } from '@/api/system/job'
+import { listJobs, jobDepartments, changeJobStatus, jobDetail, duplicateJob, jobQuality } from '@/api/system/job'
 
 const router = useRouter()
 const route = useRoute()
@@ -79,6 +79,39 @@ async function fetchJobs() {
 
 const selected = computed(() => jobs.value.find(j => j.id === selectedId.value) || jobs.value[0] || {})
 const pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+
+// 岗位画像质量评分：按岗位缓存，切换岗位时按需请求 AI
+const quality = ref(null)
+const qualityLoading = ref(false)
+const qualityError = ref('')
+const qualityCache = new Map()
+async function loadQuality(jobId) {
+  if (!jobId) return
+  if (qualityCache.has(jobId)) {
+    quality.value = qualityCache.get(jobId)
+    qualityError.value = ''
+    return
+  }
+  quality.value = null
+  qualityError.value = ''
+  qualityLoading.value = true
+  try {
+    const res = await jobQuality(jobId)
+    const data = res.data || res
+    qualityCache.set(jobId, data)
+    if (selectedId.value === jobId) quality.value = data
+  } catch (e) {
+    if (selectedId.value === jobId) qualityError.value = (e && e.message) || '评分失败，请稍后重试'
+  } finally {
+    if (selectedId.value === jobId) qualityLoading.value = false
+  }
+}
+watch(selectedId, (id) => {
+  quality.value = null
+  qualityError.value = ''
+  qualityLoading.value = false
+  if (id) loadQuality(id)
+})
 
 function goPage(p) {
   if (p < 1 || p > pages.value || p === pageNum.value) return
@@ -193,18 +226,25 @@ onUnmounted(() => resizeObserver?.disconnect())
 
     <div class="jobs-layout">
       <aside class="card analysis-card">
-        <div class="analysis-title"><span class="ai-icon"><Sparkles :size="17"/></span><h2>岗位分析结果</h2><span class="pill">AI</span><small>刚刚更新</small></div>
+        <div class="analysis-title"><span class="ai-icon"><Sparkles :size="17"/></span><h2>岗位分析结果</h2><span class="pill">AI</span><small>{{ qualityLoading ? '分析中' : (quality ? 'AI 已评分' : '待评分') }}</small></div>
         <div class="analysis-body">
         <div class="current"><label>当前查看岗位</label><b>{{ selected.name || '暂无岗位' }}</b><span v-if="selected.name" class="pill" :class="selected.tone"><i class="dot"/>{{ selected.status }}</span><p>{{ selected.dept }} · {{ selected.city }} · 发布于 {{ selected.date }}</p></div>
         <div class="analysis-grid">
           <div><span class="cell-head"><span class="mini-icon"><GraduationCap :size="14"/></span><small>学历要求</small></span><b>{{ selected.education }}</b></div>
           <div><span class="cell-head"><span class="mini-icon"><CalendarClock :size="14"/></span><small>工作年限</small></span><b>{{ selected.experience }}</b></div>
           <div><span class="cell-head"><span class="mini-icon"><Users :size="14"/></span><small>投递人数</small></span><b>{{ selected.applicants }} 人</b></div>
-          <div><span class="cell-head"><span class="mini-icon"><WandSparkles :size="14"/></span><small>综合匹配度</small></span><b class="primary-text">92%</b></div>
+          <div><span class="cell-head"><span class="mini-icon"><WandSparkles :size="14"/></span><small>岗位画像质量</small></span><b class="primary-text">{{ qualityLoading ? '分析中' : (quality ? quality.overall + '%' : '—') }}</b></div>
         </div>
         <div class="profile-section"><h3>技能标签</h3><div class="tag-cloud"><span v-for="skill in selected.skills" :key="skill">{{ skill }}</span></div></div>
         <div class="profile-section"><h3>职责关键词</h3><ul><li v-for="r in selected.responsibilities" :key="r">{{ r }}</li></ul></div>
-        <div class="match-box"><div><span>胜任力模型匹配度</span><b>92%</b></div><div class="meter"><i /></div><p><span>专业技能 96%</span><span>项目交付 90%</span><span>沟通协作 88%</span></p></div>
+        <div class="match-box">
+          <div><span>岗位画像质量评分</span><b>{{ quality ? quality.overall + '%' : '—' }}</b></div>
+          <div class="meter"><i :style="{ width: (quality ? quality.overall : 0) + '%' }" /></div>
+          <p v-if="quality"><span v-for="d in quality.dimensions" :key="d.key">{{ d.label }} {{ d.score }}%</span></p>
+          <p v-else-if="qualityLoading" class="quality-hint">AI 正在分析岗位描述，请稍候…</p>
+          <p v-else class="quality-hint">{{ qualityError || '暂无评分数据' }}<button v-if="qualityError" class="link-btn" @click="loadQuality(selected.id)">重试</button></p>
+          <p v-if="quality && quality.summary" class="quality-summary">{{ quality.summary }}</p>
+        </div>
         </div>
         <div class="analysis-actions"><div class="row-actions"><button class="btn sm" @click="openEdit"><Pencil :size="13"/>编辑</button><button class="btn sm" @click="copyJob"><Copy :size="13"/>复制</button><button class="btn sm" :disabled="selected.statusCode !== 1" :title="selected.statusCode === 1 ? '分享该岗位给消息中心联系人' : '仅招聘中的岗位可分享'" @click="openShare"><Share2 :size="13"/>分享</button></div><button class="btn ghost-primary" @click="router.push(`/enterprise/jobs/${selected.id}`)">查看完整岗位详情<ChevronRight :size="14"/></button><button class="process-btn" @click="router.push(`/enterprise/jobs/${selected.id}/workflow`)">招聘流程配置 <ChevronRight :size="14"/></button></div>
       </aside>
@@ -229,4 +269,8 @@ onUnmounted(() => resizeObserver?.disconnect())
 
 <style scoped>
 .heading-actions{display:flex;gap:10px}.jobs-layout{display:grid;grid-template-columns:minmax(340px,38%) minmax(600px,62%);gap:16px;align-items:stretch}.analysis-card,.list-card{height:calc(100vh - 182px);min-height:540px}.analysis-card{padding:18px;display:flex;flex-direction:column}.analysis-body{flex:1;min-height:0;overflow-y:auto;padding-right:4px;margin-right:-4px}.analysis-title{display:flex;align-items:center;gap:7px}.analysis-title h2{font-size:17px}.analysis-title small{margin-left:auto;color:#9aa8ba;font-size:10px}.ai-icon{width:31px;height:31px;border-radius:9px;display:grid;place-items:center;color:#2563eb;background:#e9f1ff}.current{background:linear-gradient(135deg,#edf4ff,#f8fbff);border:1px solid #dce8fc;border-radius:12px;padding:14px;margin:15px 0}.current label{display:block;color:#7d8da5;font-size:10px;margin-bottom:7px}.current b{font-size:17px;margin-right:7px}.current p{font-size:10px;color:#8090a8;margin-top:7px}.analysis-grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid #e5ebf3;border-radius:11px;overflow:hidden}.analysis-grid>div{padding:11px 12px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid #e8edf4}.analysis-grid>div:nth-child(odd){border-right:1px solid #e8edf4}.analysis-grid>div:nth-child(n+3){border-bottom:0}.cell-head{display:flex;align-items:center;gap:6px}.mini-icon{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#4b7ae3;background:#eef4ff;flex:none}.analysis-grid small{font-size:10px;color:#91a0b4;line-height:1}.analysis-grid b{font-size:13px}.primary-text{color:#2563eb}.profile-section{margin-top:15px}.profile-section h3{font-size:12px;margin-bottom:8px}.tag-cloud{display:flex;gap:6px;flex-wrap:wrap}.tag-cloud span{padding:5px 8px;background:#edf4ff;color:#2563eb;border-radius:6px;font-size:11px}.profile-section ul{list-style:none;margin:0;padding:0}.profile-section li{display:flex;align-items:center;gap:8px;font-size:11px;color:#5b6c85;margin:7px 0}.profile-section li:before{content:'';width:5px;height:5px;border-radius:50%;background:#3b82f6;flex:none}.match-box{margin-top:13px;padding:12px;background:#f7f9fc;border-radius:10px}.match-box>div:first-child{display:flex;justify-content:space-between;font-size:11px}.match-box>div b{color:#2563eb}.meter{height:7px;background:#dce5f0;border-radius:6px;margin:8px 0}.meter i{display:block;width:92%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#1d4ed8,#0ea5e9)}.match-box p{display:flex;justify-content:space-between;color:#77869c;font-size:9px}.analysis-actions{margin-top:auto;display:flex;flex-direction:column;gap:4px}.analysis-actions .row-actions{display:flex;gap:6px}.analysis-actions .row-actions .btn{flex:1}.analysis-actions .btn{width:100%}.process-btn{border:0;background:transparent;color:#2563eb;height:35px;display:flex;gap:5px;align-items:center;justify-content:center;font-size:11px}.list-card{padding:18px;display:flex;flex-direction:column}.list-head h2{font-size:19px}.list-head h2 span{font-size:11px;color:#2563eb;background:#eaf1ff;border-radius:11px;padding:4px 8px;margin-left:4px}.list-head p{font-size:10px;color:#9aa8ba;margin-top:4px}.filters{display:grid;grid-template-columns:1.5fr .8fr .72fr;gap:9px;margin:15px 0 12px}.search-box{height:38px;border:1px solid #dce4ee;border-radius:9px;display:flex;align-items:center;gap:8px;padding:0 11px;color:#8da0ba}.search-box input{width:100%;border:0;outline:0;font-size:12px}.job-list{flex:1;min-height:0;display:flex;flex-direction:column;gap:9px;overflow:auto;padding:1px 3px 1px 1px}.pagination{margin-top:auto;padding-top:12px;display:flex;align-items:center;justify-content:flex-end;gap:5px;color:#8a99ad;font-size:11px}.pagination span{margin-right:auto}.pagination button{width:29px;height:29px;border:1px solid #dde5ef;background:white;border-radius:7px;color:#6b7b92}.pagination button.active{color:white;background:#2563eb;border-color:#2563eb}
+.match-box .quality-hint { margin-top: 8px; font-size: 11px; color: #8a97ad; display: flex; align-items: center; gap: 8px; }
+.match-box .quality-summary { margin-top: 8px; font-size: 11px; line-height: 1.6; color: #6f7f99; }
+.link-btn { border: 0; background: transparent; color: #2563eb; font-size: 11px; cursor: pointer; padding: 0; }
+.meter i { transition: width .3s; }
 </style>

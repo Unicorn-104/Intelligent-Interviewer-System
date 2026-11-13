@@ -161,7 +161,7 @@ async function retryReport(sid) {
 }
 
 const storage = ref({ used: 0, total: 0 })
-const storagePercent = computed(() => storage.value.total ? Math.round((storage.value.used / storage.value.total) * 100) : 0)
+const storagePercent = computed(() => storage.value.total ? Math.round((storage.value.used / storage.value.total) * 10000) / 100 : 0)
 
 // 已用/剩余容量按量级自适应显示，避免不足 1GB 时恒显示为 0 GB
 function fmtStorage(gb) {

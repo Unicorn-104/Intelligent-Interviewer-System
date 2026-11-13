@@ -38,4 +38,16 @@ public interface IEnterpriseJdService
      * @return 岗位基础信息 + 画像快照 + 技能标签列表
      */
     public Map<String, Object> getJdProfile(Long positionId);
+
+    /**
+     * 岗位画像质量评分（AI）
+     *
+     * <p>以岗位画像为依据评估 JD 撰写质量：要求清晰度、技能具体度、
+     * 职责明确度、合规安全性，不涉及候选人数据，不写业务数据。</p>
+     *
+     * @param positionId 岗位ID
+     * @param userId 当前登录用户，用于校验岗位所属企业
+     * @return 综合分、各维度得分与点评、整体评价与改进建议
+     */
+    public Map<String, Object> scoreQuality(Long positionId, Long userId);
 }

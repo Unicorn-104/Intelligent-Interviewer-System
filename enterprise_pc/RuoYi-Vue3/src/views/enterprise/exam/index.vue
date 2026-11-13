@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Plus, Search, Pencil, Trash2, X, Eye, WandSparkles, Save, Timer, FileText, GraduationCap, CalendarClock, Bell, Mail, Send, ShieldCheck, FileCheck2, RotateCw } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import {
-  listQuestions, createQuestion, updateQuestion, deleteQuestion, aiExamAnalysis,
+  listQuestions, createQuestion, updateQuestion, deleteQuestion, aiExamAnalysis, fillQuestionAnalysis,
   listPapers, getPaper, createPaper, updatePaper, deletePaper, drawPreview,
   listSchedules, createSchedule, updateSchedule, cancelSchedule,
   saveNotifyConfig, listNotifyTargets, sendExamNotify,
@@ -42,7 +42,7 @@ async function loadPositions() {
 }
 
 /* ==================== 题库 ==================== */
-const qFilter = reactive({ type: '', difficulty: '', skillTag: '', keyword: '' })
+const qFilter = reactive({ type: '', difficulty: '', skillTag: '', keyword: '', scope: '' })
 const qList = ref([])
 const qTotal = ref(0)
 const qPage = ref(1)
@@ -52,7 +52,8 @@ async function loadQuestions() {
   const res = await listQuestions({
     pageNum: qPage.value, pageSize: qPageSize,
     type: qFilter.type || undefined, difficulty: qFilter.difficulty || undefined,
-    skillTag: qFilter.skillTag || undefined, keyword: qFilter.keyword || undefined
+    skillTag: qFilter.skillTag || undefined, keyword: qFilter.keyword || undefined,
+    scope: qFilter.scope || undefined
   }).catch(() => null)
   qList.value = res?.rows || []
   qTotal.value = res?.total || 0
@@ -69,6 +70,7 @@ function openCreateQ() {
   Object.assign(qModal, { open: true, id: null, form: blankQuestion() })
 }
 function openEditQ(row) {
+  if (row.companyId == null) { notify('平台题库题目为只读，如需调整请新增到企业题库'); return }
   aiIssues.value = []
   qModal.open = true; qModal.id = row.questionId
   qModal.form = {
@@ -119,6 +121,62 @@ async function aiAnalyze() {
     notify(data.valid === false ? 'AI 已补全解析，但题目存在问题' : 'AI 已补全解析，题目校验通过')
   } catch (e) { /* 拦截器已提示 */ } finally { aiLoading.value = false }
 }
+/* 批量补全解析：仅处理解析为空的题目，逐题调用 AI 后保存 */
+const batchRunning = ref(false)
+const batchProgress = reactive({ done: 0, total: 0, updated: 0, failed: 0 })
+async function fetchAllQuestions() {
+  const size = 100
+  let page = 1
+  let rows = []
+  let total = 0
+  do {
+    const res = await listQuestions({ pageNum: page, pageSize: size }).catch(() => null)
+    if (!res) break
+    rows = rows.concat(res.rows || [])
+    total = Number(res.total) || rows.length
+    page++
+  } while (rows.length < total && page <= 20)
+  return rows
+}
+async function batchAnalyze() {
+  if (batchRunning.value) return
+  const all = await fetchAllQuestions()
+  const targets = all.filter(q => !String(q.analysis || '').trim())
+  if (!targets.length) { notify('题库中所有题目都已有解析'); return }
+  if (!confirm(`将为 ${targets.length} 道缺少解析的题目逐题生成 AI 解析，耗时较长，是否继续？`)) return
+  batchRunning.value = true
+  Object.assign(batchProgress, { done: 0, total: targets.length, updated: 0, failed: 0 })
+  let continuousFailed = 0
+  try {
+    for (const q of targets) {
+      batchProgress.done++
+      try {
+        const type = Number(q.type)
+        const options = (type <= 3 || type === 6)
+          ? (Array.isArray(q.options) ? q.options.map(optText).filter(o => String(o).trim()) : [])
+          : undefined
+        const ai = await aiExamAnalysis({
+          type: q.type, typeName: q.typeName, content: q.content, options,
+          answer: q.answer, difficulty: q.difficulty, skillTag: q.skillTag
+        })
+        const analysis = String((ai?.data || {}).analysis || '').trim()
+        if (!analysis) throw new Error('empty analysis')
+        await fillQuestionAnalysis(q.questionId, analysis)
+        batchProgress.updated++
+        continuousFailed = 0
+      } catch (e) {
+        batchProgress.failed++
+        continuousFailed++
+        if (continuousFailed >= 3) { notify('连续 3 道失败，已停止批量解析'); break }
+      }
+    }
+    notify(`批量解析结束：成功 ${batchProgress.updated} 道，失败 ${batchProgress.failed} 道`)
+    await loadQuestions()
+  } finally {
+    batchRunning.value = false
+  }
+}
+
 async function saveQuestion() {
   if (qModal.form.type === 6 && !String(qModal.form.typeName || '').trim()) { notify('请填写自定义题型名称'); return }
   if (isChoiceForm() && !String(qModal.form.answer || '').trim()) { notify('请选择标准答案'); return }
@@ -442,6 +500,11 @@ onMounted(() => {
     <!-- ============ 题库 ============ -->
     <section v-show="tab === 'questions'" class="card panel">
       <div class="toolbar">
+        <select class="select slim" v-model="qFilter.scope" @change="qPage = 1; loadQuestions()">
+          <option value="">全部题库</option>
+          <option value="platform">平台题库</option>
+          <option value="enterprise">企业题库</option>
+        </select>
         <select class="select slim" v-model="qFilter.type" @change="qPage = 1; loadQuestions()">
           <option value="">全部题型</option>
           <option v-for="t in TYPE_OPTIONS" :key="t.code" :value="t.code">{{ t.label }}</option>
@@ -453,25 +516,27 @@ onMounted(() => {
         <input class="input slim" v-model="qFilter.skillTag" placeholder="技能标签" @keyup.enter="qPage = 1; loadQuestions()" />
         <input class="input slim grow" v-model="qFilter.keyword" placeholder="搜索题干关键词" @keyup.enter="qPage = 1; loadQuestions()" />
         <button class="btn" @click="qPage = 1; loadQuestions()"><Search :size="15"/>查询</button>
+        <button class="btn" :disabled="batchRunning" @click="batchAnalyze"><WandSparkles :size="15"/>{{ batchRunning ? `解析中 ${batchProgress.done}/${batchProgress.total}` : '批量补全解析' }}</button>
         <button class="btn primary" @click="openCreateQ"><Plus :size="15"/>新增题目</button>
       </div>
       <table class="tbl">
-        <thead><tr><th>ID</th><th>题型</th><th class="wide">题干</th><th>难度</th><th>标签</th><th>分值</th><th>创建时间</th><th>操作</th></tr></thead>
+        <thead><tr><th>ID</th><th>题型</th><th>归属</th><th class="wide">题干</th><th>难度</th><th>标签</th><th>分值</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-for="row in qList" :key="row.questionId">
             <td>{{ row.questionId }}</td>
             <td><span class="pill" :class="row.type <= 3 ? '' : 'purple'">{{ typeLabel(row.type, row.typeName) }}</span></td>
+            <td><span class="pill" :class="row.companyId == null ? 'gray' : 'green'">{{ row.companyId == null ? '平台' : '企业' }}</span></td>
             <td class="wide ellipsis" :title="row.content">{{ row.content }}</td>
             <td>{{ diffLabel(row.difficulty) }}</td>
             <td><span v-if="row.skillTag" class="tag">{{ row.skillTag }}</span><span v-else class="muted">—</span></td>
             <td>{{ row.score }}</td>
             <td class="muted">{{ row.createdAt }}</td>
             <td class="ops">
-              <button class="icon-btn" title="编辑" @click="openEditQ(row)"><Pencil :size="14"/></button>
-              <button class="icon-btn danger" title="删除" @click="removeQ(row)"><Trash2 :size="14"/></button>
+              <button class="icon-btn" :disabled="row.companyId == null" :title="row.companyId == null ? '平台题库只读' : '编辑'" @click="openEditQ(row)"><Pencil :size="14"/></button>
+              <button class="icon-btn danger" :disabled="row.companyId == null" :title="row.companyId == null ? '平台题库只读' : '删除'" @click="removeQ(row)"><Trash2 :size="14"/></button>
             </td>
           </tr>
-          <tr v-if="!qList.length"><td colspan="8"><div class="empty">暂无题目，点击「新增题目」创建题库</div></td></tr>
+          <tr v-if="!qList.length"><td colspan="9"><div class="empty">暂无题目，点击「新增题目」创建企业题库</div></td></tr>
         </tbody>
       </table>
       <div class="pager">

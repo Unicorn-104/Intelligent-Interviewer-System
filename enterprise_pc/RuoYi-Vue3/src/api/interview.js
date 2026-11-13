@@ -103,3 +103,29 @@ export function rejectInterviewReview(sessionId, data) {
     data
   })
 }
+
+// 候选人改期申请列表（status：pending/approved/rejected，可选）
+export function listRescheduleRequests(query) {
+  return request({
+    url: '/enterprise/interview/reschedule-requests',
+    method: 'get',
+    params: query
+  })
+}
+
+// 候选人改期申请详情
+export function getRescheduleRequest(requestId) {
+  return request({
+    url: `/enterprise/interview/reschedule-requests/${requestId}`,
+    method: 'get'
+  })
+}
+
+// 审批改期申请（decision：approved/rejected，驳回时 note 必填）
+export function reviewRescheduleRequest(requestId, decision, note) {
+  return request({
+    url: `/enterprise/interview/reschedule-requests/${requestId}/review`,
+    method: 'put',
+    data: { decision, note }
+  })
+}

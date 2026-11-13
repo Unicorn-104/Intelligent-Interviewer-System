@@ -3,7 +3,7 @@ import { resolveResourceUrl } from "@/utils/resourceUrl"
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Video, Play, Zap, Smile, Paperclip, Camera, Send, Settings2, FileText, Bell, Copy, MessageSquareText } from '@/views/enterprise/components/icons'
+import { Search, Video, Play, Zap, Smile, Paperclip, Camera, Send, Settings2, FileText, Bell, Copy, MessageSquareText, CalendarClock } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import { listSessions, listMessages, sendMessage, readSession, readAll, uploadAttachment, listQuickReplies, saveQuickReply, deleteQuickReply, suggestQuickReplies } from '@/api/system/im'
 import { candidateAppBase } from '@/utils/appLink'
@@ -230,6 +230,43 @@ function openJob(job) {
   if (job && job.positionId) router.push('/enterprise/jobs/' + job.positionId)
 }
 
+// ---------- 面试改期卡片（type=5，内容为 kind=interview_reschedule 的 JSON） ----------
+// 与候选人端/企业 App 同一契约：仅服务端改期业务生成，PC 端解析为卡片展示
+const RESCHEDULE_STATUS = {
+  pending: '待处理',
+  changed: '已改期',
+  approved: '已通过',
+  rejected: '已驳回',
+  cancelled: '已取消'
+}
+
+function parseInterviewCard(content) {
+  if (!content || content.charAt(0) !== '{') return null
+  try {
+    const raw = JSON.parse(content)
+    if (!raw || Number(raw.version) !== 1) return null
+    if (raw.kind !== 'interview_reschedule' && raw.kind !== 'interview_card') return null
+    const candidate = String(raw.candidateName || '').trim()
+    const position = String(raw.positionName || '').trim()
+    if (!candidate && !position) return null
+    const status = String(raw.status || '').trim().toLowerCase()
+    const newStart = String(raw.newStartTime || '').trim()
+    const newEnd = String(raw.newEndTime || '').trim()
+    return {
+      candidate,
+      position,
+      status: RESCHEDULE_STATUS[status] || String(raw.status || '').trim(),
+      statusKey: status,
+      originalStartTime: String(raw.originalStartTime || '').trim(),
+      newTime: newStart ? (newEnd ? `${newStart} ~ ${newEnd.slice(-8)}` : newStart) : '',
+      reason: String(raw.reason || '').trim(),
+      reviewNote: String(raw.reviewNote || raw.message || '').trim()
+    }
+  } catch (e) {
+    return null
+  }
+}
+
 // ---------- 面试预约通知（固定在消息中心顶部的系统会话） ----------
 const SYSTEM_NOTICE_ID = '__notices__'
 const NOTICE_MODE_LABEL = { 1: '纯AI', 2: 'AI + 单面试官', 3: 'AI + 多面试官', 4: '无AI纯人工' }
@@ -346,6 +383,7 @@ async function loadMessages(sessionId) {
     text: m.content,
     // 岗位卡片解析失败时保留原文气泡，避免消息丢失
     job: m.type === 6 ? parseJobCard(m.content) : null,
+    card: parseInterviewCard(m.content),
     invite: m.type === 1 ? parseInvite(m.content) : null,
     attachmentUrl: attachmentUrl(m.attachmentUrl),
     time: fmtTime(m.sendTime)
@@ -934,8 +972,23 @@ onBeforeUnmount(() => {
           </article>
         </div>
         <div v-else ref="scroller" class="message-stream">
-          <div v-for="msg in messages" :key="msg.id" :class="['message-row', msg.type===5?'system':(msg.mine?'me':'other')]">
-            <template v-if="msg.type===5"><span class="system-line">{{msg.text}}</span></template>
+          <div v-for="msg in messages" :key="msg.id" :class="['message-row', msg.card ? (msg.mine ? 'me' : 'other') : (msg.type===5?'system':(msg.mine?'me':'other'))]">
+            <template v-if="msg.card">
+              <article class="reschedule-bubble">
+                <div class="ib-head">
+                  <CalendarClock :size="16"/><span>面试改期</span>
+                  <em v-if="msg.card.status" :class="['rb-status', msg.card.statusKey]">{{ msg.card.status }}</em>
+                </div>
+                <p class="rb-line"><span>候选人</span><b>{{ msg.card.candidate || '—' }}</b></p>
+                <p class="rb-line"><span>应聘岗位</span><b>{{ msg.card.position || '—' }}</b></p>
+                <p v-if="msg.card.originalStartTime" class="rb-line"><span>原面试时间</span><b>{{ msg.card.originalStartTime }}</b></p>
+                <p v-if="msg.card.newTime" class="rb-line"><span>申请改期至</span><b>{{ msg.card.newTime }}</b></p>
+                <p v-if="msg.card.reason" class="rb-line"><span>改期原因</span><b>{{ msg.card.reason }}</b></p>
+                <p v-if="msg.card.reviewNote" class="rb-memo">{{ msg.card.reviewNote }}</p>
+              </article>
+              <time v-if="msg.time">{{msg.time}}</time>
+            </template>
+            <template v-else-if="msg.type===5"><span class="system-line">{{msg.text}}</span></template>
             <template v-else-if="msg.type===3">
               <a class="bubble file-bubble" :href="msg.attachmentUrl" target="_blank" download><FileText :size="14"/><b>{{msg.text}}</b><small>查看</small></a>
               <time v-if="msg.time">{{msg.time}}</time>
@@ -1230,4 +1283,13 @@ onBeforeUnmount(() => {
 .ib-desc{margin-top:8px;font-size:12px;color:#40516a;line-height:1.55}
 .ib-link{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:10px;height:32px;border-radius:8px;background:#2563eb;color:white;font-size:12px;text-decoration:none}
 .ib-link:hover{background:#1d4ed8}
+.reschedule-bubble{width:300px;max-width:80%;background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px;padding:12px 13px;transition:.18s ease}
+.reschedule-bubble:hover{border-color:#8eb2fa;box-shadow:0 6px 18px rgba(37,99,235,.1)}
+.rb-status{margin-left:auto;font-style:normal;font-size:10px;padding:2px 8px;border-radius:6px;color:#8a6314;background:#fdf3d8}
+.rb-status.approved,.rb-status.rescheduled{color:#07865e;background:#e7f7f0}
+.rb-status.rejected,.rb-status.cancelled{color:#b42318;background:#fdecea}
+.rb-line{display:flex;gap:8px;margin-top:8px;font-size:12px;line-height:1.5}
+.rb-line span{flex:none;width:64px;color:#7d8ca1}
+.rb-line b{flex:1;min-width:0;color:#40516a;font-weight:500;word-break:break-word}
+.rb-memo{margin-top:9px;padding-top:9px;border-top:1px solid #eef2f7;font-size:11px;color:#7d8ca1;line-height:1.55;word-break:break-word}
 </style>

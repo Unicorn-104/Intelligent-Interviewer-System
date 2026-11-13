@@ -20,6 +20,26 @@
 | D4 | 空闲时间写库 | 未开始 | 仅本地标记，后端无接口 |
 | D5 | 硬编码/假数据清理 | 部分完成 | 流程页、批量标签、导入简历 |
 
+### 状态更新（2026-11-13）
+
+下文为 2026-10-22 的历史盘点。经 2026-11-13 复核，除 D3 外均已落地，当前状态如下：
+
+| 编号 | 当前状态 | 实现位置 |
+| --- | --- | --- |
+| A | 已完成 | `interviews/evaluation.vue`（终面/非终面 `isFinal`、级联下一轮、生成录用意向书） |
+| B | 已完成 | `candidates/process.vue` 接入 `talent/{talId}`、简历、面试列表，无 `reserveApi` |
+| C1 | 已完成 | `jobs/import.vue` 岗位文件导入与草稿箱 |
+| C2 | 已完成 | `components/PublishJobModal.vue` 编辑模式 + 岗位列表/详情编辑入口 |
+| C3 | 已完成 | `PublishJobModal.vue` AI 解析 JD 按钮已接线 `POST /enterprise/jd/parse` |
+| C4 | 已完成 | `POST /system/enterprise/jobs/{posId}/duplicate` + 列表「复制」 |
+| D1 | 已完成 | Offer 审批 `approval/start`、`approval/approve`、`approval/reject` |
+| D2 | 已完成 | `POST /enterprise/offer/{offerId}/withdraw` + 前端撤回弹窗 |
+| D3 | 本期不做 | 简历批量导入未纳入本期范围，前后端均无实现 |
+| D4 | 已完成 | `InterviewerSlotController` + `interviews/index.vue` 空闲时段持久化 |
+| D5 | 已完成 | 全局已无 `reserveApi` 引用；批量标签走 `POST /enterprise/talent/tags/batch` |
+
+后续变更计划见 `docs/spec/enterprise-pc-change-plan.md`。
+
 ### 已确认可复用的接口与数据表
 
 - 评估：`/enterprise/review/list|{sessionId}|confirm|adjust|reject|cascade`

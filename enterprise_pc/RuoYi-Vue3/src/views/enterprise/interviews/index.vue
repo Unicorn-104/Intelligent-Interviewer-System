@@ -7,6 +7,7 @@ import CalendarGrid from '@/views/enterprise/components/CalendarGrid.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import { listInterviews, rescheduleInterview, remindInterview, updateInterviewStatus, listInterviewerSlots, saveInterviewerSlots } from '@/api/interview'
+import { pendingRescheduleCount, refreshPendingReschedule } from '@/views/enterprise/store/reschedule'
 import { listInterviewers, respondInterviewNotice, notifyPrimaryConflict, replaceSessionInterviewers, notifySessionInterviewers } from '@/api/system/conference'
 import useUserStore from '@/store/modules/user'
 
@@ -162,6 +163,11 @@ async function load(){
 function shiftWeek(delta){ const d = new Date(weekStart.value); d.setDate(d.getDate() + delta*7); weekStart.value = d }
 function goToday(){ weekStart.value = mondayOf(new Date()) }
 function openDay(i){ dayIndex.value = i; dayModal.value = true }
+
+// 候选人改期申请审批入口（默认定位待审批）
+function openRescheduleReview(){
+  router.push('/enterprise/interviews/reschedule-review?status=pending')
+}
 
 // 已结束场次进入 HR 终审评估页
 function openEvaluation(){
@@ -418,12 +424,12 @@ async function confirmPending(){
   notify(fail ? `已确认 ${ok} 项，${fail} 项冲突未改` : `已确认调整 ${ok} 项面试时间`)
 }
 
-onMounted(load)
+onMounted(() => { load(); refreshPendingReschedule() })
 </script>
 
 <template>
   <div class="page interviews-page">
-    <div class="page-heading"><div><h1>面试安排中心</h1><p>{{ weekLabel }} · 本周共 {{ blocks.length }} 场面试</p></div><button class="btn"><span class="calendar-logos"><b>O</b><b>飞</b><b>钉</b></span><CalendarSync :size="16"/>同步日历</button></div>
+    <div class="page-heading"><div><h1>面试安排中心</h1><p>{{ weekLabel }} · 本周共 {{ blocks.length }} 场面试</p></div><div class="head-actions"><button class="btn" @click="openRescheduleReview">改期审批<span v-if="pendingRescheduleCount" class="count-badge">{{ pendingRescheduleCount }}</span></button><button class="btn"><span class="calendar-logos"><b>O</b><b>飞</b><b>钉</b></span><CalendarSync :size="16"/>同步日历</button></div></div>
     <div class="schedule-layout">
       <!-- 左侧候选人面板 320px -->
       <aside class="card recommend-card">
@@ -746,4 +752,6 @@ onMounted(load)
 .conflict-box p{font-size:12px;color:#475569;margin:0 0 8px}
 .conflict-box ul{margin:0 0 10px;padding-left:16px;font-size:12px;color:#1e293b;line-height:1.7}
 .conflict-box .tip{color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin:0}
+.head-actions{display:flex;align-items:center;gap:10px}
+.count-badge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#ef4444;color:#fff;font-size:10px;display:inline-grid;place-items:center;margin-left:6px}
 </style>
