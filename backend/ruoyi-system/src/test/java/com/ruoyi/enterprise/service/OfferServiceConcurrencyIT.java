@@ -187,8 +187,9 @@ class OfferServiceConcurrencyIT
 
         AtomicReference<Throwable> hrErr = new AtomicReference<>();
         AtomicReference<Throwable> acceptErr = new AtomicReference<>();
+        long applicationId = appId(CANDIDATE_ID, POSITION_1);
         Outcome both = runConcurrent(
-                () -> { try { talentPoolService.terminateApplication(USER_ID, CANDIDATE_ID, POSITION_1, "HR_REJECTED"); }
+                () -> { try { talentPoolService.terminateApplication(USER_ID, CANDIDATE_ID, POSITION_1, applicationId, "HR_REJECTED"); }
                         catch (Exception e) { hrErr.set(e); } },
                 () -> { try { offerService.acceptOffer(USER_ID, offerId); } catch (Exception e) { acceptErr.set(e); } });
 
@@ -239,13 +240,13 @@ class OfferServiceConcurrencyIT
                 Long.class, CANDIDATE_ID, POSITION_1);
 
         // 1) 真实 HR 入口淘汰（生产链确认：terminateApplication 不取消 Offer）
-        talentPoolService.terminateApplication(USER_ID, CANDIDATE_ID, POSITION_1, "HR_REJECTED");
+        long applicationId = appId(CANDIDATE_ID, POSITION_1);
+        talentPoolService.terminateApplication(USER_ID, CANDIDATE_ID, POSITION_1, applicationId, "HR_REJECTED");
         assertEquals(5, jdbc.queryForObject("select app_status from t_app_record where app_candidate_id=? and app_position_id=?",
                 Integer.class, CANDIDATE_ID, POSITION_1), "HR 淘汰后投递应为未录用");
         assertEquals(0, jdbc.queryForObject("select ofr_status from t_off_offer where ofr_id=?", Integer.class, offerId),
                 "terminateApplication 不取消 Offer，Offer 应仍为已发送");
 
-        long applicationId = appId(CANDIDATE_ID, POSITION_1);
         int appLogsBefore = count("t_app_status_log", "asl_app_id", applicationId);
         int talLogsBefore = count("t_tal_status_log", "tsl_candidate_id", CANDIDATE_ID);
         int offerBefore = jdbc.queryForObject("select ofr_status from t_off_offer where ofr_id=?", Integer.class, offerId);
