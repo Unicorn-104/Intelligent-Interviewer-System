@@ -32,11 +32,12 @@ class ScreeningMapperDatabaseTest
         try (var session = factory.openSession(false))
         {
             try (var statement = session.getConnection().createStatement(); var rows = statement.executeQuery(
-                    "select pos.pos_company_id, pos.pos_id from t_pos pos join t_process_instance p on p.pin_position_id=pos.pos_id "
-                    + "join t_tal t on t.tal_id=p.pin_candidate_id and t.tal_company_id=pos.pos_company_id limit 1"))
+                    "select pos.pos_company_id, pos.pos_id, a.app_id from t_pos pos join t_process_instance p on p.pin_position_id=pos.pos_id "
+                    + "join t_tal t on t.tal_id=p.pin_candidate_id and t.tal_company_id=pos.pos_company_id "
+                    + "join t_app_record a on a.app_position_id=pos.pos_id and a.app_candidate_id=t.tal_id limit 1"))
             {
-                assertTrue(rows.next(), "Local smoke requires one existing job with a candidate");
-                long company = rows.getLong(1), position = rows.getLong(2);
+                assertTrue(rows.next(), "Local smoke requires one existing job with a candidate application");
+                long company = rows.getLong(1), position = rows.getLong(2), application = rows.getLong(3);
                 var mapper = session.getMapper(ScreeningMapper.class);
                 assertNotNull(mapper.selectPosition(company, position));
                 assertNull(mapper.selectPosition(Long.MAX_VALUE, position));
@@ -68,12 +69,13 @@ class ScreeningMapperDatabaseTest
                 assertEquals(run, mapper.lockTask(company, position).get("runId"));
                 Map<String, Object> report = new LinkedHashMap<>();
                 report.put("companyId", company); report.put("positionId", position); report.put("resultId", talent);
+                report.put("applicationId", application);
                 report.put("resumeId", resume); report.put("report", "{\"source\":\"llm\",\"recommendation\":\"演示数据：事务回滚验证\"}");
                 assertTrue(mapper.saveAnalysis(report) > 0);
-                assertTrue(mapper.selectAnalysis(company, position, talent).get("report").toString().contains("llm"));
+                assertTrue(mapper.selectAnalysis(company, position, application, talent).get("report").toString().contains("llm"));
                 assertTrue(mapper.selectAnalyzedCandidates(company, position).stream().anyMatch(row -> ((Number) row.get("candidateId")).longValue() == talent));
                 assertNotNull(mapper.selectLatestAnalysis(company, talent));
-                assertNull(mapper.selectAnalysis(Long.MAX_VALUE, position, talent));
+                assertNull(mapper.selectAnalysis(Long.MAX_VALUE, position, application, talent));
                 assertEquals(1, mapper.updateTask(company, position, run, "completed", candidates.size(), 1, null));
                 assertEquals(0, mapper.updateTask(company, position, "stale-run", "failed", 0, 0, "stale"));
             }
