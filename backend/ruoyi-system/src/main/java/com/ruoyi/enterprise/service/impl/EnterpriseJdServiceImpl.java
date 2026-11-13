@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.common.constant.ErrorCode;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.enterprise.mapper.EnterpriseJdMapper;
@@ -43,6 +44,12 @@ public class EnterpriseJdServiceImpl implements IEnterpriseJdService
 
     @Autowired
     private EnterpriseJdMapper jdMapper;
+
+    @Autowired
+    private com.ruoyi.system.mapper.DashboardMapper dashboardMapper;
+
+    @Autowired
+    private com.ruoyi.enterprise.service.jd.JdQualityScorer qualityScorer;
 
     @Override
     public Map<String, Object> analyzeJd(String jdText)
@@ -121,6 +128,33 @@ public class EnterpriseJdServiceImpl implements IEnterpriseJdService
                 : JSON.parseObject(String.valueOf(position.get("jdJson"))));
         result.put("skills", skills);
         return result;
+    }
+
+    @Override
+    public Map<String, Object> scoreQuality(Long positionId, Long userId)
+    {
+        if (positionId == null)
+        {
+            throw new ServiceException("岗位ID不能为空", ErrorCode.BAD_REQUEST);
+        }
+        Map<String, Object> position = jdMapper.selectPositionJd(positionId);
+        if (position == null)
+        {
+            throw new ServiceException("岗位不存在", ErrorCode.NOT_FOUND);
+        }
+        Long companyId = dashboardMapper.selectCompanyIdByUser(userId);
+        Object positionCompany = position.get("companyId");
+        if (companyId == null || positionCompany == null
+                || !companyId.equals(((Number) positionCompany).longValue()))
+        {
+            throw new ServiceException("无权访问该岗位", ErrorCode.FORBIDDEN);
+        }
+        Object jdJson = position.get("jdJson");
+        if (jdJson == null || String.valueOf(jdJson).isBlank())
+        {
+            throw new ServiceException("该岗位尚未生成岗位画像，请先补全岗位信息或解析 JD 后再评分", ErrorCode.BAD_REQUEST);
+        }
+        return qualityScorer.score(String.valueOf(position.get("title")), String.valueOf(jdJson));
     }
 
     /** 学历关键词匹配（博士>硕士>研究生>本科>学士>大专>专科） */
