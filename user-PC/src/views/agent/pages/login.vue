@@ -51,7 +51,7 @@
         <button class="primary" :disabled="loading" type="submit">{{ loading ? '登录中...' : '登录' }}</button>
       </form>
 
-      <div class="footer-link">还没有账号？ <a :href="appHref('/register')">立即注册</a></div>
+      <div class="footer-link">还没有账号？ <a :href="appHref(`/register?redirect=${encodeURIComponent(candidateRedirect(route.query.redirect))}`)">立即注册</a> · <a :href="appHref('/index')">先逛逛</a></div>
     </section>
   </main>
 </template>
@@ -64,6 +64,7 @@ import { sendSmsCode } from '@/api/login'
 import useUserStore from '@/store/modules/user'
 import { clearCandidateSession, resetCandidateSecurityNotice } from '@/utils/agentSession'
 import { removeToken } from '@/utils/auth'
+import { candidateAuthError } from '@/utils/agentLogin'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,6 +89,7 @@ function switchMode(nextMode) {
 }
 
 async function handleSendCode() {
+  if (sendingCode.value || cooldown.value > 0) return
   error.value = ''
   if (!isValidPhoneNumber(form.phone)) {
     error.value = '请输入正确的手机号'
@@ -108,7 +110,7 @@ async function handleSendCode() {
       }
     }, 1000)
   } catch (requestError) {
-    error.value = requestError?.message || '验证码发送失败，请稍后重试'
+    error.value = candidateAuthError(requestError, '验证码发送失败，请稍后重试')
   } finally {
     sendingCode.value = false
   }
@@ -124,6 +126,7 @@ function validate() {
 }
 
 async function handleSubmit() {
+  if (loading.value) return
   error.value = validate()
   if (error.value) return
 
@@ -133,7 +136,7 @@ async function handleSubmit() {
     await userStore.login(form)
     await router.push(candidateRedirect(route.query.redirect))
   } catch (requestError) {
-    error.value = requestError?.message || '登录失败，请检查登录凭证'
+    error.value = candidateAuthError(requestError, '登录失败，请检查登录凭证')
   } finally {
     loading.value = false
   }

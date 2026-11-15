@@ -147,7 +147,7 @@ export const constantRoutes = [
         path: 'resume-screening/ai',
         component: () => import('@/views/enterprise/screening/ai.vue'),
         name: 'EnterpriseResumeScreeningAi',
-        meta: { title: 'AI 初筛详情' }
+        meta: { title: 'AI 评分详情' }
       },
       {
         path: 'screening',
@@ -207,6 +207,12 @@ export const constantRoutes = [
         component: () => import('@/views/enterprise/interviews/index.vue'),
         name: 'EnterpriseInterviews',
         meta: { title: '面试安排中心' }
+      },
+      {
+        path: 'interviews/reschedule-review',
+        component: () => import('@/views/enterprise/interviews/reschedule-review.vue'),
+        name: 'EnterpriseRescheduleReview',
+        meta: { title: '改期审批' }
       },
       {
         path: 'offer',

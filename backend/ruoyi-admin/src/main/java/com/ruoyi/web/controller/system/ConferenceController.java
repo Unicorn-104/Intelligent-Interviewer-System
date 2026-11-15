@@ -106,6 +106,35 @@ public class ConferenceController extends BaseController
     }
 
     /**
+     * 面试官把时间冲突反馈给主面试官
+     */
+    @PostMapping("/interviewer/notices/{sessionId}/conflict")
+    public AjaxResult notifyPrimaryConflict(@PathVariable Long sessionId, @RequestBody(required = false) Map<String, Object> body)
+    {
+        return success(conferenceService.notifyPrimaryConflict(getUserId(), sessionId,
+                body == null ? null : str(body, "remark")));
+    }
+
+    /**
+     * 主面试官更换本场面试官
+     */
+    @PutMapping("/session/{sessionId}/interviewers")
+    public AjaxResult replaceInterviewers(@PathVariable Long sessionId, @RequestBody Map<String, Object> body)
+    {
+        return success(conferenceService.replaceSessionInterviewers(getUserId(), sessionId,
+                longListOf(body, "interviewerIds")));
+    }
+
+    /**
+     * 主面试官改期后重新通知面试官确认时间
+     */
+    @PostMapping("/session/{sessionId}/interviewers/notify")
+    public AjaxResult notifyInterviewers(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.remindSessionInterviewers(getUserId(), sessionId));
+    }
+
+    /**
      * 本企业全体在职用户（HR 发起面试时选择面试官）
      */
     @GetMapping("/interviewers")

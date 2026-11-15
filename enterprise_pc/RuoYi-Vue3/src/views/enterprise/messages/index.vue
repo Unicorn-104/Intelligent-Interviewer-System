@@ -2,12 +2,12 @@
 import { resolveResourceUrl } from "@/utils/resourceUrl"
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Search, Video, Play, Zap, Smile, Paperclip, Camera, Send, Settings2, FileText, Bell, Copy, MessageSquareText } from '@/views/enterprise/components/icons'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Video, Play, Zap, Smile, Paperclip, Camera, Send, Settings2, FileText, Bell, Copy, MessageSquareText, CalendarClock } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
-import { listSessions, listMessages, sendMessage, readSession, readAll, uploadAttachment, listQuickReplies, saveQuickReply, deleteQuickReply } from '@/api/system/im'
+import { listSessions, listMessages, sendMessage, readSession, readAll, uploadAttachment, listQuickReplies, saveQuickReply, deleteQuickReply, suggestQuickReplies } from '@/api/system/im'
 import { candidateAppBase } from '@/utils/appLink'
-import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice } from '@/api/system/conference'
+import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice, notifyPrimaryConflict } from '@/api/system/conference'
 import { listSurveyTemplates, sendSurvey } from '@/api/survey'
 import { listPapers, listSchedules, createSchedule } from '@/api/exam'
 import { refreshUnread, totalUnread } from '@/views/enterprise/store/unread'
@@ -48,6 +48,28 @@ async function loadTemplates() {
   templates.value = res.data || []
 }
 loadTemplates()
+
+// AI 推荐：结合当前会话最近消息生成，不落库
+const aiLoading = ref(false)
+const aiSuggestions = ref([])
+async function generateAiReplies() {
+  const sessionId = activeId.value !== SYSTEM_NOTICE_ID ? activeId.value : null
+  if (!sessionId) {
+    ElMessage.warning('请选择已有消息的会话后再生成建议')
+    return
+  }
+  aiLoading.value = true
+  try {
+    const res = await suggestQuickReplies(sessionId)
+    aiSuggestions.value = res.data || []
+    if (!aiSuggestions.value.length) ElMessage.warning('未生成建议，请重试')
+  } catch (e) {
+    aiSuggestions.value = []
+    ElMessage.error(e?.message || 'AI 建议生成失败')
+  } finally {
+    aiLoading.value = false
+  }
+}
 
 // 管理模板弹窗
 const manageOpen = ref(false)
@@ -208,6 +230,43 @@ function openJob(job) {
   if (job && job.positionId) router.push('/enterprise/jobs/' + job.positionId)
 }
 
+// ---------- 面试改期卡片（type=5，内容为 kind=interview_reschedule 的 JSON） ----------
+// 与候选人端/企业 App 同一契约：仅服务端改期业务生成，PC 端解析为卡片展示
+const RESCHEDULE_STATUS = {
+  pending: '待处理',
+  changed: '已改期',
+  approved: '已通过',
+  rejected: '已驳回',
+  cancelled: '已取消'
+}
+
+function parseInterviewCard(content) {
+  if (!content || content.charAt(0) !== '{') return null
+  try {
+    const raw = JSON.parse(content)
+    if (!raw || Number(raw.version) !== 1) return null
+    if (raw.kind !== 'interview_reschedule' && raw.kind !== 'interview_card') return null
+    const candidate = String(raw.candidateName || '').trim()
+    const position = String(raw.positionName || '').trim()
+    if (!candidate && !position) return null
+    const status = String(raw.status || '').trim().toLowerCase()
+    const newStart = String(raw.newStartTime || '').trim()
+    const newEnd = String(raw.newEndTime || '').trim()
+    return {
+      candidate,
+      position,
+      status: RESCHEDULE_STATUS[status] || String(raw.status || '').trim(),
+      statusKey: status,
+      originalStartTime: String(raw.originalStartTime || '').trim(),
+      newTime: newStart ? (newEnd ? `${newStart} ~ ${newEnd.slice(-8)}` : newStart) : '',
+      reason: String(raw.reason || '').trim(),
+      reviewNote: String(raw.reviewNote || raw.message || '').trim()
+    }
+  } catch (e) {
+    return null
+  }
+}
+
 // ---------- 面试预约通知（固定在消息中心顶部的系统会话） ----------
 const SYSTEM_NOTICE_ID = '__notices__'
 const NOTICE_MODE_LABEL = { 1: '纯AI', 2: 'AI + 单面试官', 3: 'AI + 多面试官', 4: '无AI纯人工' }
@@ -246,7 +305,21 @@ loadNotices()
 
 async function respondNotice(n, accept) {
   try {
-    await respondInterviewNotice(n.sessionId, accept)
+    const res = await respondInterviewNotice(n.sessionId, accept)
+    // 与本人已确认的其他面试时间冲突：不写入接受状态，由面试官决定是否通知主面试官
+    if(accept && res.data?.conflict){
+      const list = (res.data.conflicts || []).map(c => `${c.positionTitle}（${c.startTime}-${c.endTime}）`).join('\n')
+      try{
+        await ElMessageBox.confirm(
+          `接受该邀约与您已确认的面试时间冲突：\n${list}\n\n是否通知主面试官改期或更换面试官？`,
+          '时间冲突',
+          { confirmButtonText: '通知主面试官', cancelButtonText: '暂不通知', type: 'warning' }
+        )
+        const notified = await notifyPrimaryConflict(n.sessionId, '')
+        ElMessage.success(notified.data?.message || '已通知主面试官')
+      }catch(e){ /* 选择暂不通知 */ }
+      return
+    }
     ElMessage.success(accept ? '已接受面试邀约' : '已拒绝面试邀约')
     await loadNotices()
   } catch (e) {
@@ -281,6 +354,7 @@ async function openConv(c) {
   activeId.value = c.id
   peerPositions.value = []
   peerPositionsReady.value = false
+  aiSuggestions.value = []
   if (c.system) {
     await loadNotices()
     return
@@ -309,6 +383,7 @@ async function loadMessages(sessionId) {
     text: m.content,
     // 岗位卡片解析失败时保留原文气泡，避免消息丢失
     job: m.type === 6 ? parseJobCard(m.content) : null,
+    card: parseInterviewCard(m.content),
     invite: m.type === 1 ? parseInvite(m.content) : null,
     attachmentUrl: attachmentUrl(m.attachmentUrl),
     time: fmtTime(m.sendTime)
@@ -897,8 +972,23 @@ onBeforeUnmount(() => {
           </article>
         </div>
         <div v-else ref="scroller" class="message-stream">
-          <div v-for="msg in messages" :key="msg.id" :class="['message-row', msg.type===5?'system':(msg.mine?'me':'other')]">
-            <template v-if="msg.type===5"><span class="system-line">{{msg.text}}</span></template>
+          <div v-for="msg in messages" :key="msg.id" :class="['message-row', msg.card ? (msg.mine ? 'me' : 'other') : (msg.type===5?'system':(msg.mine?'me':'other'))]">
+            <template v-if="msg.card">
+              <article class="reschedule-bubble">
+                <div class="ib-head">
+                  <CalendarClock :size="16"/><span>面试改期</span>
+                  <em v-if="msg.card.status" :class="['rb-status', msg.card.statusKey]">{{ msg.card.status }}</em>
+                </div>
+                <p class="rb-line"><span>候选人</span><b>{{ msg.card.candidate || '—' }}</b></p>
+                <p class="rb-line"><span>应聘岗位</span><b>{{ msg.card.position || '—' }}</b></p>
+                <p v-if="msg.card.originalStartTime" class="rb-line"><span>原面试时间</span><b>{{ msg.card.originalStartTime }}</b></p>
+                <p v-if="msg.card.newTime" class="rb-line"><span>申请改期至</span><b>{{ msg.card.newTime }}</b></p>
+                <p v-if="msg.card.reason" class="rb-line"><span>改期原因</span><b>{{ msg.card.reason }}</b></p>
+                <p v-if="msg.card.reviewNote" class="rb-memo">{{ msg.card.reviewNote }}</p>
+              </article>
+              <time v-if="msg.time">{{msg.time}}</time>
+            </template>
+            <template v-else-if="msg.type===5"><span class="system-line">{{msg.text}}</span></template>
             <template v-else-if="msg.type===3">
               <a class="bubble file-bubble" :href="msg.attachmentUrl" target="_blank" download><FileText :size="14"/><b>{{msg.text}}</b><small>查看</small></a>
               <time v-if="msg.time">{{msg.time}}</time>
@@ -958,7 +1048,7 @@ onBeforeUnmount(() => {
       <div v-else class="chat-empty"><p>{{ loading ? '加载中…' : '暂无会话，请在候选人详情页发起沟通' }}</p></div>
     </section>
 
-    <aside class="template-panel"><header><span><Zap :size="17"/>快捷回复模板</span><small>AI 智能推荐</small></header><div class="template-list"><button v-for="item in templates" :key="item.id" @click="useTemplate(item.content)"><label>{{item.category}}</label><span>{{item.content}}</span></button></div><div class="ai-tip"><Zap :size="16"/><p><b>AI 提示</b>可结合会话上下文微调话术，高频内容可加入模板库。</p></div><button class="manage" @click="openManage"><Settings2 :size="15"/>管理模板</button></aside>
+    <aside class="template-panel"><header><span><Zap :size="17"/>快捷回复</span><small>AI 智能推荐</small></header><div class="ai-panel"><div class="ai-head"><b>AI 推荐</b><button :disabled="aiLoading" @click="generateAiReplies">{{ aiLoading ? '生成中…' : (aiSuggestions.length ? '重新生成' : '生成建议') }}</button></div><div v-if="aiLoading" class="ai-empty">正在结合会话上下文生成…</div><div v-else-if="!aiSuggestions.length" class="ai-empty">选择会话后点击生成，AI 会基于最近聊天给出 3 条话术。</div><template v-else><button v-for="(s,i) in aiSuggestions" :key="i" class="ai-item" @click="useTemplate(s)">{{ s }}</button></template></div><div class="template-list"><button v-for="item in templates" :key="item.id" @click="useTemplate(item.content)"><label>{{item.category}}</label><span>{{item.content}}</span></button></div><div class="ai-tip"><Zap :size="16"/><p><b>模板库</b>常用话术可加入下方模板库长期复用。</p></div><button class="manage" @click="openManage"><Settings2 :size="15"/>管理模板</button></aside>
 
     <BaseModal v-if="manageOpen" title="管理快捷回复模板" width="640px" @close="manageOpen=false">
       <div class="tpl-manage">
@@ -1105,6 +1195,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .messages-page{height:calc(100vh - 64px);padding:24px;display:grid;grid-template-columns:292px minmax(540px,1fr) 260px;grid-template-rows:minmax(0,1fr);gap:1px;overflow:hidden}.conversation-panel,.chat-panel,.template-panel{background:white;border:1px solid #e5ebf3}.conversation-panel{border-radius:14px 0 0 14px;overflow:hidden;display:flex;flex-direction:column}.search-row{display:flex;align-items:center;gap:8px;margin:14px;flex:none}.conversation-search{height:38px;flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#f2f5f9;border-radius:9px;padding:0 11px;color:#8999af}.conversation-search input{width:100%;border:0;outline:0;background:transparent;font-size:11px}.read-all{width:38px;height:38px;flex:none;border:1px solid #e0e7f0;border-radius:9px;background:white;color:#64748b;display:grid;place-items:center;cursor:pointer}.read-all:hover:not(:disabled){border-color:#8eb2fa;color:#2563eb}.read-all:disabled{opacity:.4;cursor:not-allowed}.conversation-list{overflow:auto;flex:1}.conversation-list article{height:77px;border-top:1px solid #e8edf4;display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:0 14px;position:relative;cursor:pointer}.conversation-list article.active{background:#edf4ff}.conversation-list article>div{min-width:0}.conversation-list h3{font-size:12px}.conversation-list p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#7d8ca1;font-size:10px;margin-top:5px}.conversation-list time{position:absolute;right:14px;top:13px;color:#98a5b7;font-size:9px}.conversation-list em{position:absolute;right:14px;bottom:11px;width:19px;height:19px;border-radius:50%;background:#2563eb;color:white;font-style:normal;font-size:9px;display:grid;place-items:center;line-height:1}.empty-list{border-top:1px solid #e8edf4;text-align:center;color:#98a5b7;font-size:10px;padding:24px 0;margin:0}.chat-panel{display:flex;flex-direction:column;min-height:0;overflow:hidden}.chat-head{height:86px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;gap:10px;padding:0 16px;flex:none}.chat-head-info{flex:1;min-width:0}.chat-head h2{font-size:14px;display:flex;gap:6px;align-items:center}.chat-head p{display:block;color:#7c8ca3;font-size:9px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.message-stream{flex:1;overflow:auto;background:#f8fafc;padding:18px 18px 10px}.stream-loading{text-align:center;color:#98a5b7;font-size:10px}.message-row{display:flex;flex-direction:column;align-items:flex-start;margin-bottom:17px}.message-row.me{align-items:flex-end}.bubble{max-width:76%;padding:11px 13px;border-radius:5px 13px 13px 13px;background:#eaf1ff;font-size:11px;line-height:1.55;white-space:pre-wrap;word-break:break-word}.message-row.me .bubble{background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px}.bubble-link{color:#2563eb;text-decoration:underline;word-break:break-all;cursor:pointer}.file-bubble{display:flex;align-items:center;gap:7px;text-decoration:none;color:inherit;cursor:pointer}.file-bubble svg{color:#2563eb;flex:none}.file-bubble b{font-weight:500;font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-bubble small{color:#2563eb;font-size:9px}.img-bubble{padding:4px}.img-bubble img{max-width:220px;max-height:180px;border-radius:8px;display:block}.message-row time{color:#9aa7b8;font-size:9px;margin-top:4px}.message-row.system{align-items:center;margin:5px 0 17px}.system-line{color:#95a2b4;font-size:9px;display:flex;align-items:center;width:80%;gap:8px}.system-line:before,.system-line:after{content:'';height:1px;background:#e5ebf3;flex:1}.chat-empty{flex:1;display:grid;place-items:center;color:#98a5b7;font-size:12px}.composer{min-height:86px;border-top:1px solid #e5ebf3;padding:8px 15px;position:relative;flex:none}.composer-tools{height:28px;display:flex;gap:5px;align-items:center}.composer-tools button{border:0;background:none;color:#64748b;padding:4px;cursor:pointer}.composer-tools .quick{margin-left:auto;display:flex;align-items:center;gap:5px;color:#2563eb;font-size:10px}.composer>div:last-child{display:flex;gap:8px;align-items:flex-end}.composer textarea{min-height:36px;max-height:96px;flex:1;border:0;outline:0;border-radius:8px;background:#f0f4f9;padding:9px 11px;font-size:11px;resize:none;font-family:inherit;line-height:1.5}.send{height:36px;border:0;border-radius:8px;background:#2563eb;color:white;padding:0 13px;display:flex;align-items:center;gap:6px;cursor:pointer}.emoji-pop{position:absolute;left:14px;bottom:80px;background:white;border:1px solid #e0e7f0;border-radius:10px;padding:8px;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;box-shadow:0 8px 24px rgba(30,41,59,.14);z-index:5}.emoji-pop button{border:0;background:none;font-size:16px;padding:4px;border-radius:6px;cursor:pointer}.emoji-pop button:hover{background:#f0f4f9}.template-panel{border-radius:0 14px 14px 0;display:flex;flex-direction:column;overflow:hidden}.template-panel header{height:60px;padding:0 14px;border-bottom:1px solid #e5ebf3;display:flex;align-items:center;justify-content:space-between}.template-panel header span{font-size:12px;font-weight:700;display:flex;align-items:center;gap:7px}.template-panel header svg{color:#2563eb}.template-panel header small{color:#9aa7b8;font-size:8px}.template-list{padding:12px;display:flex;flex-direction:column;gap:9px;overflow:auto}.template-list button{border:1px solid #e0e7f0;border-radius:8px;background:white;padding:8px 9px;text-align:left;cursor:pointer}.template-list button:hover{border-color:#8eb2fa;background:#f8fbff}.template-list label{display:block;color:#8392a7;font-size:9px;margin-bottom:4px}.template-list span{font-size:10px;line-height:1.45;color:#40516a}.ai-tip{margin:3px 12px;padding:10px;background:#edf4ff;color:#2563eb;border-radius:9px;display:flex;gap:7px}.ai-tip svg{flex:none}.ai-tip p{font-size:9px;color:#6a7d99;line-height:1.45}.ai-tip b{color:#315b9e;display:block}.manage{height:42px;border:0;border-top:1px solid #e5ebf3;background:white;color:#2563eb;margin-top:auto;display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;cursor:pointer}
+.ai-panel{border:1px solid #e3ecf8;background:#f7faff;border-radius:10px;padding:10px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px}
+.ai-head{display:flex;align-items:center;justify-content:space-between;font-size:11px}
+.ai-head b{color:#2563eb}
+.ai-head button{border:0;background:transparent;color:#2563eb;font-size:11px;cursor:pointer}
+.ai-head button:disabled{color:#9aa7b9;cursor:not-allowed}
+.ai-empty{margin:0;font-size:11px;color:#8d9baf;line-height:1.6}
+.ai-item{border:1px solid #dfe8f6;background:#fff;border-radius:8px;padding:8px 10px;text-align:left;font-size:12px;color:#3b4a61;line-height:1.5;cursor:pointer}
+.ai-item:hover{border-color:#2563eb;color:#2563eb}
 .tpl-manage{display:flex;flex-direction:column;gap:12px}.tpl-form{display:flex;gap:8px}.tpl-form input{height:34px;border:1px solid #dfe6ef;border-radius:8px;padding:0 10px;font-size:12px;outline:none}.tpl-form input:focus{border-color:#2563eb}.tpl-form .cat{width:140px;flex:none}.tpl-form .cnt{flex:1;min-width:0}.tpl-form .save{height:34px;flex:none;border:0;border-radius:8px;background:#2563eb;color:white;padding:0 14px;font-size:11px;cursor:pointer}.tpl-form .cancel{height:34px;flex:none;border:1px solid #dfe6ef;border-radius:8px;background:white;color:#64748b;padding:0 12px;font-size:11px;cursor:pointer}
 .tpl-rows{max-height:340px;overflow:auto;border:1px solid #eef2f7;border-radius:9px}.tpl-row{display:grid;grid-template-columns:96px 1fr 88px;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid #f2f5f9;font-size:11px}.tpl-row:last-child{border-bottom:0}.tpl-row.on{background:#f4f8ff}.tpl-row label{color:#8392a7;font-size:10px}.tpl-row span{color:#40516a;line-height:1.45;word-break:break-word}.tpl-row .ops{display:flex;gap:8px;justify-content:flex-end}.tpl-row .ops button{border:0;background:none;color:#2563eb;font-size:10px;cursor:pointer;padding:0}.tpl-row .ops button.del{color:#ef4444}.none{padding:20px;text-align:center;color:#9aa7b9;font-size:11px}
 .link-form{display:flex;flex-direction:column;gap:14px}
@@ -1185,4 +1283,13 @@ onBeforeUnmount(() => {
 .ib-desc{margin-top:8px;font-size:12px;color:#40516a;line-height:1.55}
 .ib-link{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:10px;height:32px;border-radius:8px;background:#2563eb;color:white;font-size:12px;text-decoration:none}
 .ib-link:hover{background:#1d4ed8}
+.reschedule-bubble{width:300px;max-width:80%;background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px;padding:12px 13px;transition:.18s ease}
+.reschedule-bubble:hover{border-color:#8eb2fa;box-shadow:0 6px 18px rgba(37,99,235,.1)}
+.rb-status{margin-left:auto;font-style:normal;font-size:10px;padding:2px 8px;border-radius:6px;color:#8a6314;background:#fdf3d8}
+.rb-status.approved,.rb-status.rescheduled{color:#07865e;background:#e7f7f0}
+.rb-status.rejected,.rb-status.cancelled{color:#b42318;background:#fdecea}
+.rb-line{display:flex;gap:8px;margin-top:8px;font-size:12px;line-height:1.5}
+.rb-line span{flex:none;width:64px;color:#7d8ca1}
+.rb-line b{flex:1;min-width:0;color:#40516a;font-weight:500;word-break:break-word}
+.rb-memo{margin-top:9px;padding-top:9px;border-top:1px solid #eef2f7;font-size:11px;color:#7d8ca1;line-height:1.55;word-break:break-word}
 </style>

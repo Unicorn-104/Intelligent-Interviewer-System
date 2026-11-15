@@ -40,6 +40,25 @@ export function deleteQuestion(questionId) {
   })
 }
 
+/** 补全空解析（已有解析不覆盖，平台题库也可补全） */
+export function fillQuestionAnalysis(questionId, analysis) {
+  return request({
+    url: `/enterprise/exam/questions/${questionId}/analysis`,
+    method: 'put',
+    data: { analysis }
+  })
+}
+
+/** AI 补全答案解析，并校验题目是否正确 */
+export function aiExamAnalysis(data) {
+  return request({
+    url: '/enterprise/exam/questions/ai-analysis',
+    method: 'post',
+    data,
+    timeout: 90000
+  })
+}
+
 // ==================== 试卷 ====================
 
 export function listPapers(positionId) {

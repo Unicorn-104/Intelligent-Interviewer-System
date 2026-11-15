@@ -2,6 +2,7 @@ package com.ruoyi.web.controller.candidate;
 
 import java.util.List;
 import java.util.Map;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -79,9 +80,9 @@ public class CandidateExamController extends BaseController
 
     /** 双机位监考信息：主机位入会令牌 + 副机位接入码与二维码地址 + 副机位状态 */
     @GetMapping("/record/{recordId}/monitor")
-    public AjaxResult monitor(@PathVariable("recordId") Long recordId)
+    public AjaxResult monitor(@PathVariable("recordId") Long recordId, HttpServletRequest request)
     {
-        return success(examMonitorService.getMonitorInfo(getUserId(), recordId));
+        return success(examMonitorService.getMonitorInfo(getUserId(), recordId, request.getServerName()));
     }
 
     @SuppressWarnings("unchecked")

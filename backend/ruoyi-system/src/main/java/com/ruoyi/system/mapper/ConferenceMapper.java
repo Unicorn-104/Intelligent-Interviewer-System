@@ -331,6 +331,34 @@ public interface ConferenceMapper
             @Param("acceptStatus") Integer acceptStatus);
 
     /**
+     * 重置某场次除操作人外的接受状态，重新等待面试官确认
+     */
+    public int resetInterviewerAcceptStatus(@Param("sessionId") Long sessionId, @Param("operatorId") Long operatorId);
+
+    /**
+     * 移除某场次下指定的面试官（更换面试官时使用）
+     */
+    public int deleteSessionInterviewer(@Param("sessionId") Long sessionId, @Param("userId") Long userId);
+
+    /**
+     * 查询同一候选人同岗位尚未开始的面试安排（重复发起时拦截并提示岗位）
+     */
+    public Map<String, Object> selectActiveAppointment(@Param("candidateId") Long candidateId,
+            @Param("positionId") Long positionId, @Param("companyId") Long companyId);
+
+    /**
+     * 查询某面试官已接受且与指定场次时间重叠的其他面试（确认邀约时的时间冲突检测）
+     */
+    public List<Map<String, Object>> selectInterviewerConflicts(@Param("sessionId") Long sessionId,
+            @Param("userId") Long userId);
+
+    /**
+     * 同步预约记录的主面试官（面试安排日历按该字段展示面试官）
+     */
+    public int updateAppointmentInterviewer(@Param("appointmentId") Long appointmentId,
+            @Param("userId") Long userId);
+
+    /**
      * 查询场次主面试官用户ID（无则返回 null）
      */
     public Long selectPrimaryInterviewerId(@Param("sessionId") Long sessionId);

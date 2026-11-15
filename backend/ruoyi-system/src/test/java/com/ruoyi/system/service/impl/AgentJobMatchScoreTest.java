@@ -239,6 +239,64 @@ class AgentJobMatchScoreTest
         return query;
     }
 
+    @Test
+    void selectedResumeChangesScoresAndOrderingBeforePagination() throws Exception
+    {
+        execute("insert into t_res_base values(11,100,1,0,'2026-10-29','Python')");
+        execute("insert into t_res_skill values(4,11,'Python')");
+        enableResumePreferenceColumns();
+        AgentJobQuery query = matchQuery();
+        query.setResumeId(11L);
+        assertEquals(1, mapper.countAvailableResume(11L, 100L));
+        PageHelper.startPage(1, 1);
+        List<AgentJob> jobs = mapper.selectJobList(query, 100L);
+        assertEquals(3L, ((Page<AgentJob>) jobs).getTotal());
+        assertEquals(2L, jobs.get(0).getId());
+        assertScore("85", jobs.get(0));
+        assertEquals(1L, mapper.selectJobList(matchQuery(), 100L).get(0).getId());
+    }
+
+    @Test
+    void selectedResumeMustBeActiveAndOwnedAndCannotBorrowDefaultSkills() throws Exception
+    {
+        execute("insert into t_res_base values(11,100,0,0,'2026-10-29','Python'),"
+                + "(20,200,1,1,'2026-10-29','Python'),(12,100,1,0,'2026-10-29','')");
+        enableResumePreferenceColumns();
+        assertEquals(0, mapper.countAvailableResume(11L, 100L));
+        assertEquals(0, mapper.countAvailableResume(20L, 100L));
+        assertEquals(0, mapper.countAvailableResume(999L, 100L));
+        for (Long resumeId : List.of(11L, 20L, 12L, 999L))
+        {
+            AgentJobQuery query = matchQuery();
+            query.setResumeId(resumeId);
+            assertTrue(mapper.selectJobList(query, 100L).stream().allMatch(job -> job.getMatchScore() == null));
+        }
+    }
+
+    @Test
+    void selectedResumeUsesItsOwnTargetRoleAndCityInsteadOfPersonalProfile() throws Exception
+    {
+        execute("insert into t_res_base values(11,100,1,0,'2026-10-29','')");
+        execute("insert into t_res_skill values(4,11,'Python')");
+        enableResumePreferenceColumns();
+        execute("update t_res_base set rbs_target_role='Python',rbs_target_city='广州',rbs_current_city='杭州' where rbs_id=11");
+        AgentJobQuery query = matchQuery();
+        query.setResumeId(11L);
+        List<AgentJob> jobs = mapper.selectJobList(query, 100L);
+        assertEquals(2L, jobs.get(0).getId());
+        assertScore("100", jobs.get(0));
+        assertScore("0", jobs.stream().filter(job -> job.getId().equals(1L)).findFirst().orElseThrow());
+        execute("update t_res_base set rbs_target_city='' where rbs_id=11");
+        assertScore("85", mapper.selectJobList(query, 100L).get(0));
+    }
+
+    private void enableResumePreferenceColumns() throws Exception
+    {
+        execute("alter table t_res_base add column rbs_target_role varchar(100)");
+        execute("alter table t_res_base add column rbs_target_city varchar(100)");
+        execute("alter table t_res_base add column rbs_current_city varchar(100)");
+    }
+
     private void assertScore(String expected, AgentJob job)
     {
         assertNotNull(job.getMatchScore());

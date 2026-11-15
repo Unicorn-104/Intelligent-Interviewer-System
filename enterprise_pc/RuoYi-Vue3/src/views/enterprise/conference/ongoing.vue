@@ -11,6 +11,7 @@ import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import { getCurrentSession, getSessionContext, getProgress, listCaptions, getQuestionHints, feedbackQuestionHint, heartbeat, finishSession, joinInterviewer, transferPrimary, getLiveKitToken, startRecording, stopRecording, takeover } from '@/api/system/conference'
 import { getTalentResume } from '@/api/talent'
+import { talStatusInfo } from '@/views/enterprise/components/talStatus'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, savePreferredDevice } from '@/utils/media'
 import { useRealtimeAsr } from './useRealtimeAsr'
 import { Room, RoomEvent, Track } from 'livekit-client'
@@ -157,15 +158,10 @@ const resumeLoading = ref(false)
 const resumeError = ref('')
 const resume = ref(null)
 
-// 候选人流程状态文案（与 t_tal.tal_status 取值一致）
-const CANDIDATE_STATUS_LABEL = {
-  0: '新入库', 1: '初筛通过', 2: '面试中', 3: '已淘汰', 4: '已录用',
-  5: '待笔试', 6: '笔试中', 7: '笔试通过', 8: '笔试未通过', 9: '笔试缺考', 10: '待发Offer'
-}
 // 当前阶段：候选人的真实流程状态，未取到时展示占位
 const stageLabel = computed(() => {
   const v = candidateStatus.value
-  return v == null ? '—' : (CANDIDATE_STATUS_LABEL[v] || '—')
+  return v == null ? '—' : talStatusInfo(v)[0]
 })
 // 岗位摘要：取 JD 画像中的岗位职责，无数据时为空（前端展示空态）
 const positionSummary = computed(() => {

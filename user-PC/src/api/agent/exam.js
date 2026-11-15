@@ -36,8 +36,9 @@ export function getExamMonitor(recordId) {
 }
 
 // 副机位H5（匿名）：凭接入码换取入会令牌
+// 换令牌是幂等操作，允许重试，跳过前端 1s 防重复提交拦截
 export function subJoin(data) {
-  return request({ url: '/candidate/exam/sub/join', method: 'post', data })
+  return request({ url: '/candidate/exam/sub/join', method: 'post', data, headers: { repeatSubmit: false } })
 }
 
 // 副机位H5（匿名）：心跳保活

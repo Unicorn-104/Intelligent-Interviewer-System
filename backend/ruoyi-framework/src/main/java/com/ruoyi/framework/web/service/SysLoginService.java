@@ -1,5 +1,6 @@
 package com.ruoyi.framework.web.service;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -23,6 +24,7 @@ import com.ruoyi.common.enums.UserStatus;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.MessageUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.common.utils.http.UserAgentUtils;
 import com.ruoyi.common.utils.ip.IpUtils;
 import com.ruoyi.framework.manager.AsyncManager;
 import com.ruoyi.framework.manager.factory.AsyncFactory;
@@ -58,6 +60,15 @@ public class SysLoginService
 
     @Autowired
     private com.ruoyi.framework.web.service.SysPermissionService permissionService;
+
+    @PostConstruct
+    public void initializeClientInfo()
+    {
+        String startupAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+        UserAgentUtils.getBrowser(startupAgent);
+        UserAgentUtils.getOperatingSystem(startupAgent);
+    }
 
     /**
      * 登录验证

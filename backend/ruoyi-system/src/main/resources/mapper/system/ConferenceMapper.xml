@@ -745,6 +745,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <select id="selectSessionInterviewers" parameterType="Long" resultType="java.util.LinkedHashMap">
         select si.isi_user_id     as userId,
                si.isi_is_primary  as isPrimary,
+               si.isi_accept_status as acceptStatus,
                si.isi_join_status as joinStatus,
                si.isi_muted_av    as mutedAv,
                date_format(si.isi_joined_at, '%H:%i:%s') as joinedAt,
@@ -783,6 +784,59 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where isi_session_id = #{sessionId} and isi_user_id = #{userId}
     </update>
 
+    <update id="resetInterviewerAcceptStatus">
+        update t_int_session_interviewer
+        set isi_accept_status = 0, isi_updated_at = sysdate()
+        where isi_session_id = #{sessionId} and isi_user_id != #{operatorId}
+    </update>
+
+    <delete id="deleteSessionInterviewer">
+        delete from t_int_session_interviewer
+        where isi_session_id = #{sessionId} and isi_user_id = #{userId}
+    </delete>
+
+    <!-- 同一候选人同岗位未开始的面试安排：重复发起时拦截，避免把旧安排静默顶掉 -->
+    <select id="selectActiveAppointment" resultType="java.util.LinkedHashMap">
+        select a.apt_id as appointmentId,
+               p.pos_title as positionTitle,
+               date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as startTime
+        from t_sch_appointment a
+        join t_pos p on p.pos_id = a.apt_position_id
+        where a.apt_candidate_id = #{candidateId}
+          and a.apt_position_id = #{positionId}
+          and p.pos_company_id = #{companyId}
+          and a.apt_status in (0, 1)
+          and a.apt_end_time &gt; sysdate()
+        order by a.apt_start_time
+        limit 1
+    </select>
+
+    <!-- 面试官本人已接受的、与本场次时间重叠的其他面试（确认邀约时的时间冲突检测） -->
+    <select id="selectInterviewerConflicts" resultType="java.util.LinkedHashMap">
+        select s2.ses_id as sessionId,
+               p2.pos_title as positionTitle,
+               ifnull(u2.nick_name, u2.user_name) as candidateName,
+               date_format(a2.apt_start_time, '%Y-%m-%d %H:%i') as startTime,
+               date_format(a2.apt_end_time, '%Y-%m-%d %H:%i') as endTime
+        from t_int_session_interviewer si2
+        join t_int_session s2 on s2.ses_id = si2.isi_session_id
+        join t_sch_appointment a2 on a2.apt_id = s2.ses_appointment_id
+        left join t_pos p2 on p2.pos_id = s2.ses_position_id
+        left join t_tal t2 on t2.tal_id = s2.ses_candidate_id
+        left join sys_user u2 on u2.user_id = t2.tal_user_id
+        join (select a.apt_start_time as cur_start, a.apt_end_time as cur_end
+                from t_int_session s
+                join t_sch_appointment a on a.apt_id = s.ses_appointment_id
+               where s.ses_id = #{sessionId}) cur
+          on a2.apt_start_time &lt; cur.cur_end and cur.cur_start &lt; a2.apt_end_time
+        where si2.isi_user_id = #{userId}
+          and si2.isi_session_id != #{sessionId}
+          and si2.isi_accept_status = 1
+          and a2.apt_status in (0, 1)
+          and s2.ses_status &lt;= 1
+        order by a2.apt_start_time
+    </select>
+
     <select id="selectPrimaryInterviewerId" parameterType="Long" resultType="java.lang.Long">
         select isi_user_id
         from t_int_session_interviewer
@@ -810,6 +864,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_int_session
         set ses_interviewer_id = #{userId}, ses_updated_at = sysdate()
         where ses_id = #{sessionId}
+    </update>
+
+    <update id="updateAppointmentInterviewer">
+        update t_sch_appointment
+        set apt_interviewer_id = #{userId}, apt_updated_at = sysdate()
+        where apt_id = #{appointmentId}
     </update>
 
     <select id="selectCompanyEmployees" resultType="java.util.LinkedHashMap">

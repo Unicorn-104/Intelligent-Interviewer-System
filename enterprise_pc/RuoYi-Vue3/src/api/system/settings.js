@@ -54,6 +54,16 @@ export function inviteMember(data) {
   return request({ url: '/system/enterprise/settings/members/invite', method: 'post', data })
 }
 
+// ==================== 企业信息 ====================
+
+export function getCompanyInfo() {
+  return request({ url: '/system/enterprise/settings/company', method: 'get' })
+}
+
+export function updateCompanyInfo(data) {
+  return request({ url: '/system/enterprise/settings/company', method: 'put', data })
+}
+
 // ==================== 数据管理 ====================
 
 export function dataOverview() {

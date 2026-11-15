@@ -25,6 +25,24 @@ class AgentJobQueryTest
     }
 
     @Test
+    void bindsAndValidatesOptionalRecommendationResume()
+    {
+        AgentJobQuery query = new AgentJobQuery();
+        DataBinder binder = new DataBinder(query);
+        binder.setConversionService(new DefaultFormattingConversionService());
+        binder.bind(new MutablePropertyValues(Map.of("resumeId", "12")));
+        assertEquals(12L, query.getResumeId());
+        try (var factory = Validation.buildDefaultValidatorFactory())
+        {
+            assertTrue(factory.getValidator().validate(query).isEmpty());
+            query.setResumeId(0L);
+            assertFalse(factory.getValidator().validate(query).isEmpty());
+            query.setResumeId(null);
+            assertTrue(factory.getValidator().validate(query).isEmpty());
+        }
+    }
+
+    @Test
     void rejectsInvalidIdsAndUnboundedBatches()
     {
         try (var factory = Validation.buildDefaultValidatorFactory())

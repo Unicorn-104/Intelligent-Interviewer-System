@@ -81,7 +81,10 @@
             <div class="mon-row">
               <span class="mon-label"><i class="dot-state" :class="mainStateClass"></i>主机位（电脑摄像头）</span>
             </div>
-            <video v-show="mainStatus === 'live'" ref="mainVideo" class="mon-video" autoplay muted playsinline></video>
+            <div v-show="mainStatus === 'live'" class="mon-video-wrap">
+              <video ref="mainVideo" class="mon-video" autoplay muted playsinline></video>
+              <FaceGuideOverlay :video-el="mainVideo" :active="mainStatus === 'live'" />
+            </div>
             <div v-if="mainStatus === 'connecting'" class="mon-note">主机位连接中...</div>
             <div v-else-if="mainStatus === 'error'" class="mon-note err">{{ mainError || '主机位连接失败，不影响作答' }}</div>
             <div v-else-if="mainStatus === 'idle'" class="mon-note">主机位未开启</div>
@@ -136,7 +139,9 @@ import { Room, Track } from 'livekit-client'
 import QRCode from 'qrcode'
 import { getExamEntry, getExamMonitor, saveExamAnswers, startExam, submitExam } from '@/api/agent/exam'
 import { appHref } from '@/utils/agentNavigation'
+import FaceGuideOverlay from '@/views/agent/components/FaceGuideOverlay.vue'
 import { userAppUrl } from '@/utils/appLink'
+import { resolveLivekitUrl } from '@/utils/livekitUrl'
 
 const route = useRoute()
 const router = useRouter()
@@ -346,7 +351,7 @@ async function startMainCamera() {
   mainError.value = ''
   try {
     if (!lkRoom) lkRoom = new Room()
-    await lkRoom.connect(monitorInfo.url, monitorInfo.token)
+    await lkRoom.connect(resolveLivekitUrl(monitorInfo.url), monitorInfo.token)
     await lkRoom.localParticipant.setCameraEnabled(true)
     const track = lkRoom.localParticipant.getTrackPublication(Track.Source.Camera)?.track
     if (track && mainVideo.value) track.attach(mainVideo.value)
@@ -500,7 +505,8 @@ onBeforeUnmount(() => {
 .dot-state.red{background:#D94B55}
 .dot-state.gray{background:#C3CEDD}
 .mon-sub-state{color:#96A3B5;font-size:10px}
-.mon-video{width:100%;margin-top:8px;border-radius:8px;background:#0F1722;aspect-ratio:16/9;object-fit:cover}
+.mon-video-wrap{position:relative;margin-top:8px}
+.mon-video{width:100%;border-radius:8px;background:#0F1722;aspect-ratio:16/9;object-fit:cover}
 .mon-note{margin-top:8px;color:#96A3B5;font-size:10px}
 .mon-note.err{color:#D94B55}
 .mon-qr{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:10px;padding:10px;border:1px solid #E6EBF2;border-radius:10px;background:#FBFCFE}

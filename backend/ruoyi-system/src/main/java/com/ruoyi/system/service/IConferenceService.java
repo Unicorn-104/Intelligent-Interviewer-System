@@ -73,6 +73,21 @@ public interface IConferenceService
     public Map<String, Object> respondInterviewNotice(Long userId, Long sessionId, boolean accept);
 
     /**
+     * 面试官把时间冲突反馈给主面试官
+     */
+    public Map<String, Object> notifyPrimaryConflict(Long userId, Long sessionId, String remark);
+
+    /**
+     * 主面试官更换本场面试官（新加入的面试官重新收到确认邀约）
+     */
+    public Map<String, Object> replaceSessionInterviewers(Long userId, Long sessionId, List<Long> interviewerIds);
+
+    /**
+     * 主面试官改期后重新通知面试官确认新时间
+     */
+    public Map<String, Object> remindSessionInterviewers(Long userId, Long sessionId);
+
+    /**
      * 候选人在本企业投递过的岗位（HR 发起面试时选择岗位）
      */
     public List<Map<String, Object>> listCandidatePositions(Long userId, Long peerUserId);

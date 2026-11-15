@@ -26,12 +26,14 @@ class AiMessage {
     this.runId,
     this.runStatus,
     this.cards = const [],
+    this.sources = const [],
   });
   final String role;
   final String content;
   final String? runId;
   final String? runStatus;
   final List<Job> cards;
+  final List<Map<String, dynamic>> sources;
 
   factory AiMessage.fromJson(Map<String, dynamic> json) {
     final raw = json['cardsJson'];
@@ -41,6 +43,10 @@ class AiMessage {
       runId: json['runId'] as String?,
       runStatus: json['runStatus'] as String?,
       cards: readJobCards(raw is String ? jsonDecode(raw) : raw),
+      sources: (json['sources'] as List? ?? const [])
+          .whereType<Map>()
+          .map((s) => Map<String, dynamic>.from(s))
+          .toList(),
     );
   }
 }
@@ -99,6 +105,7 @@ Stream<AiEvent> decodeAiEvents(Stream<String> lines) async* {
 }
 
 String aiRunError(String? code) => switch (code) {
+  'KNOWLEDGE_UNAVAILABLE' => '资料检索暂不可用，请稍后重试，或取消选择知识库后自由聊天',
   'OUTPUT_LIMIT' => '回答已达到长度上限，请将问题拆分后重试',
   'CONNECTION_FAILED' => 'AI 服务连接失败，请检查网络后重新生成',
   'TIMEOUT' => '本次处理超时，请缩小问题范围后重试',

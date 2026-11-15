@@ -106,7 +106,7 @@ test('实际导航读取 IM 的顶层 count，定时刷新、恢复可见及卸�
   window.clearInterval = timer => { cleared = timer === 11 }
   const topbar = componentScript('../src/components/agent/AgentTopbar.vue', {
     ref, computed, createUnreadCounter, unreadBadge, window, document,
-    defineProps() {}, useRouter: () => ({}), useUserStore: () => ({}),
+    defineProps() {}, useRouter: () => ({}), useRoute: () => ({ fullPath: '/index' }), hasCandidateAccessToken: () => true, useUserStore: () => ({}),
     onMounted: callback => mounted.push(callback),
     onBeforeUnmount: callback => unmounted.push(callback),
     getNoticeUnreadCount: async () => ({ code: 200, data: 0 }),
@@ -140,6 +140,25 @@ test('实际导航读取 IM 的顶层 count，定时刷新、恢复可见及卸�
   tick()
   window.dispatchEvent(new Event('agent-notifications-updated'))
   await flush()
+  assert.equal(topbar.unreadCount.value, 0)
+})
+
+test('游客导航不查询未读数也不启动定时轮询', () => {
+  const mounted = []
+  let privateRequests = 0
+  let timers = 0
+  const topbar = componentScript('../src/components/agent/AgentTopbar.vue', {
+    ref, computed, createUnreadCounter, unreadBadge,
+    window: { setInterval: () => { timers++ } }, document: { visibilityState: 'visible' },
+    defineProps() {}, useRouter: () => ({}), useRoute: () => ({ fullPath: '/index' }),
+    hasCandidateAccessToken: () => false, useUserStore: () => ({}),
+    onMounted: callback => mounted.push(callback), onBeforeUnmount() {},
+    getNoticeUnreadCount: async () => { privateRequests++ },
+    getImUnreadCount: async () => { privateRequests++ }
+  }, ['unreadCount', 'navItems'])
+  mounted.forEach(callback => callback())
+  assert.equal(privateRequests, 0)
+  assert.equal(timers, 0)
   assert.equal(topbar.unreadCount.value, 0)
 })
 

@@ -13,7 +13,11 @@
         </a>
       </nav>
 
-      <div class="agent-profile-menu">
+      <div v-if="!isLoggedIn" class="agent-auth-actions">
+        <a :href="appHref(`/login?redirect=${encodeURIComponent(route.fullPath)}`)">登录</a>
+        <a class="agent-register-link" :href="appHref(`/register?redirect=${encodeURIComponent(route.fullPath)}`)">注册</a>
+      </div>
+      <div v-else class="agent-profile-menu">
         <button class="agent-profile-button" type="button" aria-haspopup="true">
           <span class="agent-avatar">{{ avatarText }}</span>
           <span class="agent-profile-meta"><span class="agent-profile-name">{{ displayName }}</span><span class="agent-profile-role">候选人</span></span>
@@ -35,7 +39,7 @@
 import { appHref } from '@/utils/agentNavigation'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { clearCandidateSession } from '@/utils/agentSession'
+import { clearCandidateSession, hasCandidateAccessToken } from '@/utils/agentSession'
 import { removeToken } from '@/utils/auth'
 import useUserStore from '@/store/modules/user'
 import { getNoticeUnreadCount } from '@/api/system/notice'
@@ -50,6 +54,8 @@ defineProps({
 })
 
 const router = useRouter()
+const route = useRoute()
+const isLoggedIn = hasCandidateAccessToken()
 const userStore = useUserStore()
 const unreadCount = ref(0)
 let unreadTimer
@@ -72,6 +78,7 @@ const navItems = computed(() => baseNavItems.map(item => ({
 })))
 
 function handleNotificationUpdate() {
+  if (!isLoggedIn) return
   if (document.visibilityState !== 'hidden') unreadCounter.refresh()
 }
 
@@ -105,6 +112,7 @@ async function handleLogout() {
 }
 
 onMounted(() => {
+  if (!isLoggedIn) return
   handleNotificationUpdate()
   unreadTimer = window.setInterval(handleNotificationUpdate, 5000)
   window.addEventListener('agent-notifications-updated', handleNotificationUpdate)
@@ -132,6 +140,9 @@ onBeforeUnmount(() => {
 .agent-nav-link.active{font-weight:700}
 .agent-nav-link.active::after{content:"";position:absolute;right:18px;bottom:0;left:18px;height:3px;border-radius:3px 3px 0 0;background:#2B7FFF}
 .agent-nav-badge{min-width:17px;height:17px;margin-left:6px;padding:0 5px;display:inline-grid;place-items:center;border-radius:99px;color:#fff;background:#D94B55;font-size:10px;line-height:1}
+.agent-auth-actions{display:flex;align-items:center;justify-self:end;gap:10px;white-space:nowrap}
+.agent-auth-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 10px;border-radius:6px;color:#2B7FFF;text-decoration:none;font-size:13px;font-weight:700}
+.agent-auth-actions .agent-register-link{background:#2B7FFF;color:#fff}
 .agent-profile-menu{position:relative;justify-self:end;min-width:0}
 .agent-profile-button{height:48px;display:flex;align-items:center;gap:9px;min-width:0;padding:0;border:0;color:#172B4D;background:transparent}
 .agent-avatar{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#7894BE;font-size:13px;font-weight:800}
@@ -148,4 +159,5 @@ onBeforeUnmount(() => {
 .agent-profile-action.danger:hover,.agent-profile-action.danger:focus-visible{color:#C34B55;background:#FFF1F2}
 @media(max-width:900px){.agent-topbar-inner{width:calc(100% - 32px);gap:14px}.agent-brand-tag,.agent-profile-meta{display:none}.agent-nav-link{padding:0 10px}.agent-nav-link.active::after{right:10px;left:10px}}
 @media(max-width:640px){.agent-topbar{height:64px}.agent-topbar-inner{width:calc(100% - 28px);grid-template-columns:auto 1fr auto;gap:8px}.agent-brand-name{font-size:16px}.agent-main-nav{height:64px;gap:0}.agent-nav-link{height:64px;padding:0 5px;font-size:11px}.agent-nav-link.active::after{right:5px;left:5px}.agent-nav-badge{position:absolute;top:14px;right:0}.agent-profile-button{height:44px}.agent-profile-popover{top:44px}}
+@media(max-width:640px){.agent-topbar{height:auto}.agent-topbar-inner{grid-template-columns:1fr auto;row-gap:0}.agent-brand{grid-column:1;grid-row:1;min-height:56px}.agent-auth-actions,.agent-profile-menu{grid-column:2;grid-row:1}.agent-main-nav{grid-column:1 / -1;grid-row:2;justify-content:center;height:44px}.agent-nav-link{height:44px;padding:0 12px}.agent-nav-badge{top:3px}}
 </style>

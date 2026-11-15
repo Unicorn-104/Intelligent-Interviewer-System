@@ -15,6 +15,9 @@ public class AgentJobQuery
 {
     @Min(1)
     private Long companyId;
+
+    @Positive
+    private Long resumeId;
     private String keyword;
     private String category;
     private String city;
@@ -40,6 +43,8 @@ public class AgentJobQuery
 
     public Long getCompanyId() { return companyId; }
     public void setCompanyId(Long companyId) { this.companyId = companyId; }
+    public Long getResumeId() { return resumeId; }
+    public void setResumeId(Long resumeId) { this.resumeId = resumeId; }
     public String getKeyword() { return keyword; }
     public void setKeyword(String keyword) { this.keyword = keyword; }
     public String getCategory() { return category; }

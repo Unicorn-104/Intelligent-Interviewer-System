@@ -5,6 +5,8 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.system.service.IModelProviderService;
 import org.junit.jupiter.api.Test;
@@ -28,9 +30,7 @@ class AgentModelStreamTest
         var reply = parse("""
                 data: {"choices":[{"delta":{"reasoning_content":"private reasoning","content":"你好"}}]}
 
-                data: {"choices":[{"delta":{"content":"世界"},"finish_reason":"stop"}]}
-
-                data: {"choices":[],"usage":{"total_tokens":42}}
+                data: {"choices":[{"delta":{"content":"世界"},"finish_reason":"stop"}],"usage":{"total_tokens":42}}
 
                 data: [DONE]
 
@@ -54,6 +54,21 @@ class AgentModelStreamTest
                 .putObject("function").put("arguments", "5}");
         var reply = parse("data: " + first + "\n\ndata: " + second + "\n\ndata: [DONE]\n\n", new ArrayList<>());
         assertToolReply(reply);
+    }
+
+    @Test
+    void finishReasonEndsReadWithoutWaitingForDoneOrSocketClose() throws Exception
+    {
+        BufferedReader reader = mock(BufferedReader.class);
+        when(reader.readLine()).thenReturn("data: {\"choices\":[{\"delta\":{\"content\":\"synthetic answer\"},\"finish_reason\":\"stop\"}]}")
+                .thenThrow(new AssertionError("must not wait for another network read"));
+        List<String> output = new ArrayList<>();
+        var reply = model.readStream(reader, json.createArrayNode(), json.createArrayNode(), output::add,
+                System.nanoTime() + TimeUnit.SECONDS.toNanos(5));
+        assertEquals("synthetic answer", reply.message().path("content").asText());
+        assertEquals(List.of("synthetic answer"), output);
+        verify(reader, times(1)).readLine();
+        assertTrue(reply.tokens() > 0);
     }
 
     private void assertToolReply(AgentModelClient.Reply reply)
@@ -108,5 +123,60 @@ class AgentModelStreamTest
         assertThrows(java.util.concurrent.TimeoutException.class, () -> model.readStream(
                 new BufferedReader(new StringReader("data: [DONE]\n\n")), json.createArrayNode(),
                 json.createArrayNode(), ignored -> { }, System.nanoTime() - 1));
+    }
+
+    @Test
+    void continuousProgressSurvivesOldNinetySecondLimitButNotAbsoluteDeadline()
+    {
+        AtomicLong clock = new AtomicLong();
+        var budget = new AgentModelClient.StreamBudget(TimeUnit.SECONDS.toNanos(180), clock::get);
+        for (long seconds : List.of(40L, 80L, 120L, 160L))
+        {
+            clock.set(TimeUnit.SECONDS.toNanos(seconds));
+            assertFalse(budget.expired());
+            budget.progress();
+        }
+        clock.set(TimeUnit.SECONDS.toNanos(180));
+        budget.progress();
+        assertTrue(budget.expired());
+    }
+
+    @Test
+    void stalledStreamExpiresAfterIdleBudgetAndProgressResetsIdleClock()
+    {
+        AtomicLong clock = new AtomicLong();
+        var budget = new AgentModelClient.StreamBudget(TimeUnit.SECONDS.toNanos(180), clock::get);
+        clock.set(TimeUnit.SECONDS.toNanos(44));
+        assertFalse(budget.expired());
+        budget.progress();
+        clock.set(TimeUnit.SECONDS.toNanos(88));
+        assertFalse(budget.expired());
+        clock.set(TimeUnit.SECONDS.toNanos(89));
+        assertTrue(budget.expired());
+        budget.progress();
+        assertTrue(budget.expired());
+    }
+
+    @Test
+    void onlyContentReasoningAndToolsRefreshProgressNotKeepAlive() throws Exception
+    {
+        AtomicInteger progress = new AtomicInteger();
+        List<String> output = new ArrayList<>();
+        var reply = model.readStream(new BufferedReader(new StringReader("""
+                : keepalive
+
+                data: {"choices":[{"delta":{}}]}
+
+                data: {"choices":[{"delta":{"reasoning_content":"private reasoning"}}]}
+
+                data: {"choices":[{"delta":{"content":"synthetic answer"},"finish_reason":"stop"}]}
+
+                data: [DONE]
+
+                """)), json.createArrayNode(), json.createArrayNode(), output::add,
+                System.nanoTime() + TimeUnit.SECONDS.toNanos(5), progress::incrementAndGet);
+        assertEquals(2, progress.get());
+        assertEquals(List.of("synthetic answer"), output);
+        assertFalse(reply.message().toString().contains("private reasoning"));
     }
 }

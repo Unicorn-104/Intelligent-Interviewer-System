@@ -41,6 +41,7 @@
     <select id="selectGradingAnswers" resultType="java.util.LinkedHashMap">
         select a.ean_id as eanId, a.ean_question_id as questionId, q.eqs_type as type,
                a.ean_content as content, q.eqs_answer as stdAnswer,
+               q.eqs_options_json as optionsJson,
                a.ean_max_score as maxScore, a.ean_score as score
         from t_exam_answer a
         join t_exam_question q on q.eqs_id = a.ean_question_id

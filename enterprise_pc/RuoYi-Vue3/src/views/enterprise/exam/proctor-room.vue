@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Camera, Video, ShieldCheck, RotateCw } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
+import FaceGuideOverlay from '@/views/enterprise/components/FaceGuideOverlay.vue'
 import { listOngoingExams, getExamProctorToken } from '@/api/exam'
 import { Room, RoomEvent, Track } from 'livekit-client'
 
@@ -157,7 +158,10 @@ onBeforeUnmount(() => {
       </div>
       <div class="tiles">
         <figure class="tile">
-          <video ref="mainVideo" class="tile-video" autoplay muted playsinline></video>
+          <div class="tile-frame">
+            <video ref="mainVideo" class="tile-video" autoplay muted playsinline></video>
+            <FaceGuideOverlay :video-el="mainVideo" :active="mainOnline" />
+          </div>
           <div v-if="!mainOnline" class="tile-mask">
             <Camera :size="22" />
             <span>{{ connecting ? '连接中...' : '主机位未接入' }}</span>
@@ -165,10 +169,9 @@ onBeforeUnmount(() => {
           <figcaption><i :class="['dot', mainOnline ? 'on' : '']"></i>主机位 · 电脑摄像头</figcaption>
         </figure>
         <figure class="tile">
-          <video ref="subVideo" class="tile-video" autoplay muted playsinline></video>
-          <div v-if="!subOnline" class="tile-mask">
-            <Video :size="22" />
-            <span>{{ connecting ? '连接中...' : '副机位未接入' }}</span>
+          <div class="tile-frame">
+            <video ref="subVideo" class="tile-video" autoplay muted playsinline></video>
+            <FaceGuideOverlay :video-el="subVideo" :active="subOnline" model="blaze_face_full_range" :min-ratio="0.1" :max-ratio="0.45" />
           </div>
           <figcaption><i :class="['dot', subOnline ? 'on' : '']"></i>副机位 · 手机扫码</figcaption>
         </figure>
@@ -196,6 +199,7 @@ onBeforeUnmount(() => {
 .detail-grid b.danger{color:var(--red)}
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .tile{margin:0;position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#0f1722}
+.tile-frame{position:relative}
 .tile-video{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#0f1722}
 .tile-mask{position:absolute;inset:0 0 38px 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#8fa1b8;background:#0f1722;font-size:12px}
 .tile figcaption{height:38px;display:flex;align-items:center;gap:7px;padding:0 13px;color:#c7d3e3;background:#16202e;font-size:12px}

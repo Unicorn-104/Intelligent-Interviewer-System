@@ -37,7 +37,6 @@ public class AgentTools
     {
         if (userId == null || userId <= 0) throw new ServiceException("请先登录", 401);
         var data = fields("action", action, "resumeId", resumeId);
-        if (applicationId == null && ("chat".equals(action) || "writing_polish".equals(action))) return data;
         if (applicationId != null)
         {
             var application = applications.selectApplication(userId, applicationId);
@@ -45,7 +44,7 @@ public class AgentTools
             if (appliedResume == null || appliedResume <= 0)
                 throw new ServiceException("该投递缺少关联简历，请选择其他岗位", 400);
             if (resumeId != null && !resumeId.equals(appliedResume))
-                throw new ServiceException("面试准备须使用该岗位投递时的简历，请重新选择岗位", 400);
+                throw new ServiceException("所选岗位须使用该次投递的简历，请重新选择岗位", 400);
             resumeId = appliedResume;
             data.put("resumeId", resumeId);
             data.put("applicationId", applicationId);
@@ -53,10 +52,22 @@ public class AgentTools
         }
         if ("interview_preparation".equals(action) && applicationId == null)
             throw new ServiceException("请先选择已投递的岗位", 400);
-        if (Set.of("job_recommendation", "resume_analysis", "interview_preparation").contains(action))
+        if (resumeId == null && Set.of("job_recommendation", "resume_analysis", "interview_preparation").contains(action))
+            throw new ServiceException("请先选择简历", 400);
+        if (resumeId != null)
         {
-            if (resumeId == null) throw new ServiceException("请先选择简历", 400);
-            data.put("resume", resume(resumes.selectResume(userId, resumeId)));
+            AppResume selected;
+            try
+            {
+                selected = resumes.selectResume(userId, resumeId);
+            }
+            catch (ServiceException unavailable)
+            {
+                throw new ServiceException(applicationId == null
+                        ? "所选简历已删除、停用或无法访问，请重新选择有效简历"
+                        : "该次投递关联的简历已删除、停用或无法访问，请清除岗位后选择有效简历，或选择其他投递记录", 400);
+            }
+            data.put("resume", resume(selected));
         }
         return data;
     }

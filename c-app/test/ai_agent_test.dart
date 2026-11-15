@@ -82,6 +82,7 @@ class FakeAiApi extends AiApi {
     int? resumeId,
     int? applicationId,
     String action = 'chat',
+    List<String> knowledgeBaseIds = const [],
   }) async {
     requests.add(requestId);
     contents.add(content);

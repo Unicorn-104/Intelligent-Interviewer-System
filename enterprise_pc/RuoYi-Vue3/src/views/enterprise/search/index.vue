@@ -7,6 +7,7 @@ import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import { listTalents } from '@/api/talent'
 import { listJobs } from '@/api/system/job'
 import { listSessions } from '@/api/system/im'
+import { talStatusInfo } from '@/views/enterprise/components/talStatus'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,12 +21,7 @@ const sessions = ref([])
 const totalCount = computed(() => candidates.value.length + jobs.value.length + sessions.value.length)
 const isEmptyKeyword = computed(() => !keyword.value)
 
-// 人才状态（t_tal.tal_status）
-const TALENT_STATUS = {
-  0: ['新入库', 'gray'], 1: ['初筛通过', 'green'], 2: ['面试中', 'purple'], 3: ['已淘汰', 'red'],
-  4: ['已录用', 'green'], 5: ['待笔试', 'orange'], 6: ['笔试中', 'orange'], 7: ['笔试通过', 'green'],
-  8: ['笔试未通过', 'red'], 9: ['笔试缺考', 'gray'], 10: ['待发Offer', 'orange']
-}
+// 岗位状态
 const JOB_STATUS = { 1: ['招聘中', 'green'], 2: ['已暂停', 'gray'], 0: ['已下线', 'red'] }
 
 function salaryText(row) {
@@ -69,8 +65,8 @@ async function run(rawKeyword) {
       name: row.name || `候选人${row.talentId}`,
       phone: row.phone,
       jobDirection: row.jobDirection,
-      statusText: (TALENT_STATUS[row.status] || TALENT_STATUS[0])[0],
-      statusTone: (TALENT_STATUS[row.status] || TALENT_STATUS[0])[1]
+      statusText: talStatusInfo(row.status)[0],
+      statusTone: talStatusInfo(row.status)[1]
     }))
     jobs.value = (jobRes.rows || []).map(row => ({
       posId: row.posId,

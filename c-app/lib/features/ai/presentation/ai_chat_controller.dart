@@ -39,6 +39,7 @@ class AiChatController extends ChangeNotifier {
   int? _requestResume;
   int? _requestApplication;
   String _requestAction = 'chat';
+  List<String> _requestKnowledge = [];
   int _cursor = 0;
   bool _disposed = false;
   bool _completing = false;
@@ -46,8 +47,7 @@ class AiChatController extends ChangeNotifier {
   int _epoch = 0;
   int _streamEpoch = 0;
   bool get busy => sending || runId != null || stopping || _completing;
-  bool get awaitingConversation =>
-      restoreLastConversation && sessionId == null;
+  bool get awaitingConversation => restoreLastConversation && sessionId == null;
   bool get canRetry =>
       !busy &&
       !loading &&
@@ -193,6 +193,7 @@ class AiChatController extends ChangeNotifier {
     int? resumeId, {
     int? applicationId,
     String action = 'chat',
+    List<String> knowledgeBaseIds = const [],
   }) async {
     content = content.trim();
     if (busy ||
@@ -212,12 +213,14 @@ class AiChatController extends ChangeNotifier {
         _requestResume != resumeId ||
         _requestApplication != applicationId ||
         _requestAction != action ||
+        !listEquals(_requestKnowledge, knowledgeBaseIds) ||
         _requestId == null) {
       _requestId = _newRequestId();
       _requestContent = content;
       _requestResume = resumeId;
       _requestApplication = applicationId;
       _requestAction = action;
+      _requestKnowledge = List.of(knowledgeBaseIds);
     }
     try {
       if (sessionId == null) {
@@ -233,6 +236,7 @@ class AiChatController extends ChangeNotifier {
         resumeId: resumeId,
         applicationId: applicationId,
         action: action,
+        knowledgeBaseIds: knowledgeBaseIds,
       );
       if (!_valid(epoch)) return false;
       _requestId = null;

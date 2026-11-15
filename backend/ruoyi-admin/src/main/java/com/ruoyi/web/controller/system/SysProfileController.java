@@ -1,6 +1,8 @@
 package com.ruoyi.web.controller.system;
 
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +22,10 @@ import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.framework.web.service.TokenService;
+import com.ruoyi.enterprise.domain.NoticePref;
+import com.ruoyi.enterprise.service.UserNoticePrefService;
+import com.ruoyi.system.domain.SysLogininfor;
+import com.ruoyi.system.service.ISysLogininforService;
 import com.ruoyi.system.service.ISysUserService;
 import com.ruoyi.system.service.storage.AvatarStorage;
 
@@ -40,6 +46,48 @@ public class SysProfileController extends BaseController
 
     @Autowired
     private AvatarStorage avatarStorage;
+
+    @Autowired
+    private ISysLogininforService logininforService;
+
+    @Autowired
+    private UserNoticePrefService noticePrefService;
+
+    /**
+     * 本人通知设置
+     */
+    @GetMapping("/noticePref")
+    public AjaxResult noticePref()
+    {
+        return success(noticePrefService.get(getUserId()));
+    }
+
+    /**
+     * 保存本人通知设置
+     */
+    @Log(title = "通知设置", businessType = BusinessType.UPDATE)
+    @PutMapping("/noticePref")
+    public AjaxResult updateNoticePref(@RequestBody NoticePref pref)
+    {
+        noticePrefService.save(getUserId(), pref);
+        return success();
+    }
+
+    /**
+     * 本人最近登录记录
+     */
+    @GetMapping("/loginRecords")
+    public AjaxResult loginRecords()
+    {
+        String userName = getUsername();
+        SysLogininfor query = new SysLogininfor();
+        query.setUserName(userName);
+        List<SysLogininfor> records = logininforService.selectLogininforList(query).stream()
+                .filter(item -> userName.equals(item.getUserName()))
+                .limit(10)
+                .collect(Collectors.toList());
+        return success(records);
+    }
 
     /**
      * 个人信息

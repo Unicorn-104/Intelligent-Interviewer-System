@@ -1,5 +1,22 @@
 import request from '@/utils/request'
 import { getToken } from '@/utils/auth'
+import { consumeAiEvents } from '@/utils/agentAi'
+
+export function renameAiSession(sessionId, title) {
+  return request({ url: `/app/ai/sessions/${encodeURIComponent(sessionId)}/rename`, method: 'post', data: { title }, headers: { repeatSubmit: false } })
+}
+
+export function pinAiSession(sessionId, pinned) {
+  return request({ url: `/app/ai/sessions/${encodeURIComponent(sessionId)}/pin`, method: 'post', data: { pinned }, headers: { repeatSubmit: false } })
+}
+
+export function deleteAiSession(sessionId) {
+  return request({ url: `/app/ai/sessions/${encodeURIComponent(sessionId)}`, method: 'delete' })
+}
+
+export function getAiRun(runId) {
+  return request({ url: `/app/ai/runs/${encodeURIComponent(runId)}`, method: 'get' })
+}
 
 export function listAiSessions(before) {
   return request({
@@ -58,48 +75,9 @@ export async function streamAiRun(runId, after, onEvent, signal) {
   if (!response.body) {
     throw new Error('当前浏览器不支持 AI 实时回答')
   }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder('utf-8')
-  let buffer = ''
-  let eventId = 0
-  let eventType = 'message'
-  let eventData = []
-
-  const emit = () => {
-    if (!eventData.length) return
-    const data = JSON.parse(eventData.join('\n'))
-    onEvent({ id: eventId, type: eventType, data })
-    eventId = 0
-    eventType = 'message'
-    eventData = []
+  if (!response.headers.get('content-type')?.includes('text/event-stream')) {
+    const result = await response.json().catch(() => ({}))
+    throw new Error(result.msg || 'AI 实时连接未返回有效事件流，请重新登录或稍后重试')
   }
-
-  const consume = (line) => {
-    if (line === '') {
-      emit()
-      return
-    }
-    if (line.startsWith(':')) return
-    const separator = line.indexOf(':')
-    const field = separator < 0 ? line : line.slice(0, separator)
-    let value = separator < 0 ? '' : line.slice(separator + 1)
-    if (value.startsWith(' ')) value = value.slice(1)
-    if (field === 'id') eventId = Number.parseInt(value, 10) || 0
-    if (field === 'event') eventType = value
-    if (field === 'data') eventData.push(value)
-  }
-
-  while (true) {
-    const { value, done } = await reader.read()
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
-    const lines = buffer.split(/\r?\n/)
-    buffer = lines.pop() || ''
-    lines.forEach(consume)
-    if (done) {
-      if (buffer) consume(buffer)
-      emit()
-      break
-    }
-  }
+  await consumeAiEvents(response.body, onEvent)
 }

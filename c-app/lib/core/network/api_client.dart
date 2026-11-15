@@ -304,6 +304,10 @@ class ApiClient {
 
   String _contentType(String fileName) {
     final lower = fileName.toLowerCase();
+    if (lower.endsWith('.docx')) {
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    }
+    if (lower.endsWith('.txt') || lower.endsWith('.md')) return 'text/plain';
     if (lower.endsWith('.pdf')) return 'application/pdf';
     if (lower.endsWith('.png')) return 'image/png';
     if (lower.endsWith('.gif')) return 'image/gif';

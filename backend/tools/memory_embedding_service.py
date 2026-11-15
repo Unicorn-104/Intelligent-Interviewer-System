@@ -18,8 +18,12 @@ def get_model():
         with _model_lock:
             if _model is None:
                 from fastembed import TextEmbedding
+                model_path = os.environ.get("MEMORY_EMBEDDING_MODEL_PATH")
+                options = ({"specific_model_path": model_path, "local_files_only": True}
+                           if model_path else {})
                 _model = TextEmbedding(model_name=MODEL_NAME,
-                                       cache_dir=os.environ.get("MEMORY_EMBEDDING_CACHE_DIR") or None)
+                                       cache_dir=os.environ.get("MEMORY_EMBEDDING_CACHE_DIR") or None,
+                                       threads=2, **options)
     return _model
 
 

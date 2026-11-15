@@ -20,7 +20,9 @@ class _MemoryTokenStore implements TokenStore {
 }
 
 void main() {
-  testWidgets('shows the password login experience by default', (tester) async {
+  testWidgets('guest home opens login only for restricted navigation', (
+    tester,
+  ) async {
     final client = ApiClient();
     final controller = AuthController(
       api: AuthApi(client),
@@ -31,6 +33,19 @@ void main() {
     await tester.pumpWidget(
       IntelligentInterviewerApp(authController: controller),
     );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('游客'), findsWidgets);
+    expect(find.text('欢迎回来'), findsNothing);
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    expect(find.text('请先登录'), findsOneWidget);
+    await tester.tap(find.text('不了'));
+    await tester.pumpAndSettle();
+    expect(find.text('请先登录'), findsNothing);
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
     await tester.pumpAndSettle();
 
     expect(find.text('欢迎回来'), findsOneWidget);

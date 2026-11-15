@@ -279,3 +279,20 @@
 .top-right-btn {
 	margin-left: auto;
 }
+
+/* 全站隐藏滚动条（保留滚轮/触控板滚动能力） */
+* {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+	width: 0;
+	height: 0;
+	display: none;
+}
+
+/* Element Plus 模拟滚动条同样隐藏 */
+.el-scrollbar__bar {
+	display: none !important;
+}

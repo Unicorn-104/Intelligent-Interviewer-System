@@ -36,7 +36,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </resultMap>
 
     <sql id="candidateDirection">
-        COALESCE(NULLIF(TRIM(match_resume.rbs_job_direction), ''), NULLIF(TRIM(match_user.target_direction), ''))
+        <choose>
+            <when test="matchResumeId != null">COALESCE(NULLIF(TRIM(match_resume.rbs_job_direction), ''), NULLIF(TRIM(match_resume.rbs_target_role), ''))</when>
+            <otherwise>COALESCE(NULLIF(TRIM(match_resume.rbs_job_direction), ''), NULLIF(TRIM(match_user.target_direction), ''))</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="candidateCity">
+        <choose>
+            <when test="matchResumeId != null">COALESCE(NULLIF(TRIM(match_resume.rbs_target_city), ''), NULLIF(TRIM(match_resume.rbs_current_city), ''))</when>
+            <otherwise>COALESCE(NULLIF(TRIM(match_user.target_city), ''), NULLIF(TRIM(match_user.current_city), ''))</otherwise>
+        </choose>
     </sql>
 
     <sql id="candidateMatchScore">
@@ -68,9 +78,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 LOCATE(LOWER(<include refid="candidateDirection"/>), LOWER(pos.pos_title)) > 0
                 OR LOCATE(LOWER(pos.pos_title), LOWER(<include refid="candidateDirection"/>)) > 0
             ) THEN 25 ELSE 0 END
-            + CASE WHEN NULLIF(TRIM(pos.pos_work_city), '') = COALESCE(
-                NULLIF(TRIM(match_user.target_city), ''), NULLIF(TRIM(match_user.current_city), '')
-            ) THEN 15 ELSE 0 END,
+            + CASE WHEN NULLIF(TRIM(pos.pos_work_city), '') = <include refid="candidateCity"/> THEN 15 ELSE 0 END,
             1
         ) END
     </sql>
@@ -128,6 +136,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             SELECT resume.rbs_id
             FROM t_res_base resume
             WHERE resume.rbs_user_id = #{userId} AND resume.rbs_status = 1
+            <if test="matchResumeId != null">
+                AND resume.rbs_id = #{matchResumeId}
+            </if>
             ORDER BY resume.rbs_is_default DESC, resume.rbs_updated_at DESC, resume.rbs_id DESC
             LIMIT 1
         )
@@ -201,6 +212,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </sql>
 
     <select id="selectJobList" resultMap="AgentJobResult">
+        <bind name="matchResumeId" value="query.resumeId"/>
         <include refid="jobSelect"/>
         <include refid="jobFilters"/>
         <choose>
@@ -293,9 +305,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <select id="selectJobById" resultMap="AgentJobResult">
+        <bind name="matchResumeId" value="null"/>
         <include refid="jobSelect"/>
         WHERE pos.pos_id = #{jobId}
           AND pos.pos_status IN (1, 2)
           AND cmp.cmp_status = 1
+    </select>
+
+    <select id="countAvailableResume" resultType="int">
+        SELECT COUNT(*) FROM t_res_base
+        WHERE rbs_id = #{resumeId} AND rbs_user_id = #{userId} AND rbs_status = 1
     </select>
 </mapper>

@@ -324,6 +324,10 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     if (!mounted || !success) return;
     TextInput.finishAutofillContext();
+    // 游客从首页进入登录页时，登录成功后关闭覆盖层，回到已登录首页。
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   void _showPolicy(String title) {

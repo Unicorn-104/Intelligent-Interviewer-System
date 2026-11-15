@@ -327,12 +327,38 @@ export function listInterviewerNotices() {
   })
 }
 
-// 面试官回应邀约：accept=true 接受，false 拒绝
+// 面试官回应邀约：accept=true 接受，false 拒绝；返回 conflict=true 表示与本人已有安排冲突
 export function respondInterviewNotice(sessionId, accept) {
   return request({
     url: '/system/conference/interviewer/notices/' + sessionId + '/respond',
     method: 'post',
     data: { accept: accept }
+  })
+}
+
+// 面试官把时间冲突反馈给主面试官
+export function notifyPrimaryConflict(sessionId, remark) {
+  return request({
+    url: '/system/conference/interviewer/notices/' + sessionId + '/conflict',
+    method: 'post',
+    data: { remark: remark }
+  })
+}
+
+// 主面试官更换本场面试官（新加入的面试官会重新收到确认邀约）
+export function replaceSessionInterviewers(sessionId, interviewerIds) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/interviewers',
+    method: 'put',
+    data: { interviewerIds: interviewerIds }
+  })
+}
+
+// 主面试官改期后重新通知面试官确认时间
+export function notifySessionInterviewers(sessionId) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/interviewers/notify',
+    method: 'post'
   })
 }
 

@@ -102,25 +102,27 @@ class JobCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.md),
-                  FilledButton(
-                    onPressed: job.applied || applying || onApply == null
-                        ? null
-                        : () => onApply!(job),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(72, 46),
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                  if (session.token.isNotEmpty) ...[
+                    const SizedBox(width: AppSpacing.md),
+                    FilledButton(
+                      onPressed: job.applied || applying || onApply == null
+                          ? null
+                          : () => onApply!(job),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(72, 46),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                      ),
+                      child: applying
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(job.applied ? '已投递' : '投递'),
                     ),
-                    child: applying
-                        ? const SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(job.applied ? '已投递' : '投递'),
-                  ),
+                  ],
                 ],
               ),
             ],

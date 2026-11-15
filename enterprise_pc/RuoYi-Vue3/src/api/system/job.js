@@ -115,3 +115,12 @@ export function saveWorkflow(posId, data) {
     data
   })
 }
+
+// 岗位画像质量评分（AI，评估 JD 撰写质量）
+export function jobQuality(posId) {
+  return request({
+    url: `/enterprise/jd/${posId}/quality`,
+    method: 'post',
+    timeout: 90000
+  })
+}

@@ -1,5 +1,6 @@
 package com.ruoyi.enterprise.service.impl;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -64,7 +65,7 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
-    public Map<String, Object> getMonitorInfo(Long userId, Long recordId)
+    public Map<String, Object> getMonitorInfo(Long userId, Long recordId, String clientHost)
     {
         Map<String, Object> record = requireOwnedActive(userId, recordId);
         examMonitorMapper.insertMonitorIfAbsent(recordId);
@@ -82,7 +83,7 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("recordId", recordId);
         result.put("room", room);
-        result.put("url", livekitUrl);
+        result.put("url", livekitUrlFor(clientHost));
         result.put("token", issueExamToken(room, "exam-main-" + talId, true));
         result.put("identity", "exam-main-" + talId);
         result.put("joinCode", code);
@@ -108,7 +109,7 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
     }
 
     @Override
-    public Map<String, Object> subJoin(Long recordId, String code)
+    public Map<String, Object> subJoin(Long recordId, String code, String clientHost)
     {
         Map<String, Object> record = requireSubCode(recordId, code);
         examMonitorMapper.insertMonitorIfAbsent(recordId);
@@ -116,7 +117,7 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
         String room = roomOf(recordId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("room", room);
-        result.put("url", livekitUrl);
+        result.put("url", livekitUrlFor(clientHost));
         result.put("token", issueExamToken(room, "exam-sub-" + recordId, true));
         result.put("identity", "exam-sub-" + recordId);
         result.put("candidateName", record.get("candidateName"));
@@ -220,6 +221,32 @@ public class ExamMonitorServiceImpl implements IExamMonitorService
             throw new ServiceException("考试未处于进行中，副机位不可加入");
         }
         return record;
+    }
+
+    /**
+     * 副机位/主机位共用一份 LiveKit 地址配置；本机配置多为 localhost，
+     * 手机端无法访问电脑的 localhost，故按请求主机名替换，保持端口与协议不变。
+     */
+    private String livekitUrlFor(String clientHost)
+    {
+        if (StringUtils.isEmpty(clientHost))
+        {
+            return livekitUrl;
+        }
+        try
+        {
+            URI uri = new URI(livekitUrl);
+            String host = uri.getHost();
+            if (host == null || !("localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host)))
+            {
+                return livekitUrl;
+            }
+            return new URI(uri.getScheme(), null, clientHost, uri.getPort(), null, null, null).toString();
+        }
+        catch (Exception e)
+        {
+            return livekitUrl;
+        }
     }
 
     private Map<String, Object> monitorStatus(Long recordId)
