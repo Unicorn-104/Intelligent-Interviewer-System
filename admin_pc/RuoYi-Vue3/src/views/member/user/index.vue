@@ -62,7 +62,7 @@
         <el-table-column label="昵称" align="center" prop="userName" min-width="140" />
         <el-table-column label="账号" align="center" prop="account" min-width="160" />
         <el-table-column label="手机号" align="center" width="130">
-          <template #default="scope">{{ maskPhone(scope.row.phone) }}</template>
+          <template #default="scope">{{ scope.row.phone || '-' }}</template>
         </el-table-column>
         <el-table-column label="身份" align="center" width="100">
           <template #default="scope">

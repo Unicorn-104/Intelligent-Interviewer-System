@@ -17,7 +17,7 @@
       <el-table-column label="接收人" prop="receiver_name" width="120" />
       <el-table-column label="手机号" width="130">
         <template #default="{ row }">
-          {{ row.receiver_phone ? row.receiver_phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : '-' }}
+          {{ row.receiver_phone || '-' }}
         </template>
       </el-table-column>
       <el-table-column label="类型" prop="msg_type" width="90">
