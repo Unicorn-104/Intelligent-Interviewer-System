@@ -194,3 +194,39 @@ aside {
     margin-bottom: 10px;
   }
 }
+
+/* ===== 业务列表页统一优化（Ant Design Pro 风格）===== */
+.app-container {
+  /* 统计卡 */
+  .stat-card {
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: all 0.2s;
+    &:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+    .el-statistic__content { font-size: 28px; font-weight: 600; }
+    .el-statistic__head { font-size: 13px; color: #8c8c8c; margin-top: 4px; }
+  }
+  /* 表格统一 */
+  .el-table {
+    border-radius: 8px;
+    th { background: #fafafa !important; font-weight: 600; color: #262626; }
+    td { padding: 12px 0; }
+    .el-table__row:hover > td { background: #e6f4ff !important; }
+  }
+  /* 卡片 */
+  .el-card {
+    border-radius: 8px;
+    border: 1px solid #e8e8e8;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+}
+/* biz 新页面专用 class */
+.biz-stat-card {
+  background: #fff; border-radius: 8px; padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  display: flex; flex-direction: column; gap: 6px;
+  transition: all 0.2s;
+  &:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); transform: translateY(-2px); }
+  .num { font-size: 28px; font-weight: 600; line-height: 1.2; }
+  .label { font-size: 13px; color: #8c8c8c; }
+}
