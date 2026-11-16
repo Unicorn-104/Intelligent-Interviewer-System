@@ -227,6 +227,12 @@ export const constantRoutes = [
         meta: { title: '面试评估' }
       },
       {
+        path: 'send',
+        component: () => import('@/views/enterprise/send/index.vue'),
+        name: 'EnterpriseSendCenter',
+        meta: { title: '笔试面试安排中心' }
+      },
+      {
         path: 'messages',
         component: () => import('@/views/enterprise/messages/index.vue'),
         name: 'EnterpriseMessages',
