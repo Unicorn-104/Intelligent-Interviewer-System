@@ -214,6 +214,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                p.pos_title   as positionTitle,
                a.app_status  as appStatus,
                t.tal_id      as candidateId,
+               pi.pin_id     as instanceId,
                cur.psg_id    as currentStageId,
                cur.psg_name  as currentStageName,
                cur.psg_type  as currentStageType,

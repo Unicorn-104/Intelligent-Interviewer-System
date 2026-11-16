@@ -2,7 +2,7 @@
 import { markRaw, reactive, ref, watch } from 'vue'
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { LayoutDashboard, BriefcaseBusiness, CalendarDays, MessageCircle, Settings, UsersRound, Video, ChevronDown, FileText } from '@/views/enterprise/components/icons'
+import { LayoutDashboard, BriefcaseBusiness, MessageCircle, Settings, UsersRound, Video, ChevronDown, FileText, MonitorUp, Send } from '@/views/enterprise/components/icons'
 import AppLogo from './AppLogo.vue'
 import HelpGuideDialog from './HelpGuideDialog.vue'
 import { totalUnread, refreshUnread } from '@/views/enterprise/store/unread'
@@ -20,7 +20,7 @@ const menus = reactive([
       { label: '岗位列表', to: '/enterprise/jobs', match: ['EnterpriseJobs', 'EnterpriseJobDetail', 'EnterpriseWorkflowConfig'] },
       { label: '岗位导入与草稿', to: '/enterprise/jobs/import', match: ['EnterpriseJobImport'] }
     ] },
-  { label: '候选人与初筛', to: '/enterprise/candidates', icon: markRaw(UsersRound),
+  { label: '候选人与AI评分', to: '/enterprise/candidates', icon: markRaw(UsersRound),
     match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess', 'EnterpriseResumeScreening', 'EnterpriseResumeScreeningAi', 'EnterpriseTalent'],
     children: [
       { label: '候选人列表', to: '/enterprise/candidates', match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
@@ -28,23 +28,24 @@ const menus = reactive([
       { label: 'AI 评分详情', to: '/enterprise/resume-screening/ai', match: ['EnterpriseResumeScreeningAi'] },
       { label: '人才库', to: '/enterprise/talent', match: ['EnterpriseTalent'] }
     ] },
-  { label: '面试与笔试', to: '/enterprise/interviews', icon: markRaw(CalendarDays),
-    match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation', 'EnterpriseExam', 'EnterpriseExamProctor', 'EnterpriseExamProctorRoom', 'EnterpriseSurvey', 'EnterpriseRescheduleReview'],
+  { label: '视频面试管理', to: '/enterprise/interviews', icon: markRaw(Video),
+    match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation', 'EnterpriseRescheduleReview', 'EnterpriseConferenceActive', 'EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'],
     dot: pendingRescheduleCount,
     children: [
       { label: '面试安排', to: '/enterprise/interviews', match: ['EnterpriseInterviews', 'EnterpriseInterviewEvaluation'] },
       { label: '改期审批', to: '/enterprise/interviews/reschedule-review', match: ['EnterpriseRescheduleReview'], badge: pendingRescheduleCount },
+      { label: '正在进行的面试', to: '/enterprise/conference/active', match: ['EnterpriseConferenceActive'] },
+      { label: '录制回放', to: '/enterprise/conference/records', match: ['EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'] }
+    ] },
+  { label: '在线笔试管理', to: '/enterprise/exam', icon: markRaw(MonitorUp),
+    match: ['EnterpriseExam', 'EnterpriseExamProctor', 'EnterpriseExamProctorRoom', 'EnterpriseSurvey'],
+    children: [
       { label: '笔试管理', to: '/enterprise/exam', match: ['EnterpriseExam'] },
       { label: '监考监控', to: '/enterprise/exam/proctor', match: ['EnterpriseExamProctor', 'EnterpriseExamProctorRoom'] },
       { label: '满意度调研', to: '/enterprise/survey', match: ['EnterpriseSurvey'] }
     ] },
+  { label: '笔试面试安排中心', to: '/enterprise/send', icon: markRaw(Send), match: ['EnterpriseSendCenter'] },
   { label: 'Offer 管理', to: '/enterprise/offer', icon: markRaw(FileText), match: ['EnterpriseOffer'] },
-  { label: '视频会议', to: '/enterprise/conference/active', icon: markRaw(Video),
-    match: ['EnterpriseConferenceActive', 'EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'],
-    children: [
-      { label: '正在进行的面试', to: '/enterprise/conference/active', match: ['EnterpriseConferenceActive'] },
-      { label: '录制回放', to: '/enterprise/conference/records', match: ['EnterpriseConferenceRecords', 'EnterpriseConferencePlayback'] }
-    ] },
   { label: '消息中心', to: '/enterprise/messages', icon: markRaw(MessageCircle), match: ['EnterpriseMessages'], badge: totalUnread },
   { label: '系统设置', to: '/enterprise/settings', icon: markRaw(Settings),
     match: ['EnterpriseSettings', 'EnterpriseProfile'],

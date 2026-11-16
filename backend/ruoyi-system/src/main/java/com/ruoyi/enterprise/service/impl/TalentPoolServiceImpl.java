@@ -143,6 +143,7 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     }
 
     @Override
+    @Transactional
     public Map<String, Object> updateStatus(Long userId, List<Long> talIds, Integer status)
     {
         Long companyId = resolveCompanyId(userId);
@@ -154,11 +155,33 @@ public class TalentPoolServiceImpl implements ITalentPoolService
         {
             throw new ServiceException("状态值不合法，仅支持已投递/待面试/已淘汰/已录用");
         }
-        int updated = talentPoolMapper.updateTalentStatus(companyId, talIds, status);
+        // 手动改状态统一走状态机，写入业务原因与操作人日志；已淘汰/已录用为终态，不可改写
+        int updated = 0;
+        int skipped = 0;
+        for (Long talId : talIds)
+        {
+            // 企业隔离：候选人必须归属当前企业
+            if (talentPoolMapper.selectTalentById(companyId, talId) == null)
+            {
+                skipped++;
+                continue;
+            }
+            if (talStatusService.change(talId, status, MANUAL_ALLOWED_FROM, null, null, "手动调整", userId))
+            {
+                updated++;
+            }
+            else
+            {
+                skipped++;
+            }
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("updated", updated);
+        result.put("skipped", skipped);
         result.put("status", status);
-        result.put("message", "已更新 " + updated + " 位候选人的状态");
+        result.put("message", skipped == 0
+                ? "已更新 " + updated + " 位候选人的状态"
+                : "已更新 " + updated + " 位候选人，" + skipped + " 位因终态或状态不允许被跳过");
         return result;
     }
 
@@ -571,4 +594,10 @@ public class TalentPoolServiceImpl implements ITalentPoolService
     {
         return status >= 0 && status <= 5;
     }
+
+    /** 手动改状态允许的起始状态：已淘汰(3)/已录用(4)为终态，不可改写 */
+    private static final List<Integer> MANUAL_ALLOWED_FROM = List.of(
+            TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
+            TalStatusService.TAL_PENDING_EXAM, TalStatusService.TAL_EXAM_TAKING, TalStatusService.TAL_EXAM_PASSED,
+            TalStatusService.TAL_EXAM_FAILED, TalStatusService.TAL_EXAM_ABSENT, TalStatusService.TAL_PENDING_OFFER);
 }
