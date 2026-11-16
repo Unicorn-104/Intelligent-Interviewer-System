@@ -19,8 +19,13 @@
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover">
-          <div style="font-size:13px;color:#999;margin-bottom:6px">近7天分布</div>
-          <div v-for="d in overview.byDay || []" :key="d.d" class="type-row">{{ fmtDay(d.d) }}: {{ d.c }}</div>
+          <div style="font-size:13px;color:#999;margin-bottom:10px">近7天分布</div>
+          <div style="display:flex;align-items:flex-end;gap:6px;height:120px">
+            <div v-for="d in overview.byDay || []" :key="d.d" style="flex:1;display:flex;flex-direction:column;align-items:center">
+              <div :style="{height: Math.max(4, (d.c / maxDayCount) * 100) + 'px', width:'100%', background:'#409EFF', borderRadius:'3px 3px 0 0'}"></div>
+              <div style="font-size:10px;color:#999;margin-top:4px">{{ fmtDay(d.d).slice(5) }}</div>
+            </div>
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -73,6 +78,7 @@
 import request from '@/utils/request'
 const overview = ref({})
 const list = ref([])
+const maxDayCount = computed(() => Math.max(1, ...(overview.value.byDay || []).map(d => d.c)))
 const total = ref(0)
 const loading = ref(false)
 const query = ref({ eventType: '', keyword: '', pageNum: 1, pageSize: 20 })

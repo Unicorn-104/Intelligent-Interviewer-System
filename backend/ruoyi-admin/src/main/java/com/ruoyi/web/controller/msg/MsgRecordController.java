@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.*;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
+import com.ruoyi.common.annotation.Log;
+import com.ruoyi.common.enums.BusinessType;
 import com.ruoyi.system.service.EmailService;
 
 import java.util.ArrayList;
@@ -113,6 +115,7 @@ public class MsgRecordController extends BaseController {
      * - sms/system 无真实通道，仅清空失败原因并标记待重试，不伪造投递结果。
      */
     @PreAuthorize("@ss.hasPermi('msg:record:edit')")
+    @Log(title = "消息重发", businessType = BusinessType.UPDATE)
     @PostMapping("/resend")
     public AjaxResult resend(@RequestBody Map<String, Object> body) {
         Object recordId = body.get("recordId");

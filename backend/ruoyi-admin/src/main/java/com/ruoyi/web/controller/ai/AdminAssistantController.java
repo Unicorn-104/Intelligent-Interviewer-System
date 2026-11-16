@@ -107,6 +107,9 @@ public class AdminAssistantController extends BaseController {
     @Autowired
     private JdbcTemplate jdbc;
 
+    @Autowired
+    private KbEmbeddingService kbEmbedding;
+
     public AdminAssistantController(IModelProviderService providerService) {
         this.providerService = providerService;
     }
@@ -205,9 +208,14 @@ public class AdminAssistantController extends BaseController {
             if (needTools) {
                 out.write("event: tool\ndata: 正在查询业务数据…\n\n");
                 out.flush();
-                String stats = quickStats();
+                StringBuilder stats = new StringBuilder(quickStats());
+                // 尝试从问题中识别公司名，命中则注入该公司维度详细数据
+                Long cmpId = matchCompany(message);
+                if (cmpId != null) {
+                    stats.append("\n【指定公司详细数据】\n").append(companyDetailStats(cmpId));
+                }
                 messages.addObject().put("role", "system").put("content",
-                        "【实时业务数据】\n" + stats + "\n请基于以上真实数据回答用户问题，不要编造数字。");
+                        "【实时业务数据】\n" + stats + "\n请基于以上真实数据回答用户问题，不要编造数字。如果用户问的是某家公司，就用【指定公司详细数据】里的数字回答。");
             }
             streamGenerate(model, url, apiKey, messages, out);
             out.write("data: [DONE]\n\n");
@@ -216,6 +224,69 @@ public class AdminAssistantController extends BaseController {
             logger.error("assistant stream error", e);
             out.write("data: {\"error\":\"stream failed\"}\n\n");
             out.flush();
+        }
+    }
+
+    /** 从问题中识别公司名：LIKE 模糊匹配 t_cmp.cmp_name，返回最匹配的 cmp_id。 */
+    private Long matchCompany(String q) {
+        try {
+            if (q == null || q.length() < 2) return null;
+            // 去掉常见干扰词
+            String kw = q.replaceAll("(公司|企业|今天|今日|现在|目前|多少|几个|的|了|吗|呢|？|\\?|，|,|。|\\.)", " ").trim();
+            if (kw.length() < 2) return null;
+            // 取最长的一段作为候选
+            String[] parts = kw.split("\\s+");
+            String best = "";
+            for (String p : parts) {
+                if (p.length() >= 2 && p.length() > best.length()) best = p;
+            }
+            if (best.length() < 2) return null;
+            List<Long> ids = jdbc.queryForList(
+                    "SELECT cmp_id FROM t_cmp WHERE cmp_name LIKE ? ORDER BY cmp_id LIMIT 1",
+                    Long.class, "%" + best + "%");
+            return ids.isEmpty() ? null : ids.get(0);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 某公司维度的详细业务数据：岗位、投递、面试、通过率。 */
+    private String companyDetailStats(Long cmpId) {
+        try {
+            String name = jdbc.queryForObject("SELECT cmp_name FROM t_cmp WHERE cmp_id=?", String.class, cmpId);
+            Integer posTotal = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM t_pos WHERE pos_company_id=?", Integer.class, cmpId);
+            Integer posOn = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM t_pos WHERE pos_company_id=? AND pos_status=1", Integer.class, cmpId);
+            Integer todayApp = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM t_app_record a JOIN t_pos p ON a.app_position_id=p.pos_id " +
+                    "WHERE p.pos_company_id=? AND a.app_created_at>=CURDATE()", Integer.class, cmpId);
+            Integer totalApp = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM t_app_record a JOIN t_pos p ON a.app_position_id=p.pos_id " +
+                    "WHERE p.pos_company_id=?", Integer.class, cmpId);
+            Integer weekApp = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM t_app_record a JOIN t_pos p ON a.app_position_id=p.pos_id " +
+                    "WHERE p.pos_company_id=? AND a.app_created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY)", Integer.class, cmpId);
+            Integer intvTotal = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM t_sch_appointment a JOIN t_pos p ON a.apt_position_id=p.pos_id " +
+                    "WHERE p.pos_company_id=?", Integer.class, cmpId);
+            Integer intvPass = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM t_sch_appointment a JOIN t_pos p ON a.apt_position_id=p.pos_id " +
+                    "WHERE p.pos_company_id=? AND a.apt_status=1", Integer.class, cmpId);
+            Integer intvPending = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM t_sch_appointment a JOIN t_pos p ON a.apt_position_id=p.pos_id " +
+                    "WHERE p.pos_company_id=? AND a.apt_status=0 AND a.apt_start_time>=NOW()", Integer.class, cmpId);
+            String passRate = (intvTotal == null || intvTotal == 0) ? "暂无面试记录"
+                    : String.format("%.1f%%", intvPass * 100.0 / intvTotal);
+            return String.join("\n",
+                    "公司名称=" + name,
+                    "岗位总数=" + posTotal + "（上架" + posOn + "）",
+                    "今日新投递=" + todayApp + "份",
+                    "近7天投递=" + weekApp + "份，累计投递=" + totalApp + "份",
+                    "面试总数=" + intvTotal + "场（通过=" + intvPass + "，待面试=" + intvPending + "）",
+                    "面试通过率=" + passRate);
+        } catch (Exception e) {
+            return "公司详情查询失败：" + e.getMessage();
         }
     }
 
@@ -464,15 +535,24 @@ public class AdminAssistantController extends BaseController {
         }
     }
 
-    /** RAG：关键词检索知识库，返回前 3 条命中。 */
+    /** RAG：优先向量语义检索，fallback全文索引，返回Top3相关知识。 */
     private String searchKnowledge(String q) {
         try {
-            String kw = q.replaceAll("[%_]", "").trim();
-            if (kw.length() < 2) return "";
-            String like = "%" + kw.substring(0, Math.min(kw.length(), 12)) + "%";
+            if (q == null || q.trim().length() < 2) return "";
+            // 1) 优先用向量语义检索（真RAG）
+            List<String> vecResults = kbEmbedding.search(q, 3);
+            if (!vecResults.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                for (String c : vecResults) sb.append("参考资料：").append(c).append("\n");
+                return sb.toString();
+            }
+            // 2) fallback：全文索引
+            String expanded = expandSynonyms(q);
             List<Map<String, Object>> rows = jdbc.queryForList(
-                    "SELECT question, answer FROM t_ai_knowledge " +
-                    "WHERE question LIKE ? OR answer LIKE ? ORDER BY kb_id DESC LIMIT 3", like, like);
+                    "SELECT question, answer, MATCH(question,answer) AGAINST (? IN NATURAL LANGUAGE MODE) AS score " +
+                    "FROM t_ai_knowledge " +
+                    "WHERE MATCH(question,answer) AGAINST (? IN NATURAL LANGUAGE MODE) " +
+                    "ORDER BY score DESC LIMIT 3", expanded, expanded);
             if (rows.isEmpty()) return "";
             StringBuilder sb = new StringBuilder();
             for (Map<String, Object> r : rows) {
@@ -482,6 +562,25 @@ public class AdminAssistantController extends BaseController {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /** 把问题里的词去同义词表扩展，返回一个空格分隔的搜索串（MySQL全文模式）。 */
+    private String expandSynonyms(String q) {
+        StringBuilder all = new StringBuilder(q);
+        try {
+            // 取所有同义词对，看用户问题里有没有命中原词
+            List<Map<String, Object>> pairs = jdbc.queryForList("SELECT word, synonyms FROM t_ai_synonym");
+            for (Map<String, Object> p : pairs) {
+                String word = String.valueOf(p.get("word"));
+                if (q.contains(word)) {
+                    for (String s : String.valueOf(p.get("synonyms")).split(",")) {
+                        all.append(" ").append(s.trim());
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        // 去掉标点，全文检索用空格分隔
+        return all.toString().replaceAll("[，。？！、,\\.\\?\\!]", " ").trim();
     }
 
     private String decryptKey(String stored) {

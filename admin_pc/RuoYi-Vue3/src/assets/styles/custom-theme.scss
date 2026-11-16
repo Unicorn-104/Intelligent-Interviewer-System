@@ -471,3 +471,49 @@ body,
     }
   }
 }
+
+// ========================================
+// P0 UI优化：统一卡片/表格/按钮规范
+// ========================================
+
+// 所有el-card统一圆角和阴影
+.el-card {
+  border-radius: 8px !important;
+  border: 1px solid #ebeef5 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+}
+
+// 表格行高统一48px，斑马纹
+.el-table {
+  td.el-table__cell {
+    padding: 12px 0 !important;
+  }
+  .el-table__row--striped td.el-table__cell {
+    background: #fafbfc !important;
+  }
+}
+
+// 统计卡：去掉彩色背景，统一白底
+.el-row > .el-col > .el-card {
+  .ov-num, .stat-value {
+    font-size: 28px !important;
+    font-weight: 700 !important;
+    color: #1f2937 !important;
+  }
+  .ov-label, .stat-label {
+    font-size: 13px !important;
+    color: #6b7280 !important;
+  }
+}
+
+// 操作列按钮统一为文字链接
+.el-table .el-button--text {
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+// 搜索区压缩高度
+.app-container .el-form--inline .el-form-item {
+  margin-bottom: 12px;
+}
+

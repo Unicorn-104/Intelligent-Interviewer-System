@@ -1,5 +1,9 @@
 <template>
   <div class="app-container">
+    <el-tabs v-model="bankType" @tab-change="handleBankTypeChange" style="margin-bottom: 10px">
+      <el-tab-pane label="平台题库" name="platform" />
+      <el-tab-pane label="企业内部题库" name="enterprise" />
+    </el-tabs>
     <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch">
       <el-form-item label="题目内容" prop="content">
         <el-input
@@ -206,7 +210,13 @@
           </el-col>
         </el-row>
         <el-form-item label="解析说明" prop="analysis">
-          <el-input v-model="form.analysis" type="textarea" :rows="3" placeholder="请输入解析说明（选填）" />
+          <el-input v-model="form.analysis" type="textarea" :rows="3" placeholder="请输入解析说明（选填）">
+            <template #append>
+              <el-button :loading="aiLoading" @click="aiExpandAnalysis">
+                <el-icon><MagicStick /></el-icon> AI扩写
+              </el-button>
+            </template>
+          </el-input>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -221,8 +231,36 @@
 
 <script setup name="Question">
 import { listQuestion, getQuestion, addQuestion, updateQuestion, delQuestion } from '@/api/content/question'
+import { MagicStick } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
+
+/** 题库类型：platform=平台题库，enterprise=企业内部题库 */
+const bankType = ref('platform')
+
+function handleBankTypeChange() {
+  queryParams.pageNum = 1
+  getList()
+}
+
+const aiLoading = ref(false)
+
+/** AI扩写答案解析 */
+function aiExpandAnalysis() {
+  if (!form.value.content) {
+    proxy.$modal.msgWarning('请先填写题目内容')
+    return
+  }
+  aiLoading.value = true
+  // TODO: 调用后端AI扩写接口
+  setTimeout(() => {
+    const original = form.value.analysis || ''
+    form.value.analysis = original + (original ? '\n\n' : '') +
+      '【AI扩写】本题主要考察对核心概念的理解与应用。解题思路：首先明确题干关键信息，其次结合相关知识点进行分析，最后得出结论。易错点在于混淆相近概念，需注意区分。'
+    aiLoading.value = false
+    proxy.$modal.msgSuccess('AI扩写完成')
+  }, 800)
+}
 
 const questionList = ref([])
 const open = ref(false)

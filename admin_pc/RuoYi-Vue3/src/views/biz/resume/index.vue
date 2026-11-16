@@ -30,17 +30,19 @@
     <el-table v-loading="loading" :data="resumeList" stripe>
       <el-table-column label="姓名" align="center" prop="name" width="100" />
       <el-table-column label="手机号" align="center" width="130">
-        <template #default="scope">{{ maskPhone(scope.row.phone) }}</template>
+        <template #default="scope">{{ scope.row.phone || '-' }}</template>
       </el-table-column>
       <el-table-column label="邮箱" align="center" prop="email" :show-overflow-tooltip="true" min-width="180">
         <template #default="scope">{{ scope.row.email ? scope.row.email.replace(/(\w{2})\w*(@.*)/, '$1****$2') : '-' }}</template>
       </el-table-column>
       <el-table-column label="目标岗位" align="center" prop="jobName" :show-overflow-tooltip="true" min-width="150" />
-      <el-table-column label="匹配分" align="center" width="90">
+      <el-table-column label="AI评分" align="center" width="100">
         <template #default="scope">
-          <span :style="{ color: scoreColor(scope.row.matchScore), fontWeight: 600 }">
-            {{ scope.row.matchScore == null || scope.row.matchScore === '' ? '-' : scope.row.matchScore }}
-          </span>
+          <el-tag v-if="scope.row.matchScore != null && scope.row.matchScore !== ''"
+            :type="scoreTagType(scope.row.matchScore)" size="small" effect="dark">
+            {{ scope.row.matchScore }}分
+          </el-tag>
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="状态" align="center" width="100">
@@ -74,8 +76,8 @@
         <h4>基本信息</h4>
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="姓名">{{ resumeDetail.name || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="手机号">{{ maskPhone(resumeDetail.phone) }}</el-descriptions-item>
-          <el-descriptions-item label="邮箱">{{ resumeDetail.email ? resumeDetail.email.replace(/(\w{2})\w*(@.*)/, '$1****$2') : '-' }}</el-descriptions-item>
+          <el-descriptions-item label="手机号">{{ resumeDetail.phone || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">{{ resumeDetail.email || '-' }}</el-descriptions-item>
           <el-descriptions-item label="目标岗位">{{ resumeDetail.jobName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="上传时间">{{ fmtTime(resumeDetail.uploadTime) }}</el-descriptions-item>
         </el-descriptions>
@@ -154,6 +156,13 @@ function scoreColor(v) {
   if (n >= 80) return '#22C55E'
   if (n >= 60) return '#F59E0B'
   return '#EF4444'
+}
+function scoreTagType(v) {
+  if (v === undefined || v === null || v === '') return 'info'
+  const n = Number(v)
+  if (n >= 80) return 'success'
+  if (n >= 60) return 'warning'
+  return 'danger'
 }
 function maskPhone(p) {
   if (!p || String(p).length < 7) return p || '-'

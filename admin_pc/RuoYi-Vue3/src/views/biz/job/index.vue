@@ -41,23 +41,6 @@
             <el-table-column label="岗位名称" align="center" prop="jobName" :show-overflow-tooltip="true" />
             <el-table-column label="薪资" align="center" prop="salary" width="110" />
             <el-table-column label="城市" align="center" prop="city" width="80" />
-            <!-- 风控功能未上线，暂时隐藏
-            <el-table-column label="风险等级" align="center" width="80">
-              <template #default="scope">
-                <el-tag v-if="scope.row.riskLevel !== null && scope.row.riskLevel !== undefined && scope.row.riskLevel !== ''"
-                  :type="riskLevelTag(scope.row.riskLevel)">{{ riskLevelLabel(scope.row.riskLevel) }}</el-tag>
-                <span v-else>-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="命中风控词" align="center" min-width="140">
-              <template #default="scope">
-                <template v-if="scope.row.riskWords && scope.row.riskWords.length > 0">
-                  <el-tag v-for="(word, index) in scope.row.riskWords" :key="index" type="danger" size="small" class="risk-tag">{{ word }}</el-tag>
-                </template>
-                <span v-else>-</span>
-              </template>
-            </el-table-column>
-            -->
             <el-table-column label="状态" align="center" width="90">
               <template #default="scope">
                 <el-tag :type="statusTag(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag>
@@ -143,7 +126,11 @@
         <div class="jd-title">任职要求</div>
         <ul><li v-for="(r, i) in jd.requirements" :key="i">{{ r }}</li></ul>
       </div>
-      <el-empty v-if="!jd.requirements?.length && !jd.responsibilities?.length" description="暂无 JD 内容" :image-size="60" />
+      <div class="jd-block" v-if="detailForm.jdExtra">
+        <div class="jd-title">附加信息</div>
+        <div style="white-space: pre-wrap; color: #606266; line-height: 1.8;">{{ detailForm.jdExtra }}</div>
+      </div>
+      <el-empty v-if="!jd.requirements?.length && !jd.responsibilities?.length && !detailForm.jdExtra" description="暂无 JD 内容" :image-size="60" />
     </el-dialog>
 
     <!-- 变更历史 / 处理原因对话框 -->
