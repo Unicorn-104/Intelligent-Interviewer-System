@@ -37,10 +37,6 @@ public interface TalentPoolMapper
     /** 更新归档来源（3-主动归档，0-取消归档） */
     public int updateArchiveSource(@Param("talId") Long talId, @Param("archiveSource") Integer archiveSource);
 
-    /** 批量更新候选人流程状态（企业隔离） */
-    public int updateTalentStatus(@Param("companyId") Long companyId, @Param("talIds") List<Long> talIds,
-            @Param("status") Integer status);
-
     /** 校验岗位归属企业（返回 pos_id 或 null） */
     public Integer selectPositionInCompany(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
 

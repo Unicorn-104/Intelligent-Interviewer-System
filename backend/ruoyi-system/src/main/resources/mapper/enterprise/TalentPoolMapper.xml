@@ -320,17 +320,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select pos_id from t_pos where pos_id = #{positionId} and pos_company_id = #{companyId}
     </select>
 
-    <!-- 批量更新候选人流程状态：已淘汰/已录用为终态，只允许保持原状态，禁止翻案 -->
-    <update id="updateTalentStatus">
-        update t_tal set tal_status = #{status}, tal_updated_at = now()
-        where tal_company_id = #{companyId}
-          and (tal_status not in (3, 4) or tal_status = #{status})
-          and tal_id in
-        <foreach collection="talIds" item="talId" open="(" separator="," close=")">
-            #{talId}
-        </foreach>
-    </update>
-
     <select id="selectPositionInCompany" resultType="java.lang.Integer">
         select pos_id from t_pos where pos_id = #{positionId} and pos_company_id = #{companyId} limit 1
     </select>
