@@ -118,6 +118,16 @@ export function filterDynamicRoutes(routes) {
 }
 
 export const loadView = (view) => {
+  const specialMap = {
+    'biz/job/index': () => import('@/views/biz/job/index.vue'),
+    'biz/offer/index': () => import('@/views/biz/offer/index.vue'),
+    'biz/onboarding/index': () => import('@/views/biz/onboarding/index.vue'),
+    'biz/appointment/index': () => import('@/views/biz/appointment/index.vue'),
+    'biz/im/index': () => import('@/views/biz/im/index.vue'),
+    'biz/aiAnalysis/index': () => import('@/views/biz/aiAnalysis/index.vue'),
+    'ai/kb/index': () => import('@/views/ai/kb/index.vue'),
+  }
+  if (specialMap[view]) return specialMap[view]
   let res
   for (const path in modules) {
     const dir = path.split('views/')[1].split('.vue')[0]
