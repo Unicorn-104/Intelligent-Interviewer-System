@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { AlertTriangle, ChevronRight, CircleCheck, CloudUpload, FileText, RotateCw, Sparkles, Trash2 } from '@/views/enterprise/components/icons'
+import { AlertTriangle, ChevronRight, CircleCheck, Clock3, CloudUpload, FileText, RotateCw, Sparkles, Trash2 } from '@/views/enterprise/components/icons'
 import JobContentFields from './JobContentFields.vue'
 import { createJob, listJobs, parseJdDocument, updateJob } from '@/api/system/job'
 
@@ -21,17 +21,15 @@ const SUGGESTED_FIELDS = [
 
 const phase = ref('upload')
 const parsing = ref(false)
-const submitting = ref(false)
+// 单条 JD 正在导入的 key，避免重复提交
+const importingKey = ref(null)
 const tip = ref('')
 const files = ref([])
 const existingJobs = ref([])
-const totals = ref({ created: 0, updated: 0, failed: 0 })
 let keySeed = 0
 
 const parseTargets = computed(() => files.value.filter(f => f.status === 'pending' || f.status === 'error'))
 const parsedFiles = computed(() => files.value.filter(f => f.status === 'done'))
-const importTargets = computed(() => parsedFiles.value.filter(f => f.action !== 'skip' && !f.imported))
-const skippedCount = computed(() => parsedFiles.value.filter(f => f.action === 'skip').length)
 
 function text(value) { return value == null ? '' : String(value).trim() }
 function lines(value) { return text(value).split('\n').map(s => s.trim()).filter(Boolean) }
@@ -109,7 +107,6 @@ async function startParse() {
   const targets = parseTargets.value
   if (!targets.length) { tip.value = '请先选择需要解析的 JD 文件'; return }
   tip.value = ''
-  totals.value = { created: 0, updated: 0, failed: 0 }
   parsing.value = true
   for (const item of targets) {
     item.status = 'parsing'
@@ -151,41 +148,40 @@ function validate(item) {
   return ''
 }
 
-async function submitAll() {
-  const targets = importTargets.value
-  if (!targets.length) { tip.value = '请至少选择一个需要导入的岗位'; return }
-  for (const item of targets) {
-    const message = validate(item)
-    if (message) { tip.value = `${item.name}：${message}`; item.message = message; return }
-    item.message = ''
-  }
+// 单条 JD 独立确认导入：每个解析结果各自校验、各自生成草稿
+async function submitOne(item) {
+  if (item.imported || importingKey.value != null) return
+  if (item.action === 'skip') { tip.value = `${item.name}：已选择跳过，不会导入`; return }
+  const message = validate(item)
+  if (message) { tip.value = `${item.name}：${message}`; item.message = message; return }
+  item.message = ''
   tip.value = ''
-  submitting.value = true
-  for (const item of targets) {
-    const form = item.form
-    const payload = {
-      title: text(form.title), dept: text(form.dept), city: text(form.city),
-      salaryMin: form.salaryMin === '' ? null : Number(form.salaryMin),
-      salaryMax: form.salaryMax === '' ? null : Number(form.salaryMax),
-      experience: text(form.experience) || '经验不限',
-      education: form.education, jobType: form.jobType, description: text(form.description),
-      responsibilities: lines(form.responsibilities), requirements: lines(form.requirements),
-      skills: item.skills.map(skill => ({ name: skill.name, required: skill.required }))
-    }
-    try {
-      // 命中重复岗位且选择覆盖更新时走更新接口，否则按草稿新建（状态 0）
-      if (item.match && item.action === 'overwrite') { await updateJob(item.match.id, payload); totals.value.updated += 1 }
-      else { await createJob({ ...payload, status: 0 }); totals.value.created += 1 }
-      item.imported = true
-      item.message = ''
-    } catch (e) {
-      totals.value.failed += 1
-      item.message = (e && e.message) || '导入失败'
-    }
+  importingKey.value = item.key
+  const form = item.form
+  const payload = {
+    title: text(form.title), dept: text(form.dept), city: text(form.city),
+    salaryMin: form.salaryMin === '' ? null : Number(form.salaryMin),
+    salaryMax: form.salaryMax === '' ? null : Number(form.salaryMax),
+    experience: text(form.experience) || '经验不限',
+    education: form.education, jobType: form.jobType, description: text(form.description),
+    responsibilities: lines(form.responsibilities), requirements: lines(form.requirements),
+    skills: item.skills.map(skill => ({ name: skill.name, required: skill.required }))
   }
-  submitting.value = false
-  if (importTargets.value.length) tip.value = `已导入 ${totals.value.created + totals.value.updated} 个，${importTargets.value.length} 个未完成，请修正后重试`
-  else emit('done', { ...totals.value, skipped: skippedCount.value })
+  let result = { created: 0, updated: 0, failed: 0, skipped: 0 }
+  try {
+    // 命中重复岗位且选择覆盖更新时走更新接口，否则按草稿新建（状态 0）
+    if (item.match && item.action === 'overwrite') { await updateJob(item.match.id, payload); result.updated = 1 }
+    else { await createJob({ ...payload, status: 0 }); result.created = 1 }
+    item.imported = true
+    item.message = ''
+    emit('done', result)
+  } catch (e) {
+    result.failed = 1
+    item.message = (e && e.message) || '导入失败'
+    emit('done', result)
+  } finally {
+    importingKey.value = null
+  }
 }
 
 onMounted(loadExistingJobs)
@@ -209,7 +205,8 @@ onMounted(loadExistingJobs)
           <em :class="file.status">
             <CircleCheck v-if="file.status === 'done'" :size="15" />
             <AlertTriangle v-else-if="file.status === 'error' || file.status === 'invalid'" :size="15" />
-            <RotateCw v-else :size="15" />
+            <RotateCw v-else-if="file.status === 'parsing'" :size="15" />
+            <Clock3 v-else :size="15" />
             {{ statusText(file) }}
           </em>
           <button @click="remove(index)"><Trash2 :size="15" /></button>
@@ -254,13 +251,18 @@ onMounted(loadExistingJobs)
             <li v-for="warning in item.warnings" :key="warning"><AlertTriangle :size="13" />{{ warning }}</li>
           </ul>
           <p v-if="item.message" class="err">{{ item.message }}</p>
+          <div v-if="!item.imported" class="card-actions">
+            <span v-if="item.action === 'skip'" class="skip-note">已选择跳过，不导入该岗位</span>
+            <button
+              v-else
+              class="btn primary"
+              :disabled="importingKey != null"
+              @click="submitOne(item)"
+            >
+              <Sparkles v-if="importingKey === item.key" class="spinning" :size="15" />{{ importingKey === item.key ? '正在导入' : '确认导入为草稿' }}
+            </button>
+          </div>
         </article>
-      </div>
-      <div class="panel-actions">
-        <span class="summary">待导入 {{ importTargets.length }} 个，跳过 {{ skippedCount }} 个</span>
-        <button class="btn primary" :disabled="submitting || !importTargets.length" @click="submitAll">
-          <Sparkles v-if="submitting" class="spinning" :size="15" />{{ submitting ? '正在导入' : '确认导入为草稿' }}
-        </button>
       </div>
     </template>
   </div>
@@ -274,7 +276,7 @@ onMounted(loadExistingJobs)
 .file-list>div{min-height:45px;border:1px solid #e0e7f1;border-radius:9px;background:#f8fafc;display:flex;align-items:center;gap:9px;padding:0 12px;color:#2563eb}
 .file-list span{flex:1;color:#26364f;font-size:12px}.file-msg{font-style:normal;color:#dc2626;font-size:11px}
 .file-list em{display:flex;align-items:center;gap:5px;font-style:normal;color:#2970ed;font-size:11px}
-.file-list em:not(.done):not(.error):not(.invalid) svg{animation:spin 1s linear infinite}
+.file-list em.parsing svg{animation:spin 1s linear infinite}
 .file-list em.done{color:#08a775}.file-list em.error,.file-list em.invalid{color:#dc2626}
 .file-list button{border:0;background:transparent;color:#a0aec0}
 .spinning{animation:spin 1s linear infinite}
@@ -298,4 +300,6 @@ onMounted(loadExistingJobs)
 .warnings{margin-top:10px;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:5px}
 .warnings li{display:flex;gap:6px;align-items:flex-start;font-size:11px;color:#6f7f99}
 .err{margin-top:10px;font-size:12px;color:#dc2626}
+.card-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid #eef2f7}
+.skip-note{font-size:12px;color:#b45309}
 </style>
