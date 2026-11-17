@@ -144,6 +144,27 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by tsl_created_at asc, tsl_id asc
     </select>
 
+    <!-- 会议中「往轮面试总结」：同候选人同岗位、早于当前场次的已结束场次及其评估摘要 -->
+    <select id="selectPreviousSessionReviews" resultType="java.util.LinkedHashMap">
+        select s.ses_id                         as sessionId,
+               s.ses_cascade_round              as roundNo,
+               date_format(s.ses_start_at, '%Y-%m-%d %H:%i') as startAt,
+               s.ses_report_status              as reportStatus,
+               e.evl_overall_score              as overallScore,
+               e.evl_summary                    as summary,
+               e.evl_recommendation             as recommendation
+        from t_int_session s
+        left join t_int_evaluation e on e.evl_session_id = s.ses_id
+        where s.ses_candidate_id = #{candidateId}
+          and s.ses_position_id = #{positionId}
+          and s.ses_id &lt;&gt; #{sessionId}
+          and s.ses_status = 2
+          and s.ses_start_at is not null
+          and s.ses_start_at &lt; ifnull((select cur.ses_start_at from t_int_session cur where cur.ses_id = #{sessionId}), sysdate())
+        order by s.ses_cascade_round asc, s.ses_start_at asc
+        limit 10
+    </select>
+
     <!-- 锁候选人记录，串行化同一候选人的并发发起面试，避免产生多个活跃场次 -->
     <select id="lockCandidateForUpdate" parameterType="Long" resultType="long">
         select tal_id from t_tal where tal_id = #{candidateId} for update

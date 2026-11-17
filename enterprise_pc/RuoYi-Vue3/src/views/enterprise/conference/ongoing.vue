@@ -4,12 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, FileText, Timer, Mic, MicOff,
   Video, MonitorUp, Copy, MessageSquareText, Settings, PhoneOff,
-  ArrowUpRight, AlertTriangle, Lightbulb, CirclePause
+  ArrowUpRight, AlertTriangle, Lightbulb, CirclePause, History
 } from '@/views/enterprise/components/icons'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
-import { getCurrentSession, getSessionContext, getProgress, listCaptions, getQuestionHints, feedbackQuestionHint, heartbeat, finishSession, joinInterviewer, transferPrimary, getLiveKitToken, startRecording, stopRecording, takeover } from '@/api/system/conference'
+import { getCurrentSession, getSessionContext, getProgress, getPreviousReviews, listCaptions, getQuestionHints, feedbackQuestionHint, heartbeat, finishSession, joinInterviewer, transferPrimary, getLiveKitToken, startRecording, stopRecording, takeover } from '@/api/system/conference'
 import { getTalentResume } from '@/api/talent'
 import { talStatusInfo } from '@/views/enterprise/components/talStatus'
 import { clearPreferredDevice, describeMediaNotice, getPreferredDevice, listMediaDevices, savePreferredDevice } from '@/utils/media'
@@ -150,6 +150,23 @@ const candidateStatus = ref(null)
 const positionJd = ref(null)
 const positionSkills = ref([])
 const flowHistory = ref([])
+
+// 往轮面试总结：同一候选人同岗位、早于本场次的已结束场次 AI 评估摘要
+const previousReviews = ref([])
+const prevReviewsLoading = ref(false)
+
+async function loadPreviousReviews() {
+  if (!sessionId.value) return
+  prevReviewsLoading.value = true
+  try {
+    const res = await getPreviousReviews(sessionId.value)
+    previousReviews.value = Array.isArray(res.data) ? res.data : []
+  } catch (e) {
+    previousReviews.value = []
+  } finally {
+    prevReviewsLoading.value = false
+  }
+}
 
 // 会议中查看候选人简历（人才库简历接口，按当前企业隔离）
 const candidateId = ref(null)
@@ -819,6 +836,8 @@ async function initSession() {
   if (!sessionId.value) return
   // 拉取场次上下文：候选人 / 面试官列表 / 面试模式 / 本人在场次中的角色（主面试官自动加入）
   await refreshContext()
+  // 面试官在会议中可查看往轮评估总结
+  if (sessionRole.value === 'HR') loadPreviousReviews()
   await refreshProgress()
   // 进度与接管状态随场次变化，定时刷新以同步另一位面试官的操作
   if (!progressId) progressId = setInterval(refreshProgress, 5000)
@@ -922,6 +941,24 @@ onBeforeUnmount(() => {
           </li>
         </ol>
         <p v-else class="empty">暂无流程记录</p>
+
+        <template v-if="sessionRole === 'HR'">
+          <h3 class="panel-title"><History :size="14" />往轮面试总结</h3>
+          <p v-if="prevReviewsLoading" class="empty">加载中…</p>
+          <p v-else-if="!previousReviews.length" class="empty">暂无往轮评估报告</p>
+          <article v-for="r in previousReviews" :key="r.sessionId" class="prev-item">
+            <header>
+              <b>第 {{ r.roundNo || '—' }} 轮</b>
+              <span>{{ r.startAt || '' }}</span>
+            </header>
+            <template v-if="Number(r.reportStatus) === 2">
+              <p class="prev-score">综合评分 <b>{{ r.overallScore != null ? r.overallScore : '—' }}</b></p>
+              <p v-if="r.summary" class="prev-summary">{{ r.summary }}</p>
+              <p v-if="r.recommendation" class="prev-rec">建议：{{ r.recommendation }}</p>
+            </template>
+            <p v-else class="empty">{{ Number(r.reportStatus) === 1 ? '报告生成中' : Number(r.reportStatus) === 3 ? '报告生成失败' : '暂无评估报告' }}</p>
+          </article>
+        </template>
       </aside>
 
       <section class="stage">
@@ -1346,7 +1383,7 @@ onBeforeUnmount(() => {
 }
 .resume svg:last-child { margin-left: auto; color: var(--muted); }
 .resume:hover { border-color: var(--primary); color: #9dbcff; }
-.panel-title { margin: 16px 0 10px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.panel-title { margin: 16px 0 10px; font-size: 12px; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .timeline { list-style: none; margin: 0; padding: 0; }
 .timeline li { position: relative; padding: 0 0 18px 22px; }
 .timeline li:last-child { padding-bottom: 0; }
@@ -1543,6 +1580,13 @@ onBeforeUnmount(() => {
 .q-act.on { border-color: rgba(82, 196, 26, .5); color: #7ee787; }
 .q-act.off { border-color: rgba(255, 77, 79, .4); color: #ff9c9e; }
 .empty { margin: 9px 0 0; font-size: 12px; color: var(--muted); }
+.prev-item { margin-top: 10px; padding: 0 0 0 10px; border-left: 2px solid #dbe4f0; }
+.prev-item header { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #8494ab; }
+.prev-item header b { color: #2563eb; font-size: 12px; }
+.prev-score { margin: 6px 0 0; font-size: 11px; color: #6f7f99; }
+.prev-score b { color: #08a775; font-size: 13px; }
+.prev-summary { margin: 6px 0 0; font-size: 12px; line-height: 1.65; color: #4a5a76; }
+.prev-rec { margin: 6px 0 0; font-size: 11px; line-height: 1.6; color: #6f7f99; }
 
 /* HR 打断接管 */
 .takeover-card.on { padding: 10px 12px; border-radius: 11px; background: rgba(250, 173, 20, .12); border: 1px solid rgba(250, 173, 20, .32); }

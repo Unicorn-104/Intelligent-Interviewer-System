@@ -47,6 +47,12 @@ public interface ConferenceMapper
     public List<Map<String, Object>> selectCandidateFlowHistory(@Param("candidateId") Long candidateId);
 
     /**
+     * 查询同一候选人同一岗位下早于当前场次的已结束场次及其 AI 评估摘要（会议中查看往轮面试总结）
+     */
+    public List<Map<String, Object>> selectPreviousSessionReviews(@Param("sessionId") Long sessionId,
+            @Param("candidateId") Long candidateId, @Param("positionId") Long positionId);
+
+    /**
      * 按用户ID查询候选人档案（用于把聊天对象解析为候选人）
      * companyId 非空时同时限定候选人所属企业，避免跨企业发起面试
      */
