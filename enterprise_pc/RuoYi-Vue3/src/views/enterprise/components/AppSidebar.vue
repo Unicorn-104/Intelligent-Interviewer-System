@@ -101,7 +101,7 @@ function toggle(item) {
       <div class="support-icon">?</div>
       <div><b>需要帮助？</b><small>查看使用指南</small></div>
     </button>
-    <span class="version">TalentFlow v1.0</span>
+    <span class="version">慧科智聘 v1.0</span>
     <HelpGuideDialog v-model="helpOpen" />
   </aside>
 </template>

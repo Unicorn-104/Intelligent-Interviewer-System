@@ -5,7 +5,7 @@ import { BriefcaseBusiness } from '@/views/enterprise/components/icons'
 <template>
   <div class="app-logo">
     <span class="logo-mark"><BriefcaseBusiness :size="19" /></span>
-    <div><strong>TalentFlow</strong><small>招聘管理系统</small></div>
+    <div><strong>慧科智聘</strong><small>企业级智能招聘面试官系统</small></div>
   </div>
 </template>
 

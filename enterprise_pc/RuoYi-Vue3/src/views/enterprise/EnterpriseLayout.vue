@@ -7,7 +7,7 @@ import AiAssistantBall from '@/views/enterprise/components/AiAssistantBall.vue'
 import WelcomeGuide from '@/views/enterprise/components/WelcomeGuide.vue'
 
 const route = useRoute()
-const title = computed(() => route.meta.title || 'TalentFlow')
+const title = computed(() => route.meta.title || '慧科智聘')
 </script>
 
 <template>
