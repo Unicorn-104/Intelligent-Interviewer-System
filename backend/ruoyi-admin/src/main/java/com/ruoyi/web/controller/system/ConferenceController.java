@@ -367,6 +367,15 @@ public class ConferenceController extends BaseController
     }
 
     /**
+     * 往轮面试总结：同候选人同岗位、早于当前场次的已结束场次评估摘要（会议中面试官查看）
+     */
+    @GetMapping("/session/{sessionId}/previous-reviews")
+    public AjaxResult previousReviews(@PathVariable Long sessionId)
+    {
+        return success(conferenceService.getPreviousSessionReviews(getUserId(), sessionId));
+    }
+
+    /**
      * 录制文件列表（企业范围内，一场面试多次录制各为一条）
      */
     @GetMapping("/recordings")

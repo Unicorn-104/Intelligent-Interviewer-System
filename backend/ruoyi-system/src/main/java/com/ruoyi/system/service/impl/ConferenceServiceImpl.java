@@ -1398,6 +1398,19 @@ public class ConferenceServiceImpl implements IConferenceService
         return result;
     }
 
+    @Override
+    public List<Map<String, Object>> getPreviousSessionReviews(Long userId, Long sessionId)
+    {
+        Map<String, Object> ctx = requireAccess(userId, sessionId);
+        Long candidateId = toLong(ctx.get("candidateId"));
+        Long positionId = toLong(ctx.get("positionId"));
+        if (candidateId == null || positionId == null)
+        {
+            return new ArrayList<>();
+        }
+        return conferenceMapper.selectPreviousSessionReviews(sessionId, candidateId, positionId);
+    }
+
     /** 候选人视图只暴露五维分数，剔除模型引用原文证据 */
     private Map<String, Object> candidateDimensionScores(Object raw)
     {

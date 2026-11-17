@@ -481,7 +481,7 @@ onMounted(() => {
 
     <!-- ============ 偏好设置 Tab ============ -->
     <section v-else-if="active==='偏好设置'" class="card preference-card">
-      <div class="section-title"><div><h2>工作偏好</h2><p>根据你的工作习惯个性化 TalentFlow</p></div></div>
+      <div class="section-title"><div><h2>工作偏好</h2><p>根据你的工作习惯个性化慧科智聘</p></div></div>
       <div class="preference-grid">
         <div class="field"><label>面试默认时长</label>
           <select class="select" v-model="prefsForm.interviewDuration">

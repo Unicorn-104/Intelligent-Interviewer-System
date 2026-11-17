@@ -36,7 +36,7 @@ function openGuide() {
     <div class="welcome">
       <div class="welcome-head">
         <span class="badge">首次登录引导</span>
-        <h2>欢迎使用 TalentFlow 企业招聘工作台</h2>
+        <h2>欢迎使用慧科智聘企业招聘工作台</h2>
         <p>这里是招聘全流程的操作中心。花一分钟了解基础用法，之后随时可以在左下角「需要帮助？」里查看完整指南。</p>
       </div>
 

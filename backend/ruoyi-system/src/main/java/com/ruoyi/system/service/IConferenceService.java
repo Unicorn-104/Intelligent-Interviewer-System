@@ -211,6 +211,11 @@ public interface IConferenceService
     public Map<String, Object> getSessionReport(Long userId, Long sessionId);
 
     /**
+     * 同一候选人同一岗位的历史轮次评估摘要（会议中查看往轮面试总结）
+     */
+    public List<Map<String, Object>> getPreviousSessionReviews(Long userId, Long sessionId);
+
+    /**
      * 录制文件列表（企业范围内）
      */
     public List<Map<String, Object>> listRecordings(Long userId, Map<String, Object> query);
