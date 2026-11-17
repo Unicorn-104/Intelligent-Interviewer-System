@@ -9,7 +9,7 @@ const router = useRouter()
 const keyword = ref('')
 const activeId = ref('dashboard')
 
-// 指南内容：覆盖企业端全部现有功能，keywords 用于搜索
+// 指南内容：与左侧菜单层级保持一致，keywords 用于搜索
 const MODULES = [
   {
     id: 'dashboard', group: '入门', title: '招聘总览', route: '/enterprise/dashboard',
@@ -25,8 +25,8 @@ const MODULES = [
     tips: ['点击漏斗任一阶段可跳转对应列表查看明细。', '指标口径按当前登录账号所属企业统计。']
   },
   {
-    id: 'jobs', group: '招聘', title: '岗位管理', route: '/enterprise/jobs',
-    keywords: '岗位 发布 编辑 复制 JD 解析 流程 配置',
+    id: 'jobs', group: '岗位管理', title: '岗位列表', route: '/enterprise/jobs',
+    keywords: '岗位 发布 编辑 复制 JD 解析 流程 上下架',
     summary: '岗位的新建、编辑、复制、上下架与招聘流程配置。',
     steps: [
       '点击「发布新岗位」填写标题、薪资、城市、经验、学历、技能与职责后提交。',
@@ -38,20 +38,21 @@ const MODULES = [
     tips: ['仅草稿岗位可删除，删除会先清理技能关联。', '编辑不会改变岗位当前状态。', 'AI 解析结果需人工确认后再保存。']
   },
   {
-    id: 'jobs-import', group: '招聘', title: '岗位导入与草稿', route: '/enterprise/jobs/import',
-    keywords: '导入 草稿 文件 批量',
-    summary: '通过文件批量导入岗位，统一在草稿箱中完善后发布。',
+    id: 'jobs-import', group: '岗位管理', title: '岗位导入与草稿', route: '/enterprise/jobs/import',
+    keywords: '导入 草稿 文件 批量 解析',
+    summary: '通过文件批量导入岗位，逐条解析确认后生成草稿。',
     steps: [
-      '进入「岗位导入与草稿」，上传岗位文件后系统逐条解析并生成草稿。',
-      '解析结果逐条展示成功或失败原因，失败项可单独重试。',
-      '在草稿箱中打开草稿补充薪资、部门等信息后发布。',
-      '草稿可批量删除，删除前会先清理技能关联，避免外键冲突。'
+      '进入「岗位导入与草稿」，上传一个或多个岗位文件（支持 Word/PDF/TXT 等）。',
+      '点击「开始解析」，文件列表会显示待解析、解析中、已完成、失败等状态。',
+      '解析完成的 JD 会以独立卡片展示，逐条核对完整度与重复岗位提示。',
+      '每个 JD 卡片底部有独立的「确认导入为草稿」按钮，点击只导入当前这一条。',
+      '导入成功的岗位进入草稿箱，补充薪资、部门等信息后可发布；草稿可批量删除。'
     ],
-    tips: ['导入不会直接上线岗位，必须人工核对后发布。', '文件格式与字段要求以页面提示为准。']
+    tips: ['导入不会直接上线岗位，必须人工核对后发布。', '同一岗位重复导入时可选择跳过或覆盖更新。']
   },
   {
-    id: 'candidates', group: '招聘', title: '候选人管理', route: '/enterprise/candidates',
-    keywords: '候选人 投递 批量 状态 标签 聊天',
+    id: 'candidates', group: '候选人与AI评分', title: '候选人列表', route: '/enterprise/candidates',
+    keywords: '候选人 投递 批量 状态 标签 聊天 流程',
     summary: '按投递维度管理候选人，支持批量流转、批量打标签与即时沟通。',
     steps: [
       '列表按岗位、状态筛选，展示候选人、岗位、阶段与最近动态。',
@@ -63,19 +64,31 @@ const MODULES = [
     tips: ['状态 3（已淘汰）、4（已录用）为终态，不能再向前流转。', '所有状态变更都会写入状态变更日志，可追溯。']
   },
   {
-    id: 'screening', group: '招聘', title: 'AI 评分与复核', route: '/enterprise/resume-screening',
-    keywords: '评分 报告 复核 人工 结论',
-    summary: '对投递简历发起 AI 评分并查看评分报告，支持人工复核。',
+    id: 'applications', group: '候选人与AI评分', title: '投递详情', route: '/enterprise/resume-screening',
+    keywords: '投递 简历 发起评分 批量 筛选',
+    summary: '新投递最先到达这里，可按岗位筛选并对简历发起 AI 评分。',
     steps: [
-      '在投递详情中选择简历，点击发起评分；系统异步生成评分结果。',
-      '「AI 评分详情」展示维度得分、优势、风险与推荐结论。',
-      '可人工调整分数并填写评语，人工评分优先于 AI 结果展示。',
-      '评分结论可作为进入面试环节的依据，不通过则按淘汰处理。'
+      '列表展示所有新投递，支持按岗位或全部岗位筛选。',
+      '勾选投递后可批量发起 AI 评分，评分任务异步执行。',
+      '评分结果不在本页展示，需前往「AI 评分详情」查看报告。',
+      '投递状态会随评分与面试进展自动流转，可在候选人列表中查看最新阶段。'
     ],
-    tips: ['评分任务为异步执行，结果未生成时可稍后刷新。', '同一投递重复发起评分会复用已有结果，避免重复计费。']
+    tips: ['重复发起评分会复用已有结果，避免重复计费。', '评分仅作参考，不会自动淘汰候选人。']
   },
   {
-    id: 'talent', group: '招聘', title: '人才库', route: '/enterprise/talent',
+    id: 'screening', group: '候选人与AI评分', title: 'AI 评分详情', route: '/enterprise/resume-screening/ai',
+    keywords: '评分 报告 复核 人工 结论 维度',
+    summary: '查看 AI 评分报告，并可人工评分与填写评语。',
+    steps: [
+      '按岗位与状态筛选投递，打开某条投递查看 AI 评分报告。',
+      '报告展示维度得分、优势、风险与推荐结论。',
+      '可人工调整分数并填写评语，人工评分优先于 AI 结果展示。',
+      '评分结论可作为进入面试环节的依据，不通过时按流程处理。'
+    ],
+    tips: ['评分任务为异步执行，结果未生成时可稍后刷新。', 'AI 评分仅作参考，最终结论由 HR 人工确认。']
+  },
+  {
+    id: 'talent', group: '候选人与AI评分', title: '人才库', route: '/enterprise/talent',
     keywords: '人才 筛选 邀约 简历 PDF',
     summary: '沉淀候选人简历，支持筛选、查看与发起面试邀约。',
     steps: [
@@ -87,7 +100,7 @@ const MODULES = [
     tips: ['面试官下拉仅展示本企业具备面试官角色的成员。', '发起邀约前请确认岗位与候选人归属同一企业。']
   },
   {
-    id: 'interviews', group: '面试', title: '面试安排中心', route: '/enterprise/interviews',
+    id: 'interviews', group: '视频面试管理', title: '面试安排', route: '/enterprise/interviews',
     keywords: '面试 日历 改期 拖拽 空闲 提醒',
     summary: '以周视图管理面试安排，支持拖拽改期、空闲时段与提醒。',
     steps: [
@@ -100,11 +113,11 @@ const MODULES = [
     tips: ['同一时段日历只显示最早一场，其余进入等待安排列表。', '拖拽后未确认离开页面，改动不会生效。']
   },
   {
-    id: 'reschedule', group: '面试', title: '改期审批', route: '/enterprise/interviews/reschedule-review',
+    id: 'reschedule', group: '视频面试管理', title: '改期审批', route: '/enterprise/interviews/reschedule-review',
     keywords: '改期 审批 申请 驳回 候选人',
     summary: '处理候选人在求职端提交的面试改期申请。',
     steps: [
-      '候选人提交申请后，侧边栏「视频面试管理」出现红点，「改期审批」显示待处理数量。',
+      '候选人提交申请后，「视频面试管理」出现红点，「改期审批」显示待处理数量。',
       '列表按待审批/已通过/已驳回/全部筛选，展示原时间、申请时间与理由。',
       '点击「通过」按新时段改期，并通知候选人与面试官；点击「驳回」必须填写原因。',
       '「查看」展示申请详情、审批人与审批时间。'
@@ -116,7 +129,32 @@ const MODULES = [
     ]
   },
   {
-    id: 'exam', group: '面试', title: '笔试管理', route: '/enterprise/exam',
+    id: 'conference', group: '视频面试管理', title: '正在进行的面试', route: '/enterprise/conference/active',
+    keywords: '视频 会议 进行中 设备检测 接管 字幕 往轮总结',
+    summary: '查看当前账号待开始/进行中的视频面试场次并进入会议。',
+    steps: [
+      '页面展示当前账号作为候选人或面试官的待开始 / 进行中场次。',
+      '进入会议前完成摄像头、麦克风、扬声器与网络四项设备检测。',
+      '会议中可发起/结束接管、共享屏幕、查看 AI 实时建议与字幕。',
+      '面试官可在左侧候选人信息栏查看「往轮面试总结」，包括历史轮次的总分、总结与建议（无 AI 纯人工模式也可查看）。',
+      '录制由服务端执行，需至少一位真实参与者进入房间才会生成文件。'
+    ],
+    tips: ['面试链接必须为完整绝对路径，发送前请确认候选人端地址配置正确。', '往轮总结仅展示同岗位已结束且报告已生成的场次。']
+  },
+  {
+    id: 'records', group: '视频面试管理', title: '录制回放', route: '/enterprise/conference/records',
+    keywords: '录制 回放 下载 删除 报告 总结 存储',
+    summary: '按场次查看录制文件与 AI 评估报告，支持播放、下载与删除。',
+    steps: [
+      '列表按录制开始时间筛选场次，展示候选人、岗位与录制状态。',
+      '录制完成后可在线播放、下载或删除，删除前请确认已备份。',
+      '展开场次可查看 AI 评估报告：综合评分、五维分数、本轮总结与建议。',
+      '报告生成中时可稍后刷新，生成失败会展示失败状态。'
+    ],
+    tips: ['录制显示「处理中」时需等待服务端回填真实状态。', '删除录制不可恢复，请谨慎操作。']
+  },
+  {
+    id: 'exam', group: '在线笔试管理', title: '笔试管理', route: '/enterprise/exam',
     keywords: '笔试 题库 试卷 安排 通知 成绩',
     summary: '维护题库与试卷，安排考试并在消息中心发送笔试链接。',
     steps: [
@@ -129,7 +167,7 @@ const MODULES = [
     tips: ['候选人需先完成双机位设备检测才能进入笔试。', '笔试链接为绝对路径，需正确配置候选人端地址。']
   },
   {
-    id: 'proctor', group: '面试', title: '监考监控', route: '/enterprise/exam/proctor',
+    id: 'proctor', group: '在线笔试管理', title: '监考监控', route: '/enterprise/exam/proctor',
     keywords: '监考 双机位 画面 考试中',
     summary: '实时监控进行中的在线笔试。',
     steps: [
@@ -140,7 +178,7 @@ const MODULES = [
     tips: ['主副机位画面延迟属正常现象，以实际考试状态为准。']
   },
   {
-    id: 'survey', group: '面试', title: '满意度调研', route: '/enterprise/survey',
+    id: 'survey', group: '在线笔试管理', title: '满意度调研', route: '/enterprise/survey',
     keywords: '问卷 调研 模板 结果 统计',
     summary: '配置满意度问卷模板并查看回收结果。',
     steps: [
@@ -150,6 +188,19 @@ const MODULES = [
       '「结果」页查看回收份数、各题分布与反馈明细。'
     ],
     tips: ['修改模板不影响已回收的历史结果。']
+  },
+  {
+    id: 'send', group: '笔试面试安排', title: '笔试面试安排中心', route: '/enterprise/send',
+    keywords: '安排 笔试 面试 邀约 多轮 批量 通知',
+    summary: '选择候选人的投递记录，直接发送笔试通知或面试邀约。',
+    steps: [
+      '搜索并选择候选人，确认要操作的投递记录后进入发送面板。',
+      '发送笔试：选择已有考试安排或新建安排，设置标题、有效期与通知渠道后发送。',
+      '发送面试：选择面试阶段、面试官与时间，创建会议并通知候选人。',
+      '需要多轮面试时可批量安排多轮排期，会议链接需在面试安排中心发起。',
+      '发送结果面板会展示创建成功数量与失败原因，失败项可调整后重试。'
+    ],
+    tips: ['投递已进入终态（已淘汰/已录用）时无法再发送。', '同一岗位已有未开始的面试时，新的会议创建会被拦截，需先在面试安排中心处理。', '岗位流程要求先通过笔试时，系统会阻止提前安排面试。']
   },
   {
     id: 'offer', group: '录用', title: 'Offer 管理', route: '/enterprise/offer',
@@ -162,19 +213,6 @@ const MODULES = [
       '已发送的 Offer 支持撤回，必须填写撤回原因，候选人会收到站内消息。'
     ],
     tips: ['仅草稿状态可提交审批，仅已发送状态可撤回。', '审批/撤回均按企业隔离，越权访问会返回业务错误。']
-  },
-  {
-    id: 'conference', group: '录用', title: '视频面试与录制', route: '/enterprise/conference/active',
-    keywords: '视频 会议 录制 回放 协同 接管',
-    summary: '进行中的视频面试与录制回放管理。',
-    steps: [
-      '「正在进行的面试」展示当前场次，点击进入协同面试间。',
-      '进入会议前完成摄像头、麦克风、扬声器与网络四项设备检测。',
-      '会议中可发起/结束接管、共享屏幕、查看 AI 实时建议与字幕。',
-      '录制由服务端执行，需至少一位真实参与者进入房间才会生成文件。',
-      '「录制回放」按录制开始时间筛选，可播放、下载与删除录制。'
-    ],
-    tips: ['面试链接必须为完整绝对路径，发送前请确认候选人端地址配置正确。', '录制显示「处理中」时需等待服务端回填真实状态。']
   },
   {
     id: 'messages', group: '协作', title: '消息中心', route: '/enterprise/messages',
@@ -191,10 +229,10 @@ const MODULES = [
   },
   {
     id: 'assistant', group: '协作', title: 'AI 助手', route: '/enterprise/assistant',
-    keywords: 'AI 助手 对话 工具 任务',
+    keywords: 'AI 助手 对话 工具 任务 悬浮球',
     summary: '通过对话完成查询与业务操作，结果可追溯。',
     steps: [
-      '点击右下角悬浮球展开助手面板，新建会话后输入问题。',
+      '点击页面右下角悬浮球展开助手面板，新建会话后输入问题。',
       '助手会按需调用受控工具（如查询岗位、候选人、面试安排），调用过程以工具标签展示。',
       '任务中断后重新进入会话可恢复执行进度。'
     ],
@@ -214,7 +252,7 @@ const MODULES = [
     tips: ['删除成员会清理其会话与令牌，操作不可撤销。', '数据清理仅删除本企业数据，不会影响其他企业。']
   },
   {
-    id: 'profile', group: '系统', title: '个人中心', route: '/enterprise/profile',
+    id: 'profile', group: '系统', title: '个人档案', route: '/enterprise/profile',
     keywords: '个人 资料 密码 偏好 通知',
     summary: '维护个人资料、登录安全与消息偏好。',
     steps: [
@@ -232,6 +270,7 @@ const MODULES = [
       '看不到某个菜单：菜单按角色权限展示，请联系企业管理员确认角色（企业管理员/招聘 HR/面试官）。',
       '登录提示状态已过期：刷新令牌失效，需要重新登录；重新登录后会自动回到企业端首页。',
       '页面数据为空：先确认筛选条件，再刷新；接口无数据时页面展示空态而非演示数据。',
+      '提示「当前操作没有权限」：当前账号角色不满足接口要求，请切换到有权限的账号或联系管理员分配角色。',
       '改期审批与面试安排的「调整」有何区别：前者处理候选人申请并需审批，后者是 HR 主动改期，立即生效。',
       '录制列表没有新增记录：需至少一位参与者进入会议房间，服务端才会生成录制文件。',
       'AI 评分结果一直未生成：评分为异步任务，可稍后刷新；多次失败请联系管理员查看模型服务。',
@@ -272,7 +311,7 @@ function go() {
       <div class="guide-head">
         <div>
           <h3>企业端使用指南</h3>
-          <p>按左侧模块查看操作步骤，或在右上角搜索关键词</p>
+          <p>按左侧模块查看操作步骤，或在上方搜索关键词</p>
         </div>
         <input v-model="keyword" class="guide-search" placeholder="搜索功能，如：改期、Offer、录制" />
       </div>
@@ -280,7 +319,7 @@ function go() {
 
     <div class="guide-body">
       <aside class="guide-nav">
-        <template v-for="group in ['入门', '招聘', '面试', '录用', '协作', '系统', '帮助']" :key="group">
+        <template v-for="group in ['入门', '岗位管理', '候选人与AI评分', '视频面试管理', '在线笔试管理', '笔试面试安排', '录用', '协作', '系统', '帮助']" :key="group">
           <div v-if="filtered.some(m => m.group === group)" class="guide-group">{{ group }}</div>
           <button
             v-for="m in filtered.filter(x => x.group === group)"
@@ -313,10 +352,10 @@ function go() {
 </template>
 
 <style scoped>
-.guide-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.guide-head { position: relative; display: flex; align-items: flex-end; gap: 20px; }
 .guide-head h3 { font-size: 18px; }
 .guide-head p { margin-top: 5px; color: var(--muted); font-size: 12px; }
-.guide-search { width: 260px; height: 36px; padding: 0 12px; border: 1px solid #dce4ee; border-radius: 9px; outline: none; font-size: 13px; }
+.guide-search { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 260px; height: 36px; padding: 0 12px; border: 1px solid #dce4ee; border-radius: 9px; outline: none; font-size: 13px; }
 .guide-search:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.09); }
 .guide-body { display: grid; grid-template-columns: 190px 1fr; gap: 20px; height: 480px; margin-top: 6px; }
 .guide-nav { border-right: 1px solid var(--line); padding-right: 14px; overflow-y: auto; }
