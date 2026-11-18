@@ -126,7 +126,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
         _avatarChanged = true;
       });
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('头像已更新')));
+          .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('头像已更新')));
     } catch (error) {
       if (mounted) setState(() => _avatarError = profileError(error));
     } finally {

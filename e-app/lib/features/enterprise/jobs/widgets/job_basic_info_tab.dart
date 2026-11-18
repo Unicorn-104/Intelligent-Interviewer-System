@@ -13,20 +13,14 @@ class JobBasicInfoTab extends StatelessWidget {
     required this.profile,
     required this.onReload,
     required this.onReloadProfile,
-    required this.onInterviews,
     this.onEdit,
-    this.onPreview,
-    this.onDelete,
     required this.workflowTimeline,
   });
   final JobSectionState<JobDetailViewData> detail;
   final JobSectionState<Map<String, dynamic>> profile;
   final Future<void> Function() onReload;
   final VoidCallback onReloadProfile;
-  final VoidCallback onInterviews;
   final VoidCallback? onEdit;
-  final VoidCallback? onPreview;
-  final VoidCallback? onDelete;
   final Widget workflowTimeline;
 
   @override
@@ -64,8 +58,6 @@ class JobBasicInfoTab extends StatelessWidget {
         children: [
           _section(null, [
             workflowTimeline,
-            const SizedBox(height: 20),
-            _actionRow(context),
           ]),
           _section(null, [
             Row(
@@ -86,7 +78,7 @@ class JobBasicInfoTab extends StatelessWidget {
                   key: const Key('job-edit-entry'),
                   onPressed: onEdit,
                   style: TextButton.styleFrom(
-                    foregroundColor: AppColors.teal,
+                    foregroundColor: AppColors.interactive,
                     minimumSize: const Size(44, 40),
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     shape: RoundedRectangleBorder(
@@ -142,20 +134,17 @@ class JobBasicInfoTab extends StatelessWidget {
                       _infoField(
                         Icons.school_outlined,
                         '学历要求',
-                        education[int.tryParse('${job['education']}')] ??
-                            '未提供',
+                        education[int.tryParse('${job['education']}')] ?? '未提供',
                       ),
                       _infoField(
                         Icons.work_outline,
                         '工作性质',
-                        jobTypes[int.tryParse('${job['jobType']}')] ??
-                            '未提供',
+                        jobTypes[int.tryParse('${job['jobType']}')] ?? '未提供',
                       ),
                       _infoField(
                         Icons.campaign_outlined,
                         '岗位状态',
-                        statuses[int.tryParse('${job['status']}')] ??
-                            '未提供',
+                        statuses[int.tryParse('${job['status']}')] ?? '未提供',
                       ),
                     ],
                   ),
@@ -175,104 +164,26 @@ class JobBasicInfoTab extends StatelessWidget {
                 _highlightChip(
                   key: const Key('job-basic-applicants'),
                   icon: Icons.group_outlined,
-                  label: '投递人数：${jobValue(data.funnel['total'], fallback: '未提供')}',
+                  label:
+                      '投递人数：${jobValue(data.funnel['total'], fallback: '未提供')}',
                 ),
+                _highlightChip(
+                  key: const Key('job-basic-interested'),
+                  icon: Icons.bookmark_border,
+                  label:
+                      '感兴趣：${jobValue(data.job['interestCount'], fallback: '0')}',
+                  ),
               ],
             ),
           ]),
-          _section(
-            '职责要求',
-            [_description(data)],
-            icon: Icons.description_outlined,
-          ),
+          _section('职责要求', [
+            _description(data),
+          ], icon: Icons.description_outlined),
           _section('技能', [_skills()], icon: Icons.view_in_ar_outlined),
         ],
       ),
     );
   }
-
-  /// 面试安排 / 预览 / 删除岗位三个操作按钮；窄屏自动改为纵向全宽。
-  Widget _actionRow(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final narrow =
-          constraints.maxWidth < 300 ||
-          MediaQuery.textScalerOf(context).scale(1) > 1.3;
-      final buttons = [
-        _actionButton(
-          key: const Key('job-interviews-entry'),
-          icon: Icons.event_outlined,
-          label: '面试安排',
-          onPressed: onInterviews,
-          background: AppColors.teal,
-          foreground: Colors.white,
-        ),
-        if (onPreview != null)
-          _actionButton(
-            key: const Key('job-preview-entry'),
-            icon: Icons.visibility_outlined,
-            label: '预览',
-            onPressed: onPreview,
-            background: AppColors.tealSoft,
-            foreground: AppColors.tealDeep,
-          ),
-        if (onDelete != null)
-          _actionButton(
-            key: const Key('job-delete-entry'),
-            icon: Icons.delete_outline,
-            label: '删除岗位',
-            onPressed: onDelete,
-            background: AppColors.dangerSoft,
-            foreground: AppColors.error,
-          ),
-      ];
-      if (narrow) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final (index, button) in buttons.indexed) ...[
-              if (index > 0) const SizedBox(height: 10),
-              button,
-            ],
-          ],
-        );
-      }
-      return Row(
-        children: [
-          for (final (index, button) in buttons.indexed) ...[
-            if (index > 0) const SizedBox(width: 10),
-            Expanded(child: button),
-          ],
-        ],
-      );
-    },
-  );
-
-  Widget _actionButton({
-    required Key key,
-    required IconData icon,
-    required String label,
-    required VoidCallback? onPressed,
-    required Color background,
-    required Color foreground,
-  }) => FilledButton.icon(
-    key: key,
-    onPressed: onPressed,
-    style: FilledButton.styleFrom(
-      minimumSize: const Size(0, 44),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      backgroundColor: background,
-      foregroundColor: foreground,
-      elevation: 0,
-      disabledBackgroundColor: background.withValues(alpha: .55),
-      disabledForegroundColor: foreground.withValues(alpha: .55),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    ),
-    icon: Icon(icon, size: 18),
-    label: Text(
-      label,
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-    ),
-  );
 
   /// 两列信息字段：线性图标 + 浅灰标签 + 深灰取值，长文本自动换行。
   Widget _infoField(IconData icon, String label, String value) => Padding(
@@ -319,20 +230,20 @@ class JobBasicInfoTab extends StatelessWidget {
     key: key,
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: AppColors.tealSoft,
+      color: AppColors.interactiveSoft,
       borderRadius: BorderRadius.circular(8),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: AppColors.tealDeep),
+        Icon(icon, size: 14, color: AppColors.interactive),
         const SizedBox(width: 5),
         Text(
           label,
           style: const TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: AppColors.tealDeep,
+            color: AppColors.interactive,
           ),
         ),
       ],
@@ -361,7 +272,11 @@ class JobBasicInfoTab extends StatelessWidget {
             if (title != null) ...[
               Row(
                 children: [
-                  Icon(icon ?? Icons.circle_outlined, size: 20, color: AppColors.teal),
+                  Icon(
+                    icon ?? Icons.circle_outlined,
+                    size: 20,
+                    color: AppColors.interactive,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     title,
@@ -429,7 +344,7 @@ class JobBasicInfoTab extends StatelessWidget {
               width: 3,
               height: 14,
               decoration: BoxDecoration(
-                color: AppColors.teal,
+                color: AppColors.interactive,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -459,10 +374,7 @@ class JobBasicInfoTab extends StatelessWidget {
                 children: [
                   const Text(
                     '•  ',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 14),
                   ),
                   Expanded(
                     child: Text(
@@ -511,7 +423,7 @@ class JobBasicInfoTab extends StatelessWidget {
             (skill) => Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
-                color: AppColors.tealSoft,
+                color: AppColors.interactiveSoft,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -519,7 +431,7 @@ class JobBasicInfoTab extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.tealDeep,
+                  color: AppColors.interactive,
                 ),
               ),
             ),

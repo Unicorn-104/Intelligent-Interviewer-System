@@ -75,6 +75,55 @@ Future<List<Map<String, dynamic>>> searchAdvancedTalentPool({
   return [for (final row in rows) Map<String, dynamic>.from(row as Map)];
 }
 
+/// 岗位收藏者列表：仅返回人才发现接口允许展示的公开资料。
+Future<List<Map<String, dynamic>>> listInterestedTalent(int positionId) async {
+  if (positionId <= 0) throw const FormatException('岗位编号无效');
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/talent-discovery/interested',
+    query: {'positionId': positionId, 'pageNum': 1, 'pageSize': 100},
+  );
+  final rows = response['rows'];
+  if (rows is! List || rows.any((row) => row is! Map)) {
+    throw const FormatException('感兴趣人才列表响应不完整，请重新读取');
+  }
+  return [
+    for (final row in rows)
+      TalentDiscoveryRow.fromJson(Map<String, dynamic>.from(row as Map)),
+  ];
+}
+
+/// 公开资料字段校验与标准化，避免列表页渲染未知字段。
+class TalentDiscoveryRow {
+  static Map<String, dynamic> fromJson(Map<String, dynamic> row) {
+    final userId = int.tryParse('${row['userId']}');
+    if (userId == null || userId <= 0 || row['directoryVersion'] != 1) {
+      throw const FormatException('感兴趣人才资料不完整，请确认服务器已更新');
+    }
+    return {
+      'userId': userId,
+      for (final key in const [
+        'name',
+        'avatar',
+        'currentCity',
+        'targetCity',
+        'currentStatus',
+        'jobDirection',
+        'highestEducation',
+        'workMonths',
+        'schoolName',
+        'major',
+        'graduationYear',
+        'salaryMin',
+        'salaryMax',
+        'salaryNegotiable',
+        'interestedAt',
+      ])
+        if (row.containsKey(key)) key: row[key],
+      'directoryVersion': 1,
+    };
+  }
+}
+
 Future<Map<String, dynamic>> loadTalentPoolOptions({
   EnterpriseApiClient? client,
 }) async {
@@ -114,14 +163,16 @@ Future<Map<String, dynamic>> getTalentParsedResume(int talentId) async {
 Future<Uint8List> getTalentResumePdf(
   int talentId, {
   EnterpriseApiClient? client,
-}) =>
-    (client ?? EnterpriseApiClient()).getBytes(
-      '/enterprise/talent/$talentId/resume/pdf',
-    );
+}) => (client ?? EnterpriseApiClient()).getBytes(
+  '/enterprise/talent/$talentId/resume/pdf',
+);
+
 /// 投递级结构化简历快照（岗位投递场景，以 applicationId 唯一定位）。
 /// 已对接：GET /enterprise/applications/{applicationId}/resume
 /// 后端只返回企业快照，不读 C-App 当前简历；快照缺失时返回错误，不回退。
-Future<Map<String, dynamic>> getApplicationParsedResume(int applicationId) async {
+Future<Map<String, dynamic>> getApplicationParsedResume(
+  int applicationId,
+) async {
   final response = await EnterpriseApiClient().get(
     '/enterprise/applications/$applicationId/resume',
   );
@@ -136,10 +187,9 @@ Future<Map<String, dynamic>> getApplicationParsedResume(int applicationId) async
 Future<Uint8List> getApplicationResumePdf(
   int applicationId, {
   EnterpriseApiClient? client,
-}) =>
-    (client ?? EnterpriseApiClient()).getBytes(
-      '/enterprise/applications/$applicationId/resume/pdf',
-    );
+}) => (client ?? EnterpriseApiClient()).getBytes(
+  '/enterprise/applications/$applicationId/resume/pdf',
+);
 
 /// HR 主动淘汰单条投递：经后端状态机终止为未录用并记录终止原因。
 /// 已对接：PUT /enterprise/talent/applications/terminate

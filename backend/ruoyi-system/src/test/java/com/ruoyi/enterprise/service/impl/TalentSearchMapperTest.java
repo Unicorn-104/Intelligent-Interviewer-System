@@ -42,18 +42,25 @@ public class TalentSearchMapperTest
             "create table t_res_base(rbs_id bigint primary key,rbs_user_id bigint,rbs_job_direction varchar(100),rbs_status int)",
             "create table t_tal_tag(tg_candidate_id bigint,tg_name varchar(100))",
             "create table t_tal_status_log(tsl_candidate_id bigint,tsl_to_status int)",
-            "create table t_res_education(edu_resume_id bigint,edu_degree int)",
-            "create table t_res_work(wrk_id bigint primary key,wrk_resume_id bigint,wrk_start_date date,wrk_end_date date,wrk_is_current int)")) jdbc.execute(sql);
+            "create table t_res_education(edu_id bigint primary key,edu_resume_id bigint,edu_degree int,edu_school varchar(100),edu_end_date date)",
+            "create table t_res_work(wrk_id bigint primary key,wrk_resume_id bigint,wrk_start_date date,wrk_end_date date,wrk_is_current int)",
+            "create table t_pos(pos_id bigint primary key,pos_title varchar(100))",
+            "create table t_app_record(app_id bigint primary key,app_candidate_id bigint,app_position_id bigint,app_status int,app_created_at timestamp)")) jdbc.execute(sql);
         for (long i=1;i<=6;i++) {
             jdbc.update("insert into sys_user values(?,?,null,null,?,?,?)",i,"合成候选人"+i, i==1?"杭州":"上海", i==1?"上海":"杭州", Timestamp.valueOf(LocalDateTime.now().minusDays(i==1?1:40)));
             jdbc.update("insert into t_res_base values(?,?,?,1)",i,i,"Java");
             jdbc.update("insert into t_tal values(?,?,?,?,1,80,0,current_timestamp,3)",i,i==6?2:1,i,i);
         }
-        jdbc.execute("insert into t_res_education values(1,2),(1,3),(1,0),(2,4),(4,3),(6,5)");
+        jdbc.execute("insert into t_res_education values(1,1,2,null,null),(2,1,3,null,null),(3,1,0,null,null),(4,2,4,null,null),(5,4,3,null,null),(6,6,5,null,null)");
         jdbc.execute("insert into t_tal_tag values(1,'Java'),(2,'Java')");
         jdbc.execute("insert into t_res_work values(1,1,'2019-01-01','2021-01-01',0),(2,1,'2020-01-01','2022-01-01',0),(3,1,'2019-01-01','2019-06-01',0),(4,1,'2020-06-01','2020-12-01',0)");
         jdbc.execute("insert into t_res_work values(5,2,'2020-01-01','2021-01-01',0),(6,2,'2022-01-01','2023-01-01',0)");
         jdbc.execute("insert into t_res_work values(7,3,'2022-01-01',null,0),(8,3,'2999-01-01',null,1),(9,3,'2024-01-01','2023-01-01',0)");
+        // 补岗位与投递：mapper 的最新投递岗位/状态子查询依赖这两张表，缺失会导致整个查询报错
+        jdbc.execute("insert into t_pos values(1,'岗位1')");
+        jdbc.execute("insert into t_app_record values "
+            + "(1,1,1,1,current_timestamp),(2,2,1,1,current_timestamp),(3,3,1,1,current_timestamp),"
+            + "(4,4,1,1,current_timestamp),(5,5,1,1,current_timestamp),(6,6,1,1,current_timestamp)");
         var factory = new SqlSessionFactoryBean(); factory.setDataSource(ds);
         var paging = new PageInterceptor(); var properties = new java.util.Properties(); properties.setProperty("helperDialect","mysql"); paging.setProperties(properties);
         factory.setPlugins(paging);

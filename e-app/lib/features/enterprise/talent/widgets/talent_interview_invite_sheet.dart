@@ -581,7 +581,7 @@ class _TalentInterviewInviteSheetState
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('面试安排已更新')));
+        ).showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('面试安排已更新')));
       }
     } catch (error) {
       if (!mounted) return;

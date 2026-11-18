@@ -23,8 +23,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.enterprise.domain.ProcessStageInstance;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
-import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
+import com.ruoyi.enterprise.service.ProcessStageInstanceService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
@@ -55,7 +58,8 @@ public class InterviewScheduleServiceImplTest
             "create table t_int_session(ses_id bigint, ses_appointment_id bigint, ses_candidate_id bigint, ses_position_id bigint, ses_status int)",
             "create table t_int_evaluation(evl_session_id bigint, evl_hr_status int)",
             "create table t_tal_status_log(tsl_id bigint auto_increment primary key, tsl_candidate_id bigint, tsl_from_status int, tsl_to_status int, tsl_created_at timestamp)",
-            "create table t_app_record(app_id bigint auto_increment primary key, app_candidate_id bigint, app_position_id bigint, app_status int, app_updated_at timestamp)",
+            // app_created_at 与生产 t_app_record 对齐，供面试日程 applicationId 关联子查询按业务时间过滤
+            "create table t_app_record(app_id bigint auto_increment primary key, app_candidate_id bigint, app_position_id bigint, app_status int, app_created_at timestamp default current_timestamp, app_updated_at timestamp)",
             "create table t_sch_slot(slt_id bigint auto_increment primary key, slt_interviewer_id bigint, slt_position_id bigint, slt_start_time timestamp, slt_end_time timestamp, slt_status int, slt_updated_at timestamp)",
             "create table t_sch_appointment(apt_id bigint auto_increment primary key, apt_candidate_id bigint, apt_position_id bigint, apt_stage_id bigint, apt_stage_name varchar(100), apt_stage_type int, apt_stage_order int, apt_interviewer_id bigint, apt_slot_id bigint, apt_start_time timestamp, apt_end_time timestamp, apt_status int, apt_notified int default 0, apt_meeting_url varchar(255), apt_room_id varchar(100), apt_updated_at timestamp)",
             "insert into sys_user values(19,'0','面试官'),(20,'0','面试官二'),(11,'0','候选人'),(12,'0','候选人二')",
@@ -78,11 +82,29 @@ public class InterviewScheduleServiceImplTest
         ReflectionTestUtils.setField(target,"scheduleMapper",mapper);
         ReflectionTestUtils.setField(target,"dashboardMapper",companyMapper);
         ReflectionTestUtils.setField(target,"jobMapper",jobs);
-        var screening = mock(ScreeningMapper.class);
         var status = mock(TalStatusService.class);
         when(status.change(anyLong(), anyInt(), anyList(), anyLong(), any(), any(), anyLong())).thenReturn(true);
-        ReflectionTestUtils.setField(target,"screeningMapper",screening);
         ReflectionTestUtils.setField(target,"talStatusService",status);
+        // screeningMapper 字段已移除；对齐当前「流程节点 + 状态机」模型：
+        // 1) applicationStatusMapper：selectAppId 返回投递主键（取候选人ID），selectApplicationById 返回状态与流程实例
+        var appStatusMapper = mock(ApplicationStatusMapper.class);
+        when(appStatusMapper.selectAppId(anyLong(), anyLong())).thenAnswer(inv -> inv.getArgument(0));
+        when(appStatusMapper.selectApplicationById(anyLong())).thenReturn(Map.of(
+                "appId", 1L, "status", 1, "instanceId", 900L));
+        ReflectionTestUtils.setField(target, "applicationStatusMapper", appStatusMapper);
+        ReflectionTestUtils.setField(target, "applicationStatusService", mock(ApplicationStatusService.class));
+        // 2) stageInstanceService：节点服务为 mock，getOrCreate 返回节点，listNodes 含「已通过笔试节点」，
+        // 使安排后续面试的笔试前置闸门放行；start/cancel 为空操作
+        var stageInstances = mock(ProcessStageInstanceService.class);
+        var examPassed = new ProcessStageInstance();
+        examPassed.setNodeType(ProcessStageInstance.TYPE_EXAM);
+        examPassed.setResult(ProcessStageInstance.RESULT_PASS);
+        var createdNode = new ProcessStageInstance();
+        createdNode.setId(1L);
+        when(stageInstances.getOrCreate(anyLong(), any(), anyInt(), anyString(), anyLong(), any()))
+                .thenReturn(createdNode);
+        when(stageInstances.listNodes(anyLong())).thenReturn(List.of(examPassed));
+        ReflectionTestUtils.setField(target, "stageInstanceService", stageInstances);
         var proxy = new ProxyFactory(target);
         proxy.setProxyTargetClass(true);
         proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(ds), new AnnotationTransactionAttributeSource()));
@@ -212,7 +234,7 @@ public class InterviewScheduleServiceImplTest
     }
 
     @Test
-    void cancelSingleAppointmentReleasesSlotAndRestoresStatuses()
+    void cancelSingleAppointmentReleasesSlotWithoutRegressingStatuses()
     {
         var appointment = service.invite(1L,11L,7L,31L,19L,"2099-01-02 09:00",45);
         long id = ((Number)appointment.get("appointmentId")).longValue();
@@ -220,14 +242,15 @@ public class InterviewScheduleServiceImplTest
         logTal(11, 1, 2);
         advanceToInvited(11);
         var result = cancel(id);
+        // 新六态模型：取消仅释放面试官时段并取消节点，候选人/投递状态不回退（状态变更一律经状态机）
         assertEquals(true, result.get("slotReleased"));
-        assertEquals(true, result.get("candidateStatusRestored"));
-        assertEquals(true, result.get("applicationStatusRestored"));
+        assertEquals(false, result.get("candidateStatusRestored"));
+        assertEquals(false, result.get("applicationStatusRestored"));
         assertEquals(0, result.get("remainingAppointments"));
         assertEquals(2, mapper.selectAppointmentById(id).get("status"));
         assertEquals(1, slotStatus(slotId));
-        assertEquals(1, talStatus(11));
-        assertEquals(1, appStatus(11, 7));
+        assertEquals(2, talStatus(11));
+        assertEquals(3, appStatus(11, 7));
     }
 
     @Test
@@ -253,7 +276,7 @@ public class InterviewScheduleServiceImplTest
     }
 
     @Test
-    void cancelLastValidAppointmentRestoresAfterEarlierCancelled()
+    void cancelLastValidAppointmentKeepsStatusesAfterEarlierCancelled()
     {
         var batch = service.inviteStages(1L,11L,7L,List.of(
                 stage(31,19,"2099-01-02 09:00",30), stage(32,20,"2099-01-02 10:00",60)));
@@ -263,11 +286,12 @@ public class InterviewScheduleServiceImplTest
         advanceToInvited(11);
         cancel(firstId);
         var result = cancel(secondId);
-        assertEquals(true, result.get("candidateStatusRestored"));
+        // 新模型：即使两个阶段都已取消，也不回退候选人/投递状态，由 HR 显式操作或状态机推进
+        assertEquals(false, result.get("candidateStatusRestored"));
+        assertEquals(false, result.get("applicationStatusRestored"));
         assertEquals(0, result.get("remainingAppointments"));
-        // 两个阶段都已取消，最后一条取消后才恢复状态
-        assertEquals(1, talStatus(11));
-        assertEquals(1, appStatus(11, 7));
+        assertEquals(2, talStatus(11));
+        assertEquals(3, appStatus(11, 7));
     }
 
     @Test
@@ -289,8 +313,8 @@ public class InterviewScheduleServiceImplTest
     @Test
     void cancelKeepsCandidateStatusWhenOtherPositionStillHasValidAppointment()
     {
-        // 候选人同时面试岗位7与岗位8：取消岗位7最后一个预约，候选人状态不回退（岗位8仍有效），
-        // 岗位7投递状态按岗位粒度回退。
+        // 候选人同时面试岗位7与岗位8：取消岗位7最后一个预约，候选人状态不回退（岗位8仍有效）；
+        // 新模型下岗位7投递状态同样不回退，状态变更一律经状态机。
         jdbc.update("insert into t_pos values(8,1,'第二岗位',1)");
         jdbc.update("insert into t_process_instance values(11,8,0)");
         jdbc.update("insert into t_app_record(app_candidate_id,app_position_id,app_status) values(11,8,1)");
@@ -303,10 +327,10 @@ public class InterviewScheduleServiceImplTest
         var result = cancel(id);
         assertEquals(true, result.get("slotReleased"));
         assertEquals(false, result.get("candidateStatusRestored"));
-        assertEquals(true, result.get("applicationStatusRestored"));
+        assertEquals(false, result.get("applicationStatusRestored"));
         assertEquals(1, slotStatus(slotId));
         assertEquals(2, talStatus(11));
-        assertEquals(1, appStatus(11, 7));
+        assertEquals(3, appStatus(11, 7));
         assertEquals(3, appStatus(11, 8));
     }
 
@@ -366,8 +390,9 @@ public class InterviewScheduleServiceImplTest
         assertEquals(false, again.get("slotReleased"));
         assertEquals(false, again.get("candidateStatusRestored"));
         assertEquals(1, slotStatus(slotId));
-        assertEquals(1, talStatus(11));
-        assertEquals(1, appStatus(11, 7));
+        // 新模型：取消不回退状态，重复取消后候选人/投递仍保持面试中状态
+        assertEquals(2, talStatus(11));
+        assertEquals(3, appStatus(11, 7));
     }
 
     @Test
@@ -479,7 +504,7 @@ public class InterviewScheduleServiceImplTest
     }
 
     @Test
-    void relaunchCancelReleasesSlotAndRestoresStatuses()
+    void relaunchCancelReleasesSlotWithoutRegressingStatuses()
     {
         var appointment = service.invite(1L,11L,7L,31L,19L,"2099-01-02 09:00",45);
         long id = ((Number)appointment.get("appointmentId")).longValue();
@@ -489,10 +514,12 @@ public class InterviewScheduleServiceImplTest
         var result = relaunchCancel(id);
         assertEquals("已取消该面试安排，面试官时段已释放", result.get("message"));
         assertEquals(true, result.get("slotReleased"));
-        assertEquals(true, result.get("candidateStatusRestored"));
+        // 新模型：会议重新发起前的清理同样不回退候选人/投递状态
+        assertEquals(false, result.get("candidateStatusRestored"));
+        assertEquals(false, result.get("applicationStatusRestored"));
         assertEquals(1, slotStatus(slotId));
-        assertEquals(1, talStatus(11));
-        assertEquals(1, appStatus(11, 7));
+        assertEquals(2, talStatus(11));
+        assertEquals(3, appStatus(11, 7));
     }
 
     @Test
@@ -537,7 +564,7 @@ public class InterviewScheduleServiceImplTest
     @Test
     void relaunchCancelDoesNotRegressOtherPositionInterview()
     {
-        // 岗位8仍有有效预约时，取消岗位7的旧预约只恢复岗位7投递，候选人状态不回退
+        // 岗位8仍有有效预约时，取消岗位7的旧预约：候选人状态不回退，新模型下岗位7投递状态也不回退
         jdbc.update("insert into t_pos values(8,1,'第二岗位',1)");
         jdbc.update("insert into t_process_instance values(11,8,0)");
         jdbc.update("insert into t_app_record(app_candidate_id,app_position_id,app_status) values(11,8,1)");
@@ -548,9 +575,9 @@ public class InterviewScheduleServiceImplTest
         advanceToInvited(11);
         var result = relaunchCancel(id);
         assertEquals(false, result.get("candidateStatusRestored"));
-        assertEquals(true, result.get("applicationStatusRestored"));
+        assertEquals(false, result.get("applicationStatusRestored"));
         assertEquals(2, talStatus(11));
-        assertEquals(1, appStatus(11, 7));
+        assertEquals(3, appStatus(11, 7));
         assertEquals(3, appStatus(11, 8));
     }
 }

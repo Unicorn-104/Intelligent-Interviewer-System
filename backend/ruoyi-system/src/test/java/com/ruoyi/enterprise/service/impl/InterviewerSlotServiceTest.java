@@ -23,8 +23,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.mapper.InterviewerSlotMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
+import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 
@@ -62,7 +65,8 @@ public class InterviewerSlotServiceTest
             "create table t_int_session(ses_id bigint, ses_appointment_id bigint, ses_candidate_id bigint, ses_position_id bigint, ses_status int)",
             "create table t_int_evaluation(evl_session_id bigint, evl_hr_status int)",
             "create table t_tal_status_log(tsl_id bigint auto_increment primary key, tsl_candidate_id bigint, tsl_from_status int, tsl_to_status int, tsl_created_at timestamp)",
-            "create table t_app_record(app_id bigint auto_increment primary key, app_candidate_id bigint, app_position_id bigint, app_status int, app_updated_at timestamp)",
+            // app_created_at 与生产 t_app_record 对齐，供面试日程 applicationId 关联子查询按业务时间过滤
+            "create table t_app_record(app_id bigint auto_increment primary key, app_candidate_id bigint, app_position_id bigint, app_status int, app_created_at timestamp default current_timestamp, app_updated_at timestamp)",
             "create table t_sch_slot(slt_id bigint auto_increment primary key, slt_interviewer_id bigint, slt_position_id bigint, slt_start_time timestamp, slt_end_time timestamp, slt_status int, slt_updated_at timestamp)",
             "create table t_sch_appointment(apt_id bigint auto_increment primary key, apt_candidate_id bigint, apt_position_id bigint, apt_stage_id bigint, apt_stage_name varchar(100), apt_stage_type int, apt_stage_order int, apt_interviewer_id bigint, apt_slot_id bigint, apt_start_time timestamp, apt_end_time timestamp, apt_status int, apt_notified int default 0, apt_meeting_url varchar(255), apt_room_id varchar(100), apt_updated_at timestamp)",
             "insert into sys_user values(19,'0','面试官'),(20,'0','面试官二'),(11,'0','候选人')",
@@ -94,7 +98,14 @@ public class InterviewerSlotServiceTest
         ReflectionTestUtils.setField(scheduleTarget, "scheduleMapper", scheduleMapper);
         ReflectionTestUtils.setField(scheduleTarget, "dashboardMapper", companyMapper);
         ReflectionTestUtils.setField(scheduleTarget, "jobMapper", jobs);
-        ReflectionTestUtils.setField(scheduleTarget, "screeningMapper", mock(com.ruoyi.enterprise.mapper.ScreeningMapper.class));
+        // 重构后 screeningMapper 字段已移除；补 tal/状态机依赖。
+        // 本类聚焦面试官时段，applicationStatusMapper 为 mock、selectAppId 默认返回 null，
+        // 面试节点与 startRecruitment 安全跳过（节点逻辑由其他测试覆盖）。
+        var talStatus = mock(TalStatusService.class);
+        when(talStatus.change(anyLong(), anyInt(), anyList(), anyLong(), any(), any(), anyLong())).thenReturn(true);
+        ReflectionTestUtils.setField(scheduleTarget, "talStatusService", talStatus);
+        ReflectionTestUtils.setField(scheduleTarget, "applicationStatusMapper", mock(ApplicationStatusMapper.class));
+        ReflectionTestUtils.setField(scheduleTarget, "applicationStatusService", mock(ApplicationStatusService.class));
         var scheduleProxy = new ProxyFactory(scheduleTarget);
         scheduleProxy.setProxyTargetClass(true);
         scheduleProxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(ds),

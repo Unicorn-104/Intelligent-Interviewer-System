@@ -192,7 +192,8 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
     }
     if (_loading) {
       return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 12),
+        // 紧凑化：加载态垂直留白 12→8
+        padding: EdgeInsets.symmetric(vertical: 8),
         child: LinearProgressIndicator(minHeight: 2),
       );
     }
@@ -235,7 +236,8 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
                 ? baseWidth
                 : constraints.maxWidth / _stages.length;
             final contentWidth = cellWidth * _stages.length;
-            final height = 30 + 28 * scale;
+            // 紧凑化：节点区高度基数由 30/28 收紧到 26/26，减少时间轴上下留白
+            final height = 26 + 26 * scale;
             if (_lastViewport != viewport || _lastContent != contentWidth) {
               _lastViewport = viewport;
               _lastContent = contentWidth;
@@ -472,7 +474,8 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
           children: [
             SizedBox(
               width: double.infinity,
-              height: 24,
+              // 紧凑化：节点行高由 24 收紧到 22
+              height: 22,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -480,7 +483,8 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
                     Positioned(
                       left: 0,
                       right: width / 2,
-                      top: 11,
+                      // 连线随节点中心上移（top 11→10），保持水平居中
+                      top: 10,
                       child: Container(
                         key: ValueKey('talent-flow-line-in-${stage.id}'),
                         height: 2,
@@ -493,7 +497,7 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
                     Positioned(
                       left: width / 2,
                       right: 0,
-                      top: 11,
+                      top: 10,
                       child: Container(
                         key: ValueKey('talent-flow-line-${stage.id}'),
                         height: 2,
@@ -504,8 +508,9 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
                     ),
                   Container(
                     key: ValueKey('talent-flow-dot-${stage.id}'),
-                    width: 20,
-                    height: 20,
+                    // 紧凑化：节点外圆 20→18
+                    width: 18,
+                    height: 18,
                     decoration: BoxDecoration(
                       color: color.withValues(alpha: .12),
                       shape: BoxShape.circle,
@@ -513,15 +518,17 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
                     alignment: Alignment.center,
                     child: _openingStageId == stage.id
                         ? SizedBox.square(
-                            dimension: 10,
+                            // 加载圈随内点 10→9
+                            dimension: 9,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: color,
                             ),
                           )
                         : Container(
-                            width: 10,
-                            height: 10,
+                            // 内点 10→9
+                            width: 9,
+                            height: 9,
                             decoration: BoxDecoration(
                               color: stage.attended || stage.current
                                   ? color
@@ -534,7 +541,8 @@ class _TalentWorkflowProgressState extends State<TalentWorkflowProgress> {
                 ],
               ),
             ),
-            const SizedBox(height: 4),
+            // 紧凑化：节点与阶段文字间距 4→3
+            const SizedBox(height: 3),
             Tooltip(
               message:
                   '${stage.name} · ${stage.attended

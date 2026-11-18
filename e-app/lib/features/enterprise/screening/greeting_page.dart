@@ -49,7 +49,7 @@ class _GreetingPageState extends State<GreetingPage> {
     await Clipboard.setData(ClipboardData(text: '${candidate['greeting']}'));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已复制「${candidate['name']}」的招呼语（模拟）')),
+      SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已复制「${candidate['name']}」的招呼语（模拟）')),
     );
   }
 

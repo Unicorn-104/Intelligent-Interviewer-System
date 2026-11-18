@@ -437,7 +437,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
       _importError = null;
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      SnackBar(duration: const Duration(milliseconds: 1500),
         content: Text(
           patch.isEmpty ? '内容与当前表单一致，未覆盖任何字段' : '草稿已回填，请核对必填项后预览发布',
         ),
@@ -729,7 +729,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Material(
-        color: AppColors.tealSoft,
+        color: AppColors.interactiveSoft,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           key: const Key('job-publish-add-stage'),
@@ -742,7 +742,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.teal.withValues(alpha: .4)),
+              border: Border.all(color: AppColors.interactive.withValues(alpha: .4)),
             ),
             child: Row(
               children: [
@@ -750,7 +750,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
                   width: 32,
                   height: 32,
                   decoration: const BoxDecoration(
-                    color: AppColors.teal,
+                    color: AppColors.interactive,
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.add, size: 20, color: Colors.white),
@@ -760,7 +760,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
                   child: Text(
                     '新增招聘流程',
                     style: TextStyle(
-                      color: AppColors.tealDeep,
+                      color: AppColors.interactive,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
@@ -768,7 +768,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
                 ),
                 const Icon(
                   Icons.chevron_right,
-                  color: AppColors.tealDeep,
+                  color: AppColors.interactive,
                   size: 22,
                 ),
               ],
@@ -831,9 +831,30 @@ class _JobPublishPageState extends State<JobPublishPage> {
     IconData? icon,
     Widget? suffixIcon,
     bool showCounter = false,
-  }) => InputDecoration(
-    labelText: label,
+  }) {
+    final required = label.trimRight().endsWith('*');
+    final star = required ? label.lastIndexOf('*') : -1;
+    return InputDecoration(
+    labelText: required ? null : label,
+    label: required
+        ? Text.rich(
+            TextSpan(
+              text: label.substring(0, star),
+              children: [
+                TextSpan(
+                  text: '*',
+                  style: const TextStyle(color: AppColors.error),
+                ),
+              ],
+            ),
+          )
+        : null,
     hintText: hint,
+    hintStyle: const TextStyle(
+      color: AppColors.textMuted,
+      fontSize: 13,
+      height: 1.35,
+    ),
     alignLabelWithHint: true,
     prefixIcon: icon == null ? null : Icon(icon, size: 20),
     suffixIcon: suffixIcon,
@@ -851,9 +872,10 @@ class _JobPublishPageState extends State<JobPublishPage> {
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(10),
-      borderSide: const BorderSide(color: AppColors.teal, width: 1.5),
+      borderSide: const BorderSide(color: AppColors.interactive, width: 1.5),
     ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) => PopScope(
@@ -969,11 +991,11 @@ class _JobPublishPageState extends State<JobPublishPage> {
       gradient: const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [AppColors.teal, Color(0xFF00A3C6)],
+        colors: [AppColors.brandDeep, AppColors.interactive],
       ),
       boxShadow: const [
         BoxShadow(
-          color: Color(0x2200BFA5),
+          color: Color(0x222B7FFF),
           blurRadius: 18,
           offset: Offset(0, 6),
         ),
@@ -1079,13 +1101,13 @@ class _JobPublishPageState extends State<JobPublishPage> {
               height: 32,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: AppColors.tealSoft,
+                color: AppColors.interactiveSoft,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
                 number,
                 style: const TextStyle(
-                  color: AppColors.tealDeep,
+                  color: AppColors.interactive,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1103,16 +1125,19 @@ class _JobPublishPageState extends State<JobPublishPage> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        Text(
-          subtitle,
-          style: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 12,
-            height: 1.45,
+        if (subtitle.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 12,
+              height: 1.45,
+            ),
           ),
-        ),
-        const SizedBox(height: 20),
+          const SizedBox(height: 20),
+        ] else
+          const SizedBox(height: 14),
         ...children,
       ],
     ),
@@ -1194,8 +1219,8 @@ class _JobPublishPageState extends State<JobPublishPage> {
               title: const Text('薪资面议'),
               subtitle: const Text('开启后，候选人将看到“面议”'),
               value: _negotiable,
-              activeThumbColor: AppColors.teal,
-              activeTrackColor: AppColors.tealSoft,
+              activeThumbColor: AppColors.interactive,
+              activeTrackColor: AppColors.interactiveSoft,
               onChanged: (value) => setState(() {
                 _negotiable = value;
                 _dirty = true;
@@ -1395,8 +1420,8 @@ class _JobPublishPageState extends State<JobPublishPage> {
               .map(
                 (skill) => Chip(
                   label: Text('${skill.name} · ${skill.requirementLabel}'),
-                  labelStyle: const TextStyle(color: AppColors.tealDeep),
-                  backgroundColor: AppColors.tealSoft,
+                  labelStyle: const TextStyle(color: AppColors.interactive),
+                  backgroundColor: AppColors.interactiveSoft,
                   side: BorderSide.none,
                 ),
               )
@@ -1417,13 +1442,26 @@ class _JobPublishPageState extends State<JobPublishPage> {
   ];
 
   Widget _skillSection() =>
-      _section('04', '技能标签', '最多30项；“未注明”会保留为空，不会自动视为必备', [
-        if (_skills.isEmpty)
-          const Text(
-            '可从文档导入技能，也可手动添加。',
-            style: TextStyle(color: AppColors.textMuted),
-          ),
-        if (_skills.isNotEmpty)
+      _section('04', '技能标签', '', [
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '最多30项；“未注明”会保留为空，不会自动视为必备',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 11,
+              ),
+            ),
+            SizedBox(height: 2),
+            Text(
+              '可从文档导入技能，也可手动添加。',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 10),
+            ),
+          ],
+        ),
+        if (_skills.isNotEmpty) ...[
+          const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -1432,21 +1470,23 @@ class _JobPublishPageState extends State<JobPublishPage> {
                 _skillTag(index),
             ],
           ),
+        ],
+        const SizedBox(height: 10),
         Align(
           alignment: Alignment.centerLeft,
           child: OutlinedButton.icon(
             key: const Key('job-add-skill'),
             onPressed: _skills.length >= 30 ? null : () => _editSkill(),
             style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.tealDeep,
-              backgroundColor: AppColors.tealSoft,
-              side: const BorderSide(color: AppColors.teal, width: 1.2),
-              minimumSize: const Size(0, 44),
+              foregroundColor: AppColors.interactive,
+              backgroundColor: AppColors.interactiveSoft,
+              side: const BorderSide(color: AppColors.interactive, width: 1.2),
+              minimumSize: const Size(0, 40),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
             ),
-            icon: const Icon(Icons.add, size: 18),
+            icon: const Icon(Icons.add, size: 17),
             label: const Text(
               '添加技能',
               style: TextStyle(fontWeight: FontWeight.w600),
@@ -1459,7 +1499,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
   Widget _skillTag(int index) {
     final skill = _skills[index];
     return Material(
-      color: AppColors.tealSoft,
+      color: AppColors.interactiveSoft,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         key: ValueKey('job-skill-$index'),
@@ -1470,7 +1510,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: AppColors.teal.withValues(alpha: .35),
+              color: AppColors.interactive.withValues(alpha: .35),
             ),
           ),
           child: Row(
@@ -1481,7 +1521,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.tealDeep,
+                  color: AppColors.interactive,
                 ),
               ),
               const SizedBox(width: 4),
@@ -1498,7 +1538,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
                   child: Icon(
                     Icons.close,
                     size: 15,
-                    color: AppColors.tealDeep,
+                    color: AppColors.interactive,
                   ),
                 ),
               ),
@@ -1551,7 +1591,7 @@ class _JobPublishPageState extends State<JobPublishPage> {
                         _scroll.jumpTo(0);
                       },
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.tealDeep,
+                  foregroundColor: AppColors.interactive,
                   minimumSize: const Size(0, 52),
                   side: const BorderSide(color: AppColors.hairline),
                   shape: RoundedRectangleBorder(
@@ -1569,11 +1609,11 @@ class _JobPublishPageState extends State<JobPublishPage> {
                   gradient: const LinearGradient(
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
-                    colors: [AppColors.teal, Color(0xFF00A3C6)],
+                    colors: [AppColors.brandDeep, AppColors.interactive],
                   ),
                   boxShadow: const [
                     BoxShadow(
-                      color: Color(0x3300BFA5),
+                      color: Color(0x332B7FFF),
                       blurRadius: 10,
                       offset: Offset(0, 4),
                     ),
@@ -1694,6 +1734,11 @@ class _JdSkillEditorState extends State<_JdSkillEditor> {
                 decoration: InputDecoration(
                   labelText: '技能名称',
                   hintText: '请输入技能名称',
+                  hintStyle: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
                   filled: true,
                   fillColor: AppColors.fieldBackground,
                   border: OutlineInputBorder(
@@ -1707,7 +1752,7 @@ class _JdSkillEditorState extends State<_JdSkillEditor> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: const BorderSide(
-                      color: AppColors.teal,
+                      color: AppColors.interactive,
                       width: 1.5,
                     ),
                   ),
@@ -1766,7 +1811,7 @@ class _JdSkillEditorState extends State<_JdSkillEditor> {
       FilledButton(
         key: const Key('job-skill-save'),
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.teal,
+          backgroundColor: AppColors.interactive,
           minimumSize: const Size(0, 44),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
@@ -1797,7 +1842,7 @@ class _JdSkillEditorState extends State<_JdSkillEditor> {
     final selected = (_requiredFlag ?? -1) == flag;
     return Material(
       key: key,
-      color: selected ? AppColors.teal : AppColors.fieldBackground,
+      color: selected ? AppColors.interactive : AppColors.fieldBackground,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -1810,7 +1855,7 @@ class _JdSkillEditorState extends State<_JdSkillEditor> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: selected ? AppColors.teal : AppColors.hairline,
+              color: selected ? AppColors.interactive : AppColors.hairline,
             ),
           ),
           child: Text(

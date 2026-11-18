@@ -45,7 +45,7 @@ class _JobsScreenState extends State<JobsScreen> {
       await widget.repository.changeJobStatus(job['posId'] ?? job['positionId'], status);
       await _load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('$e')));
     }
   }
 
@@ -199,7 +199,7 @@ class _CreateJobSheetState extends State<_CreateJobSheet> {
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('$e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

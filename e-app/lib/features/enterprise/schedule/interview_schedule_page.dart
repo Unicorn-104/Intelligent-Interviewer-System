@@ -421,7 +421,7 @@ class _DemoInterviewSchedulePageState extends State<InterviewSchedulePage> {
     );
     if (created == true) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('面试邀约已发送（模拟），候选人将收到专属预约链接')),
+        const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('面试邀约已发送（模拟），候选人将收到专属预约链接')),
       );
       await _load();
     }
@@ -447,7 +447,7 @@ class _DemoInterviewSchedulePageState extends State<InterviewSchedulePage> {
             onPressed: () {
               Navigator.pop(context);
               messenger.showSnackBar(
-                SnackBar(content: Text('已向「${item['candidateName']}」发送提醒（模拟）')),
+                SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已向「${item['candidateName']}」发送提醒（模拟）')),
               );
             },
             child: const Text('发送'),

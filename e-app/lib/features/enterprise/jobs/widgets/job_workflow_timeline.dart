@@ -87,7 +87,7 @@ class JobWorkflowTimeline extends StatelessWidget {
                       height: 2,
                       color: hasPlaceholder
                           ? AppColors.hairline
-                          : AppColors.teal.withValues(alpha: .25),
+                          : AppColors.interactive.withValues(alpha: .25),
                     ),
                   ),
                 Row(
@@ -156,7 +156,7 @@ class JobWorkflowTimeline extends StatelessWidget {
                     shape: BoxShape.circle,
                     color: placeholder
                         ? const Color(0xFFEEF2F6)
-                        : AppColors.teal,
+                        : AppColors.interactive,
                   ),
                   child: Icon(
                     placeholder ? Icons.add : _stageIcon(type),

@@ -67,7 +67,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
     if (_busy || peerId == null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('求职者信息缺失，暂时无法发起对话')));
+        ..showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('求职者信息缺失，暂时无法发起对话')));
       return;
     }
     // 仅需对方真实 userId；无历史会话时聊天页允许直接编辑首条消息，
@@ -111,7 +111,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
       setState(() => _workflowRevision++);
       widget.onInvited?.call();
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请在面试安排中核对邀约结果')));
+          .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('请在面试安排中核对邀约结果')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -166,14 +166,14 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
     if (positionId == null || candidateId == null) {
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('岗位信息缺失，无法淘汰')));
+        ..showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('岗位信息缺失，无法淘汰')));
       return;
     }
     // 必须有精确投递ID，缺失时明确报错，不让后端猜测
     if (applicationId == null) {
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('当前投递ID缺失，无法淘汰，请刷新后重试')));
+        ..showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('当前投递ID缺失，无法淘汰，请刷新后重试')));
       return;
     }
     setState(() => _busy = true);
@@ -189,13 +189,13 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
       widget.onInvited?.call();
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('已标记为未录用（${reason.label}）')));
+        ..showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已标记为未录用（${reason.label}）')));
     } catch (error) {
       if (!mounted) return;
       final message = error is ApiException ? error.message : '淘汰失败，请刷新后重试';
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(message)));
+        ..showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(message)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -209,7 +209,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
     }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('$action功能开发中')));
+      ..showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('$action功能开发中')));
   }
 
   /// 按投递状态生成「更多」操作项；终态不提供推进类操作。
@@ -229,27 +229,33 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
       case ApplicationStatus.applied:
         return [
           _menuItem('启动招聘', Icons.play_arrow_outlined, AppColors.interactive),
+          // 菜单项之间用细分隔线，避免误触
+          const PopupMenuDivider(),
           _rejectItem(),
         ];
       case ApplicationStatus.pendingOffer:
         return [
           _menuItem('发Offer', Icons.send_outlined, AppColors.warning),
+          const PopupMenuDivider(),
           _rejectItem(),
         ];
       case ApplicationStatus.offerPendingConfirmation:
         return [
           _menuItem('撤销Offer', Icons.undo_outlined, AppColors.warning),
+          const PopupMenuDivider(),
           _rejectItem(),
         ];
       case ApplicationStatus.inProgress:
         return [
           _menuItem('查看评审', Icons.fact_check_outlined, AppColors.interactive),
+          const PopupMenuDivider(),
           _rejectItem(),
         ];
       default:
         // 状态未知时保留入口，但不暴露淘汰，避免误操作。
         return [
           _menuItem('录用', Icons.check_circle_outline, AppColors.success),
+          const PopupMenuDivider(),
           _rejectItem(),
         ];
     }
@@ -286,7 +292,8 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
         job: widget.job,
         revision: widget.workflowRevision + _workflowRevision,
       ),
-      const SizedBox(height: 8),
+      // 紧凑化：时间轴与按钮间距 8→6
+      const SizedBox(height: 6),
       _buttons(context),
     ],
   );
@@ -299,11 +306,13 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
         key: ValueKey('${widget.keyPrefix}-greeting'),
         onPressed: _openChat,
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size(0, 46),
+          // 紧凑化：按钮高度 46→40
+          minimumSize: const Size(0, 40),
           padding: const EdgeInsets.symmetric(horizontal: 8),
           foregroundColor: AppColors.interactive,
-          side: const BorderSide(color: AppColors.hairline),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          // 次按钮：描边由浅灰 hairline 改为蓝色，与蓝白风格统一
+          side: const BorderSide(color: AppColors.interactive),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
         icon: const Icon(Icons.chat_bubble_outline, size: 18),
         label: const FittedBox(fit: BoxFit.scaleDown, child: Text('打招呼')),
@@ -313,7 +322,8 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
           color: _enabled
               ? AppColors.interactive
               : AppColors.interactive.withValues(alpha: .4),
-          borderRadius: BorderRadius.circular(4),
+          // 圆角与次按钮统一为 6
+          borderRadius: BorderRadius.circular(6),
         ),
         child: Row(
           children: [
@@ -322,7 +332,8 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
                 key: ValueKey('${widget.keyPrefix}-invite'),
                 onPressed: (_enabled && !terminal) ? _openInvite : null,
                 style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 46),
+                  // 紧凑化：按钮高度 46→40
+                  minimumSize: const Size(0, 40),
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   backgroundColor: AppColors.canvas.withValues(alpha: 0),
                   disabledBackgroundColor: AppColors.canvas.withValues(
@@ -334,7 +345,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
                   ),
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.horizontal(
-                      left: Radius.circular(4),
+                      left: Radius.circular(6),
                     ),
                   ),
                 ),
@@ -357,8 +368,10 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
               onSelected: _more,
               position: PopupMenuPosition.under,
               color: AppColors.canvas,
+              // 下拉菜单：圆角 4→8，3 级柔和阴影，白底轻投影
+              elevation: 3,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(8),
               ),
               padding: EdgeInsets.zero,
               iconSize: 20,

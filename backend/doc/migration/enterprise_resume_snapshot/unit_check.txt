@@ -1,0 +1,8 @@
+﻿mvn : OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath h
+as been appended
+所在位置 行:1 字符: 90
++ ... "-Xmx900m"; mvn -pl ruoyi-system test -q "-Dtest=ScreeningServiceImpl ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (OpenJDK 64-Bit ...s been appended:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

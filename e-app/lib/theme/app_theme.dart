@@ -1,5 +1,16 @@
 import 'package:flutter/material.dart';
 
+SnackBar compactSnackBar(String message) {
+  final width = (message.characters.length * 16 + 40).clamp(128, 320).toDouble();
+  return SnackBar(
+    duration: const Duration(milliseconds: 1500),
+    width: width,
+    content: Center(
+      child: Text(message, textAlign: TextAlign.center),
+    ),
+  );
+}
+
 abstract final class AppColors {
   static const ink = Color(0xFF080808);
   static const brand = Color(0xFF1A3C6E);
@@ -126,6 +137,21 @@ abstract final class AppTheme {
         height: 68,
         backgroundColor: AppColors.canvas,
         indicatorColor: AppColors.primarySoft,
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.ink,
+        elevation: 6,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+        width: 180,
+        insetPadding: EdgeInsets.only(bottom: 360),
+        contentTextStyle: TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          height: 1.4,
+        ),
       ),
     );
   }

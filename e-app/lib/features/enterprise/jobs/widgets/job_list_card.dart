@@ -10,6 +10,7 @@ class JobListCard extends StatelessWidget {
     required this.job,
     required this.onOpen,
     required this.onApplicants,
+    this.onInterests,
     required this.onToggle,
     this.changing = false,
   });
@@ -17,6 +18,7 @@ class JobListCard extends StatelessWidget {
   final Map<String, dynamic> job;
   final VoidCallback onOpen;
   final VoidCallback onApplicants;
+  final VoidCallback? onInterests;
   final VoidCallback onToggle;
   final bool changing;
 
@@ -95,6 +97,7 @@ class JobListCard extends StatelessWidget {
     int? value,
     String name, {
     bool clickable = false,
+    VoidCallback? onTap,
   }) {
     final content = Column(
       mainAxisSize: MainAxisSize.min,
@@ -126,7 +129,7 @@ class JobListCard extends StatelessWidget {
           child: clickable
               ? InkWell(
                   key: ValueKey('job-applicants-$id'),
-                  onTap: id == null || value == null ? null : onApplicants,
+                  onTap: id == null || value == null ? null : onTap,
                   borderRadius: BorderRadius.circular(4),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(minHeight: 46),
@@ -186,8 +189,20 @@ class JobListCard extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         _stat('看过', views, 'views'),
-                        _stat('投递过', applicants, 'applicants', clickable: true),
-                        _stat('感兴趣', interests, 'interests'),
+                        _stat(
+                          '投递过',
+                          applicants,
+                          'applicants',
+                          clickable: true,
+                          onTap: onApplicants,
+                        ),
+                        _stat(
+                          '感兴趣',
+                          interests,
+                          'interests',
+                          clickable: onInterests != null,
+                          onTap: onInterests,
+                        ),
                       ],
                     ),
                   ),

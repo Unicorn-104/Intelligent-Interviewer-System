@@ -610,7 +610,7 @@ class _RegistrationPrompt extends StatelessWidget {
         key: const ValueKey('enterprise-login-register'),
         onPressed: () =>
             ScaffoldMessenger.of(context)
-                .showSnackBar(const SnackBar(content: Text('企业账号注册功能开发中'))),
+                .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('企业账号注册功能开发中'))),
         style: TextButton.styleFrom(
           foregroundColor: AppColors.interactive,
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
@@ -731,7 +731,7 @@ class _SmsLoginPreview extends StatelessWidget {
                   key: const ValueKey('enterprise-login-sms-send'),
                   onPressed: () => ScaffoldMessenger.of(
                     context,
-                  ).showSnackBar(const SnackBar(content: Text('短信验证码登录功能开发中'))),
+                  ).showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('短信验证码登录功能开发中'))),
                   style: TextButton.styleFrom(
                     foregroundColor: AppColors.interactive,
                     padding: const EdgeInsets.symmetric(horizontal: 4),

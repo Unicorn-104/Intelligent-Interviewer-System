@@ -140,7 +140,7 @@ class _RescheduleReviewPageState extends State<RescheduleReviewPage> {
         _uncertain.remove(row.id);
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        SnackBar(duration: const Duration(milliseconds: 1500),
           content: Text(
             decision == 'approved' ? '申请已通过，面试时段已更新' : '申请已驳回，原面试安排不变',
           ),
@@ -157,7 +157,7 @@ class _RescheduleReviewPageState extends State<RescheduleReviewPage> {
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('审批结果待核对，请刷新查看。不会自动重复提交')));
+      ).showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('审批结果待核对，请刷新查看。不会自动重复提交')));
     } finally {
       if (mounted) setState(() => _reviewing = null);
     }

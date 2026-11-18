@@ -22,7 +22,6 @@ import 'widgets/chat_job_card.dart';
 import 'widgets/message_avatar.dart';
 import 'widgets/reschedule_chat_card.dart';
 import 'widgets/chat_message_time.dart';
-import 'widgets/chat_bubble_border.dart';
 import 'widgets/share_job_sheet.dart';
 import 'widgets/shared_job_card_view.dart';
 import '../schedule/data/reschedule_review_data_source.dart';
@@ -90,6 +89,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _entering = false;
   static const _ownBubble = Color(0xFF95EC69);
   static const _bubbleText = Color(0xFF161616);
+  static const _chatAvatarSize = 36.0;
+  static const _chatAvatarSlot = 45.0;
   @override
   void initState() {
     super.initState();
@@ -248,7 +249,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     if (_contextLoading) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('正在读取求职者资料，请稍候')));
+          .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('正在读取求职者资料，请稍候')));
       return;
     }
     if (_contextError != null) {
@@ -256,7 +257,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (!mounted || _contextError != null) {
         if (mounted) {
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(_contextError!)));
+              .showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(_contextError!)));
         }
         return;
       }
@@ -271,7 +272,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (talent == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('当前企业暂无该求职者的关联资料，请稍后刷新重试')));
+      ).showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('当前企业暂无该求职者的关联资料，请稍后刷新重试')));
       return;
     }
     final job = _selectedJob;
@@ -298,7 +299,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _peerAvatar(String key) => Semantics(
+  Widget _peerAvatar(String key, {double size = 36}) => Semantics(
     button: true,
     label: '查看$_peerName的求职者资料',
     child: Tooltip(
@@ -308,7 +309,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         onTap: _openCandidate,
         borderRadius: BorderRadius.circular(24),
         child: MessageAvatar(
-          square: true,
+          size: size,
           name: _peerName,
           url: widget.source.avatarUrl(
             messageText(widget.session['peerAvatar'], ''),
@@ -501,7 +502,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (_sending || _fetching || _uncertain || !_ready) return;
     if (_id == null) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请先发送一条文字消息，再发送图片或文件')));
+          .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('请先发送一条文字消息，再发送图片或文件')));
       return;
     }
     var messageAttempted = false;
@@ -596,7 +597,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           SizedBox(
             width: 40,
             height: 40,
-            child: _peerAvatar('chat-peer-profile'),
+            child: _peerAvatar('chat-peer-profile', size: 40),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -855,6 +856,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
     final invite = _interviewInviteLink(item.content);
     if (invite != null) {
+      if (item.mine) return _recruiterInterviewInvite(item.id, invite.text);
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -876,6 +878,129 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return Text(
       item.display,
       style: const TextStyle(color: color, fontSize: 16, height: 1.55),
+    );
+  }
+
+  Widget _recruiterInterviewInvite(int messageId, String text) {
+    final detail = _inviteDetail(text);
+    return Column(
+      key: ValueKey('chat-interview-invite-$messageId'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.video_camera_front_outlined,
+                color: AppColors.interactive,
+                size: 23,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                '面试邀请',
+                style: TextStyle(
+                  color: AppColors.brand,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Text(
+          detail.title,
+          style: const TextStyle(
+            color: AppColors.brand,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (detail.subtitle.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            detail.subtitle,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.bodySoft,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+        ],
+        const Padding(
+          padding: EdgeInsets.only(top: 12, bottom: 10),
+          child: Divider(height: 1),
+        ),
+        SizedBox(
+          width: double.infinity,
+          child: InkWell(
+            key: ValueKey('chat-enter-interview-$messageId'),
+            onTap: _entering ? null : _enterInterview,
+            child: const Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '查看安排 · 进入面试',
+                    style: TextStyle(
+                      color: AppColors.interactive,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: AppColors.interactive,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static ({String title, String subtitle}) _inviteDetail(String text) {
+    final clean = text.trim();
+    final tag = RegExp(r'^【面试邀请[^】]*】').firstMatch(clean);
+    final body = (tag == null ? clean : clean.substring(tag.end)).trim();
+    final tagText = tag?.group(0);
+    final tagDetail = tagText == null
+        ? ''
+        : tagText
+            .substring(1, tagText.length - 1)
+            .replaceFirst('面试邀请·', '')
+            .trim();
+    final normalized = body
+        .replaceFirst(RegExp(r'视频面试[，,。]?请点击链接进入[:：]?\s*$'), '')
+        .trim();
+    if (normalized.isEmpty) {
+      return (
+        title: tagDetail.isEmpty ? '视频面试' : tagDetail,
+        subtitle: '请确认面试安排后进入会议',
+      );
+    }
+    final parts = normalized.split(RegExp(r'\s+'));
+    if (parts.length >= 2) {
+      return (
+        title: tagDetail.isEmpty ? parts.take(parts.length - 1).join(' ') : tagDetail,
+        subtitle: tagDetail.isEmpty ? parts.last : normalized,
+      );
+    }
+    return (
+      title: tagDetail.isEmpty ? normalized : tagDetail,
+      subtitle: tagDetail.isEmpty ? '视频面试' : normalized,
     );
   }
 
@@ -904,14 +1029,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       } catch (error) {
         if (!mounted) return;
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('查询面试状态失败：$error')));
+            .showSnackBar(compactSnackBar('查询面试状态失败：$error'));
         return;
       }
       if (messageId(session['sessionId']) == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('当前没有待开始或进行中的面试，可在面试安排中查看')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(compactSnackBar('本场面试已结束'));
         return;
       }
       if (!mounted) return;
@@ -992,51 +1115,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   List<Widget> _messageTimeline() {
-    final widgets = <Widget>[];
-    DateTime? previous;
-    for (final item in _messages) {
-      if (showChatTimestamp(item.time, previous)) {
-        widgets.add(
-          Padding(
-            key: ValueKey('chat-time-${item.id}'),
-            padding: const EdgeInsets.only(top: 8, bottom: 20),
-            child: Center(
-              child: Tooltip(
-                message: fullChatTimestamp(item.time!),
-                child: Text(
-                  chatTimestamp(item.time!),
-                  style: const TextStyle(
-                    color: Color(0xFF737373),
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      }
-      widgets.add(_bubble(item));
-      if (item.time != null) previous = item.time;
-    }
-    return widgets;
+    return _messages.map(_bubble).toList();
   }
 
-  Widget _deliveryReceipt(ConversationMessage item) => Padding(
-    padding: const EdgeInsets.only(bottom: 2),
-    child: Tooltip(
-      message: item.deliveryStatus == 'read' ? '对方已查看消息' : '消息已保存到对方会话',
-      child: Text(
-        item.deliveryStatus == 'read' ? '已读' : '送达',
-        key: ValueKey('chat-receipt-${item.id}'),
-        style: TextStyle(
-          fontSize: 11,
-          color: item.deliveryStatus == 'read'
-              ? const Color(0xFF257B4B)
-              : const Color(0xFF737373),
-        ),
-      ),
-    ),
-  );
+  String _chatMetaTime(DateTime? value) {
+    if (value == null) return '时间未提供';
+    final wall = value.toUtc().add(const Duration(hours: 8));
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    final clock =
+        '${wall.hour.toString().padLeft(2, '0')}:${wall.minute.toString().padLeft(2, '0')}';
+    final sameDay =
+        wall.year == now.year && wall.month == now.month && wall.day == now.day;
+    return sameDay ? clock : '${wall.month}月${wall.day}日 $clock';
+  }
 
   Widget _bubble(ConversationMessage item) => Padding(
     key: ValueKey('chat-message-${item.id}'),
@@ -1044,8 +1135,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 56,
+          SizedBox(
+            width: _chatAvatarSlot,
           child: item.mine
               ? null
               : Align(
@@ -1056,9 +1147,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
+              final recruiterInvite =
+                  item.mine && _interviewInviteLink(item.content) != null;
+              final richContent =
+                  item.jobCard != null ||
+                  item.reschedule != null ||
+                  (item.type == 2 &&
+                      widget.source.attachmentUrl(item.attachment) != null);
               // 双方始终使用同一正文区域；尖角和回执不参与正文宽度计算。
-              final maxBodyWidth =
-                  constraints.maxWidth - 2 * ChatBubbleBorder.tailWidth;
+              final maxBodyWidth = constraints.maxWidth;
               double? bodyWidth;
               if (item.type == 1 || item.type == 4) {
                 final painter = TextPainter(
@@ -1075,63 +1172,80 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     painter.computeLineMetrics().length > 1 ||
                         item.display.characters.length > 6
                     ? maxBodyWidth
-                    : (painter.width.ceilToDouble() + 24).clamp(
+                    : (painter.maxIntrinsicWidth.ceilToDouble() + 32).clamp(
                         24,
                         maxBodyWidth,
                       );
                 painter.dispose();
               }
               return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: ChatBubbleBorder.tailWidth,
-                ),
+                padding: EdgeInsets.zero,
                 child: Align(
                   alignment: item.mine ? Alignment.topRight : Alignment.topLeft,
-                  child: Stack(
-                    clipBehavior: Clip.none,
+                  child: Column(
+                    crossAxisAlignment: item.mine
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start,
                     children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
                       Container(
                         key: ValueKey('chat-bubble-${item.id}'),
                         width: bodyWidth,
                         constraints: BoxConstraints(maxWidth: maxBodyWidth),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 11,
-                        ),
-                        decoration: ShapeDecoration(
-                          color: item.mine ? _ownBubble : Colors.white,
-                          shape: ChatBubbleBorder(mine: item.mine),
-                        ),
+                        padding: richContent
+                            ? EdgeInsets.zero
+                            : const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                        decoration: richContent
+                            ? null
+                            : BoxDecoration(
+                                color: recruiterInvite
+                                    ? Colors.white
+                                    : item.mine
+                                    ? _ownBubble
+                                    : Colors.white,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: const Radius.circular(12),
+                                  topRight: const Radius.circular(12),
+                                  bottomLeft: Radius.circular(
+                                    item.mine ? 12 : 3,
+                                  ),
+                                  bottomRight: Radius.circular(
+                                    item.mine ? 3 : 12,
+                                  ),
+                                ),
+                                border: item.mine && !recruiterInvite
+                                    ? null
+                                    : Border.all(color: AppColors.hairline),
+                              ),
                         child: GestureDetector(
                           onLongPress: () => _messageDetails(item),
                           child: _messageContent(item),
                         ),
                       ),
                       // 仅标识尖角布局位置；填色和描边由气泡的完整轮廓统一绘制。
-                      Positioned(
-                        right: item.mine ? -ChatBubbleBorder.tailWidth : null,
-                        left: item.mine ? null : -ChatBubbleBorder.tailWidth,
-                        top: 18,
-                        child: SizedBox(
-                          key: ValueKey('chat-bubble-tail-${item.id}'),
-                          width: ChatBubbleBorder.tailWidth,
-                          height: 12,
-                        ),
+                        ],
                       ),
-                      if (item.mine &&
-                          ['read', 'delivered'].contains(item.deliveryStatus))
-                        Positioned(
-                          right: 0,
-                          left: 0,
-                          bottom: 2,
-                          child: Align(
-                            alignment: Alignment.bottomLeft,
-                            child: FractionalTranslation(
-                              translation: const Offset(-1, 0),
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 6),
-                                child: _deliveryReceipt(item),
-                              ),
+                      if (item.time != null)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            top: 4,
+                            left: 6,
+                            right: 6,
+                          ),
+                          child: Tooltip(
+                            message: fullChatTimestamp(item.time!),
+                            child: Text(
+                              '${_chatMetaTime(item.time)}${item.mine && ['read', 'delivered'].contains(item.deliveryStatus) ? ' · ${item.deliveryStatus == 'read' ? '已读' : '送达'}' : ''}',
+                              key: ValueKey('chat-receipt-${item.id}'),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(fontSize: 10),
                             ),
                           ),
                         ),
@@ -1143,7 +1257,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         ),
         SizedBox(
-          width: 56,
+          width: _chatAvatarSlot,
           child: item.mine
               ? Align(
                   alignment: Alignment.topRight,
@@ -1152,9 +1266,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     image: true,
                     child: MessageAvatar(
                       key: ValueKey('chat-recruiter-avatar-${item.id}'),
-                      square: true,
                       name: _recruiterName,
                       url: _recruiterAvatarUrl,
+                      size: _chatAvatarSize,
                     ),
                   ),
                 )

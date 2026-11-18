@@ -543,12 +543,12 @@ void main() {
     expect(source.saved, isEmpty);
   });
 
-  testWidgets('我的招聘工具一排展示迁移入口，真实人才库及审批不标演示，录播保留演示标识', (tester) async {
+  testWidgets('我的招聘工具一排展示迁移入口，人才库、录播及审批均不标演示', (tester) async {
     final source = FakeProfileSource();
     await mountProfile(tester, source);
     for (final (label, pageType, demo) in [
       ('人才库', TalentPage, false),
-      ('录播', RecordingPage, true),
+      ('录播', RecordingPage, false),
       ('改期审批', RescheduleReviewPage, false),
     ]) {
       final entry = find.byKey(ValueKey('profile-tool-$label'));

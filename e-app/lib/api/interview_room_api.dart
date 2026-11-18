@@ -212,6 +212,24 @@ Future<Map<String, dynamic>> getSessionResult(int sessionId) async {
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
+/// 开始录制（LiveKit Egress 服务端房间合成录制，仅主面试官可操作）。
+/// 已对接：POST /system/conference/session/{sessionId}/recording/start
+Future<Map<String, dynamic>> startRecording(int sessionId) async {
+  final response = await _client.post(
+    '/system/conference/session/$sessionId/recording/start',
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
+/// 停止录制（停止 Egress 任务，文件落盘结果由 Webhook 回填）。
+/// 已对接：POST /system/conference/session/{sessionId}/recording/stop
+Future<Map<String, dynamic>> stopRecording(int sessionId) async {
+  final response = await _client.post(
+    '/system/conference/session/$sessionId/recording/stop',
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
 /// UC-12 后置条件1：面试录制列表（合规存档）。
 /// 已对接：GET /system/conference/recordings
 Future<List<Map<String, dynamic>>> listRecordings({
@@ -235,11 +253,11 @@ Future<List<Map<String, dynamic>>> listRecordings({
       const <Map<String, dynamic>>[];
 }
 
-/// UC-12：面试回放。
-/// 已对接：GET /system/conference/recordings/{sessionId}
-Future<Map<String, dynamic>> getRecordingPlayback(int sessionId) async {
+/// UC-12：录制详情（含面试官、时间轴打点、录制地址、访问级别）。
+/// 已对接：GET /system/conference/recordings/{recordingId}
+Future<Map<String, dynamic>> getRecordingDetail(int recordingId) async {
   final response = await _client.get(
-    '/system/conference/recordings/$sessionId',
+    '/system/conference/recordings/$recordingId',
   );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
@@ -272,6 +290,13 @@ Future<void> downloadRecording(
     '/system/conference/recordings/$sessionId/download',
     body: payload,
   );
+}
+
+/// UC-12：录制存储空间占用（已用/上限/使用率/保留天数）。
+/// 已对接：GET /system/conference/recordings/storage
+Future<Map<String, dynamic>> getStorageUsage() async {
+  final response = await _client.get('/system/conference/recordings/storage');
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
 /// UC-12：录制存储策略查看。
