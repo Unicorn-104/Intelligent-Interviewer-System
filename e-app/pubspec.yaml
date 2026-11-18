@@ -68,7 +68,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/certificates/baota_root.pem
+    - assets/certificates/p14_root.pem
 
   # To add assets to your application, add an assets section, like this:
   # assets:
