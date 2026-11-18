@@ -118,11 +118,35 @@ Future<Uint8List> getTalentResumePdf(
     (client ?? EnterpriseApiClient()).getBytes(
       '/enterprise/talent/$talentId/resume/pdf',
     );
+/// 投递级结构化简历快照（岗位投递场景，以 applicationId 唯一定位）。
+/// 已对接：GET /enterprise/applications/{applicationId}/resume
+/// 后端只返回企业快照，不读 C-App 当前简历；快照缺失时返回错误，不回退。
+Future<Map<String, dynamic>> getApplicationParsedResume(int applicationId) async {
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/applications/$applicationId/resume',
+  );
+  final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+  data['integrity'] = data['integrity'] ?? 0;
+  data['missingFields'] = (data['missingFields'] as List?) ?? const <String>[];
+  return data;
+}
+
+/// 投递级原始简历 PDF 字节（企业独立命名空间，不依赖 rbs_status）。
+/// 已对接：GET /enterprise/applications/{applicationId}/resume/pdf
+Future<Uint8List> getApplicationResumePdf(
+  int applicationId, {
+  EnterpriseApiClient? client,
+}) =>
+    (client ?? EnterpriseApiClient()).getBytes(
+      '/enterprise/applications/$applicationId/resume/pdf',
+    );
+
 /// HR 主动淘汰单条投递：经后端状态机终止为未录用并记录终止原因。
 /// 已对接：PUT /enterprise/talent/applications/terminate
 Future<Map<String, dynamic>> terminateTalentApplication({
   required int candidateId,
   required int positionId,
+  required int applicationId,
   required String endReason,
   EnterpriseApiClient? client,
 }) async {
@@ -131,6 +155,7 @@ Future<Map<String, dynamic>> terminateTalentApplication({
     body: {
       'candidateId': candidateId,
       'positionId': positionId,
+      'applicationId': applicationId,
       'endReason': endReason,
     },
   );

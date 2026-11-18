@@ -58,6 +58,15 @@ public class EnterpriseJdController extends BaseController
         return success(jdService.getJdProfile(posId));
     }
 
+    /**
+     * 岗位画像质量评分（AI）：评估 JD 撰写质量，不涉及候选人数据
+     */
+    @PostMapping("/{posId}/quality")
+    public AjaxResult quality(@PathVariable("posId") Long posId)
+    {
+        return success(jdService.scoreQuality(posId, getUserId()));
+    }
+
     private Long asLong(Object v)
     {
         if (v == null)

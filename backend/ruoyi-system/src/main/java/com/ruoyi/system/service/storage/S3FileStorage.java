@@ -12,6 +12,7 @@ import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 /** 仅接受服务器生成的对象引用，不接受任意 URL；桶保持私有，由业务接口鉴权。 */
 @Component
@@ -28,6 +29,9 @@ public class S3FileStorage
 
     public boolean enabled() { return properties.getProvider() == FileStorageProperties.Provider.S3; }
     public static boolean isReference(String reference) { return reference != null && reference.startsWith("s3:"); }
+
+    /** 明确“对象不存在”的错误码（404 语义）；与 403/超时/5xx 等不确定失败区分，调用方按码判断而非消息文本。 */
+    public static final int NOT_FOUND_CODE = 404;
 
     public static String key(String reference) { return location(reference)[1]; }
 
@@ -78,7 +82,10 @@ public class S3FileStorage
         }
         catch (IOException | SdkException error)
         {
-            throw new ServiceException("存储文件不存在或暂时无法读取");
+            // 仅明确的 S3 NoSuchKey（404）标记为“不存在”；403/超时/5xx/网络等保持不确定失败
+            if (error instanceof NoSuchKeyException)
+                throw new ServiceException("存储对象不存在", NOT_FOUND_CODE);
+            throw new ServiceException("存储文件暂时无法读取");
         }
     }
 
@@ -104,9 +111,12 @@ public class S3FileStorage
 
     private static String[] location(String reference)
     {
+        // 引用分两类：原有按 用户/日期/uuid 的对象，以及企业投递快照独立命名空间
+        // enterprise-application-resume/企业/投递/uuid.pdf
         if (reference == null || !reference.matches("s3:[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/"
-                + "(?:private-resume|private-resume-attachment|avatars|uploads)/[1-9][0-9]*/"
-                + "[0-9]{4}/[0-9]{2}/[0-9]{2}/[a-f0-9]{32}\\.(?:pdf|doc|docx|jpg|jpeg|png|gif|bmp|xls|xlsx|ppt|pptx|txt|rar|zip|gz|bz2|mp4|avi|rmvb)"))
+                + "(?:(?:private-resume|private-resume-attachment|avatars|uploads)/[1-9][0-9]*/"
+                + "[0-9]{4}/[0-9]{2}/[0-9]{2}/[a-f0-9]{32}\\.(?:pdf|doc|docx|jpg|jpeg|png|gif|bmp|xls|xlsx|ppt|pptx|txt|rar|zip|gz|bz2|mp4|avi|rmvb)"
+                + "|enterprise-application-resume/[1-9][0-9]*/[1-9][0-9]*/[a-f0-9]{32}\\.pdf)"))
             throw new ServiceException("对象文件引用无效");
         return reference.substring(3).split("/", 2);
     }

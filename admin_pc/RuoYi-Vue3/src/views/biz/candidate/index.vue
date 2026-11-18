@@ -39,7 +39,7 @@
       <el-table-column label="ID" align="center" prop="candidateId" width="70" />
       <el-table-column label="姓名" align="center" prop="userName" min-width="90" />
       <el-table-column label="手机号" align="center" width="120">
-        <template #default="scope">{{ maskPhone(scope.row.phonenumber) }}</template>
+        <template #default="scope">{{ scope.row.phonenumber || '-' }}</template>
       </el-table-column>
       <el-table-column label="意向岗位" align="center" prop="jobName" min-width="140" :show-overflow-tooltip="true" />
       <el-table-column label="综合评分" align="center" width="100" sortable="custom" prop="totalScore">
@@ -85,7 +85,7 @@
         </div>
 
         <el-descriptions :column="2" border size="small" class="detail-desc">
-          <el-descriptions-item label="手机号">{{ maskPhone(detail.phonenumber) }}</el-descriptions-item>
+          <el-descriptions-item label="手机号">{{ detail.phonenumber || '-' }}</el-descriptions-item>
           <el-descriptions-item label="邮箱">{{ detail.email && detail.email.includes('@') ? detail.email : '-' }}</el-descriptions-item>
           <el-descriptions-item label="当前轮次">第 {{ detail.currentRound ?? 0 }} 轮</el-descriptions-item>
           <el-descriptions-item label="笔试成绩">

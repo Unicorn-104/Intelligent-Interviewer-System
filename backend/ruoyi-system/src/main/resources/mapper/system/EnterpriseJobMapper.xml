@@ -112,7 +112,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <!-- 岗位候选人列表：一条投递一行，状态取该岗位投递的 app_status（新六态），不取全局 tal_status -->
     <select id="selectJobCandidates" resultType="java.util.LinkedHashMap">
-        select pi.pin_id as instanceId, t.tal_id as talId, u.user_id as userId,
+        select a.app_id as applicationId, pi.pin_id as instanceId, t.tal_id as talId, u.user_id as userId,
                ifnull(u.nick_name, u.user_name) as name,
                ifnull(t.tal_matched_score, 0) as matchScore,
                case a.app_status

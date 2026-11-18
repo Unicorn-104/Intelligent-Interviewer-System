@@ -374,6 +374,7 @@ class _JobDetailPageState extends State<JobDetailPage>
                   _detail.data?.job['title'] ?? widget.job['title'],
                 ),
                 currentStage: candidate['currentStage']?.toString(),
+                applicationId: jobPositiveId(candidate['applicationId']),
               ),
             ),
       ),

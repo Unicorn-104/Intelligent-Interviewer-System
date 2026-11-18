@@ -36,7 +36,6 @@ public interface InterviewScheduleMapper
     int updateAppointmentStatus(@Param("appointmentId") Long appointmentId, @Param("status") Integer status);
     /** 显式重置提醒状态：只重置已处理(1)的标记，不影响发送中(2)的认领 */
     int resetAppointmentRemindFlag(@Param("appointmentId") Long appointmentId);
-    int markCandidateInterviewing(@Param("candidateId") Long candidateId);
     int insertReminderMessage(@Param("receiverId") Long receiverId, @Param("title") String title,
             @Param("content") String content);
     /** 预约行锁：取消前与改期申请审批保持同一锁顺序（候选人 → 预约）。 */

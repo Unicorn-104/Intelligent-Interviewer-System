@@ -116,7 +116,7 @@ class _TalentResumePdfPageState extends State<TalentResumePdfPage> {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    widget.fileName ?? '简历.pdf',
+                    widget.fileName ?? 'resume.pdf',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall,

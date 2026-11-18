@@ -89,6 +89,19 @@ export const constantRoutes = [
         meta: { title: '个人中心', icon: 'user' }
       }
     ]
+  },
+  {
+    path: '/system/feature',
+    component: Layout,
+    redirect: '/system/feature/index',
+    children: [
+      {
+        path: 'index',
+        component: () => import('@/views/system/feature/index'),
+        name: 'FeatureManage',
+        meta: { title: '功能开关', icon: 'switch' }
+      }
+    ]
   }
 ]
 

@@ -22,22 +22,21 @@ import com.ruoyi.system.service.IDashboardService;
 @Service
 public class DashboardServiceImpl implements IDashboardService
 {
-    /** 候选人人才库状态中文映射（tal_status 保留 11 码：0新入库 1初筛通过 2面试中 3已淘汰 4已录用
-     *  5待笔试 6笔试中 7笔试通过 8笔试未通过 9笔试缺考 10待发Offer） */
+    /** 候选人状态流转动态文案（tal_status 11 码） */
     private static final Map<Integer, String> STATUS_TEXT = new LinkedHashMap<>();
     static
     {
-        STATUS_TEXT.put(0, "新入库");
-        STATUS_TEXT.put(1, "初筛通过");
-        STATUS_TEXT.put(2, "面试中");
-        STATUS_TEXT.put(3, "已淘汰");
-        STATUS_TEXT.put(4, "已录用");
-        STATUS_TEXT.put(5, "待笔试");
-        STATUS_TEXT.put(6, "笔试中");
-        STATUS_TEXT.put(7, "笔试通过");
+        STATUS_TEXT.put(0, "投递简历，进入人才库");
+        STATUS_TEXT.put(1, "AI 初筛通过");
+        STATUS_TEXT.put(2, "进入面试环节");
+        STATUS_TEXT.put(3, "未录用，流程已终止");
+        STATUS_TEXT.put(4, "已接受 Offer，正式录用");
+        STATUS_TEXT.put(5, "进入待笔试阶段");
+        STATUS_TEXT.put(6, "开始笔试");
+        STATUS_TEXT.put(7, "笔试通过，进入面试环节");
         STATUS_TEXT.put(8, "笔试未通过");
         STATUS_TEXT.put(9, "笔试缺考");
-        STATUS_TEXT.put(10, "待发Offer");
+        STATUS_TEXT.put(10, "面试通过，进入 Offer 审批");
     }
 
     @Autowired
@@ -56,6 +55,7 @@ public class DashboardServiceImpl implements IDashboardService
         stats.put("activePositions", dashboardMapper.countActivePositions(companyId));
         stats.put("resumeCount", dashboardMapper.countResumes(companyId));
         stats.put("pendingInterviews", dashboardMapper.countPendingInterviews(companyId));
+        stats.put("pendingExams", dashboardMapper.countPendingExams(companyId));
         stats.put("weeklyCompleted", dashboardMapper.countWeeklyCompletedInterviews(companyId));
 
         Map<String, Object> funnel = buildFunnel(dashboardMapper.selectFunnel(companyId));
@@ -126,6 +126,22 @@ public class DashboardServiceImpl implements IDashboardService
             todos.add(todo("即将开始的面试", "orange", go,
                     str(upcoming, "positionTitle") + " · " + candidateName + " · " + str(upcoming, "startTime")));
         }
+
+        Map<String, Object> pendingExam = dashboardMapper.selectTodoPendingExam(companyId);
+        if (pendingExam != null)
+        {
+            String go = "/enterprise/send?talentId=" + str(pendingExam, "talId")
+                    + "&positionId=" + str(pendingExam, "positionId");
+            todos.add(todo("待安排笔试", "blue", go,
+                    str(pendingExam, "positionTitle") + " · " + str(pendingExam, "candidateName") + " · 尚未发送笔试"));
+        }
+
+        Map<String, Object> examInProgress = dashboardMapper.selectTodoExamInProgress(companyId);
+        if (examInProgress != null)
+        {
+            todos.add(todo("笔试进行中", "orange", "/enterprise/exam/proctor",
+                    str(examInProgress, "positionTitle") + " · " + str(examInProgress, "candidateName") + " · 待监考"));
+        }
         return todos;
     }
 
@@ -146,7 +162,9 @@ public class DashboardServiceImpl implements IDashboardService
         {
             String name = str(row, "candidateName");
             int status = (int) toLong(row, "toStatus");
-            String text = name + " " + STATUS_TEXT.getOrDefault(status, "状态更新");
+            String position = str(row, "positionTitle");
+            String action = STATUS_TEXT.getOrDefault(status, "状态已更新");
+            String text = StringUtils.isEmpty(position) ? name + "：" + action : name + " · " + position + "：" + action;
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("text", text);
             item.put("time", relativeTime(str(row, "createdAt")));

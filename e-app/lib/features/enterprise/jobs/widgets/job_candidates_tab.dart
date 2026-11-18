@@ -246,13 +246,23 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
   @override
   void didUpdateWidget(covariant JobCandidateCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.candidate['talId'] != widget.candidate['talId']) {
+    // 投递ID或人才ID变化都需重新加载，避免卡片复用后展示上一位候选人的简历
+    if (oldWidget.candidate['applicationId'] !=
+            widget.candidate['applicationId'] ||
+        oldWidget.candidate['talId'] != widget.candidate['talId']) {
       _resume = _loadResume();
     }
   }
 
-  Future<Map<String, dynamic>> _loadResume() async =>
-      _id == null ? <String, dynamic>{} : await widget.loadResume(_id!);
+  Future<Map<String, dynamic>> _loadResume() async {
+    // 岗位投递场景优先按 applicationId 读取企业快照，不读 C-App 当前简历
+    final applicationId = jobPositiveId(widget.candidate['applicationId']);
+    if (applicationId != null) {
+      return widget.actionsSource.loadApplicationResume(applicationId);
+    }
+    // 无投递ID（历史/异常数据）保留 talId 口径兜底
+    return _id == null ? <String, dynamic>{} : await widget.loadResume(_id!);
+  }
 
   Widget _badge(String text, Color color) => Container(
     constraints: const BoxConstraints(minHeight: 22),
@@ -384,6 +394,7 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
                     positionId: widget.job.positionId,
                     title: widget.job.title,
                     currentStage: widget.candidate['currentStage']?.toString(),
+                    applicationId: jobPositiveId(widget.candidate['applicationId']),
                   ),
                 ),
               ],

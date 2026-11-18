@@ -69,10 +69,12 @@ public class ExamServiceImpl implements IExamService
 
     @Override
     public List<Map<String, Object>> listQuestions(Integer type, Integer difficulty,
-            String skillTag, String keyword, Integer pageNum, Integer pageSize)
+            String skillTag, String keyword, String scope, Long userId, Integer pageNum, Integer pageSize)
     {
+        Long companyId = resolveCompanyId(userId);
         PageUtils.startPage(pageNum, pageSize);
-        List<Map<String, Object>> list = examMapper.selectQuestionList(type, difficulty, skillTag, keyword);
+        List<Map<String, Object>> list = examMapper.selectQuestionList(type, difficulty, skillTag, keyword,
+                scope, companyId);
         for (Map<String, Object> item : list)
         {
             item.put("options", parseJson(item.get("optionsJson")));
@@ -93,33 +95,88 @@ public class ExamServiceImpl implements IExamService
     }
 
     @Override
-    public Long saveQuestion(Map<String, Object> body)
+    public Long saveQuestion(Map<String, Object> body, Long userId)
     {
+        Long companyId = resolveCompanyId(userId);
         Map<String, Object> params = buildQuestionParams(body, null);
+        params.put("companyId", companyId);
         examMapper.insertQuestion(params);
         long id = examMapper.selectLastQuestionId();
         return id == 0 ? null : id;
     }
 
     @Override
-    public void updateQuestion(Long questionId, Map<String, Object> body)
+    public void updateQuestion(Long questionId, Map<String, Object> body, Long userId)
     {
-        if (examMapper.selectQuestionById(questionId) == null)
+        Map<String, Object> existing = examMapper.selectQuestionById(questionId);
+        if (existing == null)
         {
             throw new ServiceException("题目不存在");
         }
+        requireOwnQuestion(existing, userId);
         Map<String, Object> params = buildQuestionParams(body, questionId);
-        examMapper.updateQuestion(params);
+        params.put("companyId", resolveCompanyId(userId));
+        if (examMapper.updateQuestion(params) == 0)
+        {
+            throw new ServiceException("题目不存在或无权修改");
+        }
     }
 
     @Override
-    public void deleteQuestion(Long questionId)
+    public void deleteQuestion(Long questionId, Long userId)
     {
-        if (examMapper.selectQuestionById(questionId) == null)
+        Map<String, Object> existing = examMapper.selectQuestionById(questionId);
+        if (existing == null)
         {
             throw new ServiceException("题目不存在");
         }
-        examMapper.deleteQuestion(questionId);
+        requireOwnQuestion(existing, userId);
+        if (examMapper.deleteQuestion(questionId, resolveCompanyId(userId)) == 0)
+        {
+            throw new ServiceException("题目不存在或无权删除");
+        }
+    }
+
+    @Override
+    public void fillQuestionAnalysis(Long questionId, String analysis, Long userId)
+    {
+        if (StringUtils.isEmpty(analysis))
+        {
+            throw new ServiceException("解析内容不能为空");
+        }
+        Map<String, Object> existing = examMapper.selectQuestionById(questionId);
+        if (existing == null)
+        {
+            throw new ServiceException("题目不存在");
+        }
+        Object owner = existing.get("companyId");
+        if (owner != null)
+        {
+            Long companyId = resolveCompanyId(userId);
+            if (companyId == null || !companyId.equals(((Number) owner).longValue()))
+            {
+                throw new ServiceException("无权操作其他企业的题目");
+            }
+        }
+        if (examMapper.updateQuestionAnalysis(questionId, analysis) == 0)
+        {
+            throw new ServiceException("该题目已有解析，无需重复补全");
+        }
+    }
+
+    /** 平台题库题目只读；企业题目仅所属企业可改 */
+    private void requireOwnQuestion(Map<String, Object> question, Long userId)
+    {
+        Object owner = question.get("companyId");
+        if (owner == null)
+        {
+            throw new ServiceException("平台题库题目为只读，如需调整请新增到企业题库");
+        }
+        Long companyId = resolveCompanyId(userId);
+        if (companyId == null || !companyId.equals(((Number) owner).longValue()))
+        {
+            throw new ServiceException("无权操作其他企业的题目");
+        }
     }
 
     private Map<String, Object> buildQuestionParams(Map<String, Object> body, Long id)
@@ -228,7 +285,7 @@ public class ExamServiceImpl implements IExamService
         if ("random".equals(mode))
         {
             Map<String, Object> rule = asMap(body.get("rule"));
-            totalScore = validateRandomRule(rule);
+            totalScore = validateRandomRule(rule, resolveCompanyId(userId));
             ruleJson = JSON.toJSONString(rule);
         }
         else
@@ -274,7 +331,7 @@ public class ExamServiceImpl implements IExamService
         if ("random".equals(mode))
         {
             Map<String, Object> rule = asMap(body.get("rule"));
-            totalScore = validateRandomRule(rule);
+            totalScore = validateRandomRule(rule, resolveCompanyId(userId));
             ruleJson = JSON.toJSONString(rule);
         }
         else
@@ -311,8 +368,9 @@ public class ExamServiceImpl implements IExamService
     }
 
     @Override
-    public Map<String, Object> previewDraw(Map<String, Object> rule)
+    public Map<String, Object> previewDraw(Map<String, Object> rule, Long userId)
     {
+        Long companyId = resolveCompanyId(userId);
         List<Map<String, Object>> rules = asRuleList(rule);
         List<Long> excludeIds = new ArrayList<>();
         List<Map<String, Object>> drawn = new ArrayList<>();
@@ -329,7 +387,7 @@ public class ExamServiceImpl implements IExamService
                 throw new ServiceException("抽题规则每题数量与分值必须大于0");
             }
             List<Map<String, Object>> picked = examMapper.drawQuestions(type, difficulty, skillTag,
-                    excludeIds.isEmpty() ? null : excludeIds, count);
+                    excludeIds.isEmpty() ? null : excludeIds, count, companyId);
             if (picked.size() < count)
             {
                 throw new ServiceException("题库中满足条件的题目不足（需 " + count + " 题，仅 "
@@ -352,7 +410,7 @@ public class ExamServiceImpl implements IExamService
     }
 
     /** 校验随机抽题规则并返回预计总分 */
-    private BigDecimal validateRandomRule(Map<String, Object> rule)
+    private BigDecimal validateRandomRule(Map<String, Object> rule, Long companyId)
     {
         List<Map<String, Object>> rules = asRuleList(rule);
         if (rules.isEmpty())
@@ -372,7 +430,7 @@ public class ExamServiceImpl implements IExamService
             {
                 throw new ServiceException("抽题规则需包含题型、每题数量与每题分值");
             }
-            int available = examMapper.countDrawQuestions(type, difficulty, skillTag);
+            int available = examMapper.countDrawQuestions(type, difficulty, skillTag, companyId);
             if (available < count)
             {
                 throw new ServiceException("题型 " + type + " 可用题目不足（需 " + count + " 题，仅 "

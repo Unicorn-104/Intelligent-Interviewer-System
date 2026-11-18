@@ -17,16 +17,37 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where pos_id = #{positionId} and pos_company_id = #{companyId}
     </select>
 
-    <!-- 题库（平台共享，无企业隔离列） -->
+    <!-- 题库：eqs_company_id 为空表示平台题库，非空表示企业私有题库 -->
     <sql id="questionColumns">
         select eqs_id as questionId, eqs_type as type, eqs_type_name as typeName,
                eqs_content as content,
                eqs_options_json as optionsJson, eqs_answer as answer,
                eqs_analysis as analysis,
                eqs_score as score, eqs_difficulty as difficulty,
-               eqs_skill_tag as skillTag,
+               eqs_skill_tag as skillTag, eqs_company_id as companyId,
                date_format(eqs_created_at, '%Y-%m-%d %H:%i') as createdAt
         from t_exam_question
+    </sql>
+
+    <sql id="questionScopeFilter">
+        <choose>
+            <when test="scope == 'platform'">
+                and eqs_company_id is null
+            </when>
+            <when test="scope == 'enterprise'">
+                and eqs_company_id = #{companyId}
+            </when>
+            <otherwise>
+                <choose>
+                    <when test="companyId != null">
+                        and (eqs_company_id is null or eqs_company_id = #{companyId})
+                    </when>
+                    <otherwise>
+                        and eqs_company_id is null
+                    </otherwise>
+                </choose>
+            </otherwise>
+        </choose>
     </sql>
 
     <select id="selectQuestionList" resultType="java.util.LinkedHashMap">
@@ -44,6 +65,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <if test="keyword != null and keyword != ''">
             and eqs_content like concat('%', #{keyword}, '%')
         </if>
+        <include refid="questionScopeFilter"/>
         order by eqs_id desc
     </select>
 
@@ -55,28 +77,36 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <insert id="insertQuestion">
         insert into t_exam_question
             (eqs_type, eqs_type_name, eqs_content, eqs_options_json, eqs_answer, eqs_analysis,
-             eqs_score, eqs_difficulty, eqs_skill_tag)
+             eqs_score, eqs_difficulty, eqs_skill_tag, eqs_company_id)
         values
             (#{type}, #{typeName}, #{content}, #{optionsJson}, #{answer}, #{analysis},
-             #{score}, #{difficulty}, #{skillTag})
+             #{score}, #{difficulty}, #{skillTag}, #{companyId})
     </insert>
 
     <select id="selectLastQuestionId" resultType="int">
         select coalesce(max(eqs_id), 0) from t_exam_question
     </select>
 
+    <!-- 平台题库题目只读，仅本企业题目可修改/删除 -->
     <update id="updateQuestion">
         update t_exam_question
         set eqs_type = #{type}, eqs_type_name = #{typeName}, eqs_content = #{content},
             eqs_options_json = #{optionsJson}, eqs_answer = #{answer}, eqs_analysis = #{analysis},
             eqs_score = #{score}, eqs_difficulty = #{difficulty},
             eqs_skill_tag = #{skillTag}, eqs_updated_at = now()
-        where eqs_id = #{id}
+        where eqs_id = #{id} and eqs_company_id = #{companyId}
     </update>
 
     <delete id="deleteQuestion">
-        delete from t_exam_question where eqs_id = #{id}
+        delete from t_exam_question where eqs_id = #{id} and eqs_company_id = #{companyId}
     </delete>
+
+    <!-- 仅补全空解析：平台题库与企业题库都允许（不改动题干/答案等只读字段） -->
+    <update id="updateQuestionAnalysis">
+        update t_exam_question
+        set eqs_analysis = #{analysis}, eqs_updated_at = now()
+        where eqs_id = #{id} and (eqs_analysis is null or trim(eqs_analysis) = '')
+    </update>
 
     <select id="drawQuestions" resultType="java.util.LinkedHashMap">
         <include refid="questionColumns"/>
@@ -96,6 +126,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 #{exId}
             </foreach>
         </if>
+        <include refid="questionScopeFilter"/>
         order by rand()
         limit #{limit}
     </select>
@@ -112,6 +143,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <if test="skillTag != null and skillTag != ''">
             and eqs_skill_tag like concat('%', #{skillTag}, '%')
         </if>
+        <include refid="questionScopeFilter"/>
+    </select>
+
+    <!-- 投递记录所属企业，用于候选人考试抽题时限定题库范围 -->
+    <select id="selectRecordCompanyId" resultType="Long">
+        select pos.pos_company_id
+        from t_app_record r
+        join t_pos pos on pos.pos_id = r.app_position_id
+        where r.app_id = #{recordId}
     </select>
 
     <!-- 试卷（企业隔离：经 t_pos.pos_company_id） -->

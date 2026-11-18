@@ -54,13 +54,16 @@ class ScreeningServiceImplTest
         when(transactions.getTransaction(any())).thenAnswer(call -> new SimpleTransactionStatus());
         when(dashboard.selectCompanyIdByUser(3L)).thenReturn(1L);
         when(mapper.selectPosition(1L, 7L)).thenReturn(Map.of("positionId", 7L, "title", "演示数据Java岗位", "positionVersion", "p1"));
-        when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "v1"))));
-        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "v1"))));
+        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(candidate(11L, 21L)));
+        when(mapper.selectSnapshotByApp(anyLong())).thenAnswer(call -> {
+            Object applicationId = call.getArgument(0);
+            return Map.of("snapshotId", applicationId, "contentHash", "hash-" + applicationId);
+        });
         when(mapper.selectOwnedCandidate(anyLong(), anyLong())).thenReturn(null);
-        when(mapper.selectCandidateSkills(11L)).thenReturn(List.of("Java"));
-        when(mapper.selectEducationEvidence(21L)).thenReturn(List.of(Map.of("major", "计算机科学")));
-        when(mapper.selectWorkEvidence(21L)).thenReturn(List.of());
-        when(mapper.selectProjectEvidence(21L)).thenReturn(List.of(Map.of("description", "Java订单开发")));
+        when(mapper.selectSnapshotSkills(anyLong())).thenReturn(List.of("Java"));
+        when(mapper.selectSnapshotEducation(anyLong())).thenReturn(List.of(Map.of("major", "计算机科学")));
+        when(mapper.selectSnapshotWork(anyLong())).thenReturn(List.of());
+        when(mapper.selectSnapshotProject(anyLong())).thenReturn(List.of(Map.of("description", "Java订单开发")));
         when(mapper.selectPositionSkills(7L)).thenReturn(List.of("Java"));
         when(mapper.selectTaskStatus(1L, 7L)).thenReturn(Map.of("taskId", 7L, "state", "processing"));
         when(mapper.claimTask(eq(1L), eq(7L), anyString(), eq(1))).thenAnswer(call -> {
@@ -71,6 +74,19 @@ class ScreeningServiceImplTest
     }
 
     @AfterEach void cleanup() { service.shutdown(); }
+
+    /** 一个投递只会携带自己的快照与内容哈希；AI 只按该快照分析。 */
+    Map<String, Object> candidate(long talentId, long applicationId)
+    {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("talentId", talentId);
+        row.put("applicationId", applicationId);
+        row.put("resumeId", applicationId);
+        row.put("snapshotId", applicationId);
+        row.put("contentHash", "hash-" + applicationId);
+        row.put("snapshotAt", "2026-11-01 10:00:00");
+        return row;
+    }
 
     Map<String, Object> analysis()
     {
@@ -155,7 +171,7 @@ class ScreeningServiceImplTest
     @Test void jobResultReadsOnlyThatJobsReport()
     {
         when(mapper.selectResultsByPosition(7L)).thenReturn(new ArrayList<>(List.of(new LinkedHashMap<>(Map.of("resultId", 11L)))));
-        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(Map.of("report", JSON.toJSONString(analysis()), "generatedAt", "2026-10-20 10:00:00"));
+        when(mapper.selectAnalysis(1L, 7L, null, 11L)).thenReturn(Map.of("report", JSON.toJSONString(analysis()), "generatedAt", "2026-10-20 10:00:00"));
         assertEquals(82.0, ((Number)service.listResults(3L, 7L).get(0).get("totalScore")).doubleValue());
         verify(mapper, never()).selectLatestAnalysis(anyLong(), anyLong());
     }
@@ -191,10 +207,7 @@ class ScreeningServiceImplTest
 
     @Test void newCandidateOnlyGetsIndependentRequestAndExistingScoreIsNotWritten()
     {
-        var original = new LinkedHashMap<String, Object>(Map.of("talentId", 12L, "resumeId", 22L, "resumeVersion", "v1"));
-        var added = new LinkedHashMap<String, Object>(Map.of("talentId", 11L, "resumeId", 21L, "resumeVersion", "v1"));
-        when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(original, added));
-        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(original, added));
+        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(candidate(12L, 22L), candidate(11L, 21L)));
         when(mapper.selectAnalyzedCandidates(1L, 7L)).thenReturn(List.of(Map.of("candidateId", 12L, "resumeVersion", "v1", "positionVersion", "p1")));
         when(evaluator.evaluate(anyMap(), anyList())).thenAnswer(call -> {
             List<Map<String, Object>> input = call.getArgument(1);
@@ -238,7 +251,7 @@ class ScreeningServiceImplTest
         report.put("dimensions", dimensions);
         when(mapper.selectResultsByPosition(7L)).thenReturn(new ArrayList<>(List.of(
                 new LinkedHashMap<>(Map.of("resultId", 11L)))));
-        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(Map.of("report", JSON.toJSONString(report)));
+        when(mapper.selectAnalysis(1L, 7L, null, 11L)).thenReturn(Map.of("report", JSON.toJSONString(report)));
         var row = service.listResults(3L, 7L).get(0);
         assertEquals(0.0, row.get("researchMatch"));
         assertEquals(0.0, row.get("awardMatch"));
@@ -259,12 +272,7 @@ class ScreeningServiceImplTest
 
     @Test void secondFailureDoesNotUndoFirstCandidateResult()
     {
-        when(mapper.selectCandidatesByPosition(7L)).thenReturn(List.of(
-                new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L)),
-                new LinkedHashMap<>(Map.of("talentId", 12L, "resumeId", 22L))));
-        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(
-                new LinkedHashMap<>(Map.of("talentId", 11L, "resumeId", 21L)),
-                new LinkedHashMap<>(Map.of("talentId", 12L, "resumeId", 22L))));
+        when(mapper.selectScreenableCandidates(7L)).thenReturn(List.of(candidate(11L, 21L), candidate(12L, 22L)));
         when(mapper.claimTask(eq(1L), eq(7L), anyString(), eq(2))).thenAnswer(call -> {
             when(mapper.lockTask(1L, 7L)).thenReturn(Map.of("runId", call.getArgument(2))); return 1;
         });
@@ -279,7 +287,7 @@ class ScreeningServiceImplTest
     @Test void refreshReadsSavedResultsAndNeverCallsModel()
     {
         when(mapper.selectResultsByPosition(7L)).thenReturn(new ArrayList<>(List.of(new LinkedHashMap<>(Map.of("resultId", 11L)))));
-        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(Map.of("report", JSON.toJSONString(analysis())));
+        when(mapper.selectAnalysis(1L, 7L, null, 11L)).thenReturn(Map.of("report", JSON.toJSONString(analysis())));
         service.listResults(3L, 7L); service.listResults(3L, 7L);
         verifyNoInteractions(evaluator);
         verify(mapper, never()).saveAnalysis(anyMap());
@@ -289,7 +297,7 @@ class ScreeningServiceImplTest
     @Test void invalidReviewScoreCannotChangeCandidate()
     {
         when(mapper.selectOwnedCandidate(1L, 11L)).thenReturn(Map.of("talentId", 11L));
-        assertThrows(ServiceException.class, () -> service.reviewResult(3L, 11L, true, Double.NaN, null));
+        assertThrows(ServiceException.class, () -> service.reviewResult(3L, 11L, true, Double.NaN, null, null));
         verify(mapper, never()).updateMatchedScore(anyLong(), any());
     }
 
@@ -298,14 +306,15 @@ class ScreeningServiceImplTest
         when(mapper.selectOwnedCandidate(1L, 11L)).thenReturn(Map.of("talentId", 11L));
         when(mapper.selectApplicationResume(1L, 7L, 11L)).thenReturn(21L);
         when(mapper.countOwnedApplication(1L, 7L, 11L)).thenReturn(1);
-        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(null);
+        when(mapper.selectAnalysis(1L, 7L, 31L, 11L)).thenReturn(null);
+        when(mapper.selectSnapshotByApp(31L)).thenReturn(Map.of("snapshotId", 21L, "contentHash", "hash-1"));
 
-        Map<String, Object> reply = service.reviewResult(3L, 11L, null, 72.0, 7L);
+        Map<String, Object> reply = service.reviewResult(3L, 11L, null, 72.0, 7L, 31L);
 
         assertNull(reply.get("approved"));
         assertFalse(reply.containsKey("applicationStatus"));
         // 无 AI 分析时创建人工评分报告，并回写适配度评分
-        verify(mapper).saveAnalysis(argThat(row -> "manual".equals(row.get("source"))
+        verify(mapper).saveManualAnalysis(argThat(row -> "manual".equals(row.get("source"))
                 && row.get("resultId").equals(11L) && row.get("resumeId").equals(21L)));
         verify(mapper).updateMatchedScore(11L, 72.0);
         verify(mapper).updateApplicationScore(eq(7L), eq(11L), anyDouble(), anyList());
@@ -319,9 +328,10 @@ class ScreeningServiceImplTest
         when(mapper.selectOwnedCandidate(1L, 11L)).thenReturn(Map.of("talentId", 11L));
         when(mapper.selectApplicationResume(1L, 7L, 11L)).thenReturn(21L);
         when(mapper.countOwnedApplication(1L, 7L, 11L)).thenReturn(1);
-        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(null);
+        when(mapper.selectAnalysis(1L, 7L, 31L, 11L)).thenReturn(null);
+        when(mapper.selectSnapshotByApp(31L)).thenReturn(Map.of("snapshotId", 21L, "contentHash", "hash-1"));
 
-        Map<String, Object> reply = service.reviewResult(3L, 11L, null, 55.0, 7L);
+        Map<String, Object> reply = service.reviewResult(3L, 11L, null, 55.0, 7L, 31L);
 
         assertNull(reply.get("approved"));
         // 低分只保存评分，绝不自动终止投递
@@ -336,7 +346,7 @@ class ScreeningServiceImplTest
         when(mapper.selectOwnedCandidate(1L, 11L)).thenReturn(Map.of("talentId", 11L));
         when(mapper.countOwnedApplication(1L, 7L, 11L)).thenReturn(1);
 
-        assertThrows(ServiceException.class, () -> service.reviewResult(3L, 11L, null, null, 7L));
+        assertThrows(ServiceException.class, () -> service.reviewResult(3L, 11L, null, null, 7L, 31L));
         verify(mapper, never()).updateApplicationScore(anyLong(), anyLong(), any(), anyList());
         verify(mapper, never()).saveAnalysis(anyMap());
     }
@@ -346,8 +356,8 @@ class ScreeningServiceImplTest
         when(mapper.selectPendingApplications(7L)).thenReturn(List.of(
                 new LinkedHashMap<>(Map.of("applicationId", 31L, "talentId", 11L)),
                 new LinkedHashMap<>(Map.of("applicationId", 32L, "talentId", 12L))));
-        when(mapper.selectAnalysis(1L, 7L, 11L)).thenReturn(Map.of("report", JSON.toJSONString(analysis())));
-        when(mapper.selectAnalysis(1L, 7L, 12L)).thenReturn(null);
+        when(mapper.selectAnalysis(1L, 7L, 31L, 11L)).thenReturn(Map.of("report", JSON.toJSONString(analysis())));
+        when(mapper.selectAnalysis(1L, 7L, 32L, 12L)).thenReturn(null);
         when(mapper.selectAnalyzedCandidates(1L, 7L)).thenReturn(List.of(
                 Map.of("candidateId", 11L, "resumeVersion", "v1", "positionVersion", "p1")));
 

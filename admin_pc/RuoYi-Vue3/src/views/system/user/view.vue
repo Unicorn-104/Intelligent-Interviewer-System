@@ -131,18 +131,39 @@
           </div>
         </el-col>
       </el-row>
+
+      <!-- 投递记录 -->
+      <template v-if="apps.length">
+        <h4 class="section-header">投递记录（{{ apps.length }}）</h4>
+        <el-timeline style="padding-left:8px">
+          <el-timeline-item
+            v-for="a in apps" :key="a.appId"
+            :timestamp="`${a.created} 投递 → 当前：${a.statusText}`"
+            placement="top"
+            :type="a.status >= 5 ? 'success' : a.status === 7 || a.status === 10 ? 'danger' : 'primary'"
+          >
+            <div style="font-weight:600">{{ a.posTitle }}</div>
+            <div style="color:#666;font-size:13px">
+              {{ a.companyName }} · 匹配分 {{ a.score || '-' }}
+              <span v-if="a.updated !== a.created"> · 最近更新 {{ a.updated }}</span>
+            </div>
+          </el-timeline-item>
+        </el-timeline>
+      </template>
     </div>
   </el-drawer>
 </template>
 
 <script setup>
 import { getUser } from '@/api/system/user'
+import request from '@/utils/request'
 
 const visible = ref(false)
 const loading = ref(false)
 const info = reactive({})
 const postOptions = ref([])
 const roleOptions = ref([])
+const apps = ref([])
 
 const { sys_user_sex } = useDict('sys_user_sex')
 
@@ -178,6 +199,11 @@ const open = async (userId) => {
     roleOptions.value = res.roles || []
     info.postIds = res.postIds || []
     info.roleIds = res.roleIds || []
+    // 加载投递记录
+    try {
+      const r = await request({ url: `/system/user-apps/${userId}` })
+      apps.value = r.data || []
+    } catch { apps.value = [] }
   } catch (error) {
     console.error('获取用户信息失败:', error)
   } finally {

@@ -556,6 +556,7 @@ function handleExport() {
 
 /** 用户导入按钮操作 */
 const importUserRef = ref()
+const userViewRef = ref()
 function handleImport() {
   importUserRef.value.open()
 }
@@ -659,7 +660,7 @@ function submitForm() {
 
 /** 详情查看 */
 function handleViewData(row) {
-  router.push({ path: '/user/' + row.userId })
+  userViewRef.value.open(row.userId)
 }
 
 /** 分配角色按钮操作 */

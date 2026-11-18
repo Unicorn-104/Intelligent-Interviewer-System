@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.enterprise.mapper.EntResumeSnapshotMapper">
+
+    <!-- 主表结果映射；子表通过快照ID嵌套查询，保证读取的是同一快照内容 -->
+    <resultMap id="snapshotResult" type="com.ruoyi.enterprise.domain.EntResumeSnapshot">
+        <id property="id" column="ers_id"/>
+        <result property="appId" column="ers_app_id"/>
+        <result property="candidateId" column="ers_candidate_id"/>
+        <result property="companyId" column="ers_company_id"/>
+        <result property="positionId" column="ers_position_id"/>
+        <result property="sourceResumeId" column="ers_source_resume_id"/>
+        <result property="resumeName" column="ers_resume_name"/>
+        <result property="jobDirection" column="ers_job_direction"/>
+        <result property="filePath" column="ers_file_path"/>
+        <result property="fileName" column="ers_file_name"/>
+        <result property="fileSize" column="ers_file_size"/>
+        <result property="contentHash" column="ers_content_hash"/>
+        <result property="snapshotStatus" column="ers_snapshot_status"/>
+        <result property="versionVerified" column="ers_version_verified"/>
+        <result property="timeSource" column="ers_time_source"/>
+        <result property="snapshotAt" column="ers_snapshot_at"/>
+        <result property="createdAt" column="ers_created_at"/>
+        <collection property="educations" column="ers_id" select="selectEducations"/>
+        <collection property="works" column="ers_id" select="selectWorks"/>
+        <collection property="projects" column="ers_id" select="selectProjects"/>
+        <collection property="skills" column="ers_id" select="selectSkills"/>
+    </resultMap>
+
+    <resultMap id="educationResult" type="com.ruoyi.enterprise.domain.EntResumeSnapshot$Education">
+        <id property="educationId" column="ere_id"/>
+        <result property="school" column="ere_school"/>
+        <result property="major" column="ere_major"/>
+        <result property="degree" column="ere_degree"/>
+        <result property="startDate" column="ere_start_date"/>
+        <result property="endDate" column="ere_end_date"/>
+        <result property="gpa" column="ere_gpa"/>
+        <result property="description" column="ere_description"/>
+    </resultMap>
+
+    <resultMap id="workResult" type="com.ruoyi.enterprise.domain.EntResumeSnapshot$Work">
+        <id property="workId" column="erw_id"/>
+        <result property="company" column="erw_company"/>
+        <result property="position" column="erw_position"/>
+        <result property="department" column="erw_department"/>
+        <result property="startDate" column="erw_start_date"/>
+        <result property="endDate" column="erw_end_date"/>
+        <result property="current" column="erw_is_current"/>
+        <result property="salaryRange" column="erw_salary_range"/>
+        <result property="description" column="erw_description"/>
+    </resultMap>
+
+    <resultMap id="projectResult" type="com.ruoyi.enterprise.domain.EntResumeSnapshot$Project">
+        <id property="projectId" column="erp_id"/>
+        <result property="name" column="erp_name"/>
+        <result property="role" column="erp_role"/>
+        <result property="startDate" column="erp_start_date"/>
+        <result property="endDate" column="erp_end_date"/>
+        <result property="description" column="erp_description"/>
+        <result property="techStack" column="erp_tech_stack"/>
+    </resultMap>
+
+    <resultMap id="skillResult" type="com.ruoyi.enterprise.domain.EntResumeSnapshot$Skill">
+        <id property="skillId" column="esk_id"/>
+        <result property="name" column="esk_name"/>
+        <result property="level" column="esk_level"/>
+    </resultMap>
+
+    <!-- 插入主表，回填自增主键 -->
+    <insert id="insertSnapshot" parameterType="com.ruoyi.enterprise.domain.EntResumeSnapshot"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="ers_id">
+        INSERT INTO t_ent_resume_snapshot
+            (ers_app_id, ers_candidate_id, ers_company_id, ers_position_id, ers_source_resume_id,
+             ers_resume_name, ers_job_direction, ers_file_path, ers_file_name, ers_file_size,
+             ers_content_hash, ers_snapshot_status, ers_version_verified, ers_time_source, ers_snapshot_at)
+        VALUES
+            (#{appId}, #{candidateId}, #{companyId}, #{positionId}, #{sourceResumeId},
+             #{resumeName}, #{jobDirection}, #{filePath}, #{fileName}, #{fileSize},
+             #{contentHash}, #{snapshotStatus}, #{versionVerified}, #{timeSource}, #{snapshotAt})
+    </insert>
+
+    <insert id="insertEducationList">
+        INSERT INTO t_ent_resume_education
+            (ere_snapshot_id, ere_school, ere_major, ere_degree, ere_start_date, ere_end_date,
+             ere_gpa, ere_description)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{snapshotId}, #{item.school}, #{item.major}, #{item.degree}, #{item.startDate},
+             #{item.endDate}, #{item.gpa}, #{item.description})
+        </foreach>
+    </insert>
+
+    <insert id="insertWorkList">
+        INSERT INTO t_ent_resume_work
+            (erw_snapshot_id, erw_company, erw_position, erw_department, erw_start_date, erw_end_date,
+             erw_is_current, erw_salary_range, erw_description)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{snapshotId}, #{item.company}, #{item.position}, #{item.department}, #{item.startDate},
+             #{item.endDate}, #{item.current}, #{item.salaryRange}, #{item.description})
+        </foreach>
+    </insert>
+
+    <insert id="insertProjectList">
+        INSERT INTO t_ent_resume_project
+            (erp_snapshot_id, erp_name, erp_role, erp_start_date, erp_end_date,
+             erp_description, erp_tech_stack)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{snapshotId}, #{item.name}, #{item.role}, #{item.startDate}, #{item.endDate},
+             #{item.description}, #{item.techStack})
+        </foreach>
+    </insert>
+
+    <insert id="insertSkillList">
+        INSERT INTO t_ent_resume_skill (esk_snapshot_id, esk_name, esk_level)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{snapshotId}, #{item.name}, #{item.level})
+        </foreach>
+    </insert>
+
+    <select id="selectByAppId" resultMap="snapshotResult">
+        SELECT * FROM t_ent_resume_snapshot WHERE ers_app_id = #{appId}
+    </select>
+
+    <select id="selectById" resultMap="snapshotResult">
+        SELECT * FROM t_ent_resume_snapshot WHERE ers_id = #{id}
+    </select>
+
+    <select id="countByAppId" resultType="int">
+        SELECT COUNT(*) FROM t_ent_resume_snapshot WHERE ers_app_id = #{appId}
+    </select>
+
+    <!-- 投递企业归属校验：t_app_record 无企业列，join t_pos 以 pos_company_id 判定；
+         仅返回属于当前企业的投递，否则结果为空，由服务层按无权访问处理 -->
+    <select id="selectApplicationOwnership" resultType="java.util.LinkedHashMap">
+        SELECT a.app_id AS appId, a.app_candidate_id AS candidateId,
+               a.app_position_id AS positionId, a.app_status AS status
+        FROM t_app_record a
+        JOIN t_pos p ON p.pos_id = a.app_position_id
+        WHERE a.app_id = #{appId} AND p.pos_company_id = #{companyId}
+    </select>
+
+    <select id="selectEducations" resultMap="educationResult">
+        SELECT * FROM t_ent_resume_education WHERE ere_snapshot_id = #{ers_id} ORDER BY ere_id
+    </select>
+
+    <select id="selectWorks" resultMap="workResult">
+        SELECT * FROM t_ent_resume_work WHERE erw_snapshot_id = #{ers_id} ORDER BY erw_id
+    </select>
+
+    <select id="selectProjects" resultMap="projectResult">
+        SELECT * FROM t_ent_resume_project WHERE erp_snapshot_id = #{ers_id} ORDER BY erp_id
+    </select>
+
+    <select id="selectSkills" resultMap="skillResult">
+        SELECT * FROM t_ent_resume_skill WHERE esk_snapshot_id = #{ers_id} ORDER BY esk_id
+    </select>
+</mapper>

@@ -236,7 +236,7 @@ upstream recruit_backend {
 
 server {
     listen 443 ssl;
-    server_name 114.55.175.79;
+    server_name 121.196.111.230;
 
     # 证书路径按现网替换
     ssl_certificate     /etc/nginx/ssl/server.crt;

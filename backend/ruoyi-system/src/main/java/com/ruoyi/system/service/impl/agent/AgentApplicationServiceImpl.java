@@ -43,6 +43,7 @@ import com.ruoyi.system.service.app.IAppResumeService;
 import com.ruoyi.system.service.app.pdf.ResumePdfParser;
 import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
 import com.ruoyi.enterprise.service.ApplicationStatusService;
+import com.ruoyi.enterprise.service.EntResumeSnapshotService;
 
 /**
  * 求职者端简历与投递服务实现。
@@ -70,6 +71,9 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
 
     @Autowired
     private ApplicationStatusService applicationStatusService;
+
+    @Autowired
+    private EntResumeSnapshotService entResumeSnapshotService;
 
     @Override
     public List<AgentResumeOption> selectResumeOptions(Long userId, Long jobId)
@@ -137,6 +141,10 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         }
 
         AgentResumeDetail existing = requireResume(userId, resumeId);
+        if (applicationMapper.lockResumeBase(userId, resumeId) == null)
+        {
+            throw new ServiceException("简历不存在、已停用或无权访问");
+        }
         AgentResumeDetail resume = new AgentResumeDetail();
         resume.setId(existing.getId());
         resume.setUserId(userId);
@@ -221,6 +229,10 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
     {
         validateResumeRequest(request);
         AgentResumeDetail existing = requireResume(userId, resumeId);
+        if (applicationMapper.lockResumeBase(userId, resumeId) == null)
+        {
+            throw new ServiceException("简历不存在、已停用或无权访问");
+        }
         byte[] bytes = readPdf(file);
         ResumePdfStorage.StoredPdf stored = pdfStorage.store(userId, bytes, file.getOriginalFilename());
         registerPdfCleanup(userId, stored, existing.getFilePath());
@@ -250,6 +262,10 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
     public AgentResumeDetail uploadResumeFile(Long userId, Long resumeId, MultipartFile file) throws Exception
     {
         AgentResumeDetail existing = requireResume(userId, resumeId);
+        if (applicationMapper.lockResumeBase(userId, resumeId) == null)
+        {
+            throw new ServiceException("简历不存在、已停用或无权访问");
+        }
         byte[] bytes = readPdf(file);
         ResumePdfStorage.StoredPdf stored = pdfStorage.store(userId, bytes, file.getOriginalFilename());
         registerPdfCleanup(userId, stored, existing.getFilePath());
@@ -266,6 +282,10 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
     public void deleteResume(Long userId, Long resumeId)
     {
         AgentResumeDetail existing = requireResume(userId, resumeId);
+        if (applicationMapper.lockResumeBase(userId, resumeId) == null)
+        {
+            throw new ServiceException("简历不存在、已停用或无权访问");
+        }
         if (applicationMapper.softDeleteResume(userId, resumeId) <= 0)
         {
             throw new ServiceException("删除简历失败，请稍后重试");
@@ -389,6 +409,11 @@ public class AgentApplicationServiceImpl implements IAgentApplicationService
         {
             throw new ServiceException("投递失败，请稍后重试");
         }
+        // 生成企业独立投递快照：行锁一致性读取源简历、复制 PDF 为企业不可变对象、复制结构化内容。
+        // 旧 app_resume_id 仍保留兼容；企业简历读取与 AI 分析一律以该快照为准
+        entResumeSnapshotService.createForApplication(
+                application.getId(), userId, candidateId, job.getCompanyId(),
+                job.getId(), request.getResumeId());
         // 新投递口径：投递成功即 app_status=0（已投递），并同步创建流程实例，
         // 企业端岗位详情/漏斗/筛选均以实例为候选人来源；不经过任何待筛选/初筛中间态。
         enterpriseJobService.ensureProcessInstance(job.getCompanyId(), candidateId, request.getJobId());

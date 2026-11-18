@@ -209,6 +209,12 @@ export const constantRoutes = [
         meta: { title: '面试安排中心' }
       },
       {
+        path: 'interviews/reschedule-review',
+        component: () => import('@/views/enterprise/interviews/reschedule-review.vue'),
+        name: 'EnterpriseRescheduleReview',
+        meta: { title: '改期审批' }
+      },
+      {
         path: 'offer',
         component: () => import('@/views/enterprise/offer/index.vue'),
         name: 'EnterpriseOffer',
@@ -219,6 +225,12 @@ export const constantRoutes = [
         component: () => import('@/views/enterprise/interviews/evaluation.vue'),
         name: 'EnterpriseInterviewEvaluation',
         meta: { title: '面试评估' }
+      },
+      {
+        path: 'send',
+        component: () => import('@/views/enterprise/send/index.vue'),
+        name: 'EnterpriseSendCenter',
+        meta: { title: '笔试面试安排中心' }
       },
       {
         path: 'messages',

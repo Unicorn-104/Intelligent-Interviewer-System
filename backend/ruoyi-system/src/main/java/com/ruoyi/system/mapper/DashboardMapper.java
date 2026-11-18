@@ -37,6 +37,11 @@ public interface DashboardMapper
     public int countWeeklyCompletedInterviews(@Param("companyId") Long companyId);
 
     /**
+     * 统计待笔试人数（待笔试/笔试中）
+     */
+    public int countPendingExams(@Param("companyId") Long companyId);
+
+    /**
      * 查询招聘漏斗（近30天）
      */
     public Map<String, Object> selectFunnel(@Param("companyId") Long companyId);
@@ -55,6 +60,16 @@ public interface DashboardMapper
      * 待办：即将开始的面试（已确认且时间最近）
      */
     public Map<String, Object> selectTodoUpcomingInterview(@Param("companyId") Long companyId);
+
+    /**
+     * 待办：待安排笔试（tal_status=5，取最近一条）
+     */
+    public Map<String, Object> selectTodoPendingExam(@Param("companyId") Long companyId);
+
+    /**
+     * 待办：笔试进行中（tal_status=6，取最近一条）
+     */
+    public Map<String, Object> selectTodoExamInProgress(@Param("companyId") Long companyId);
 
     /**
      * 最近动态：候选人状态流转日志（最近4条）

@@ -52,10 +52,12 @@ public class ExamController extends BaseController
             @RequestParam(required = false) Integer difficulty,
             @RequestParam(required = false) String skillTag,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String scope,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize)
     {
-        return getDataTable(examService.listQuestions(type, difficulty, skillTag, keyword, pageNum, pageSize));
+        return getDataTable(examService.listQuestions(type, difficulty, skillTag, keyword, scope,
+                getUserId(), pageNum, pageSize));
     }
 
     /** 题目详情 */
@@ -65,28 +67,38 @@ public class ExamController extends BaseController
         return success(examService.getQuestion(questionId));
     }
 
-    /** 新增题目 */
+    /** 新增题目（归属当前企业题库） */
     @PostMapping("/questions")
     public AjaxResult createQuestion(@RequestBody Map<String, Object> body)
     {
-        return success(examService.saveQuestion(body));
+        return success(examService.saveQuestion(body, getUserId()));
     }
 
-    /** 修改题目 */
+    /** 修改题目（仅限本企业题目） */
     @PutMapping("/questions/{questionId}")
     public AjaxResult updateQuestion(@PathVariable("questionId") Long questionId,
             @RequestBody Map<String, Object> body)
     {
-        examService.updateQuestion(questionId, body);
+        examService.updateQuestion(questionId, body, getUserId());
         return success("保存成功");
     }
 
-    /** 删除题目 */
+    /** 删除题目（仅限本企业题目） */
     @DeleteMapping("/questions/{questionId}")
     public AjaxResult deleteQuestion(@PathVariable("questionId") Long questionId)
     {
-        examService.deleteQuestion(questionId);
+        examService.deleteQuestion(questionId, getUserId());
         return success("删除成功");
+    }
+
+    /** 补全空解析（平台题库只读，但允许补全解析） */
+    @PutMapping("/questions/{questionId}/analysis")
+    public AjaxResult fillAnalysis(@PathVariable("questionId") Long questionId,
+            @RequestBody Map<String, Object> body)
+    {
+        examService.fillQuestionAnalysis(questionId,
+                body.get("analysis") == null ? null : String.valueOf(body.get("analysis")), getUserId());
+        return success("解析已补全");
     }
 
     /** AI 补全答案解析，并同步校验题目是否正确 */
@@ -139,7 +151,7 @@ public class ExamController extends BaseController
     @PostMapping("/papers/draw-preview")
     public AjaxResult drawPreview(@RequestBody Map<String, Object> rule)
     {
-        return success(examService.previewDraw(rule));
+        return success(examService.previewDraw(rule, getUserId()));
     }
 
     // ==================== 考试安排 ====================

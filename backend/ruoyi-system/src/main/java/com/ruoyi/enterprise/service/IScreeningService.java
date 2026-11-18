@@ -48,10 +48,11 @@ public interface IScreeningService
     /**
      * HR 复核（UC-06）：确认通过（tal_status→初筛通过，触发器自动写状态日志）/ 调整评分
      *
-     * @param positionId 岗位ID（可为空；传入时同步回写该岗位投递状态）
+     * @param positionId    岗位ID（可为空；传入时同步回写该岗位投递状态）
+     * @param applicationId 当前投递ID（positionId 非空时必传，精确绑定，禁止反查猜测）
      */
     public Map<String, Object> reviewResult(Long userId, Long resultId, Boolean approved, Double adjustScore,
-            Long positionId);
+            Long positionId, Long applicationId);
     Map<String, Object> getTaskStatus(Long userId, Long taskId);
 
     /** 新增全量分析重载；原方法签名保持兼容，默认执行增量分析。 */

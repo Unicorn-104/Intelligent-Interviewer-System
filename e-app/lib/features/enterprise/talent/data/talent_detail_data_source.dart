@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../../../api/jobs_api.dart' as jobs;
 import '../../../../api/interview_room_api.dart' as rooms;
 import '../../../../api/review_api.dart' as review;
@@ -30,6 +32,30 @@ class TalentDetailDataSource {
     }
     return data;
   }
+
+  /// 投递级简历快照：以 applicationId 读取企业快照，校验口径与 loadResume 一致。
+  /// 后端快照缺失时直接抛错，不回退 C-App 当前简历。
+  Future<Map<String, dynamic>> loadApplicationResume(int applicationId) async {
+    final data = await talent.getApplicationParsedResume(applicationId);
+    for (final field in [
+      'educationList',
+      'workList',
+      'projectList',
+      'skills',
+    ]) {
+      if (data[field] != null) {
+        talentRows(data[field], field);
+      }
+    }
+    if (data['missingFields'] != null && data['missingFields'] is! List) {
+      throw const FormatException('简历缺失字段格式不正确');
+    }
+    return data;
+  }
+
+  /// 投递级原始 PDF 字节：读取企业独立命名空间，不依赖 rbs_status。
+  Future<Uint8List> loadApplicationPdfBytes(int applicationId) =>
+      talent.getApplicationResumePdf(applicationId);
 
   Future<TalentMatchData> loadMatch(int id, TalentJobContext context) async {
     final responses = await Future.wait<Object>([

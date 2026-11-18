@@ -146,7 +146,7 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         if (Boolean.FALSE.equals(isFinal))
         {
             // UC-15：非终面通过 → 自动触发下一轮预约（级联）
-            result.put("cascade", cascadeInternal(session));
+            result.put("cascade", cascadeInternal(session, userId));
             result.put("message", "已确认通过（非终面），已自动创建下一轮预约任务（级联流转 UC-15）");
         }
         else
@@ -231,11 +231,11 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> cascade(Long userId, Long sessionId)
     {
-        return cascadeInternal(requireSession(userId, sessionId));
+        return cascadeInternal(requireSession(userId, sessionId), userId);
     }
 
     /** UC-15 级联流转核心：按级联规则阈值判断，达标创建下一轮预约，未达标淘汰 */
-    private Map<String, Object> cascadeInternal(Map<String, Object> session)
+    private Map<String, Object> cascadeInternal(Map<String, Object> session, Long userId)
     {
         Long sessionId = Long.valueOf(String.valueOf(session.get("sessionId")));
         Object templateObj = session.get("templateId");
@@ -261,12 +261,23 @@ public class InterviewReviewServiceImpl implements IInterviewReviewService
         double threshold = Double.parseDouble(String.valueOf(rule.get("passThreshold")));
         if (overall < threshold)
         {
-            // UC-12 E2：级联模式评分未达阈值，直接走淘汰流程；候选人已处于终态时不再改写
-            if (!talStatusService.change(asLong(session.get("candidateId")), TalStatusService.TAL_REJECTED,
-                    List.of(2), asLong(session.get("positionId")), 2, "面试级联未达标", 0L))
+            Long candidateId = asLong(session.get("candidateId"));
+            Long positionId = asLong(session.get("positionId"));
+            // UC-12 E2：级联模式评分未达阈值，直接走淘汰流程；候选人已处于终态时不再改写。
+            // 进入级联评估的候选人可能处于「面试中」或「笔试通过」，两者都允许被级联结果收口
+            if (!talStatusService.change(candidateId, TalStatusService.TAL_REJECTED,
+                    List.of(TalStatusService.TAL_INTERVIEWING, TalStatusService.TAL_EXAM_PASSED),
+                    positionId, 2, "面试级联未达标", 0L))
             {
                 result.put("message", "候选人已淘汰或已录用，本次不再重复流转状态");
                 return result;
+            }
+            // 投递状态同步收口：经状态机进入未录用，避免 tal_status 已淘汰而候选人端进度仍停在招聘中
+            Long appId = applicationStatusMapper.selectAppId(candidateId, positionId);
+            if (appId != null)
+            {
+                applicationStatusService.terminate(appId, ApplicationEndReason.HR_REJECTED, userId,
+                        ApplicationStatusService.SOURCE_INTERVIEW, "面试级联未达标");
             }
             reviewMapper.insertMessage(Long.valueOf(String.valueOf(session.get("candidateUserId"))),
                     "感谢参与",

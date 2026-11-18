@@ -13,12 +13,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/talent_detail_fixture.dart';
 
 import 'package:enterprise_recruiter/features/enterprise/talent/widgets/talent_candidate_actions.dart';
-import 'package:enterprise_recruiter/features/enterprise/talent/widgets/talent_greeting_sheet.dart';
 import 'package:enterprise_recruiter/features/enterprise/talent/widgets/talent_interview_invite_sheet.dart';
 
 void main() {
   testWidgets('资料卡内展示打招呼与拆分邀约按钮，菜单操作与原面板正常', (tester) async {
     final source = TalentFakeSource();
+    source.detail = {
+      ...source.detail,
+      'userId': 19,
+    };
     source.workflow = {
       'stages': [
         {'stageId': 41, 'name': '在线笔试', 'sortOrder': 1},
@@ -40,6 +43,10 @@ void main() {
         talent: const {'talentId': 11},
         source: source,
         jobContext: talentTestJob,
+        chatPageBuilder: (session) => Scaffold(
+          appBar: AppBar(title: const Text('测试聊天页')),
+          body: Text('peerId=${session['peerId']}'),
+        ),
       ),
     );
     final pageAppBar = tester.widget<AppBar>(find.byType(AppBar));
@@ -67,20 +74,17 @@ void main() {
     await tester.tap(find.byKey(const Key('talent-more')));
     await tester.pumpAndSettle();
     expect(find.text('录用'), findsOneWidget);
-    expect(find.text('淘汰'), findsOneWidget);
+    expect(find.text('HR淘汰'), findsOneWidget);
     expect(find.byType(TalentInterviewInviteSheet), findsNothing);
-    await tester.tap(find.byKey(const Key('talent-hire')));
+    await tester.tap(find.byKey(const Key('talent-录用')));
     await tester.pumpAndSettle();
     expect(find.text('录用功能开发中'), findsOneWidget);
     await tester.tap(find.byKey(const Key('talent-greeting')));
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<TalentGreetingSheet>(find.byType(TalentGreetingSheet))
-          .candidateId,
-      11,
-    );
-    expect(source.greetingCalls, 1);
+    // 打招呼已改为直接进入聊天页（注入占位页隔离网络），不再走招呼语预览弹窗。
+    expect(find.text('测试聊天页'), findsOneWidget);
+    expect(find.text('peerId=19'), findsOneWidget);
+    expect(source.greetingCalls, 0);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('talent-invite')));
@@ -218,19 +222,19 @@ void main() {
     expect(statusBadge, findsOneWidget);
     final statusLabel = find.descendant(
       of: statusBadge,
-      matching: find.text('待面试'),
+      matching: find.text('待发Offer'),
     );
     final statusIcon = find.descendant(
       of: statusBadge,
-      matching: find.byIcon(Icons.arrow_forward),
+      matching: find.byIcon(Icons.mark_email_unread_outlined),
     );
     expect(statusLabel, findsOneWidget);
     expect(statusIcon, findsOneWidget);
     expect(
       tester.widget<Text>(statusLabel).style?.color,
-      AppColors.interactive,
+      AppColors.warning,
     );
-    expect(tester.widget<Icon>(statusIcon).color, AppColors.interactive);
+    expect(tester.widget<Icon>(statusIcon).color, AppColors.warning);
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
     source.resumePending!.complete(talentResumeJson());
     await tester.pump();

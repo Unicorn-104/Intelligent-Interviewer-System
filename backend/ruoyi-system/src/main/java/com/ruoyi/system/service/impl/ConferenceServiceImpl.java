@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.time.DateTimeException;
@@ -24,8 +25,10 @@ import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
+import com.ruoyi.enterprise.domain.ProcessStageInstance;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.ITalentPoolService;
+import com.ruoyi.enterprise.service.ProcessStageInstanceService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.asr.AsrConfigResolver;
 import com.ruoyi.system.event.InterviewFinishedEvent;
@@ -118,6 +121,10 @@ public class ConferenceServiceImpl implements IConferenceService
 
     @Autowired
     private com.ruoyi.enterprise.mapper.ApplicationStatusMapper applicationStatusMapper;
+
+    /** 阶段节点实例：发起面试时按已通过轮次过滤可选阶段 */
+    @Autowired
+    private ProcessStageInstanceService processStageInstanceService;
 
     /** 面试正常结束后发布事件，事务提交后异步生成报告 */
     @Autowired
@@ -248,8 +255,12 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("该投递已进入终态（已录用或未录用），无法发起面试");
         }
-        // 面试阶段可空；传了就必须属于该岗位的流程模板
+        // 面试阶段可空；传了就必须属于该岗位的流程模板，且不能是已通过的轮次
         Map<String, Object> stage = findStage(positionId, companyId, stageId);
+        if (stage != null && isPassedStage(candidateId, positionId, toLong(stage.get("stageId"))))
+        {
+            throw new ServiceException("该面试阶段已通过，无需重复发起");
+        }
 
         // 面试方式只接受 1~4；非法值直接报错，避免静默回落成「AI + 单面试官」与前端所选不一致
         if (mode != null && (mode < MODE_AI_ONLY || mode > MODE_HUMAN_ONLY))
@@ -779,15 +790,44 @@ public class ConferenceServiceImpl implements IConferenceService
         params.put("peerUserId", peerUserId);
         params.put("companyId", companyId);
         List<Map<String, Object>> positions = conferenceMapper.selectCandidatePositionsByPeer(params);
-        // 附带每个岗位流程模板的阶段列表，供发起面试时选择阶段并按阶段带出默认设置
+        // 附带每个岗位流程模板的阶段列表，供发起面试时选择阶段并按阶段带出默认设置；
+        // 已通过的轮次从可选项中剔除，避免对已完成阶段重复发起面试
         for (Map<String, Object> position : positions)
         {
             Map<String, Object> stageParams = new HashMap<>();
             stageParams.put("positionId", position.get("positionId"));
             stageParams.put("companyId", companyId);
-            position.put("stages", conferenceMapper.selectStagesByPosition(stageParams));
+            List<Map<String, Object>> stages = conferenceMapper.selectStagesByPosition(stageParams);
+            Set<Long> passed = passedStageIds(position.get("instanceId"));
+            if (!passed.isEmpty())
+            {
+                stages = stages.stream()
+                        .filter(stage -> !passed.contains(toLong(stage.get("stageId"))))
+                        .toList();
+            }
+            position.put("stages", stages);
         }
         return positions;
+    }
+
+    /** 投递流程实例中已通过（result=1）的节点阶段ID；无实例或节点未绑阶段时返回空集 */
+    private Set<Long> passedStageIds(Object instanceIdValue)
+    {
+        Set<Long> passed = new LinkedHashSet<>();
+        Long instanceId = toLong(instanceIdValue);
+        if (instanceId == null)
+        {
+            return passed;
+        }
+        for (ProcessStageInstance node : processStageInstanceService.listNodes(instanceId))
+        {
+            if (node.getStageId() != null && node.getResult() != null
+                    && node.getResult() == ProcessStageInstance.RESULT_PASS)
+            {
+                passed.add(node.getStageId());
+            }
+        }
+        return passed;
     }
 
     @Override
@@ -1356,6 +1396,19 @@ public class ConferenceServiceImpl implements IConferenceService
         result.put("recommendation", report.get("recommendation"));
         result.put("readyAt", report.get("readyAt"));
         return result;
+    }
+
+    @Override
+    public List<Map<String, Object>> getPreviousSessionReviews(Long userId, Long sessionId)
+    {
+        Map<String, Object> ctx = requireAccess(userId, sessionId);
+        Long candidateId = toLong(ctx.get("candidateId"));
+        Long positionId = toLong(ctx.get("positionId"));
+        if (candidateId == null || positionId == null)
+        {
+            return new ArrayList<>();
+        }
+        return conferenceMapper.selectPreviousSessionReviews(sessionId, candidateId, positionId);
     }
 
     /** 候选人视图只暴露五维分数，剔除模型引用原文证据 */
@@ -2022,6 +2075,22 @@ public class ConferenceServiceImpl implements IConferenceService
             }
         }
         throw new ServiceException("所选面试阶段与岗位不匹配");
+    }
+
+    /** 指定阶段在该投递的流程实例中是否已通过 */
+    private boolean isPassedStage(Long candidateId, Long positionId, Long stageId)
+    {
+        if (stageId == null)
+        {
+            return false;
+        }
+        Long appId = applicationStatusMapper.selectAppId(candidateId, positionId);
+        if (appId == null)
+        {
+            return false;
+        }
+        Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+        return app != null && passedStageIds(app.get("instanceId")).contains(stageId);
     }
 
     /** 把阶段信息写入预约记录，落库到 apt_stage_id / apt_stage_name / apt_stage_type / apt_stage_order */

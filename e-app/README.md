@@ -14,7 +14,7 @@ APP 当前默认访问本机后端 `http://10.0.2.2:8080`（Android 模拟器访
 需要访问公网后端时，可通过编译参数覆盖：
 
 ```powershell
-flutter run --dart-define=API_BASE_URL=http://114.55.175.79/prod-api
+flutter run --dart-define=API_BASE_URL=http://121.196.111.230/prod-api
 ```
 
 真机测试时，将接口地址覆盖为本机电脑的局域网地址与8080端口。

@@ -187,6 +187,14 @@ export function getSessionResult(sessionId) {
   })
 }
 
+// 往轮面试总结：同候选人同岗位的历史轮次评估摘要
+export function getPreviousReviews(sessionId) {
+  return request({
+    url: '/system/conference/session/' + sessionId + '/previous-reviews',
+    method: 'get'
+  })
+}
+
 // ============================ 录制回放与存储 ============================
 
 // 录制文件列表

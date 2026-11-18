@@ -23,20 +23,62 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by t.tal_id
     </select>
 
-    <!-- 可参与 AI 初筛的投递：待分析/已分析覆盖 app_status=0(已投递) 与 1(招聘中)、流程实例进行中；
-         不再以旧“初筛淘汰(2)”口径排除，AI 只分析评分，不回写 app_status -->
+    <!-- 可参与 AI 初筛的投递：以 t_app_record 为粒度，join 该投递的企业快照，
+         覆盖 app_status=0(已投递) 与 1(招聘中)；AI 只读取该岗位投递快照，不回写 app_status -->
     <select id="selectScreenableCandidates" resultType="java.util.LinkedHashMap">
-        select distinct t.tal_id as talentId, t.tal_status as status, r.rbs_id as resumeId, r.rbs_file_path as fileReference, r.rbs_user_id as resumeUserId, date_format(r.rbs_updated_at, '%Y-%m-%d %H:%i:%s') as resumeVersion
-        from t_process_instance p
-        join t_tal t on t.tal_id = p.pin_candidate_id
-        left join t_res_base r on r.rbs_id = t.tal_resume_id and r.rbs_user_id = t.tal_user_id
-        where p.pin_position_id = #{positionId}
-          and p.pin_status = 0
-          and exists (select 1 from t_app_record a
-                      where a.app_position_id = p.pin_position_id
-                        and a.app_candidate_id = p.pin_candidate_id
-                        and a.app_status in (0, 1))
-        order by t.tal_id
+        select a.app_id as applicationId,
+               a.app_candidate_id as talentId,
+               a.app_status as applicationStatus,
+               s.ers_id as snapshotId,
+               s.ers_source_resume_id as resumeId,
+               s.ers_file_path as fileReference,
+               s.ers_content_hash as contentHash,
+               s.ers_snapshot_status as snapshotStatus,
+               date_format(s.ers_snapshot_at, '%Y-%m-%d %H:%i:%s') as snapshotAt
+        from t_app_record a
+        join t_ent_resume_snapshot s on s.ers_app_id = a.app_id
+        where a.app_position_id = #{positionId}
+          and a.app_status in (0, 1)
+        order by a.app_id
+    </select>
+
+    <!-- 快照结构化证据：教育/工作/项目/技能，均按 snapshot_id 读取企业表，不触碰 C-App 表 -->
+    <select id="selectSnapshotEducation" resultType="java.util.LinkedHashMap">
+        select ere_major as major,
+               case ere_degree when 1 then '中专' when 2 then '大专' when 3 then '本科'
+                    when 4 then '硕士' when 5 then '博士' else '未提供' end as degree,
+               ere_description as description,
+               cast(ere_start_date as char) as startDate,
+               cast(ere_end_date as char) as endDate
+        from t_ent_resume_education where ere_snapshot_id = #{snapshotId} order by ere_id
+    </select>
+
+    <select id="selectSnapshotWork" resultType="java.util.LinkedHashMap">
+        select erw_position as position, erw_description as description,
+               cast(erw_start_date as char) as startDate,
+               cast(erw_end_date as char) as endDate,
+               erw_is_current as isCurrent
+        from t_ent_resume_work where erw_snapshot_id = #{snapshotId} order by erw_id
+    </select>
+
+    <select id="selectSnapshotProject" resultType="java.util.LinkedHashMap">
+        select erp_name as name, erp_role as role, erp_description as description,
+               erp_tech_stack as techStack,
+               cast(erp_start_date as char) as startDate,
+               cast(erp_end_date as char) as endDate
+        from t_ent_resume_project where erp_snapshot_id = #{snapshotId} order by erp_id
+    </select>
+
+    <select id="selectSnapshotSkills" resultType="string">
+        select esk_name from t_ent_resume_skill
+        where esk_snapshot_id = #{snapshotId} order by esk_level desc, esk_id
+    </select>
+
+    <!-- 按投递读取快照摘要，用于分析事务内确认快照仍存在且哈希未变 -->
+    <select id="selectSnapshotByApp" resultType="java.util.LinkedHashMap">
+        select ers_id as snapshotId, ers_content_hash as contentHash,
+               ers_snapshot_status as snapshotStatus, ers_app_id as appId
+        from t_ent_resume_snapshot where ers_app_id = #{appId}
     </select>
 
     <select id="selectCandidateSkills" resultType="string">
@@ -66,6 +108,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <select id="selectResultsByPosition" resultType="java.util.LinkedHashMap">
         select distinct t.tal_id as resultId, t.tal_matched_score as totalScore, t.tal_status as status,
+               a.app_id as applicationId,
                a.app_status as applicationStatus,
                u.nick_name as name, u.phonenumber as phone,
                (select group_concat(skl_name separator ',')
@@ -74,7 +117,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 from t_tal_tag g where g.tg_candidate_id = t.tal_id) as tags
         from t_process_instance p
         join t_tal t on t.tal_id = p.pin_candidate_id
-        left join t_app_record a on a.app_position_id = p.pin_position_id and a.app_candidate_id = t.tal_id
+        <!-- 重复投递时只关联该候选人在本岗位的最新一条投递，避免同一候选人因多行 app 产生重复结果行 -->
+        left join t_app_record a on a.app_id = (
+            select max(ar.app_id) from t_app_record ar
+            where ar.app_position_id = p.pin_position_id and ar.app_candidate_id = t.tal_id
+        )
         left join sys_user u on u.user_id = t.tal_user_id
         left join t_res_base r on r.rbs_id = t.tal_resume_id and r.rbs_user_id = t.tal_user_id
         where t.tal_company_id = (select pos_company_id from t_pos where pos_id = #{positionId})
@@ -117,15 +164,43 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                cast(prj_start_date as char) as startDate, cast(prj_end_date as char) as endDate
         from t_res_project where prj_resume_id = #{resumeId} order by prj_id
     </select>
+    <!-- 取该条投递(app_id)的最新一条 AI(llm) 分析，精确到投递、重复投递不串用；manual 不混入 AI 展示 -->
     <select id="selectAnalysis" resultType="java.util.LinkedHashMap">
-        select cast(asr_report as char) as report, date_format(asr_updated_at, '%Y-%m-%d %H:%i:%s') as generatedAt
-        from t_ai_candidate_analysis where asr_company_id = #{companyId} and asr_position_id = #{positionId}
+        select cast(asr_report as char) as report,
+               asr_snapshot_id as snapshotId,
+               asr_content_hash as contentHash,
+               asr_version_status as versionStatus,
+               date_format(coalesce(asr_created_at, asr_updated_at), '%Y-%m-%d %H:%i:%s') as generatedAt
+        from t_ai_candidate_analysis
+        where asr_company_id = #{companyId}
+          and asr_position_id = #{positionId}
+          and asr_app_id = #{applicationId}
           and asr_candidate_id = #{talId}
+          and asr_source = 'llm'
+        order by asr_created_at desc, asr_updated_at desc, asr_id desc limit 1
     </select>
+
+    <!-- 取该条投递(app_id)的最新一条 HR 人工(manual) 评分，精确到投递，独立于 AI 且不串用其他投递 -->
+    <select id="selectManualAnalysis" resultType="java.util.LinkedHashMap">
+        select cast(asr_report as char) as report,
+               date_format(coalesce(asr_created_at, asr_updated_at), '%Y-%m-%d %H:%i:%s') as generatedAt
+        from t_ai_candidate_analysis
+        where asr_company_id = #{companyId}
+          and asr_position_id = #{positionId}
+          and asr_app_id = #{applicationId}
+          and asr_candidate_id = #{talId}
+          and asr_source = 'manual'
+        order by asr_created_at desc, asr_updated_at desc, asr_id desc limit 1
+    </select>
+
+    <!-- 无岗位上下文入口：跨岗位取该候选人最新 AI(llm) 报告，属“当前人才库分析”口径，
+         不绑定具体投递/快照，不冒充历史投递分析；调用方须按 analysisScope=current_talent_pool 标注 -->
     <select id="selectLatestAnalysis" resultType="java.util.LinkedHashMap">
-        select cast(asr_report as char) as report, date_format(asr_updated_at, '%Y-%m-%d %H:%i:%s') as generatedAt
-        from t_ai_candidate_analysis where asr_company_id = #{companyId} and asr_candidate_id = #{talId}
-        order by asr_updated_at desc, asr_position_id desc limit 1
+        select cast(asr_report as char) as report,
+               date_format(coalesce(asr_created_at, asr_updated_at), '%Y-%m-%d %H:%i:%s') as generatedAt
+        from t_ai_candidate_analysis
+        where asr_company_id = #{companyId} and asr_candidate_id = #{talId} and asr_source = 'llm'
+        order by asr_created_at desc, asr_updated_at desc, asr_position_id desc, asr_id desc limit 1
     </select>
     <select id="selectAnalyzedCandidates" resultType="java.util.LinkedHashMap">
         select asr_candidate_id as candidateId,
@@ -134,10 +209,26 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from t_ai_candidate_analysis
         where asr_company_id = #{companyId} and asr_position_id = #{positionId}
     </select>
+    <!-- 追加式 AI 分析：每次分析新增一行，不再覆盖旧报告；绑定投递/快照/内容哈希 -->
     <insert id="saveAnalysis">
-        insert into t_ai_candidate_analysis (asr_company_id, asr_position_id, asr_candidate_id, asr_resume_id, asr_report)
-        values (#{companyId}, #{positionId}, #{resultId}, #{resumeId}, #{report})
-        on duplicate key update asr_resume_id = values(asr_resume_id), asr_report = values(asr_report), asr_updated_at = now()
+        insert into t_ai_candidate_analysis
+            (asr_company_id, asr_position_id, asr_candidate_id, asr_resume_id, asr_report,
+             asr_app_id, asr_snapshot_id, asr_content_hash, asr_source, asr_version_status,
+             asr_created_at, asr_updated_at)
+        values
+            (#{companyId}, #{positionId}, #{resultId}, #{resumeId}, #{report},
+             #{applicationId}, #{snapshotId}, #{contentHash}, 'llm', 'MATCHED', now(), now())
+    </insert>
+
+    <!-- 追加式 HR 人工评分：与 llm 独立成行，不覆盖 AI 分析 -->
+    <insert id="saveManualAnalysis">
+        insert into t_ai_candidate_analysis
+            (asr_company_id, asr_position_id, asr_candidate_id, asr_resume_id, asr_report,
+             asr_app_id, asr_snapshot_id, asr_content_hash, asr_source, asr_version_status,
+             asr_created_at, asr_updated_at)
+        values
+            (#{companyId}, #{positionId}, #{resultId}, #{resumeId}, #{report},
+             #{applicationId}, #{snapshotId}, #{contentHash}, 'manual', #{versionStatus}, now(), now())
     </insert>
     <insert id="initTask">
         insert ignore into t_ai_screening_task (ast_company_id, ast_position_id, ast_run_id, ast_state)
@@ -223,12 +314,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           and p.pos_company_id = #{companyId}
     </select>
 
-    <!-- 回写 HR 复核调整后的 AI 分析报告（仅调整分数，维度明细保持不动） -->
+    <!-- 回写复核调整后的 AI 分析报告：多版本下按单列主键 asr_id 精确定位，禁止按非唯一三元组更新（当前无生产调用方，防御性保留） -->
     <update id="updateAnalysisReport">
         update t_ai_candidate_analysis
         set asr_report = #{report}, asr_updated_at = now()
-        where asr_company_id = #{companyId} and asr_position_id = #{positionId}
-          and asr_candidate_id = #{talId}
+        where asr_id = #{id}
     </update>
 
 </mapper>

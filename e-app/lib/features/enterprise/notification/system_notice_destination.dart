@@ -48,6 +48,7 @@ class SystemNoticeDestination {
       jobContext: TalentJobContext(
         positionId: id('positionId'),
         title: position,
+        applicationId: id('applicationId'),
       ),
       source: source.candidateDetailsSource,
     ),
