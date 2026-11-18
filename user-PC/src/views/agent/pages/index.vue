@@ -220,6 +220,8 @@
 import { appHref } from '@/utils/agentNavigation'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
+import { listJobFavorites, setJobFavorite } from '@/api/agent/favorites'
+import { fetchSavedJobIds } from '@/utils/agentSavedJobs'
 import { listJobs } from '@/api/agent/job'
 import { getResumes } from '@/api/agent/resume'
 import { listApplications } from '@/api/agent/application'
@@ -252,7 +254,8 @@ const applicationError = ref('')
 const noticeItems = ref([])
 const noticesLoading = ref(false)
 const noticesError = ref(false)
-const savedJobs = ref(new Set(readSavedJobs()))
+const savedJobs = ref(new Set())
+const savingFavorite = ref(false)
 const toastVisible = ref(false)
 const toastMessage = ref('')
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
@@ -577,33 +580,28 @@ function clearSearch() {
   loadJobs()
 }
 
-function readSavedJobs() {
-  if (!isLoggedIn) return []
-  try {
-    const saved = JSON.parse(localStorage.getItem('zhipin-ai-saved-jobs') || '[]')
-    return Array.isArray(saved) ? saved.map(String) : []
-  } catch {
-    return []
-  }
+async function refreshSavedJobs() {
+  if (!isLoggedIn) return
+  try { savedJobs.value = new Set(await fetchSavedJobIds(listJobFavorites)) }
+  catch (failure) { showToast(failure?.message || '收藏暂时无法读取') }
 }
 
 function isSaved(id) {
   return savedJobs.value.has(String(id))
 }
 
-function toggleSaved(id) {
-  if (!requireCandidateLogin(`/job-detail?id=${encodeURIComponent(id)}`)) return
-  const next = new Set(savedJobs.value)
-  const key = String(id)
-  if (next.has(key)) {
-    next.delete(key)
-    showToast('已取消收藏')
-  } else {
-    next.add(key)
-    showToast('已收藏该岗位')
-  }
-  savedJobs.value = next
-  localStorage.setItem('zhipin-ai-saved-jobs', JSON.stringify([...next]))
+async function toggleSaved(id) {
+  if (!requireCandidateLogin('/job-detail?id=' + encodeURIComponent(id)) || savingFavorite.value) return
+  savingFavorite.value = true
+  try {
+    const response = await setJobFavorite(id, !savedJobs.value.has(String(id)))
+    const next = new Set(savedJobs.value)
+    response.data?.favorited ? next.add(String(id)) : next.delete(String(id))
+    savedJobs.value = next
+    showToast(response.data?.favorited ? '已收藏该岗位' : '已取消收藏')
+    window.dispatchEvent(new CustomEvent('agent-saved-jobs-updated'))
+  } catch (failure) { showToast(failure?.message || '收藏更新失败，请重试') }
+  finally { savingFavorite.value = false }
 }
 
 function openJob(id) {
@@ -698,6 +696,8 @@ function showToast(message) {
 }
 
 onMounted(() => {
+  refreshSavedJobs()
+  window.addEventListener('focus', refreshSavedJobs)
   loadRecommendationResumes()
   loadApplications()
   loadNotices()
@@ -715,6 +715,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('focus', refreshSavedJobs)
   ++resumeRequestId
   ++jobRequestId
   window.clearInterval(todayTimer)

@@ -177,6 +177,7 @@
           </div>
         </div>
 
+        <p v-if="savedError" class="favorites-warning" role="alert">{{ savedError }} <button type="button" @click="loadJobs">重试收藏读取</button></p>
         <div v-if="loading" class="empty-state visible"><strong>正在加载岗位</strong><span>正在读取最新岗位数据，请稍候。</span></div>
         <div v-else-if="visibleJobs.length" class="jobs-list" :class="{ 'grid-mode': gridMode }">
           <article v-for="job in visibleJobs" :key="job.id" class="job-card" @click="openJob(job.id)">
@@ -205,7 +206,7 @@
               <div class="job-side-top"><div class="job-salary">{{ job.salaryText }}</div><div class="job-posted">{{ formatDate(job.publishedAt) }}</div></div>
               <div class="feedback" :class="{ progress: job.appliedFlag }">{{ job.appliedFlag ? '已投递，可查看进度' : '欢迎投递' }}</div>
               <div class="card-actions">
-                <button class="save-button" type="button" :class="{ saved: isSaved(job.id) }" @click.stop="toggleSaved(job.id)">
+                <button class="save-button" type="button" :class="{ saved: isSaved(job.id) }" :disabled="savingFavorite" @click.stop="toggleSaved(job.id)">
                   <svg viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg><span>{{ isSaved(job.id) ? '已收藏' : '收藏岗位' }}</span>
                 </button>
                 <button class="contact-button" type="button" @click.stop="startConversation(job)">联系 HR</button>
@@ -232,6 +233,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { listJobFilterOptions, listJobs } from '@/api/agent/job'
 import { loadSavedJobItems, normalizeSavedJobIds, sortSavedJobItems } from '@/utils/agentSavedJobs'
+import { listJobFavorites, setJobFavorite } from '@/api/agent/favorites'
+import { fetchSavedJobIds } from '@/utils/agentSavedJobs'
 import { hasCandidateAccessToken } from '@/utils/agentSession'
 import { requireCandidateLogin } from '@/utils/agentAccess'
 
@@ -246,7 +249,9 @@ const gridMode = ref(false)
 const activePanel = ref('')
 const positionSearch = ref('')
 const selectedPositionGroup = ref('all')
-const savedJobs = ref(new Set(readSavedJobs()))
+const savedJobs = ref(new Set())
+const savedError = ref('')
+const savingFavorite = ref(false)
 const savedJobItems = ref(null)
 const toastVisible = ref(false)
 const toastMessage = ref('')
@@ -567,9 +572,20 @@ async function loadJobs() {
       companySize: filters.companySize || undefined,
       sort: sort.value
     }
+    let savedIds = []
+    savedError.value = ''
+    if (isLoggedIn) {
+      try { savedIds = await fetchSavedJobIds(listJobFavorites) }
+      catch (failure) { savedIds = null; if (revision === jobsRevision) savedError.value = failure?.message || '收藏读取失败，请重试' }
+    }
+    if (revision !== jobsRevision) return
+    savedJobs.value = new Set(savedIds || [])
     const [response, savedItems] = await Promise.all([
       listJobs({ ...query, page: 1, size: 50 }),
-      loadSavedJobItems(listJobs, [...savedJobs.value], query)
+      savedIds === null ? null : loadSavedJobItems(listJobs, savedIds, query).catch(failure => {
+        if (revision === jobsRevision) savedError.value = failure?.message || '收藏岗位读取失败，请重试'
+        return null
+      })
     ])
     if (revision !== jobsRevision) return
     jobs.value = response.data?.items || []
@@ -660,43 +676,27 @@ function clearAllFilters() {
   loadJobs()
 }
 
-function readSavedJobs() {
-  if (!hasCandidateAccessToken()) return []
-  try {
-    const saved = JSON.parse(localStorage.getItem('zhipin-ai-saved-jobs') || '[]')
-    return normalizeSavedJobIds(saved)
-  } catch {
-    return []
-  }
-}
-
-function persistSavedJobs() {
-  try {
-    localStorage.setItem('zhipin-ai-saved-jobs', JSON.stringify([...savedJobs.value]))
-  } catch {
-    // 隐私模式下保留当前页面状态。
-  }
-}
-
 function isSaved(id) {
   return savedJobs.value.has(String(id))
 }
 
-function toggleSaved(id) {
-  if (!requireCandidateLogin(`/job-detail?id=${encodeURIComponent(id)}`)) return
-  const next = new Set(savedJobs.value)
+async function toggleSaved(id) {
+  if (!requireCandidateLogin('/jobs') || savingFavorite.value) return
+  savingFavorite.value = true
   const key = String(id)
-  if (next.has(key)) {
-    next.delete(key)
-    showToast('已取消收藏')
-  } else {
-    next.add(key)
-    const job = jobs.value.find(item => String(item.id) === key)
-    if (job) savedJobItems.value = sortSavedJobItems([...(savedJobItems.value || []).filter(item => String(item.id) !== key), job], sort.value)
-    showToast('已收藏该岗位')
-  }
-  savedJobs.value = next
-  persistSavedJobs()
+  try {
+    const response = await setJobFavorite(id, !savedJobs.value.has(key))
+    const next = new Set(savedJobs.value)
+    if (response.data?.favorited === true) {
+      next.add(key)
+      const job = jobs.value.find(item => String(item.id) === key)
+      if (job) savedJobItems.value = sortSavedJobItems([...(savedJobItems.value || []).filter(item => String(item.id) !== key), job], sort.value)
+    } else { next.delete(key) }
+    savedJobs.value = next
+    showToast(response.data?.favorited ? '已收藏该岗位' : '已取消收藏')
+    window.dispatchEvent(new CustomEvent('agent-saved-jobs-updated'))
+  } catch (failure) { showToast(failure?.message || '收藏更新失败，请重试') }
+  finally { savingFavorite.value = false }
 }
 
 function toggleSavedOnly() {
@@ -747,19 +747,12 @@ function closePanelOnEscape(event) {
 }
 
 function syncSavedJobs() {
-  const latest = new Set(readSavedJobs())
-  if (latest.size === savedJobs.value.size && [...latest].every(id => savedJobs.value.has(id))) return
-  savedJobs.value = latest
-  loadJobs()
-}
-
-function handleSavedJobsStorage(event) {
-  if (event.key === 'zhipin-ai-saved-jobs' || event.key === null) syncSavedJobs()
+  return loadJobs()
 }
 
 onMounted(async () => {
   window.addEventListener('keydown', closePanelOnEscape)
-  window.addEventListener('storage', handleSavedJobsStorage)
+  window.addEventListener('agent-saved-jobs-updated', syncSavedJobs)
   window.addEventListener('focus', syncSavedJobs)
   await loadFilterOptions()
   await loadJobs()
@@ -768,7 +761,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   jobsRevision++
   window.removeEventListener('keydown', closePanelOnEscape)
-  window.removeEventListener('storage', handleSavedJobsStorage)
+  window.removeEventListener('agent-saved-jobs-updated', syncSavedJobs)
   window.removeEventListener('focus', syncSavedJobs)
   clearTimeout(toastTimer)
 })
