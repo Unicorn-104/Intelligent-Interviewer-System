@@ -84,7 +84,11 @@
                <button class="notification-retry" type="button" @click="selectedSessionId && loadMessages(selectedSessionId)">重新加载</button>
             </div>
             <template v-else-if="messages.length">
-              <div class="time-divider">聊天记录</div>
+              <div class="history-controls">
+                <button v-if="hasOlderMessages" class="notification-retry" type="button" :disabled="olderLoading" @click="loadOlderMessages">{{ olderLoading ? '加载中…' : '加载更早消息' }}</button>
+                <span v-else>已显示全部聊天记录</span>
+                <span v-if="olderError" role="alert">{{ olderError }}</span>
+              </div>
               <div v-for="message in messages" :key="message.messageId" class="message-row" :class="{ me: message.isMine }">
                  <span v-if="!message.isMine" class="bubble-avatar">{{ avatarText(activeConversation.peerName) }}</span>
                   <div class="bubble-wrap">
@@ -112,6 +116,10 @@
              <div v-else class="notification-state">{{ newConversation ? '输入消息，开始联系该企业 HR' : '暂无聊天记录' }}</div>
           </div>
 
+          <div v-if="messageSyncError || hasPendingMessages" class="message-sync-state" role="status">
+            {{ messageSyncError || '正在同步更多新消息…' }}
+            <button v-if="messageSyncError" type="button" @click="loadMessages(selectedSessionId, { silent: true })">重试</button>
+          </div>
           <form class="composer" @submit.prevent="sendMessage">
             <input ref="imageInput" class="attachment-input" type="file" accept="image/jpeg,image/png,image/gif,image/bmp" @change="handleAttachmentChange($event, true)" />
             <input ref="fileInput" class="attachment-input" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" @change="handleAttachmentChange($event, false)" />
@@ -247,6 +255,7 @@
 
 <script setup>
 import { appHref } from '@/utils/agentNavigation'
+import { mergeMessagePages, messagePageData } from '@/utils/agentMessagePage'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
@@ -267,6 +276,13 @@ const sessionsError = ref(false)
 const messages = ref([])
 const messagesLoading = ref(false)
 const messagesError = ref(false)
+const olderLoading = ref(false)
+const olderError = ref('')
+const hasOlderMessages = ref(false)
+const hasPendingMessages = ref(false)
+const messageSyncError = ref('')
+let messageRevision = 0
+let messageFetch = null
 const newConversation = ref(null)
 const draftMessage = ref('')
 const sending = ref(false)
@@ -372,51 +388,112 @@ function startNewConversation(peerId, peerName = '企业 HR', updateUrl = true) 
   activeView.value = 'chat'
   selectedSessionId.value = null
   newConversation.value = { peerId, peerName }
-  messages.value = []
+  resetMessagePage()
   messagesError.value = false
   if (updateUrl) {
     history.replaceState(history.state, '', appHref(`/messages?peerId=${encodeURIComponent(peerId)}&peerName=${encodeURIComponent(peerName)}`))
   }
 }
 
+function normalizeMessages(items) {
+  const previous = new Map(messages.value.map(message => [String(message.messageId), message]))
+  return items.map(message => {
+    const url = attachmentUrl(message.attachmentUrl)
+    const old = previous.get(String(message.messageId))
+    return {
+      ...message,
+      type: Number(message.type),
+      card: messageContentCard(message),
+      attachmentUrl: url,
+      attachmentUnavailable: old?.attachmentUrl === url && old.attachmentUnavailable,
+      linkParts: messageLinkParts(message.content || '[非文本消息]')
+    }
+  })
+}
+
+function resetMessagePage() {
+  messageRevision++
+  messageFetch = null
+  messages.value = []
+  messagesLoading.value = false
+  hasOlderMessages.value = false
+  hasPendingMessages.value = false
+  olderLoading.value = false
+  olderError.value = ''
+  messageSyncError.value = ''
+}
+
 async function loadMessages(sessionId, { silent = false } = {}) {
   if (!sessionId) return false
+  if (messageFetch) return messageFetch
+  const revision = messageRevision
   const shouldFollowLatest = !silent || followLatestMessages.value
   if (!silent) followLatestMessages.value = true
   if (!silent && !messages.value.length) messagesLoading.value = true
   messagesError.value = false
-  try {
-    const response = await listImMessages(sessionId)
-    if (selectedSessionId.value !== sessionId) return false
-    const previousMessages = new Map(messages.value.map(message => [message.messageId, message]))
-    messages.value = Array.isArray(response.data)
-      ? response.data.map(message => {
-        const url = attachmentUrl(message.attachmentUrl)
-        const previous = previousMessages.get(message.messageId)
-        return {
-          ...message,
-          card: messageContentCard(message),
-          type: Number(message.type),
-          attachmentUrl: url,
-          attachmentUnavailable: previous?.attachmentUrl === url && previous.attachmentUnavailable,
-          linkParts: messageLinkParts(message.content || '[非文本消息]')
+  const request = (async () => {
+    try {
+      for (let page = 0; page < 10; page++) {
+        const afterId = messages.value.at(-1)?.messageId
+        const data = messagePageData(await listImMessages(sessionId, afterId ? { afterId } : {}))
+        if (revision !== messageRevision || selectedSessionId.value !== sessionId) return false
+        if (afterId && data.items.some(item => BigInt(item.messageId) <= BigInt(afterId))) throw new Error('消息游标没有前进，请重试')
+        if (data.items.length) messages.value = mergeMessagePages(messages.value, normalizeMessages(data.items))
+        if (!afterId) {
+          hasOlderMessages.value = data.hasMore
+          hasPendingMessages.value = false
+        } else {
+          hasPendingMessages.value = data.hasMore
         }
-      })
-      : []
-    return true
-  } catch (error) {
-    if (!silent) {
-      messagesError.value = true
-      showToast(error?.message || '聊天记录加载失败')
+        messageSyncError.value = ''
+        if (!hasPendingMessages.value) return true
+      }
+      return false
+    } catch (error) {
+      if (revision === messageRevision && selectedSessionId.value === sessionId) {
+        messageSyncError.value = error?.message || '新消息同步失败，可重试'
+        if (!silent && !messages.value.length) messagesError.value = true
+      }
+      return false
+    } finally {
+      if (revision === messageRevision) {
+        messagesLoading.value = false
+        await nextTick()
+        if (selectedSessionId.value === sessionId && shouldFollowLatest && (!silent || followLatestMessages.value) && messagesContainer.value) {
+          followLatestMessages.value = true
+          messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+        }
+      }
     }
-    return false
-  } finally {
-    if (!silent) messagesLoading.value = false
+  })()
+  messageFetch = request
+  try { return await request }
+  finally { if (messageFetch === request) messageFetch = null }
+}
+
+async function loadOlderMessages() {
+  const sessionId = selectedSessionId.value
+  const beforeId = messages.value[0]?.messageId
+  if (!sessionId || !beforeId || olderLoading.value || !hasOlderMessages.value) return
+  const revision = messageRevision
+  const container = messagesContainer.value
+  olderLoading.value = true
+  olderError.value = ''
+  try {
+    const data = messagePageData(await listImMessages(sessionId, { beforeId }))
+    if (revision !== messageRevision || selectedSessionId.value !== sessionId) return
+    if (data.items.some(item => BigInt(item.messageId) >= BigInt(beforeId))) throw new Error('历史消息游标异常，请重试')
+    const height = container?.scrollHeight || 0
+    const top = container?.scrollTop || 0
+    messages.value = mergeMessagePages(messages.value, normalizeMessages(data.items))
+    hasOlderMessages.value = data.hasMore
+    followLatestMessages.value = false
     await nextTick()
-    if (selectedSessionId.value === sessionId && shouldFollowLatest && messagesContainer.value) {
-      followLatestMessages.value = true
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-    }
+    if (revision === messageRevision && container) container.scrollTop = top + container.scrollHeight - height
+  } catch (error) {
+    if (revision === messageRevision) olderError.value = error?.message || '历史消息加载失败'
+  } finally {
+    if (revision === messageRevision) olderLoading.value = false
   }
 }
 
@@ -437,14 +514,14 @@ async function selectSession(session, updateUrl = true) {
   activeView.value = 'chat'
   selectedSessionId.value = session.sessionId
   newConversation.value = null
-  messages.value = []
+  resetMessagePage()
   if (updateUrl) history.replaceState(history.state, '', appHref(`/messages?conversation=${encodeURIComponent(session.sessionId)}`))
   const loaded = await loadMessages(session.sessionId)
   if (loaded) await markConversationRead(session.sessionId)
 }
 
 async function markConversationRead(sessionId) {
-  if (document.visibilityState === 'hidden' || activeView.value !== 'chat' || selectedSessionId.value !== sessionId) return
+  if (document.visibilityState === 'hidden' || activeView.value !== 'chat' || selectedSessionId.value !== sessionId || hasPendingMessages.value) return
   try {
     await markImSessionRead(sessionId)
     const session = sessions.value.find(item => item.sessionId === sessionId)
@@ -459,6 +536,7 @@ function selectSystem(updateUrl = true) {
   activeView.value = 'system'
   selectedSessionId.value = null
   newConversation.value = null
+  resetMessagePage()
   if (updateUrl) history.replaceState(history.state, '', appHref('/messages?view=system'))
 }
 
@@ -480,6 +558,7 @@ async function sendMessage() {
       const createdSession = sessions.value.find(item => item.sessionId === createdSessionId || String(item.peerId) === String(newConversation.value.peerId))
       if (createdSession) await selectSession(createdSession, false)
     } else {
+      if (messageFetch) await messageFetch
       await loadMessages(selectedSession.value.sessionId)
     }
     showToast('消息已发送')
@@ -612,6 +691,7 @@ async function handleAttachmentChange(event, isImage) {
       const createdSession = sessions.value.find(item => item.sessionId === createdSessionId || String(item.peerId) === String(newConversation.value.peerId))
       if (createdSession) await selectSession(createdSession, false)
     } else {
+      if (messageFetch) await messageFetch
       await loadMessages(selectedSession.value.sessionId)
     }
     showToast(isImage ? '图片已发送' : '文件已发送')
@@ -701,6 +781,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  messageRevision++
   document.removeEventListener('pointerdown', closeEmojiPicker)
   document.removeEventListener('visibilitychange', refreshMessages)
   if (refreshTimer) window.clearInterval(refreshTimer)

@@ -12,6 +12,8 @@ import com.ruoyi.system.domain.ImMessage;
  */
 public interface ImMessageMapper
 {
+    List<ImMessage> selectMessagePage(@Param("sessionId") Long sessionId, @Param("beforeId") Long beforeId,
+            @Param("afterId") Long afterId, @Param("limit") int limit);
     /**
      * 查询指定会话的消息列表（按发送时间升序）
      */
