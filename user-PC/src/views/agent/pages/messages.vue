@@ -207,7 +207,7 @@
           <span class="mini-avatar">{{ avatarText(activeConversation.peerName) }}</span>
           <div>
             <strong>{{ activeConversation.peerName || '联系人' }}</strong>
-            <span>消息会话联系人</span>
+            <a v-if="activeConversation.peerId" :href="appHref('/contact-profile?id=' + encodeURIComponent(activeConversation.peerId))">查看 HR 公开资料</a>
           </div>
         </div>
         <div class="person-info">

@@ -12,7 +12,7 @@
             <div class="hero-row">
               <div>
                 <h1 class="job-title">{{ job.title }}</h1>
-                <div class="company-line"><span class="company-name">{{ job.companyName }}</span><span class="verified">认证企业</span><span>{{ job.workCity || '地点不限' }}</span><span>· {{ job.jobTypeText }}</span></div>
+                <div class="company-line"><a v-if="job.companyId" class="company-name" :href="appHref('/company-profile?id=' + encodeURIComponent(job.companyId))">{{ job.companyName }}</a><span v-else class="company-name">{{ job.companyName }}</span><span>{{ job.workCity || '地点不限' }}</span><span>· {{ job.jobTypeText }}</span></div>
               </div>
               <div class="hero-tools"><button class="tool-button" :class="{ active: saved }" type="button" aria-label="收藏岗位" @click="toggleSaved"><svg viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg></button><button class="tool-button" type="button" aria-label="分享岗位" @click="showToast('岗位链接已复制，可分享给好友')"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5" /></svg></button></div>
             </div>
