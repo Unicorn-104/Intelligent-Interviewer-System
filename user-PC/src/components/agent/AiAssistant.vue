@@ -85,7 +85,7 @@ import { aiActions, aiPlainText } from '@/utils/agentAi'
 import { appHref } from '@/utils/agentNavigation'
 import { formatMessageTime } from '@/utils/agentTime'
 
-const props = defineProps({ standalone: { type: Boolean, default: false } })
+const props = defineProps({ standalone: { type: Boolean, default: false }, initialAction: { type: String, default: 'chat' } })
 const emit = defineEmits(['close'])
 const assistant = useAiAssistant({ ...aiApi, getResumes, getApplication })
 const { sessions, sortedSessions, sessionId, current, messages, draft, action, resume, application, loading, busy, locked, streaming, stopping, status, error, historyError, historyLoading, historySaving, historyHasMore, hasOlder, olderLoading, runId, disconnected, initialized, initialize, loadHistory, newSession, reconnect, stop, manageHistory, selectResume, selectApplication } = assistant
@@ -298,6 +298,7 @@ onBeforeUnmount(() => {
 })
 
 onMounted(() => {
+  if (['chat', 'job_recommendation', 'resume_analysis', 'interview_preparation', 'writing_polish'].includes(props.initialAction)) action.value = props.initialAction
   if (props.standalone) togglePanel()
 })
 </script>
