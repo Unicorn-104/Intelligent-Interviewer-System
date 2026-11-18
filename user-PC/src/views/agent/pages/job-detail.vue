@@ -14,7 +14,7 @@
                 <h1 class="job-title">{{ job.title }}</h1>
                 <div class="company-line"><a v-if="job.companyId" class="company-name" :href="appHref('/company-profile?id=' + encodeURIComponent(job.companyId))">{{ job.companyName }}</a><span v-else class="company-name">{{ job.companyName }}</span><span>{{ job.workCity || '地点不限' }}</span><span>· {{ job.jobTypeText }}</span></div>
               </div>
-              <div class="hero-tools"><button class="tool-button" :class="{ active: saved }" type="button" aria-label="收藏岗位" @click="toggleSaved"><svg viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg></button><button class="tool-button" type="button" aria-label="分享岗位" @click="showToast('岗位链接已复制，可分享给好友')"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5" /></svg></button></div>
+              <div class="hero-tools"><button class="tool-button" :class="{ active: saved }" type="button" aria-label="收藏岗位" @click="toggleSaved"><svg viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg></button><button class="tool-button" type="button" aria-label="分享岗位" @click="shareJob"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5" /></svg></button></div>
             </div>
             <div class="hero-tags"><span class="hero-tag salary">{{ job.salaryText }}</span><span class="hero-tag">{{ job.educationText }}</span><span class="hero-tag">{{ job.experienceRequired || '经验不限' }}</span><span class="hero-tag">{{ job.jobTypeText }}</span><span v-for="skill in job.skills" :key="skill" class="hero-tag job-detail-skill-tag">{{ skill }}</span></div>
           </section>
@@ -28,7 +28,7 @@
         </div>
 
         <aside class="side-column">
-          <section class="panel action-panel"><div class="side-salary">{{ job.salaryText }}</div><div class="side-meta">{{ job.workCity || '地点不限' }} · {{ job.educationText }} · {{ job.experienceRequired || '经验不限' }} · {{ job.jobTypeText }}</div><button class="primary-button" :class="{ applied: job.appliedFlag }" type="button" @click="apply"><span>{{ job.appliedFlag ? '查看投递记录' : '立即投递' }}</span></button><button class="contact-button" type="button" @click="startConversation">联系 HR</button><div class="secondary-actions"><button class="secondary-button" :class="{ active: saved }" type="button" @click="toggleSaved"><svg viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg>{{ saved ? '已收藏' : '收藏岗位' }}</button><button class="secondary-button" type="button" @click="showToast('岗位链接已复制，可分享给好友')">分享</button></div><div class="ai-tip">投递前可以从你的有效简历中选择最适合该岗位的一份。</div></section>
+          <section class="panel action-panel"><div class="side-salary">{{ job.salaryText }}</div><div class="side-meta">{{ job.workCity || '地点不限' }} · {{ job.educationText }} · {{ job.experienceRequired || '经验不限' }} · {{ job.jobTypeText }}</div><button class="primary-button" :class="{ applied: job.appliedFlag }" type="button" @click="apply"><span>{{ job.appliedFlag ? '查看投递记录' : '立即投递' }}</span></button><button class="contact-button" type="button" @click="startConversation">联系 HR</button><div class="secondary-actions"><button class="secondary-button" :class="{ active: saved }" type="button" @click="toggleSaved"><svg viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.7L6 21Z" /></svg>{{ saved ? '已收藏' : '收藏岗位' }}</button><button class="secondary-button" type="button" @click="shareJob">分享</button></div><div class="ai-tip">投递前可以从你的有效简历中选择最适合该岗位的一份。</div></section>
           <section class="panel side-panel"><div class="side-heading"><h2>岗位技能</h2><span class="side-badge">{{ job.skills?.length || 0 }} 项</span></div><div class="company-tags"><span v-for="skill in job.skills" :key="skill" class="company-tag">{{ skill }}</span><span v-if="!job.skills?.length" class="metric-note">暂无技能标签</span></div></section>
           <section class="panel side-panel"><div class="side-heading"><h2>投递后流程</h2><span class="metric-note">状态会实时更新</span></div><ol class="timeline"><li class="timeline-item done"><span class="step-number">1</span><span class="step-copy"><strong>选择简历</strong><span>确认本次投递使用的简历</span></span></li><li class="timeline-item current"><span class="step-number">2</span><span class="step-copy"><strong>投递成功</strong><span>已投递，等待 HR 启动招聘环节</span></span></li><li class="timeline-item"><span class="step-number">3</span><span class="step-copy"><strong>招聘与 Offer</strong><span>查看笔试/面试安排、结果与录用信息</span></span></li></ol></section>
           <section class="panel assistant-panel"><strong>AI 求职助手</strong><p>对岗位或投递流程有疑问？进入助手继续咨询。</p><button class="chat-button" type="button" @click="openAssistant">去咨询</button></section>
@@ -46,6 +46,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getJob } from '@/api/agent/job'
+import { copyText } from '@/utils/agentClipboard'
 import { hasCandidateAccessToken } from '@/utils/agentSession'
 import { requireCandidateLogin } from '@/utils/agentAccess'
 
@@ -134,6 +135,13 @@ function showToast(message) {
 }
 
 onMounted(loadJob)
+async function shareJob() {
+  if (!job.value) return
+  try {
+    await copyText(new URL(appHref('/job-detail?id=' + encodeURIComponent(job.value.id)), window.location.origin).href)
+    showToast('岗位链接已复制，可分享给好友')
+  } catch (failure) { showToast(failure?.message || '复制失败，请复制地址栏中的链接') }
+}
 </script>
 
 <style scoped>
