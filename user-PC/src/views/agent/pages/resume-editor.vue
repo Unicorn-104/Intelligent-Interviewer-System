@@ -3,6 +3,12 @@
   <AgentTopbar active="" />
   <main class="main">
     <div class="breadcrumb"><a :href="appHref('/profile-resumes')">我的简历</a> / 编辑简历</div>
+    <div v-if="recoverableDraft" class="draft-banner" role="status">
+      <span>发现当前账号的未保存简历草稿，是否恢复？</span>
+      <button class="secondary" type="button" @click="restoreDraft">恢复草稿</button>
+      <button class="secondary" type="button" @click="discardDraft">丢弃草稿</button>
+    </div>
+    <div v-if="draftReady" class="draft-status" role="status">{{ dirty ? '有未保存修改。' : '已与服务器保存内容同步。' }} {{ draftStatus }}</div>
     <div v-if="loading" class="state">正在读取简历...</div>
     <div v-else-if="errorMessage" class="state error-state">
       <strong>简历暂时无法读取</strong>
@@ -10,6 +16,7 @@
       <button class="secondary" type="button" @click="loadResume">重新加载</button>
     </div>
     <template v-else>
+      <fieldset class="resume-draft-fields" :disabled="Boolean(recoverableDraft)">
       <section class="resume-overview">
         <div>
           <div class="resume-title-row">
@@ -185,6 +192,7 @@
           <button class="resume-savebar-action resume-savebar-submit" type="submit" :disabled="saving || parsing">{{ saving ? '保存中...' : '保存修改' }}</button>
         </div>
       </form>
+      </fieldset>
     </template>
   </main>
   <div v-if="toastMessage" class="toast" role="status">{{ toastMessage }}</div>
@@ -193,13 +201,26 @@
 
 <script setup>
 import { appHref } from '@/utils/agentNavigation'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import useUserStore from '@/store/modules/user'
+import { clearResumeDraft, readResumeDraft, resumeDraftKey, writeResumeDraft } from '@/utils/agentResumeDraft'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { createResume, deleteResumeAttachment, getResume, getResumeAttachmentFile, getResumeAttachments, getResumeFile, importResumePdf, parseResumePdf, updateResume, uploadResumeAttachments } from '@/api/agent/resume'
 import { validateResumeAttachment, validateResumeFile } from '@/utils/agentValidation'
 import { getAppProfile } from '@/api/system/user'
 import { mergeParsedResume, profileResumeDefaults, resumeDate, resumeDegree, resumeSections } from '@/utils/agentResume'
 
+const userStore = useUserStore()
+const router = useRouter()
+let draftStorage
+try { draftStorage = window.sessionStorage } catch {}
+let activeDraftKey = resumeDraftKey(userStore.id, new URLSearchParams(window.location.search).get('id') === 'new' ? null : new URLSearchParams(window.location.search).get('id'))
+const baseline = ref('')
+const draftReady = ref(false)
+const recoverableDraft = ref(null)
+const draftStatus = ref('')
+let draftTimer
 const queryId = new URLSearchParams(window.location.search).get('id')
 const resumeId = ref(queryId && queryId !== 'new' ? Number(queryId) : null)
 const loading = ref(true)
@@ -267,6 +288,56 @@ function blankResume() {
 }
 
 const resume = reactive(blankResume())
+const snapshot = computed(() => JSON.stringify(buildPayload()))
+const dirty = computed(() => draftReady.value && (snapshot.value !== baseline.value || Boolean(pendingPdf.value)))
+
+function persistDraft() {
+  if (!draftReady.value || recoverableDraft.value || !dirty.value) return
+  draftStatus.value = writeResumeDraft(draftStorage, activeDraftKey, buildPayload(), pendingPdf.value)
+    ? '草稿已暂存于当前浏览器标签页，24 小时内可恢复（未提交服务器）'
+    : '草稿暂存不可用，请及时保存修改'
+}
+
+function prepareDraft() {
+  baseline.value = snapshot.value
+  draftReady.value = true
+  recoverableDraft.value = readResumeDraft(draftStorage, activeDraftKey)
+}
+
+function restoreDraft() {
+  const draft = recoverableDraft.value
+  if (!draft) return
+  applyResume({ ...resume, ...draft.payload, id: resume.id, attachments: resume.attachments })
+  recoverableDraft.value = null
+  draftStatus.value = draft.pendingPdf ? '文字草稿已恢复；未保存的 PDF 需要重新选择上传' : '草稿已恢复，请检查后保存修改'
+}
+
+function discardDraft() {
+  recoverableDraft.value = null
+  clearResumeDraft(draftStorage, activeDraftKey)
+  draftStatus.value = ''
+}
+
+function confirmLeave() {
+  if (!dirty.value) return true
+  persistDraft()
+  return window.confirm('简历存在尚未保存到服务器的修改，确定离开？可用的文字草稿会保留在当前标签页。')
+}
+
+function beforeUnload(event) {
+  if (!dirty.value) return
+  persistDraft()
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+watch([snapshot, pendingPdf], () => {
+  window.clearTimeout(draftTimer)
+  if (dirty.value) draftTimer = window.setTimeout(persistDraft, 500)
+  else if (draftReady.value && !recoverableDraft.value) clearResumeDraft(draftStorage, activeDraftKey)
+})
+onBeforeRouteLeave(confirmLeave)
+
 
 async function loadResume() {
   if (!resumeId.value) {
@@ -278,6 +349,7 @@ async function loadResume() {
       showToast('基础资料读取失败，可手动填写简历信息')
     } finally {
       loading.value = false
+      prepareDraft()
     }
     return
   }
@@ -287,6 +359,7 @@ async function loadResume() {
     const response = await getResume(resumeId.value)
     applyResume(response.data)
     await loadAttachments()
+    prepareDraft()
   } catch (error) {
     errorMessage.value = error?.message || '简历数据暂时无法读取'
   } finally {
@@ -350,6 +423,11 @@ async function saveResume() {
     pendingPdf.value = null
     applyResume({ ...(response.data || {}), attachments: resume.attachments })
     await loadAttachments()
+    baseline.value = snapshot.value
+    discardDraft()
+    activeDraftKey = resumeDraftKey(userStore.id, resumeId.value)
+    clearResumeDraft(draftStorage, activeDraftKey)
+    if (!queryId || queryId === 'new') await router.replace('/resume-editor?id=' + encodeURIComponent(resumeId.value))
     showToast('简历及附件已保存')
   } catch (error) {
     showToast(error?.message || '保存失败，请稍后重试')
@@ -564,7 +642,16 @@ function showToast(message) {
   }, 2600)
 }
 
-onMounted(loadResume)
+onMounted(() => {
+  window.addEventListener('beforeunload', beforeUnload)
+  loadResume()
+})
+onBeforeUnmount(() => {
+  persistDraft()
+  window.clearTimeout(draftTimer)
+  window.clearTimeout(toastTimer)
+  window.removeEventListener('beforeunload', beforeUnload)
+})
 </script>
 
 <style scoped>
