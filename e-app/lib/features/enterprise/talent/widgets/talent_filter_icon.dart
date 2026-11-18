@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 
 /// 参考图中的独立漏斗轮廓，不包含图片下方的字母标记。
 class TalentFilterIcon extends StatelessWidget {
-  const TalentFilterIcon({super.key, required this.color});
+  const TalentFilterIcon({super.key, required this.color, this.size = 28});
+
   final Color color;
+
+  /// 图标边长，默认 28；painter 内部按 28 基准等比缩放，故可安全传入其它尺寸适配不同按钮。
+  final double size;
 
   @override
   Widget build(BuildContext context) =>
-      CustomPaint(size: const Size.square(28), painter: _FunnelPainter(color));
+      CustomPaint(size: Size.square(size), painter: _FunnelPainter(color));
 }
 
 class _FunnelPainter extends CustomPainter {

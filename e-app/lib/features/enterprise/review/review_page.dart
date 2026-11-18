@@ -89,7 +89,7 @@ class _ReviewPageState extends State<ReviewPage> {
     if (!mounted) return;
     setState(() => review['status'] = 'confirmed');
     messenger.showSnackBar(
-      SnackBar(content: Text('已确认通过「${review['candidateName']}」（模拟）')),
+      SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已确认通过「${review['candidateName']}」（模拟）')),
     );
   }
 
@@ -118,7 +118,7 @@ class _ReviewPageState extends State<ReviewPage> {
       );
       review['status'] = 'confirmed';
     });
-    messenger.showSnackBar(const SnackBar(content: Text('评分已调整并确认通过（模拟）')));
+    messenger.showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('评分已调整并确认通过（模拟）')));
   }
 
   /// 驳回淘汰（UC-12 步骤10：归档人才库 + 感谢信）。
@@ -170,7 +170,7 @@ class _ReviewPageState extends State<ReviewPage> {
       ),
     );
     messenger.showSnackBar(
-      SnackBar(content: Text('已驳回「${review['candidateName']}」（模拟）')),
+      SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已驳回「${review['candidateName']}」（模拟）')),
     );
   }
 

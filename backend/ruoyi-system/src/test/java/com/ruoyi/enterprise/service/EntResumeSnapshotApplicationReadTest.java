@@ -13,6 +13,7 @@ import org.springframework.core.io.Resource;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.domain.EntResumeSnapshot;
 import com.ruoyi.enterprise.mapper.EntResumeSnapshotMapper;
+import com.ruoyi.system.domain.app.AppResume;
 import com.ruoyi.system.domain.app.AppResumePdfDocument;
 import com.ruoyi.system.mapper.app.AppResumeMapper;
 import com.ruoyi.system.service.app.pdf.ResumePdfStorage;
@@ -110,6 +111,8 @@ class EntResumeSnapshotApplicationReadTest
         assertEquals("application_snapshot", view.get("resumeScope"));
         // 路径与大小均有效时，前端入口标记为可展示
         assertEquals(Boolean.TRUE, view.get("hasOriginalPdf"));
+        // 快照自身有 PDF 即认定源有文件，无需再查源简历
+        assertEquals(Boolean.TRUE, view.get("sourceHasFile"));
         // 前端 TalentResumeSection 期望的四个列表字段
         List<Map> education = castRows(view.get("educationList"));
         List<Map> work = castRows(view.get("workList"));
@@ -150,6 +153,8 @@ class EntResumeSnapshotApplicationReadTest
 
         Map<String, Object> view = service.getApplicationResumeView(COMPANY_ID, APP_ID);
         assertEquals(Boolean.FALSE, view.get("hasOriginalPdf"));
+        // 无源简历标识时不查源，按未提供处理
+        assertEquals(Boolean.FALSE, view.get("sourceHasFile"));
     }
 
     @Test void viewWithZeroSizeMarksOriginalPdfUnavailable()
@@ -162,6 +167,71 @@ class EntResumeSnapshotApplicationReadTest
 
         Map<String, Object> view = service.getApplicationResumeView(COMPANY_ID, APP_ID);
         assertEquals(Boolean.FALSE, view.get("hasOriginalPdf"));
+        // 大小为 0 同样视为无 PDF；无源简历标识不查源，按未提供处理
+        assertEquals(Boolean.FALSE, view.get("sourceHasFile"));
+    }
+
+    @Test void viewWithoutSnapshotPdfButSourceHasFileMarksSourceOnly()
+    {
+        EntResumeSnapshot snapshot = buildSnapshot();
+        snapshot.setFilePath(null);
+        snapshot.setFileSize(null);
+        snapshot.setSourceResumeId(38L);
+        // 源简历（含已停用情形）存在有效文件
+        AppResume sourceResume = new AppResume();
+        sourceResume.setFilePath("private-resume/104/2026/10/28/x.pdf");
+        sourceResume.setFileSize(360830L);
+        when(snapshotMapper.selectApplicationOwnership(APP_ID, COMPANY_ID))
+                .thenReturn(ownership());
+        when(snapshotMapper.selectByAppId(APP_ID)).thenReturn(snapshot);
+        when(appResumeMapper.selectResumeFileById(38L)).thenReturn(sourceResume);
+
+        Map<String, Object> view = service.getApplicationResumeView(COMPANY_ID, APP_ID);
+
+        // 快照无 PDF 但源有文件：前端据此显示「简历附件暂不可用」而非「未提供」
+        assertEquals(Boolean.FALSE, view.get("hasOriginalPdf"));
+        assertEquals(Boolean.TRUE, view.get("sourceHasFile"));
+        verify(appResumeMapper).selectResumeFileById(38L);
+        // 必须使用不限制状态的查询，不能误用带状态过滤的方法
+        verify(appResumeMapper, never()).selectResumeById(any());
+    }
+
+    @Test void viewWithoutSnapshotPdfAndSourceNoFileMarksNotProvided()
+    {
+        EntResumeSnapshot snapshot = buildSnapshot();
+        snapshot.setFilePath(null);
+        snapshot.setFileSize(null);
+        snapshot.setSourceResumeId(16L);
+        AppResume sourceResume = new AppResume();
+        sourceResume.setFilePath(null);
+        sourceResume.setFileSize(null);
+        when(snapshotMapper.selectApplicationOwnership(APP_ID, COMPANY_ID))
+                .thenReturn(ownership());
+        when(snapshotMapper.selectByAppId(APP_ID)).thenReturn(snapshot);
+        when(appResumeMapper.selectResumeFileById(16L)).thenReturn(sourceResume);
+
+        Map<String, Object> view = service.getApplicationResumeView(COMPANY_ID, APP_ID);
+
+        // 源简历也无文件：前端据此显示「未提供简历附件」
+        assertEquals(Boolean.FALSE, view.get("hasOriginalPdf"));
+        assertEquals(Boolean.FALSE, view.get("sourceHasFile"));
+    }
+
+    @Test void viewSourceResumeMissingMarksNotProvided()
+    {
+        EntResumeSnapshot snapshot = buildSnapshot();
+        snapshot.setFilePath(null);
+        snapshot.setFileSize(null);
+        snapshot.setSourceResumeId(99L);
+        when(snapshotMapper.selectApplicationOwnership(APP_ID, COMPANY_ID))
+                .thenReturn(ownership());
+        when(snapshotMapper.selectByAppId(APP_ID)).thenReturn(snapshot);
+        when(appResumeMapper.selectResumeFileById(99L)).thenReturn(null);
+
+        Map<String, Object> view = service.getApplicationResumeView(COMPANY_ID, APP_ID);
+
+        // 源简历查不到时不臆测，按未提供处理
+        assertEquals(Boolean.FALSE, view.get("sourceHasFile"));
     }
 
     @Test void crossCompanyAccessIsRejectedBeforeSnapshotRead()

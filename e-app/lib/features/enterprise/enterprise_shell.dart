@@ -226,7 +226,7 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
         _openFeature(_interviews);
       default:
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('该功能请在 Web 端操作')));
+            .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('该功能请在 Web 端操作')));
     }
   }
 

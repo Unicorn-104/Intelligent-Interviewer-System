@@ -12,7 +12,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.ConferenceMapper;
@@ -28,6 +30,8 @@ public class ConferenceServiceImplTest
     private ConferenceMapper conferenceMapper;
     private IInterviewScheduleService scheduleService;
     private ScreeningMapper screeningMapper;
+    private ApplicationStatusMapper applicationStatusMapper;
+    private ApplicationStatusService applicationStatusService;
     private TalStatusService talStatusService;
 
     @BeforeEach
@@ -36,10 +40,14 @@ public class ConferenceServiceImplTest
         conferenceMapper = mock(ConferenceMapper.class);
         scheduleService = mock(IInterviewScheduleService.class);
         screeningMapper = mock(ScreeningMapper.class);
+        applicationStatusMapper = mock(ApplicationStatusMapper.class);
+        applicationStatusService = mock(ApplicationStatusService.class);
         service = new ConferenceServiceImpl();
         ReflectionTestUtils.setField(service, "conferenceMapper", conferenceMapper);
         ReflectionTestUtils.setField(service, "scheduleService", scheduleService);
         ReflectionTestUtils.setField(service, "screeningMapper", screeningMapper);
+        ReflectionTestUtils.setField(service, "applicationStatusMapper", applicationStatusMapper);
+        ReflectionTestUtils.setField(service, "applicationStatusService", applicationStatusService);
         talStatusService = mock(TalStatusService.class);
         when(talStatusService.change(anyLong(), anyInt(), anyList(), anyLong(), any(), any(), anyLong())).thenReturn(true);
         ReflectionTestUtils.setField(service, "talStatusService", talStatusService);
@@ -52,6 +60,9 @@ public class ConferenceServiceImplTest
         when(conferenceMapper.selectTalentByUserId(11L, 2L)).thenReturn(Map.of("candidateId", 11L));
         when(conferenceMapper.selectPositionCompanyId(7L)).thenReturn(2L);
         when(conferenceMapper.countSchedulableApplication(11L, 7L)).thenReturn(1);
+        // 重新发起时投递已处于招聘中(1)，selectAppId 给出精确投递、状态非0故不重复触发 startRecruitment
+        when(applicationStatusMapper.selectAppId(11L, 7L)).thenReturn(501L);
+        when(applicationStatusMapper.selectApplicationById(501L)).thenReturn(Map.of("status", 1));
         when(conferenceMapper.selectCompanyEmployees(anyMap())).thenReturn(List.of(Map.of("userId", 19L)));
         when(conferenceMapper.insertAppointment(anyMap())).thenAnswer(invocation ->
         {

@@ -82,7 +82,7 @@ class _NoticePageState extends State<NoticePage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(_friendly(error))));
+      ).showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(_friendly(error))));
     } finally {
       if (mounted) setState(() => _marking.remove(id));
     }
@@ -101,7 +101,7 @@ class _NoticePageState extends State<NoticePage> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_friendly(error))));
+        ).showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(_friendly(error))));
       }
     } finally {
       if (mounted) {

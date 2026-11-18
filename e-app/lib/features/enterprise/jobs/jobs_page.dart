@@ -11,6 +11,7 @@ import 'job_detail_page.dart';
 import 'job_publish_page.dart';
 import 'widgets/job_list_card.dart';
 import 'widgets/job_sort_sheet.dart';
+import 'interested_talent_page.dart';
 
 typedef JobsLoader = Future<List<Map<String, dynamic>>> Function({
   String? keyword,
@@ -44,6 +45,7 @@ class JobsPageState extends State<JobsPage> {
   // 回到顶部请求标志（列表加载骨架时 controller 无 client，需延迟执行）
   bool _scrollTopRequested = false;
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
   final _jobs = <Map<String, dynamic>>[];
   final _changing = <int>{};
   bool _loading = true;
@@ -67,11 +69,25 @@ class JobsPageState extends State<JobsPage> {
   void dispose() {
     _scrollController.dispose();
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
+  }
+
+  /// 离开搜索输入场景时释放焦点，避免再次进入岗位 Tab 自动弹出键盘。
+  void _dismissSearchFocus() {
+    if (_searchFocus.hasFocus) {
+      _searchFocus.unfocus();
+    }
+  }
+
+  void _submitSearch() {
+    _dismissSearchFocus();
+    _load();
   }
 
   /// 由 Shell 在岗位 Tab 被选中时调用：滚动到岗位列表顶部。
   Future<void> scrollToTop() async {
+    _dismissSearchFocus();
     _scrollTopRequested = true;
     _applyScrollTop();
   }
@@ -160,6 +176,7 @@ class JobsPageState extends State<JobsPage> {
   }
 
   Future<void> _openJob(Map<String, dynamic> raw, {int initialTab = 0}) async {
+    _dismissSearchFocus();
     final job = _toJobView(raw);
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -208,8 +225,12 @@ class JobsPageState extends State<JobsPage> {
       if (mounted) await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(milliseconds: 1500),
+            content: Text(_friendlyError(error)),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _changing.remove(id));
@@ -217,6 +238,7 @@ class JobsPageState extends State<JobsPage> {
   }
 
   Future<void> _openCreate() async {
+    _dismissSearchFocus();
     final id = await Navigator.of(context, rootNavigator: true).push<int>(
       MaterialPageRoute(
         builder: widget.publishBuilder ?? (_) => const JobPublishPage(),
@@ -232,6 +254,7 @@ class JobsPageState extends State<JobsPage> {
         .firstOrNull;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        duration: const Duration(milliseconds: 1500),
         content: Text(
           id == 0
               ? '请在岗位列表核对发布结果'
@@ -247,11 +270,13 @@ class JobsPageState extends State<JobsPage> {
   }
 
   void _filter(int? status) {
+    _dismissSearchFocus();
     setState(() => _statusFilter = status);
     _load();
   }
 
   Future<void> _openSort() async {
+    _dismissSearchFocus();
     final selection = await showModalBottomSheet<JobSortSelection>(
       context: context,
       isScrollControlled: true,
@@ -335,8 +360,10 @@ class JobsPageState extends State<JobsPage> {
                           child: TextField(
                             key: const ValueKey('jobs-search'),
                             controller: _search,
+                            focusNode: _searchFocus,
+                            onTapOutside: (_) => _dismissSearchFocus(),
                             textInputAction: TextInputAction.search,
-                            onSubmitted: (_) => _load(),
+                            onSubmitted: (_) => _submitSearch(),
                             decoration: InputDecoration(
                               hintText: '搜索岗位或部门',
                               contentPadding: const EdgeInsets.symmetric(
@@ -345,7 +372,7 @@ class JobsPageState extends State<JobsPage> {
                               ),
                               prefixIcon: IconButton(
                                 tooltip: '搜索',
-                                onPressed: () => _load(),
+                                onPressed: _submitSearch,
                                 icon: const Icon(Icons.search, size: 21),
                               ),
                             ),
@@ -538,6 +565,14 @@ class JobsPageState extends State<JobsPage> {
               changing: _changing.contains(id),
               onOpen: () => _openJob(job),
               onApplicants: () => _openJob(job, initialTab: 1),
+              onInterests:
+                  id == null || int.tryParse('${job['interestCount']}') == null
+                  ? null
+                  : () => _openInterestedTalents(
+                      id,
+                      _textOr(job['title'], '岗位'),
+                      int.tryParse('${job['interestCount']}') ?? 0,
+                    ),
               onToggle: () => _toggleStatus(job),
             );
           }
@@ -563,6 +598,22 @@ class JobsPageState extends State<JobsPage> {
             child: Text('已显示全部', style: TextStyle(color: AppColors.textMuted)),
           );
         },
+      ),
+    );
+  }
+
+  Future<void> _openInterestedTalents(
+    int positionId,
+    String title,
+    int count,
+  ) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => InterestedTalentPage(
+          positionId: positionId,
+          positionTitle: title,
+          initialCount: count,
+        ),
       ),
     );
   }

@@ -42,7 +42,7 @@ class JdDocumentImportCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     key: const Key('jd-document-import-card'),
-    padding: const EdgeInsets.all(16),
+    padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
       color: AppColors.canvas,
       borderRadius: BorderRadius.circular(16),
@@ -60,60 +60,51 @@ class JdDocumentImportCard extends StatelessWidget {
         Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
-                color: AppColors.tealSoft,
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.interactiveSoft,
+                borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(
                 Icons.auto_awesome_outlined,
-                color: AppColors.teal,
-                size: 22,
+                color: AppColors.interactive,
+                size: 19,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             const Expanded(
               child: Text(
                 '从文档导入 JD',
                 style: TextStyle(
                   color: AppColors.textPrimary,
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
-                color: AppColors.tealSoft,
+                color: AppColors.interactiveSoft,
                 borderRadius: BorderRadius.circular(6),
               ),
               child: const Text(
                 'AI',
                 style: TextStyle(
-                  color: AppColors.tealDeep,
+                  color: AppColors.interactive,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        const Text(
-          '支持 PDF / DOCX，文件 ≤10MB',
-          style: TextStyle(color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'AI 结果仅供参考',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-        ),
         if (_busy) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           _progress(),
         ] else if (phase == JdDocumentImportPhase.ready) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Semantics(
             liveRegion: true,
             child: Text(
@@ -127,19 +118,19 @@ class JdDocumentImportCard extends StatelessWidget {
           ),
         ],
         if (filename != null && !_busy) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             filename!,
             style: const TextStyle(color: AppColors.textSecondary),
           ),
         ],
         if (error != null) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Semantics(
             liveRegion: true,
             child: Container(
               key: const Key('jd-document-import-error'),
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: AppColors.error.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(4),
@@ -151,24 +142,23 @@ class JdDocumentImportCard extends StatelessWidget {
             ),
           ),
         ],
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             OutlinedButton.icon(
               key: const Key('jd-document-import-select'),
               onPressed: enabled && !_busy ? onImport : null,
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.tealDeep,
-                backgroundColor: AppColors.tealSoft,
-                side: const BorderSide(color: AppColors.teal, width: 1.2),
-                minimumSize: const Size(0, 44),
+                foregroundColor: AppColors.interactive,
+                backgroundColor: AppColors.interactiveSoft,
+                side: const BorderSide(color: AppColors.interactive, width: 1.2),
+                minimumSize: const Size(0, 40),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              icon: const Icon(Icons.upload_file_outlined, size: 18),
+              icon: const Icon(Icons.upload_file_outlined, size: 16),
               label: Text(
                 _busy
                     ? '处理中'
@@ -178,20 +168,50 @@ class JdDocumentImportCard extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
-            if (error != null && onRetry != null)
-              TextButton(
-                key: const Key('jd-document-import-retry'),
-                onPressed: enabled && !_busy ? onRetry : null,
-                child: const Text('重试解析'),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '支持 PDF / DOCX，文件 ≤10MB',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'AI 结果仅供参考',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                  ),
+                ],
               ),
-            if (hasDraft)
-              TextButton(
-                key: const Key('jd-document-import-review'),
-                onPressed: enabled && !_busy ? onReview : null,
-                child: Text(applied ? '查看核对结果' : '核对草稿'),
-              ),
+            ),
           ],
         ),
+        if ((error != null && onRetry != null) || hasDraft) ...[
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              if (error != null && onRetry != null)
+                TextButton(
+                  key: const Key('jd-document-import-retry'),
+                  onPressed: enabled && !_busy ? onRetry : null,
+                  child: const Text('重试解析'),
+                ),
+              if (hasDraft)
+                TextButton(
+                  key: const Key('jd-document-import-review'),
+                  onPressed: enabled && !_busy ? onReview : null,
+                  child: Text(applied ? '查看核对结果' : '核对草稿'),
+                ),
+            ],
+          ),
+        ],
       ],
     ),
   );

@@ -213,7 +213,7 @@ class _OverviewPageState extends State<OverviewPage> {
                       final go = todo['go']?.toString();
                       if (widget.onOpenTodo == null) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('请在企业端主页打开待办事项')),
+                          const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('请在企业端主页打开待办事项')),
                         );
                       } else {
                         widget.onOpenTodo!(go);

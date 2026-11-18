@@ -188,7 +188,8 @@ class OfferServiceConcurrencyIT
         AtomicReference<Throwable> hrErr = new AtomicReference<>();
         AtomicReference<Throwable> acceptErr = new AtomicReference<>();
         Outcome both = runConcurrent(
-                () -> { try { talentPoolService.terminateApplication(USER_ID, CANDIDATE_ID, POSITION_1, "HR_REJECTED"); }
+                () -> { try { talentPoolService.terminateApplication(USER_ID, CANDIDATE_ID, POSITION_1,
+                                appId(CANDIDATE_ID, POSITION_1), "HR_REJECTED"); }
                         catch (Exception e) { hrErr.set(e); } },
                 () -> { try { offerService.acceptOffer(USER_ID, offerId); } catch (Exception e) { acceptErr.set(e); } });
 
@@ -239,7 +240,8 @@ class OfferServiceConcurrencyIT
                 Long.class, CANDIDATE_ID, POSITION_1);
 
         // 1) 真实 HR 入口淘汰（生产链确认：terminateApplication 不取消 Offer）
-        talentPoolService.terminateApplication(USER_ID, CANDIDATE_ID, POSITION_1, "HR_REJECTED");
+        talentPoolService.terminateApplication(USER_ID, CANDIDATE_ID, POSITION_1,
+                appId(CANDIDATE_ID, POSITION_1), "HR_REJECTED");
         assertEquals(5, jdbc.queryForObject("select app_status from t_app_record where app_candidate_id=? and app_position_id=?",
                 Integer.class, CANDIDATE_ID, POSITION_1), "HR 淘汰后投递应为未录用");
         assertEquals(0, jdbc.queryForObject("select ofr_status from t_off_offer where ofr_id=?", Integer.class, offerId),
@@ -601,6 +603,13 @@ class OfferServiceConcurrencyIT
         TalentPoolServiceImpl talentPoolService()
         {
             return new TalentPoolServiceImpl();
+        }
+
+        // 企业快照改造新增的依赖；本测试 Offer 链路不触发 createForApplication，用 Mockito 提供 bean 仅保证上下文装配
+        @Bean
+        EntResumeSnapshotService entResumeSnapshotService()
+        {
+            return org.mockito.Mockito.mock(EntResumeSnapshotService.class);
         }
 
         @Bean

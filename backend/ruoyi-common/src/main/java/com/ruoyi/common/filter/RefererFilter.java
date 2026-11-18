@@ -40,10 +40,11 @@ public class RefererFilter implements Filter
 
         String referer = req.getHeader("Referer");
 
-        // 如果Referer为空，拒绝访问
-        if (referer == null || referer.isEmpty())
+        // 原生客户端（例如 Flutter Image.network）通常不会发送 Referer。
+        // 资源本身已经通过公开资源路由和文件名校验控制访问范围，缺少该可选请求头时应继续处理。
+        if (referer == null || referer.isBlank())
         {
-            resp.sendError(HttpServletResponse.SC_FORBIDDEN, "Access denied: Referer header is required");
+            chain.doFilter(request, response);
             return;
         }
 

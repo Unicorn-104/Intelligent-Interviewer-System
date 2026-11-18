@@ -53,12 +53,12 @@ Future<void> _invite(
   final stageType = messageId(raw['stageType']);
   final stageName = homeText(raw['stageName'], '');
   if (peerUserId == null || positionId == null) {
-    messenger.showSnackBar(const SnackBar(content: Text('面试信息不完整，无法发起面试邀请')));
+    messenger.showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('面试信息不完整，无法发起面试邀请')));
     return;
   }
   final mode = stageTypeMode[stageType];
   if (mode != 1 && interviewerId == null) {
-    messenger.showSnackBar(const SnackBar(content: Text('该面试未指派面试官，无法发起面试')));
+    messenger.showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('该面试未指派面试官，无法发起面试')));
     return;
   }
   final Map<String, dynamic> link;
@@ -72,12 +72,12 @@ Future<void> _invite(
       interviewerIds: mode == 1 ? const <int>[] : <int>[interviewerId!],
     );
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text('发起面试失败：$error')));
+    messenger.showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('发起面试失败：$error')));
     return;
   }
   final token = homeText(link['token'], '');
   if (token.isEmpty) {
-    messenger.showSnackBar(const SnackBar(content: Text('会议链接生成异常，请稍后重试')));
+    messenger.showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('会议链接生成异常，请稍后重试')));
     return;
   }
   final modeLabel = interviewModeLabel(link['mode']);
@@ -100,7 +100,7 @@ Future<void> _invite(
       sessionId = existing;
     }
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text('面试邀请发送失败：$error')));
+    messenger.showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('面试邀请发送失败：$error')));
     return;
   }
   if (!context.mounted) return;

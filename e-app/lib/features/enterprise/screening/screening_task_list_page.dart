@@ -107,7 +107,7 @@ class _ScreeningTaskListPageState extends State<ScreeningTaskListPage> {
     });
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text('已触发「$selected」筛选任务（模拟）')));
+    ).showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已触发「$selected」筛选任务（模拟）')));
     await _load();
   }
 

@@ -104,7 +104,7 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
     String value, {
     Color textColor = AppColors.textSecondary,
   }) => Padding(
-    padding: const EdgeInsets.only(top: 6),
+    padding: const EdgeInsets.only(top: 4),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -113,7 +113,7 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
         Expanded(
           child: Text(
             '$label：$value',
-            style: TextStyle(color: textColor, fontSize: 12, height: 1.4),
+            style: TextStyle(color: textColor, fontSize: 12, height: 1.3),
           ),
         ),
       ],
@@ -238,8 +238,9 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
       key: ValueKey('home-interview-status-${interview.id}'),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: .09),
-        borderRadius: BorderRadius.circular(4),
+        color: AppColors.canvas.withValues(alpha: .72),
+        border: Border.all(color: color.withValues(alpha: .32)),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -254,7 +255,7 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
     );
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -268,13 +269,13 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
       ),
       child: Material(
         color: AppColors.canvas.withValues(alpha: 0),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           key: ValueKey('home-interview-job-${interview.id}'),
           onTap: widget.onViewJob,
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -317,17 +318,37 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        interview.candidate,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: expired
-                              ? AppColors.textMuted
-                              : AppColors.textPrimary,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            interview.candidate,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: expired
+                                  ? AppColors.textMuted
+                                  : AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            interview.position,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: expired
+                                  ? AppColors.textMuted
+                                  : AppColors.brand,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -340,14 +361,6 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  interview.position,
-                  style: TextStyle(
-                    color: expired ? AppColors.textMuted : AppColors.brand,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final details = Column(
@@ -396,9 +409,15 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                                 }
                               : null,
                           style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(0, 46),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            foregroundColor: AppColors.interactive,
+                            minimumSize: const Size(0, 42),
+                            padding: const EdgeInsets.symmetric(horizontal: 11),
+                            backgroundColor: enabled
+                                ? AppColors.interactive
+                                : AppColors.canvas,
+                            foregroundColor: enabled
+                                ? AppColors.canvas
+                                : AppColors.textMuted,
+                            disabledForegroundColor: AppColors.textMuted,
                             side: BorderSide(
                               color: enabled
                                   ? AppColors.interactive
@@ -411,7 +430,7 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                     );
                     final actions = Wrap(
                       alignment: WrapAlignment.end,
-                      spacing: 8,
+                      spacing: 6,
                       runSpacing: 4,
                       children: [
                         if (widget.onReschedule != null ||
@@ -424,9 +443,9 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                                 ? null
                                 : widget.onReschedule ?? _reschedule,
                             style: OutlinedButton.styleFrom(
-                              minimumSize: const Size(0, 46),
+                              minimumSize: const Size(0, 42),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
+                                horizontal: 11,
                               ),
                             ),
                             child: const Text('改期'),
@@ -441,11 +460,21 @@ class _HomeInterviewPreviewState extends State<HomeInterviewPreview>
                         children: [
                           Expanded(child: details),
                           const SizedBox(width: 8),
-                          if (widget.onReschedule == null &&
-                              widget.rescheduleSource == null)
-                            button
-                          else
-                            Flexible(child: actions),
+                          SizedBox(
+                            width:
+                                widget.onReschedule == null &&
+                                    widget.rescheduleSource == null
+                                ? 88
+                                : 150,
+                            child: Align(
+                              alignment: Alignment.bottomRight,
+                              child:
+                                  widget.onReschedule == null &&
+                                      widget.rescheduleSource == null
+                                  ? button
+                                  : actions,
+                            ),
+                          ),
                         ],
                       );
                     }

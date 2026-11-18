@@ -74,6 +74,20 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
   bool _startSessionRetryInProgress = false;
   bool _startSessionWaitingNoticeShown = false;
 
+  /// 主体画面焦点：false=求职者为主体、面试官为右上角小窗；
+  /// true=面试官为主体、求职者为右上角小窗（点击小窗切换）。
+  bool _selfFocused = false;
+
+  /// 录制阶段：未录制 / 录制中 / 已暂停。
+  _RecordPhase _recordPhase = _RecordPhase.idle;
+
+  /// 累计录制秒数（暂停时停止累加，继续后再递增）。
+  int _recordSeconds = 0;
+  Timer? _recordTimer;
+
+  /// 录制操作进行中（防止开始/暂停/停止重复点击）。
+  bool _recordBusy = false;
+
   @override
   void initState() {
     super.initState();
@@ -87,6 +101,7 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
   void dispose() {
     _clock?.cancel();
     _heartbeat?.cancel();
+    _recordTimer?.cancel();
     _startSessionRetryTimer?.cancel();
     _engine.removeListener(_onEngineUpdate);
     _engine.dispose();
@@ -357,7 +372,12 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     _leaving = true;
     _clock?.cancel();
     _heartbeat?.cancel();
+    _recordTimer?.cancel();
     final sessionId = _sessionId;
+    // 会议结束/离开时，若仍在录制则自动停止并保存。
+    if (_recordPhase != _RecordPhase.idle && sessionId != null) {
+      unawaited(_stopRecordingQuietly(sessionId));
+    }
     if (endSession && sessionId != null) {
       unawaited(_finishQuietly(sessionId));
     }
@@ -382,7 +402,148 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(message)));
+  }
+
+  // ==================== 录制控制 ====================
+  // 后端为 LiveKit Egress 服务端合成录制，仅支持开始/停止，不支持原生暂停。
+  // 因此「暂停」采用分段实现：暂停=停止当前段（期间不录制），继续=新起一段，
+  // 计时只累计实际录制时长；每段录制由 Webhook 回填后进入「我的-录播」。
+
+  Future<void> _startRecording() async {
+    final sessionId = _sessionId;
+    if (sessionId == null || _recordBusy) return;
+    setState(() => _recordBusy = true);
+    try {
+      await room.startRecording(sessionId);
+      if (!mounted) return;
+      setState(() => _recordPhase = _RecordPhase.recording);
+      _startRecordTimer();
+      _toast('已开始录制');
+    } catch (e) {
+      _toast('录制失败：$e');
+    } finally {
+      if (mounted) setState(() => _recordBusy = false);
+    }
+  }
+
+  Future<void> _pauseRecording() async {
+    final sessionId = _sessionId;
+    if (sessionId == null || _recordBusy) return;
+    setState(() => _recordBusy = true);
+    try {
+      await room.stopRecording(sessionId);
+      if (!mounted) return;
+      _recordTimer?.cancel();
+      setState(() => _recordPhase = _RecordPhase.paused);
+      _toast('已暂停，本段已保存');
+    } catch (e) {
+      _toast('暂停失败：$e');
+    } finally {
+      if (mounted) setState(() => _recordBusy = false);
+    }
+  }
+
+  Future<void> _resumeRecording() async {
+    await _startRecording();
+  }
+
+  Future<void> _stopRecording() async {
+    final sessionId = _sessionId;
+    if (sessionId == null || _recordBusy) return;
+    // 已暂停时，后端录制已在「暂停」时停止并保存，无需再调 stop，
+    // 否则后端会报「当前没有进行中的录制」。直接在前端结束即可。
+    if (_recordPhase == _RecordPhase.paused) {
+      _recordTimer?.cancel();
+      setState(() {
+        _recordPhase = _RecordPhase.idle;
+        _recordSeconds = 0;
+      });
+      _toast('录制已结束，可在「我的-录播」查看');
+      return;
+    }
+    setState(() => _recordBusy = true);
+    try {
+      await room.stopRecording(sessionId);
+      if (!mounted) return;
+      _recordTimer?.cancel();
+      setState(() {
+        _recordPhase = _RecordPhase.idle;
+        _recordSeconds = 0;
+      });
+      _toast('录制已停止，处理后可在「我的-录播」查看');
+    } catch (e) {
+      _toast('停止失败：$e');
+    } finally {
+      if (mounted) setState(() => _recordBusy = false);
+    }
+  }
+
+  /// 会议结束/离开时静默停止录制（不阻塞退出）。
+  Future<void> _stopRecordingQuietly(int sessionId) async {
+    try {
+      await room.stopRecording(sessionId);
+    } catch (_) {
+      // 后端在会议结束时也会停止 Egress，失败不阻塞退出。
+    }
+  }
+
+  void _startRecordTimer() {
+    _recordTimer?.cancel();
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _recordSeconds++);
+    });
+  }
+
+  String get _recordClock {
+    final h = (_recordSeconds ~/ 3600).toString().padLeft(2, '0');
+    final m = ((_recordSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final s = (_recordSeconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
+
+  /// 录制悬浮条：红点 + 计时 + 暂停/继续 + 结束（参考录屏悬浮窗）。
+  Widget _recordBar() {
+    final paused = _recordPhase == _RecordPhase.paused;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color.fromRGBO(0, 0, 0, 0.75),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 10),
+          Icon(
+            Icons.fiber_manual_record,
+            color: paused ? Colors.orange : _red,
+            size: 14,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            _recordClock,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          IconButton(
+            icon: Icon(
+              paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+              color: Colors.white,
+            ),
+            tooltip: paused ? '继续录制' : '暂停录制',
+            onPressed: _recordBusy
+                ? null
+                : (paused ? _resumeRecording : _pauseRecording),
+          ),
+          IconButton(
+            icon: const Icon(Icons.stop_rounded, color: _red),
+            tooltip: '结束录制',
+            onPressed: _recordBusy ? null : _stopRecording,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -553,20 +714,102 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
       Positioned.fill(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-          child: state.remotes.isEmpty
-              ? _waitingView(state)
-              : _participantGrid(state),
+          child: _selfFocused
+              ? _selfMainView(state)
+              : state.remotes.isEmpty
+                  ? _waitingView(state)
+                  : _participantGrid(state),
         ),
       ),
       Positioned(top: 10, left: 10, child: _statusChip(state)),
-      Positioned(top: 10, right: 10, child: _selfPreview(state)),
-      Positioned(
-        left: 14,
-        bottom: 14,
-        child: _badge(interviewModeLabel(_info.mode)),
-      ),
+      Positioned(top: 10, right: 10, child: _stagePip(state)),
+      if (_recordPhase != _RecordPhase.idle)
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 14,
+          child: Center(child: _recordBar()),
+        ),
     ],
   );
+
+  /// 右上角小窗：点击在「求职者主体 + 面试官小窗」与「面试官主体 + 求职者小窗」之间切换。
+  Widget _stagePip(ConferenceRoomState state) {
+    return Stack(
+      children: [
+        _selfFocused ? _remotePip(state) : _selfPreview(state),
+        // 透明手势覆盖层：LiveKit 视频画面是原生视图，会拦截触摸，
+        // 覆盖一层透明手势，确保点击视频区域（而不仅是顶部文字）也能切换。
+        Positioned.fill(
+          child: GestureDetector(
+            key: const ValueKey('conference-pip-toggle'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _selfFocused = !_selfFocused),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 面试官（自己）主体大画面（点小窗切换为主体后显示）。
+  Widget _selfMainView(ConferenceRoomState state) {
+    if (!state.canPublish) return _waitingView(state);
+    final selfName = _info.interviewerName.isEmpty
+        ? '我'
+        : _info.interviewerName;
+    return Padding(
+      padding: const EdgeInsets.only(top: 42),
+      child: _ParticipantSurface(
+        name: selfName,
+        role: '面试官',
+        initial: _initial(selfName),
+        video: state.cameraEnabled ? state.localVideoTrack : null,
+        micEnabled: state.micEnabled,
+        mirror: true,
+        placeholderText: state.cameraEnabled ? '连接摄像头…' : '摄像头已关闭',
+      ),
+    );
+  }
+
+  /// 求职者小窗（面试官为主体时，右上角展示求职者）。
+  Widget _remotePip(ConferenceRoomState state) {
+    if (state.remotes.isEmpty) {
+      // 候选人未加入时，小窗显示占位提示。
+      return SizedBox(
+        width: 96,
+        height: 130,
+        child: _ParticipantSurface(
+          name: _info.candidateName,
+          initial: _initial(_info.candidateName),
+          video: null,
+          compact: true,
+          placeholderText: '等待加入',
+        ),
+      );
+    }
+    final participant = state.remotes.first;
+    final userId = _userIdFromIdentity(participant.identity);
+    final name = _nameForUserId(userId);
+    return SizedBox(
+      width: 96,
+      height: 130,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: _ParticipantSurface(
+              name: name,
+              initial: _initial(name),
+              video: participant.videoTrack,
+              micEnabled: participant.micEnabled,
+              compact: true,
+            ),
+          ),
+          Positioned(top: 4, left: 4, child: _miniTag(name)),
+        ],
+      ),
+    );
+  }
 
   Widget _waitingView(ConferenceRoomState state) {
     final initial = _initial(_info.candidateName);
@@ -689,7 +932,7 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
               placeholderText: state.cameraEnabled ? '连接摄像头…' : '摄像头已关闭',
             ),
           ),
-          Positioned(top: 4, left: 4, child: _miniTag('我 · $selfName')),
+          Positioned(top: 4, left: 4, child: _miniTag(selfName)),
         ],
       ),
     );
@@ -832,6 +1075,37 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
               ),
             _InfoRow(label: '场次号', value: '#${_info.sessionId ?? '—'}'),
             const Divider(color: _line, height: 1),
+            if (_recordPhase == _RecordPhase.idle)
+              ListTile(
+                leading: const Icon(Icons.fiber_manual_record, color: _red),
+                title: const Text('开始录制', style: TextStyle(color: _text)),
+                subtitle: const Text(
+                  '录制本场合成视频，存入「我的-录播」',
+                  style: TextStyle(color: _muted, fontSize: 12),
+                ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _startRecording();
+                },
+              )
+            else
+              ListTile(
+                leading: Icon(
+                  Icons.fiber_manual_record,
+                  color: _recordPhase == _RecordPhase.paused
+                      ? Colors.orange
+                      : _red,
+                ),
+                title: Text(
+                  _recordPhase == _RecordPhase.paused ? '录制已暂停' : '录制中',
+                  style: const TextStyle(color: _text),
+                ),
+                subtitle: const Text(
+                  '使用页面录制条暂停 / 继续 / 结束',
+                  style: TextStyle(color: _muted, fontSize: 12),
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(),
+              ),
             ListTile(
               leading: const Icon(Icons.logout_rounded, color: _text),
               title: const Text('离开会议', style: TextStyle(color: _text)),
@@ -1102,6 +1376,9 @@ class _ParticipantSurface extends StatelessWidget {
     );
   }
 }
+
+/// 录制阶段：未录制 / 录制中 / 已暂停。
+enum _RecordPhase { idle, recording, paused }
 
 class _ControlButton extends StatelessWidget {
   const _ControlButton({

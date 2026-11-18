@@ -1,0 +1,15 @@
+scenario,test_case,expected_result,actual_result,status,evidence,detail
+SMOKE,容器拉起与版本核对,MySQL8容器可用并自动销毁,MySQL 8.0.46 容器启动验证后销毁,PASS,Testcontainers mysql:8.0,随机端口独立库不挂载卷
+A,首次迁移五表/回填/幂等,五表+6列+2快照+gap0+幂等,entTables=5 snap=2 gap=0,PASS,MySQL 8.0.46,真实容器执行
+B,现实旧版升级补列/回填,补列+按真实时间回填+收紧,time_source nullable=NO BACKFILL_REAL,PASS,MySQL 8.0.46,真实容器执行
+B,严重缺列升级(缺ers_snapshot_at),应自动补列不报错,Unknown column 'ers_snapshot_at',FAIL,MySQL 8.0.46,"DR-2：02迁移过程未ADD ers_snapshot_at但UPDATE先引用；最小修复：在396行前 IF NOT EXISTS ADD ers_snapshot_at datetime"
+C,重复投递AI精确关联(4A/4B/4C/MATCHED保护/幂等),唯一组绑定+多组不绑定+无组待核实+MATCHED不覆盖,4A app=1004;4B NULL;4C unknown;MATCHED保留,PASS,MySQL 8.0.46,真实容器执行
+D,哈希边界/长TEXT/多重集/12日期,均区分+多重集检出+12日期date,hashCompare边界全0;8.5.4双向各1;datePairs=12,PASS,MySQL 8.0.46,真实容器执行
+E,PDF 14列/10分类/异常分支/CSV防护,8可达分类+2不制造+异常全MANUAL_REVIEW+14列+公式防护,classifications=8 copy/archive/authenticity分离,PASS,Fake内存端口,未连真实对象存储
+F,真实复合主键回滚(守卫2),应能执行回滚,回滚中止：原表主键不是单列主键,FAIL,MySQL 8.0.46,"DR-3：05守卫2要求单列主键，但真实表为复合三列主键且02未加单列PK；最小修复：回滚按复合主键口径重写，或先经评审加单列主键迁移"
+F,单列主键回滚/归档/manual-only/恢复,归档4行零删除+新表2行+manual-only不写入+快照保留,hist=4 new=2 归档守卫有效,PASS,MySQL 8.0.46,RENAME后归档表保留即中途失败可恢复证据；DDL隐式提交不可事务回滚
+G,C/E独立生命周期/重复投递/跨企业,修改删除源后快照零变化+独立快照+跨企业拦截,snapshot immutable after UPDATE/DELETE;company隔离,PASS,MySQL 8.0.46,数据层独立已验证；Flutter UI字段未在容器内实跑
+06,默认注释/十六进制/守卫/幂等/隔离库回写,零可执行语句+编码正确+影响1行+幂等0行+状态不变,all UPDATE commented;writeback row=1 then 0;guard works,PASS,MySQL 8.0.46,未放开真实性升级未改app_status
+REG,Mockito单测回归,全绿,Console 8+Migrator 12+Verification 16=36,PASS,ruoyi-system,无外部依赖
+REG,ApplicationStatusConcurrencyIT,并发状态机一致,6 tests PASS,PASS,独立Testcontainer,不连外部库
+REG,OfferServiceConcurrencyIT,Offer并发一致,5 tests PASS,PASS,独立Testcontainer,仅补测试配置bean不影响生产

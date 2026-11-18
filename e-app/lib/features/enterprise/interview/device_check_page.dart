@@ -168,7 +168,7 @@ class _DeviceCheckPageState extends State<DeviceCheckPage> {
   void _enterInterview() {
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('会话状态已标记"已就绪"（模拟），进入模块五面试房间')));
+    ).showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('会话状态已标记"已就绪"（模拟），进入模块五面试房间')));
   }
 }
 

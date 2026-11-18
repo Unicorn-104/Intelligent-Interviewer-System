@@ -2,6 +2,7 @@ package com.ruoyi.system.service.app;
 
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.mapper.app.AppJobMapper;
+import com.ruoyi.system.service.IEnterpriseJobService;
 import com.ruoyi.system.service.app.impl.AppJobServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,12 +13,14 @@ import static org.mockito.Mockito.*;
 class AppJobApplyServiceTest
 {
     private final AppJobMapper mapper = mock(AppJobMapper.class);
+    private final IEnterpriseJobService enterpriseJobService = mock(IEnterpriseJobService.class);
     private final AppJobServiceImpl service = new AppJobServiceImpl();
 
     @BeforeEach
     void setup()
     {
         ReflectionTestUtils.setField(service, "jobMapper", mapper);
+        ReflectionTestUtils.setField(service, "enterpriseJobService", enterpriseJobService);
         when(mapper.selectCompanyIdByPositionId(91L)).thenReturn(71L);
         when(mapper.selectCandidateId(17L, 71L)).thenReturn(31L);
         when(mapper.insertApplication(eq(31L), eq(91L), anyLong())).thenReturn(1);

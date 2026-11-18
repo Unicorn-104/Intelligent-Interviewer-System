@@ -12,6 +12,11 @@ public interface AppResumeMapper
     AppResume selectResumeForUpdate(@Param("resumeId") Long resumeId, @Param("userId") Long userId);
     /** 不带用户条件的主键查询：仅供企业端在校验候选人归属后使用，C-App 不得直接调用。 */
     AppResume selectResumeById(@Param("resumeId") Long resumeId);
+    /**
+     * 不区分启用/停用状态的主键查询：仅用于企业端核对源简历是否曾上传文件，
+     * 避免软删（status=0）但有文件的简历被误判为未上传；C-App 不得直接调用。
+     */
+    AppResume selectResumeFileById(@Param("resumeId") Long resumeId);
     List<AppResume.Education> selectEducations(Long resumeId);
     List<AppResume.Work> selectWorks(Long resumeId);
     List<AppResume.Project> selectProjects(Long resumeId);

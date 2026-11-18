@@ -131,7 +131,7 @@ class _SystemNotificationsPageState extends State<SystemNotificationsPage>
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(messageError(error))));
+            .showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(messageError(error))));
       }
     } finally {
       if (mounted) setState(() => _action = false);
@@ -171,7 +171,7 @@ class _SystemNotificationsPageState extends State<SystemNotificationsPage>
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(messageError(error))));
+            .showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(messageError(error))));
       }
     } finally {
       if (mounted) setState(() => _action = false);

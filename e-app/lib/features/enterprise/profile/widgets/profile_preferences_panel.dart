@@ -43,7 +43,7 @@ class _ProfilePreferencesPanelState extends State<ProfilePreferencesPanel> {
       await widget.onSave(_draft);
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('已保存到本机')));
+            .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已保存到本机')));
       }
     } catch (error) {
       if (mounted) setState(() => _error = profileError(error));

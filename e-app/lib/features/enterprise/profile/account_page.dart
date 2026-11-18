@@ -10,6 +10,9 @@ import 'data/profile_data_source.dart';
 import 'models/profile_view_data.dart';
 import 'profile_edit_page.dart';
 import 'settings_page.dart';
+import 'enterprise_management_page.dart';
+import '../exam/exam_management_page.dart';
+import '../exam/exam_proctor_page.dart';
 import 'widgets/profile_avatar_view.dart';
 
 class AccountPage extends StatefulWidget {
@@ -134,6 +137,27 @@ class AccountPageState extends State<AccountPage> {
     if (mounted) await reload();
   }
 
+  Future<void> _openEnterpriseSection(String name) async {
+    if (_actionOpen) return;
+    final page = switch (name) {
+      '部门管理' => const EnterpriseManagementPage(
+        section: EnterpriseManagementSection.departments,
+      ),
+      '成员管理' => const EnterpriseManagementPage(
+        section: EnterpriseManagementSection.members,
+      ),
+      '通知模板' => const EnterpriseManagementPage(
+        section: EnterpriseManagementSection.templates,
+      ),
+      _ => null,
+    };
+    if (page == null) {
+      _message('$name功能开发中，请在 Web 端操作');
+      return;
+    }
+    await _openTool(page);
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -209,7 +233,9 @@ class AccountPageState extends State<AccountPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const EnterpriseManagementPanel(),
+                EnterpriseManagementPanel(
+                  onOpenSection: _openEnterpriseSection,
+                ),
                 const SizedBox(height: 16),
                 _recruitingTools(),
                 const SizedBox(height: 28),
@@ -256,73 +282,79 @@ class AccountPageState extends State<AccountPage> {
           ),
         ),
         const SizedBox(height: 16),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        GridView.count(
+          crossAxisCount: 4,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 4,
+          crossAxisSpacing: 4,
+          childAspectRatio: .75,
           children: [
             for (final (label, icon, page, demo)
                 in const <(String, IconData, Widget, bool)>[
-                  (
-                    '人才库',
-                    Icons.people_outline,
-                    TalentPage(discovery: true),
-                    false,
-                  ),
-                  ('录播', Icons.video_library_outlined, RecordingPage(), true),
-                  (
-                    '改期审批',
-                    Icons.edit_calendar_outlined,
-                    RescheduleReviewPage(),
-                    false,
-                  ),
+                  ('人才库', Icons.people_outline, TalentPage(discovery: true), false),
+                  ('录播', Icons.video_library_outlined, RecordingPage(), false),
+                  ('改期审批', Icons.edit_calendar_outlined, RescheduleReviewPage(), false),
+                  ('笔试管理', Icons.assignment_outlined, ExamManagementPage(), false),
+                  ('监控监考', Icons.shield_outlined, ExamProctorPage(), false),
                 ])
-              Expanded(
-                child: InkWell(
+              InkWell(
                   key: ValueKey('profile-tool-$label'),
                   borderRadius: BorderRadius.circular(8),
                   onTap: _actionOpen ? null : () => _openTool(page),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      vertical: 10,
+                      vertical: 8,
                       horizontal: 4,
                     ),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.primarySoft,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            icon,
-                            color: AppColors.interactive,
-                            size: 26,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.body,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        if (demo)
-                          const Text(
-                            '演示数据',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: AppColors.orange,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topCenter,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.primarySoft,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              icon,
+                              color: AppColors.interactive,
+                              size: 26,
                             ),
                           ),
-                      ],
+                          const SizedBox(height: 10),
+                          Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.body,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          // 固定高度占位：有无「演示数据」标签都保留同等空间，
+                          // 避免个别格子内容超出 GridView 单元格高度导致 BOTTOM OVERFLOWED。
+                          SizedBox(
+                            height: 14,
+                            child: demo
+                                ? const Text(
+                                    '演示数据',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.orange,
+                                    ),
+                                  )
+                                : null,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
           ],
         ),
       ],

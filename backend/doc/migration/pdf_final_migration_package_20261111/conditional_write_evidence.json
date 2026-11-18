@@ -1,0 +1,16 @@
+{
+  "endpoint": "http://127.0.0.1:19000",
+  "bucket": "recruit-files",
+  "region": "us-east-1",
+  "rustfsVersion": "v1.0.4",
+  "versionVerification": "MANUAL_VERIFICATION",
+  "probeKey": "conditional-write-probe/probe-00b9be64dfed4d9ca13bb5a767a68581.txt",
+  "firstPutStatus": "HTTP_200_OK",
+  "secondPutStatus": "HTTP_412_PRECONDITION_FAILED",
+  "firstObjectSha256": "7d4d51ea87c2c620b25f0dcb087811b1cbcb02122d39b3e7da648aee0276e2ee",
+  "finalObjectSha256": "7d4d51ea87c2c620b25f0dcb087811b1cbcb02122d39b3e7da648aee0276e2ee",
+  "verifiedAt": "2026-11-11T18:04:41+08:00",
+  "verifiedBy": "张祥\\86193",
+  "result": "VERIFIED",
+  "note": "条件写验证完整通过：首次条件写成功（HTTP_200_OK），第二次同 key 条件写 AWS CLI 退出码 254、服务端 PreconditionFailed，按错误分类记为 HTTP_412_PRECONDITION_FAILED（非退出码本身）；前后 GetObject 成功，大小 56 bytes，双 SHA 一致，证明未覆盖。verifiedAt 来源 Get-History 的 EndExecutionTime，verifiedBy 来源 whoami，全字段通过 Assert-ConditionalWriteEvidence，result=VERIFIED。本证据仅证明条件写能力，正式复制仍须人工另行授权，门禁不自动解除。"
+}

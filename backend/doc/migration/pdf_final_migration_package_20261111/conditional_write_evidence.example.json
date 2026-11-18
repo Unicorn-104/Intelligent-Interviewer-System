@@ -1,0 +1,16 @@
+{
+  "endpoint": "http://127.0.0.1:19000",
+  "bucket": "recruit-files",
+  "region": "us-east-1",
+  "rustfsVersion": "NOT_VERIFIED",
+  "versionVerification": "MANUAL_VERIFICATION",
+  "probeKey": "conditional-write-probe/non-production-object.txt",
+  "firstPutStatus": "NOT_VERIFIED",
+  "secondPutStatus": "NOT_VERIFIED",
+  "firstObjectSha256": "NOT_VERIFIED",
+  "finalObjectSha256": "NOT_VERIFIED",
+  "verifiedAt": "NOT_VERIFIED",
+  "verifiedBy": "NOT_VERIFIED",
+  "result": "NOT_VERIFIED",
+  "note": "本模板默认 NOT_VERIFIED，直接使用无法通过正式执行门禁。必须由 test_conditional_write.ps1 -Execute 在当前实例对 conditional-write-probe/ 前缀的非生产对象实测：首次条件写成功（HTTP_200_OK），第二次同 key 条件写必须为 HTTP_412_PRECONDITION_FAILED（409 不算成功），且 firstObjectSha256 与 finalObjectSha256 一致，证明未覆盖。版本无法自动获取，须人工核验并保持 MANUAL_VERIFICATION。endpoint/bucket/region/版本须与正式参数一致。"
+}

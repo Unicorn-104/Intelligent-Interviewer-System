@@ -1,6 +1,8 @@
 package com.ruoyi.system.service.storage;
 
 import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
@@ -18,6 +20,8 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 @Component
 public class S3FileStorage
 {
+    // 临时诊断日志：定位头像读取失败的真实根因（诊断后可移除）
+    private static final Logger diagLog = LoggerFactory.getLogger("S3_DIAG");
     private final FileStorageProperties properties;
     private final ObjectProvider<S3Client> clients;
 
@@ -61,27 +65,37 @@ public class S3FileStorage
     public Resource read(String reference, int maxBytes)
     {
         String[] location = location(reference);
+        diagLog.info("read start reference={}, bucket={}, key={}, maxBytes={}",
+                reference, location[0], location[1], maxBytes);
         try (ResponseInputStream<GetObjectResponse> input = client().getObject(
                 request -> request.bucket(location[0]).key(location[1])))
         {
             Long length = input.response().contentLength();
+            diagLog.info("getObject ok declaredLength={}, contentType={}",
+                    length, input.response().contentType());
             if (length != null && length > maxBytes)
             {
                 input.abort();
                 throw new ServiceException("存储文件超过允许大小");
             }
             byte[] bytes = input.readNBytes(maxBytes + 1);
+            diagLog.info("readNBytes returned bytes={}", bytes.length);
             if (bytes.length > maxBytes)
             {
                 input.abort();
                 throw new ServiceException("存储文件超过允许大小");
             }
             if (length != null && length >= 0 && bytes.length != length)
+            {
+                diagLog.warn("incomplete read declared={}, actual={}", length, bytes.length);
                 throw new ServiceException("存储文件读取不完整，请稍后重试");
+            }
             return new ByteArrayResource(bytes);
         }
         catch (IOException | SdkException error)
         {
+            // 临时诊断：打印真实根因堆栈，区分 NoSuchKey 与其他失败
+            diagLog.error("read FAILED " + error.getClass().getName(), error);
             // 仅明确的 S3 NoSuchKey（404）标记为“不存在”；403/超时/5xx/网络等保持不确定失败
             if (error instanceof NoSuchKeyException)
                 throw new ServiceException("存储对象不存在", NOT_FOUND_CODE);

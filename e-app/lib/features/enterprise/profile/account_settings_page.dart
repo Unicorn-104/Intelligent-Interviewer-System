@@ -149,7 +149,7 @@ class AccountSettingsPageState extends State<AccountSettingsPage> {
   }
 
   void _message(String text) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(text)));
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
