@@ -37,4 +37,7 @@ public interface AppJobMapper
     int insertApplication(@Param("candidateId") Long candidateId,
                           @Param("positionId") Long positionId,
                           @Param("resumeId") Long resumeId);
+
+    Long selectAppId(@Param("candidateId") Long candidateId,
+                     @Param("positionId") Long positionId);
 }

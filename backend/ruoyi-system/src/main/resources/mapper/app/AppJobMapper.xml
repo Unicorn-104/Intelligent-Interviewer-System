@@ -161,4 +161,9 @@
         select #{candidateId}, p.pos_id, #{resumeId}, 60, 0, now(), now()
         from t_pos p where p.pos_id = #{positionId} and p.pos_status = 1
     </insert>
+
+    <select id="selectAppId" resultType="long">
+        select app_id from t_app_record
+        where app_candidate_id = #{candidateId} and app_position_id = #{positionId}
+    </select>
 </mapper>
