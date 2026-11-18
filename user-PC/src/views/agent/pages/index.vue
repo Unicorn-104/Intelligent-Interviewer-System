@@ -1,4 +1,5 @@
 <template>
+  <div class="candidate-page--index">
 <div class="app-shell" :class="{ 'guest-mode': !isLoggedIn }">
     <AgentTopbar active="index" />
 
@@ -212,6 +213,7 @@
   </div>
 
   <div class="toast" :class="{ show: toastVisible }" role="status"><span>✓</span><span>{{ toastMessage }}</span></div>
+  </div>
 </template>
 
 <script setup>
@@ -721,7 +723,7 @@ onUnmounted(() => {
 </script>
 
 <style>
-:root {
+:where(.candidate-page--index) {
       --primary: #1A3C6E;
       --primary-deep: #102D53;
       --interactive: #2B7FFF;
@@ -739,11 +741,11 @@ onUnmounted(() => {
       --radius: 12px;
     }
 
-    * { box-sizing: border-box; }
+    :where(.candidate-page--index) * { box-sizing: border-box; }
 
-    html { scroll-behavior: smooth; }
+    :where(.candidate-page--index) { scroll-behavior: smooth; }
 
-    body {
+    :where(.candidate-page--index) {
       margin: 0;
       color: var(--text);
       background: var(--bg);
@@ -752,14 +754,14 @@ onUnmounted(() => {
       line-height: 1.5;
     }
 
-    button, input { font: inherit; }
+    :where(.candidate-page--index) button, :where(.candidate-page--index) input { font: inherit; }
 
-    button { cursor: pointer; }
+    :where(.candidate-page--index) button { cursor: pointer; }
 
-    .app-shell { min-height: 100vh; }
+    :where(.candidate-page--index) .app-shell { min-height: 100vh; }
 
     /* 顶部导航栏 */
-    .topbar {
+    :where(.candidate-page--index) .topbar {
       position: sticky;
       top: 0;
       z-index: 20;
@@ -771,7 +773,7 @@ onUnmounted(() => {
       backdrop-filter: blur(12px);
     }
 
-    .topbar-inner {
+    :where(.candidate-page--index) .topbar-inner {
       width: min(1240px, calc(100% - 48px));
       margin: 0 auto;
       display: flex;
@@ -779,7 +781,7 @@ onUnmounted(() => {
       gap: 32px;
     }
 
-    .brand {
+    :where(.candidate-page--index) .brand {
       display: inline-flex;
       align-items: center;
       gap: 10px;
@@ -788,7 +790,7 @@ onUnmounted(() => {
       white-space: nowrap;
     }
 
-    .brand-mark {
+    :where(.candidate-page--index) .brand-mark {
       width: 34px;
       height: 34px;
       display: grid;
@@ -802,12 +804,12 @@ onUnmounted(() => {
       letter-spacing: -1px;
     }
 
-    .brand-name { font-weight: 800; font-size: 18px; letter-spacing: 0.2px; }
-    .brand-tag { margin-left: 2px; color: var(--muted); font-size: 11px; font-weight: 500; }
+    :where(.candidate-page--index) .brand-name { font-weight: 800; font-size: 18px; letter-spacing: 0.2px; }
+    :where(.candidate-page--index) .brand-tag { margin-left: 2px; color: var(--muted); font-size: 11px; font-weight: 500; }
 
-    .main-nav { display: flex; align-items: center; gap: 5px; height: 100%; }
+    :where(.candidate-page--index) .main-nav { display: flex; align-items: center; gap: 5px; height: 100%; }
 
-    .nav-link {
+    :where(.candidate-page--index) .nav-link {
       position: relative;
       height: 72px;
       display: inline-flex;
@@ -821,9 +823,9 @@ onUnmounted(() => {
       transition: color .2s ease;
     }
 
-    .nav-link:hover, .nav-link.active { color: var(--primary); }
-    .nav-link.active { font-weight: 700; }
-    .nav-link.active::after {
+    :where(.candidate-page--index) .nav-link:hover, :where(.candidate-page--index) .nav-link.active { color: var(--primary); }
+    :where(.candidate-page--index) .nav-link.active { font-weight: 700; }
+    :where(.candidate-page--index) .nav-link.active::after {
       content: "";
       position: absolute;
       right: 15px;
@@ -834,11 +836,11 @@ onUnmounted(() => {
       background: var(--interactive);
     }
 
-    .nav-badge { min-width: 17px; height: 17px; margin-left: 6px; padding: 0 5px; display: inline-grid; place-items: center; border-radius: 99px; color: #fff; background: #F05C63; font-size: 10px; line-height: 1; }
+    :where(.candidate-page--index) .nav-badge { min-width: 17px; height: 17px; margin-left: 6px; padding: 0 5px; display: inline-grid; place-items: center; border-radius: 99px; color: #fff; background: #F05C63; font-size: 10px; line-height: 1; }
 
-    .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+    :where(.candidate-page--index) .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 18px; }
 
-    .icon-button {
+    :where(.candidate-page--index) .icon-button {
       position: relative;
       width: 36px;
       height: 36px;
@@ -851,308 +853,308 @@ onUnmounted(() => {
       transition: background .2s, color .2s;
     }
 
-    .icon-button:hover { color: var(--primary); background: var(--interactive-soft); }
-    .icon-button svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .notification-dot { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border: 2px solid #fff; border-radius: 50%; background: #F05C63; }
+    :where(.candidate-page--index) .icon-button:hover { color: var(--primary); background: var(--interactive-soft); }
+    :where(.candidate-page--index) .icon-button svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    :where(.candidate-page--index) .notification-dot { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border: 2px solid #fff; border-radius: 50%; background: #F05C63; }
 
-    .profile-chip { display: flex; align-items: center; gap: 9px; padding: 4px 0 4px 5px; border: 0; color: var(--text); background: transparent; }
-    .avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: linear-gradient(135deg, #8EA9D1, #5377AE); font-size: 13px; font-weight: 700; }
-    .profile-meta { text-align: left; line-height: 1.25; }
-    .profile-name { display: block; font-weight: 700; }
-    .profile-role { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
-    .profile-chevron { width: 15px; height: 15px; margin-left: 1px; color: var(--muted); }
+    :where(.candidate-page--index) .profile-chip { display: flex; align-items: center; gap: 9px; padding: 4px 0 4px 5px; border: 0; color: var(--text); background: transparent; }
+    :where(.candidate-page--index) .avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: linear-gradient(135deg, #8EA9D1, #5377AE); font-size: 13px; font-weight: 700; }
+    :where(.candidate-page--index) .profile-meta { text-align: left; line-height: 1.25; }
+    :where(.candidate-page--index) .profile-name { display: block; font-weight: 700; }
+    :where(.candidate-page--index) .profile-role { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+    :where(.candidate-page--index) .profile-chevron { width: 15px; height: 15px; margin-left: 1px; color: var(--muted); }
 
-    .main-content { width: min(1240px, calc(100% - 48px)); margin: 0 auto; padding: 34px 0 56px; }
+    :where(.candidate-page--index) .main-content { width: min(1240px, calc(100% - 48px)); margin: 0 auto; padding: 34px 0 56px; }
 
     /* 页面问候区 */
-    .welcome-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 26px; }
-    .eyebrow { margin: 0 0 7px; color: var(--interactive); font-size: 12px; font-weight: 700; letter-spacing: .8px; }
-    h1 { margin: 0; color: var(--primary); font-size: clamp(24px, 3vw, 30px); line-height: 1.25; letter-spacing: -.4px; }
-    .welcome-subtitle { margin: 9px 0 0; color: var(--muted); font-size: 14px; }
-    .welcome-subtitle strong { color: var(--primary); font-weight: 700; }
+    :where(.candidate-page--index) .welcome-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 26px; }
+    :where(.candidate-page--index) .eyebrow { margin: 0 0 7px; color: var(--interactive); font-size: 12px; font-weight: 700; letter-spacing: .8px; }
+    :where(.candidate-page--index) h1 { margin: 0; color: var(--primary); font-size: clamp(24px, 3vw, 30px); line-height: 1.25; letter-spacing: -.4px; }
+    :where(.candidate-page--index) .welcome-subtitle { margin: 9px 0 0; color: var(--muted); font-size: 14px; }
+    :where(.candidate-page--index) .welcome-subtitle strong { color: var(--primary); font-weight: 700; }
 
-    .search-box { width: min(320px, 100%); height: 42px; position: relative; }
-    .search-box input { width: 100%; height: 100%; padding: 0 42px 0 40px; border: 1px solid var(--line); border-radius: 9px; outline: 0; color: var(--text); background: var(--card); transition: border .2s, box-shadow .2s; }
-    .search-box input:focus { border-color: rgba(43, 127, 255, .7); box-shadow: 0 0 0 3px rgba(43, 127, 255, .12); }
-    .search-box svg { position: absolute; top: 12px; left: 14px; width: 18px; height: 18px; color: var(--muted); stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
-    .search-clear { display: none; position: absolute; top: 7px; right: 8px; width: 28px; height: 28px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; }
-    .search-clear.visible { display: block; }
+    :where(.candidate-page--index) .search-box { width: min(320px, 100%); height: 42px; position: relative; }
+    :where(.candidate-page--index) .search-box input { width: 100%; height: 100%; padding: 0 42px 0 40px; border: 1px solid var(--line); border-radius: 9px; outline: 0; color: var(--text); background: var(--card); transition: border .2s, box-shadow .2s; }
+    :where(.candidate-page--index) .search-box input:focus { border-color: rgba(43, 127, 255, .7); box-shadow: 0 0 0 3px rgba(43, 127, 255, .12); }
+    :where(.candidate-page--index) .search-box svg { position: absolute; top: 12px; left: 14px; width: 18px; height: 18px; color: var(--muted); stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    :where(.candidate-page--index) .search-clear { display: none; position: absolute; top: 7px; right: 8px; width: 28px; height: 28px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; }
+    :where(.candidate-page--index) .search-clear.visible { display: block; }
 
-    .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.06fr) minmax(0, .94fr); gap: 20px; margin-bottom: 25px; }
+    :where(.candidate-page--index) .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.06fr) minmax(0, .94fr); gap: 20px; margin-bottom: 25px; }
 
-    .panel { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
-    .panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 18px; }
-    .panel-title { margin: 0; color: var(--primary); font-size: 16px; font-weight: 800; }
-    .panel-caption { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
-    .text-button { padding: 2px 0; border: 0; color: var(--interactive); background: transparent; font-size: 12px; font-weight: 700; white-space: nowrap; }
-    .text-button:hover { color: var(--primary); }
+    :where(.candidate-page--index) .panel { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
+    :where(.candidate-page--index) .panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 18px; }
+    :where(.candidate-page--index) .panel-title { margin: 0; color: var(--primary); font-size: 16px; font-weight: 800; }
+    :where(.candidate-page--index) .panel-caption { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    :where(.candidate-page--index) .text-button { padding: 2px 0; border: 0; color: var(--interactive); background: transparent; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    :where(.candidate-page--index) .text-button:hover { color: var(--primary); }
 
     /* 投递摘要 */
-    .application-panel { min-height: 280px; }
-    .dashboard-state { min-height: 150px; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 20px 24px; color: var(--muted); font-size: 12px; text-align: center; }
-    .dashboard-state .text-button { padding: 0; }
-    .dashboard-state.error-state { flex-direction: column; color: #A95D64; }
-    .dashboard-empty { min-height: 92px; margin: 0 24px 22px; border: 1px dashed #DDE6F2; border-radius: 9px; background: #FBFCFE; }
-    .application-overview { display: flex; align-items: center; gap: 22px; padding: 1px 24px 18px; }
-    .progress-ring { position: relative; width: 92px; height: 92px; flex: 0 0 auto; }
-    .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-    .progress-ring circle { fill: none; stroke-width: 7; }
-    .progress-ring .track { stroke: #EDF1F6; }
-    .progress-ring .value { stroke: var(--interactive); stroke-linecap: round; stroke-dasharray: 213.6; stroke-dashoffset: 58.9; }
-    .progress-ring-label { position: absolute; inset: 0; display: grid; place-items: center; color: var(--primary); font-size: 22px; font-weight: 800; }
-    .progress-ring-label small { margin-top: -25px; color: var(--muted); font-size: 10px; font-weight: 500; }
-    .stat-copy strong { display: block; color: var(--primary); font-size: 25px; line-height: 1.15; }
-    .stat-copy span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
-    .stat-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    .stat-chip { padding: 5px 9px; border-radius: 6px; color: var(--muted); background: #F7F9FC; font-size: 11px; }
-    .stat-chip strong { display: inline; margin-right: 3px; color: var(--primary); font-size: 12px; }
+    :where(.candidate-page--index) .application-panel { min-height: 280px; }
+    :where(.candidate-page--index) .dashboard-state { min-height: 150px; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 20px 24px; color: var(--muted); font-size: 12px; text-align: center; }
+    :where(.candidate-page--index) .dashboard-state .text-button { padding: 0; }
+    :where(.candidate-page--index) .dashboard-state.error-state { flex-direction: column; color: #A95D64; }
+    :where(.candidate-page--index) .dashboard-empty { min-height: 92px; margin: 0 24px 22px; border: 1px dashed #DDE6F2; border-radius: 9px; background: #FBFCFE; }
+    :where(.candidate-page--index) .application-overview { display: flex; align-items: center; gap: 22px; padding: 1px 24px 18px; }
+    :where(.candidate-page--index) .progress-ring { position: relative; width: 92px; height: 92px; flex: 0 0 auto; }
+    :where(.candidate-page--index) .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    :where(.candidate-page--index) .progress-ring circle { fill: none; stroke-width: 7; }
+    :where(.candidate-page--index) .progress-ring .track { stroke: #EDF1F6; }
+    :where(.candidate-page--index) .progress-ring .value { stroke: var(--interactive); stroke-linecap: round; stroke-dasharray: 213.6; stroke-dashoffset: 58.9; }
+    :where(.candidate-page--index) .progress-ring-label { position: absolute; inset: 0; display: grid; place-items: center; color: var(--primary); font-size: 22px; font-weight: 800; }
+    :where(.candidate-page--index) .progress-ring-label small { margin-top: -25px; color: var(--muted); font-size: 10px; font-weight: 500; }
+    :where(.candidate-page--index) .stat-copy strong { display: block; color: var(--primary); font-size: 25px; line-height: 1.15; }
+    :where(.candidate-page--index) .stat-copy span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+    :where(.candidate-page--index) .stat-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    :where(.candidate-page--index) .stat-chip { padding: 5px 9px; border-radius: 6px; color: var(--muted); background: #F7F9FC; font-size: 11px; }
+    :where(.candidate-page--index) .stat-chip strong { display: inline; margin-right: 3px; color: var(--primary); font-size: 12px; }
 
-    .latest-application { margin: 0 24px 22px; padding: 15px 16px; border: 1px solid #E6ECF5; border-radius: 9px; background: #FBFCFE; }
-    .latest-label { margin: 0 0 11px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .4px; }
-    .latest-main { display: flex; align-items: center; gap: 13px; }
-    .company-logo { width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; color: var(--primary); background: #EAF2FF; font-size: 13px; font-weight: 800; }
-    .company-logo.orange { color: #9A5810; background: #FFF0D8; }
-    .company-logo.green { color: #147156; background: #E5F7F0; }
-    .job-basic { min-width: 0; flex: 1; }
-    .job-title { overflow: hidden; color: var(--primary); font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-    .job-company { margin-top: 3px; color: var(--muted); font-size: 12px; }
-    .status-pill { flex: 0 0 auto; padding: 5px 9px; border-radius: 6px; color: var(--interactive); background: var(--interactive-soft); font-size: 11px; font-weight: 700; }
-    .latest-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 13px; padding-top: 12px; border-top: 1px dashed #DCE4EF; }
-    .time-note { color: var(--muted); font-size: 11px; }
-    .outline-button { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 0 12px; border: 1px solid #BCD1ED; border-radius: 6px; color: var(--interactive); background: #fff; font-size: 12px; font-weight: 700; transition: all .2s; }
-    .outline-button:hover { border-color: var(--interactive); background: var(--interactive-soft); }
+    :where(.candidate-page--index) .latest-application { margin: 0 24px 22px; padding: 15px 16px; border: 1px solid #E6ECF5; border-radius: 9px; background: #FBFCFE; }
+    :where(.candidate-page--index) .latest-label { margin: 0 0 11px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .4px; }
+    :where(.candidate-page--index) .latest-main { display: flex; align-items: center; gap: 13px; }
+    :where(.candidate-page--index) .company-logo { width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; color: var(--primary); background: #EAF2FF; font-size: 13px; font-weight: 800; }
+    :where(.candidate-page--index) .company-logo.orange { color: #9A5810; background: #FFF0D8; }
+    :where(.candidate-page--index) .company-logo.green { color: #147156; background: #E5F7F0; }
+    :where(.candidate-page--index) .job-basic { min-width: 0; flex: 1; }
+    :where(.candidate-page--index) .job-title { overflow: hidden; color: var(--primary); font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    :where(.candidate-page--index) .job-company { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    :where(.candidate-page--index) .status-pill { flex: 0 0 auto; padding: 5px 9px; border-radius: 6px; color: var(--interactive); background: var(--interactive-soft); font-size: 11px; font-weight: 700; }
+    :where(.candidate-page--index) .latest-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 13px; padding-top: 12px; border-top: 1px dashed #DCE4EF; }
+    :where(.candidate-page--index) .time-note { color: var(--muted); font-size: 11px; }
+    :where(.candidate-page--index) .outline-button { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 0 12px; border: 1px solid #BCD1ED; border-radius: 6px; color: var(--interactive); background: #fff; font-size: 12px; font-weight: 700; transition: all .2s; }
+    :where(.candidate-page--index) .outline-button:hover { border-color: var(--interactive); background: var(--interactive-soft); }
 
     /* 企业动态 */
-    .activity-panel { min-height: 280px; overflow: hidden; }
-    .activity-list { max-height: 272px; display: flex; flex-direction: column; list-style: none; margin: 0; overflow-y: auto; padding: 0 24px 17px; }
-    .activity-item { display: flex; align-items: flex-start; flex: 0 0 auto; min-width: 0; gap: 12px; padding: 0 0 16px; }
-    .activity-item + .activity-item { padding-top: 16px; border-top: 1px solid #F0F2F6; }
-    .activity-item.activity-unread .activity-company { color: var(--primary); }
-    .activity-dot { position: relative; width: 9px; height: 9px; flex: 0 0 9px; margin-top: 5px; }
-    .activity-dot::before { content: ""; position: absolute; top: 0; left: 0; width: 9px; height: 9px; border-radius: 50%; background: var(--interactive); box-shadow: 0 0 0 4px var(--interactive-soft); }
-    .activity-item:nth-child(2) .activity-dot::before { background: #35A77F; box-shadow: 0 0 0 4px var(--success-soft); }
-    .activity-item:nth-child(3) .activity-dot::before { background: #E19A38; box-shadow: 0 0 0 4px var(--warning-soft); }
-    .activity-body { min-width: 0; flex: 1; overflow: hidden; }
-    .activity-company { overflow: hidden; color: var(--primary); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-    .activity-company span { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 400; }
-    .activity-content { display: -webkit-box; max-height: 38px; margin: 4px 0 0; overflow: hidden; color: #4D5F78; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; text-overflow: ellipsis; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-    .activity-time { margin-top: 6px; color: #9AA7B8; font-size: 11px; white-space: nowrap; }
+    :where(.candidate-page--index) .activity-panel { min-height: 280px; overflow: hidden; }
+    :where(.candidate-page--index) .activity-list { max-height: 272px; display: flex; flex-direction: column; list-style: none; margin: 0; overflow-y: auto; padding: 0 24px 17px; }
+    :where(.candidate-page--index) .activity-item { display: flex; align-items: flex-start; flex: 0 0 auto; min-width: 0; gap: 12px; padding: 0 0 16px; }
+    :where(.candidate-page--index) .activity-item + .activity-item { padding-top: 16px; border-top: 1px solid #F0F2F6; }
+    :where(.candidate-page--index) .activity-item.activity-unread .activity-company { color: var(--primary); }
+    :where(.candidate-page--index) .activity-dot { position: relative; width: 9px; height: 9px; flex: 0 0 9px; margin-top: 5px; }
+    :where(.candidate-page--index) .activity-dot::before { content: ""; position: absolute; top: 0; left: 0; width: 9px; height: 9px; border-radius: 50%; background: var(--interactive); box-shadow: 0 0 0 4px var(--interactive-soft); }
+    :where(.candidate-page--index) .activity-item:nth-child(2) .activity-dot::before { background: #35A77F; box-shadow: 0 0 0 4px var(--success-soft); }
+    :where(.candidate-page--index) .activity-item:nth-child(3) .activity-dot::before { background: #E19A38; box-shadow: 0 0 0 4px var(--warning-soft); }
+    :where(.candidate-page--index) .activity-body { min-width: 0; flex: 1; overflow: hidden; }
+    :where(.candidate-page--index) .activity-company { overflow: hidden; color: var(--primary); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    :where(.candidate-page--index) .activity-company span { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 400; }
+    :where(.candidate-page--index) .activity-content { display: -webkit-box; max-height: 38px; margin: 4px 0 0; overflow: hidden; color: #4D5F78; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; text-overflow: ellipsis; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    :where(.candidate-page--index) .activity-time { margin-top: 6px; color: #9AA7B8; font-size: 11px; white-space: nowrap; }
 
     /* 推荐岗位区域 */
-    .jobs-section { margin-top: 3px; }
-    .jobs-section .section-heading { flex-wrap: wrap; align-items: center; }
-    .jobs-section .section-heading > :first-child { flex: 1 1 280px; min-width: 0; }
-    .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin: 0 0 15px; }
-    .section-heading h2 { margin: 0; color: var(--primary); font-size: 18px; }
-    .section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
-    .jobs-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
-    .jobs-section .recommendation-resume-control { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: 12px; }
-    .jobs-section .recommendation-resume-select { width: clamp(140px, 15vw, 220px); min-width: 0; text-overflow: ellipsis; }
-    .jobs-section .recommendation-empty { margin: 0 0 15px; color: var(--muted); font-size: 13px; }
-    .jobs-section .recommendation-empty a { color: var(--interactive); }
-    .filter-select { height: 34px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #fff; font-size: 12px; }
-    .jobs-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-    .job-card { position: relative; display: flex; min-height: 224px; flex-direction: column; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: 0 4px 14px rgba(26, 60, 110, .04); transition: transform .2s ease, box-shadow .2s ease, border .2s; cursor: pointer; }
-    .job-card:hover { transform: translateY(-2px); border-color: #D3E1F4; box-shadow: 0 10px 22px rgba(26, 60, 110, .09); }
-    .job-card.hidden { display: none; }
-    .job-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-    .job-card .company-logo { width: 42px; height: 42px; border-radius: 10px; }
-    .bookmark-button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 6px; color: #A7B2C1; background: transparent; }
-    .bookmark-button:hover, .bookmark-button.saved { color: var(--interactive); background: var(--interactive-soft); }
-    .bookmark-button svg { width: 17px; height: 17px; fill: currentColor; stroke: currentColor; stroke-width: 1.5; }
-    .job-card h3 { overflow: hidden; margin: 14px 0 3px; color: var(--primary); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-    .job-card-company { color: var(--muted); font-size: 12px; }
-    .job-card-meta { display: flex; flex-wrap: wrap; gap: 7px 13px; margin-top: 13px; color: #4F617A; font-size: 12px; }
-    .meta-item { display: inline-flex; align-items: center; gap: 5px; }
-    .meta-item svg { width: 14px; height: 14px; color: #8C9BB0; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-    .job-card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-    .match-tag { padding: 4px 7px; border-radius: 5px; color: var(--interactive); background: var(--interactive-soft); font-size: 11px; font-weight: 700; }
-    .job-tag { padding: 4px 7px; border-radius: 5px; color: #5B6E87; background: #F1F4F8; font-size: 11px; }
-    .urgent-tag { padding: 4px 7px; border-radius: 5px; color: #B36512; background: var(--warning-soft); font-size: 11px; font-weight: 700; }
-    .job-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 15px; }
-    .salary { color: var(--primary); font-size: 13px; font-weight: 800; }
-    .salary small { color: var(--muted); font-size: 11px; font-weight: 400; }
-    .apply-button { min-width: 72px; height: 32px; padding: 0 12px; border: 0; border-radius: 6px; color: #fff; background: var(--interactive); font-size: 12px; font-weight: 700; transition: background .2s, transform .2s; }
-    .apply-button:hover { background: #1769DB; transform: translateY(-1px); }
-    .apply-button.applied { color: var(--success); background: var(--success-soft); }
-    .empty-state { grid-column: 1 / -1; display: none; padding: 34px; border: 1px dashed #CDD9E8; border-radius: 10px; color: var(--muted); background: #fff; text-align: center; }
-    .empty-state.visible { display: block; }
+    :where(.candidate-page--index) .jobs-section { margin-top: 3px; }
+    :where(.candidate-page--index) .jobs-section .section-heading { flex-wrap: wrap; align-items: center; }
+    :where(.candidate-page--index) .jobs-section .section-heading > :first-child { flex: 1 1 280px; min-width: 0; }
+    :where(.candidate-page--index) .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin: 0 0 15px; }
+    :where(.candidate-page--index) .section-heading h2 { margin: 0; color: var(--primary); font-size: 18px; }
+    :where(.candidate-page--index) .section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    :where(.candidate-page--index) .jobs-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+    :where(.candidate-page--index) .jobs-section .recommendation-resume-control { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: 12px; }
+    :where(.candidate-page--index) .jobs-section .recommendation-resume-select { width: clamp(140px, 15vw, 220px); min-width: 0; text-overflow: ellipsis; }
+    :where(.candidate-page--index) .jobs-section .recommendation-empty { margin: 0 0 15px; color: var(--muted); font-size: 13px; }
+    :where(.candidate-page--index) .jobs-section .recommendation-empty a { color: var(--interactive); }
+    :where(.candidate-page--index) .filter-select { height: 34px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #fff; font-size: 12px; }
+    :where(.candidate-page--index) .jobs-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    :where(.candidate-page--index) .job-card { position: relative; display: flex; min-height: 224px; flex-direction: column; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: 0 4px 14px rgba(26, 60, 110, .04); transition: transform .2s ease, box-shadow .2s ease, border .2s; cursor: pointer; }
+    :where(.candidate-page--index) .job-card:hover { transform: translateY(-2px); border-color: #D3E1F4; box-shadow: 0 10px 22px rgba(26, 60, 110, .09); }
+    :where(.candidate-page--index) .job-card.hidden { display: none; }
+    :where(.candidate-page--index) .job-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    :where(.candidate-page--index) .job-card .company-logo { width: 42px; height: 42px; border-radius: 10px; }
+    :where(.candidate-page--index) .bookmark-button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 6px; color: #A7B2C1; background: transparent; }
+    :where(.candidate-page--index) .bookmark-button:hover, :where(.candidate-page--index) .bookmark-button.saved { color: var(--interactive); background: var(--interactive-soft); }
+    :where(.candidate-page--index) .bookmark-button svg { width: 17px; height: 17px; fill: currentColor; stroke: currentColor; stroke-width: 1.5; }
+    :where(.candidate-page--index) .job-card h3 { overflow: hidden; margin: 14px 0 3px; color: var(--primary); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+    :where(.candidate-page--index) .job-card-company { color: var(--muted); font-size: 12px; }
+    :where(.candidate-page--index) .job-card-meta { display: flex; flex-wrap: wrap; gap: 7px 13px; margin-top: 13px; color: #4F617A; font-size: 12px; }
+    :where(.candidate-page--index) .meta-item { display: inline-flex; align-items: center; gap: 5px; }
+    :where(.candidate-page--index) .meta-item svg { width: 14px; height: 14px; color: #8C9BB0; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    :where(.candidate-page--index) .job-card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+    :where(.candidate-page--index) .match-tag { padding: 4px 7px; border-radius: 5px; color: var(--interactive); background: var(--interactive-soft); font-size: 11px; font-weight: 700; }
+    :where(.candidate-page--index) .job-tag { padding: 4px 7px; border-radius: 5px; color: #5B6E87; background: #F1F4F8; font-size: 11px; }
+    :where(.candidate-page--index) .urgent-tag { padding: 4px 7px; border-radius: 5px; color: #B36512; background: var(--warning-soft); font-size: 11px; font-weight: 700; }
+    :where(.candidate-page--index) .job-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 15px; }
+    :where(.candidate-page--index) .salary { color: var(--primary); font-size: 13px; font-weight: 800; }
+    :where(.candidate-page--index) .salary small { color: var(--muted); font-size: 11px; font-weight: 400; }
+    :where(.candidate-page--index) .apply-button { min-width: 72px; height: 32px; padding: 0 12px; border: 0; border-radius: 6px; color: #fff; background: var(--interactive); font-size: 12px; font-weight: 700; transition: background .2s, transform .2s; }
+    :where(.candidate-page--index) .apply-button:hover { background: #1769DB; transform: translateY(-1px); }
+    :where(.candidate-page--index) .apply-button.applied { color: var(--success); background: var(--success-soft); }
+    :where(.candidate-page--index) .empty-state { grid-column: 1 / -1; display: none; padding: 34px; border: 1px dashed #CDD9E8; border-radius: 10px; color: var(--muted); background: #fff; text-align: center; }
+    :where(.candidate-page--index) .empty-state.visible { display: block; }
 
     /* 通知浮层和详情弹窗 */
-    .notification-popover { position: fixed; z-index: 30; top: 63px; right: max(24px, calc((100vw - 1240px) / 2)); width: 320px; display: none; border: 1px solid var(--line); border-radius: 10px; background: #fff; box-shadow: 0 16px 38px rgba(23, 43, 77, .16); overflow: hidden; }
-    .notification-popover.open { display: block; animation: popIn .16s ease-out; }
-    @keyframes popIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
-    .popover-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 16px; border-bottom: 1px solid var(--line); }
-    .popover-head strong { color: var(--primary); font-size: 14px; }
-    .popover-head button { padding: 0; border: 0; color: var(--interactive); background: transparent; font-size: 11px; }
-    .notification-item { display: flex; gap: 10px; padding: 13px 16px; border-bottom: 1px solid #F1F3F7; }
-    .notification-icon { width: 28px; height: 28px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 7px; color: var(--interactive); background: var(--interactive-soft); font-size: 13px; font-weight: 800; }
-    .notification-item p { margin: 0; color: var(--text); font-size: 12px; line-height: 1.45; }
-    .notification-item time { display: block; margin-top: 4px; color: #9AA7B8; font-size: 10px; }
-    .modal-backdrop { position: fixed; z-index: 40; inset: 0; display: none; align-items: center; justify-content: center; padding: 22px; background: rgba(16, 45, 83, .32); }
-    .modal-backdrop.open { display: flex; }
-    .detail-modal { width: min(520px, 100%); border-radius: 12px; background: #fff; box-shadow: 0 22px 50px rgba(16, 45, 83, .2); overflow: hidden; }
-    .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid var(--line); }
-    .modal-title-wrap { display: flex; align-items: center; gap: 13px; }
-    .modal-title { margin: 0; color: var(--primary); font-size: 17px; }
-    .modal-company { margin-top: 3px; color: var(--muted); font-size: 12px; }
-    .modal-close { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 20px; }
-    .modal-close:hover { background: #F2F5F9; }
-    .modal-body { padding: 21px 24px 24px; }
-    .progress-track { display: flex; align-items: flex-start; justify-content: space-between; gap: 0; margin: 15px 0 24px; }
-    .progress-step { position: relative; flex: 1; text-align: center; }
-    .progress-step::before { content: ""; position: absolute; z-index: 0; top: 9px; right: 50%; left: -50%; height: 2px; background: #E5EAF2; }
-    .progress-step:first-child::before { display: none; }
-    .progress-step.done::before, .progress-step.current::before { background: var(--interactive); }
-    .step-dot { position: relative; z-index: 1; width: 20px; height: 20px; display: grid; place-items: center; margin: 0 auto 8px; border: 3px solid #E5EAF2; border-radius: 50%; color: #fff; background: #fff; font-size: 10px; }
-    .progress-step.done .step-dot, .progress-step.current .step-dot { border-color: var(--interactive); background: var(--interactive); }
-    .progress-step span { color: var(--muted); font-size: 11px; }
-    .progress-step.current span { color: var(--interactive); font-weight: 700; }
-    .modal-note { margin: 0; padding: 12px 13px; border-radius: 7px; color: #53647B; background: #F7F9FC; font-size: 12px; line-height: 1.6; }
+    :where(.candidate-page--index) .notification-popover { position: fixed; z-index: 30; top: 63px; right: max(24px, calc((100vw - 1240px) / 2)); width: 320px; display: none; border: 1px solid var(--line); border-radius: 10px; background: #fff; box-shadow: 0 16px 38px rgba(23, 43, 77, .16); overflow: hidden; }
+    :where(.candidate-page--index) .notification-popover.open { display: block; animation: candidate-page--index-popIn .16s ease-out; }
+    @keyframes candidate-page--index-popIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    :where(.candidate-page--index) .popover-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 16px; border-bottom: 1px solid var(--line); }
+    :where(.candidate-page--index) .popover-head strong { color: var(--primary); font-size: 14px; }
+    :where(.candidate-page--index) .popover-head button { padding: 0; border: 0; color: var(--interactive); background: transparent; font-size: 11px; }
+    :where(.candidate-page--index) .notification-item { display: flex; gap: 10px; padding: 13px 16px; border-bottom: 1px solid #F1F3F7; }
+    :where(.candidate-page--index) .notification-icon { width: 28px; height: 28px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 7px; color: var(--interactive); background: var(--interactive-soft); font-size: 13px; font-weight: 800; }
+    :where(.candidate-page--index) .notification-item p { margin: 0; color: var(--text); font-size: 12px; line-height: 1.45; }
+    :where(.candidate-page--index) .notification-item time { display: block; margin-top: 4px; color: #9AA7B8; font-size: 10px; }
+    :where(.candidate-page--index) .modal-backdrop { position: fixed; z-index: 40; inset: 0; display: none; align-items: center; justify-content: center; padding: 22px; background: rgba(16, 45, 83, .32); }
+    :where(.candidate-page--index) .modal-backdrop.open { display: flex; }
+    :where(.candidate-page--index) .detail-modal { width: min(520px, 100%); border-radius: 12px; background: #fff; box-shadow: 0 22px 50px rgba(16, 45, 83, .2); overflow: hidden; }
+    :where(.candidate-page--index) .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid var(--line); }
+    :where(.candidate-page--index) .modal-title-wrap { display: flex; align-items: center; gap: 13px; }
+    :where(.candidate-page--index) .modal-title { margin: 0; color: var(--primary); font-size: 17px; }
+    :where(.candidate-page--index) .modal-company { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    :where(.candidate-page--index) .modal-close { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 20px; }
+    :where(.candidate-page--index) .modal-close:hover { background: #F2F5F9; }
+    :where(.candidate-page--index) .modal-body { padding: 21px 24px 24px; }
+    :where(.candidate-page--index) .progress-track { display: flex; align-items: flex-start; justify-content: space-between; gap: 0; margin: 15px 0 24px; }
+    :where(.candidate-page--index) .progress-step { position: relative; flex: 1; text-align: center; }
+    :where(.candidate-page--index) .progress-step::before { content: ""; position: absolute; z-index: 0; top: 9px; right: 50%; left: -50%; height: 2px; background: #E5EAF2; }
+    :where(.candidate-page--index) .progress-step:first-child::before { display: none; }
+    :where(.candidate-page--index) .progress-step.done::before, :where(.candidate-page--index) .progress-step.current::before { background: var(--interactive); }
+    :where(.candidate-page--index) .step-dot { position: relative; z-index: 1; width: 20px; height: 20px; display: grid; place-items: center; margin: 0 auto 8px; border: 3px solid #E5EAF2; border-radius: 50%; color: #fff; background: #fff; font-size: 10px; }
+    :where(.candidate-page--index) .progress-step.done .step-dot, :where(.candidate-page--index) .progress-step.current .step-dot { border-color: var(--interactive); background: var(--interactive); }
+    :where(.candidate-page--index) .progress-step span { color: var(--muted); font-size: 11px; }
+    :where(.candidate-page--index) .progress-step.current span { color: var(--interactive); font-weight: 700; }
+    :where(.candidate-page--index) .modal-note { margin: 0; padding: 12px 13px; border-radius: 7px; color: #53647B; background: #F7F9FC; font-size: 12px; line-height: 1.6; }
 
-    .toast { position: fixed; z-index: 60; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 9px; max-width: calc(100vw - 48px); padding: 11px 15px; border: 1px solid #CCE9DE; border-radius: 8px; color: #176B50; background: #F2FBF7; box-shadow: 0 10px 25px rgba(23, 43, 77, .1); font-size: 12px; opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .2s, transform .2s; }
-    .toast.show { opacity: 1; transform: translateY(0); }
+    :where(.candidate-page--index) .toast { position: fixed; z-index: 60; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 9px; max-width: calc(100vw - 48px); padding: 11px 15px; border: 1px solid #CCE9DE; border-radius: 8px; color: #176B50; background: #F2FBF7; box-shadow: 0 10px 25px rgba(23, 43, 77, .1); font-size: 12px; opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .2s, transform .2s; }
+    :where(.candidate-page--index) .toast.show { opacity: 1; transform: translateY(0); }
 
     @media (max-width: 980px) {
-      .topbar-inner, .main-content { width: min(100% - 32px, 760px); }
-      .topbar-inner { gap: 15px; }
-      .brand-tag, .profile-meta, .profile-chevron { display: none; }
-      .main-nav { margin-left: auto; }
-      .nav-link { padding: 0 9px; }
-      .nav-link.active::after { right: 9px; left: 9px; }
-      .topbar-actions { margin-left: 0; }
-      .dashboard-grid { grid-template-columns: 1fr; }
-      .jobs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      :where(.candidate-page--index) .topbar-inner, :where(.candidate-page--index) .main-content { width: min(100% - 32px, 760px); }
+      :where(.candidate-page--index) .topbar-inner { gap: 15px; }
+      :where(.candidate-page--index) .brand-tag, :where(.candidate-page--index) .profile-meta, :where(.candidate-page--index) .profile-chevron { display: none; }
+      :where(.candidate-page--index) .main-nav { margin-left: auto; }
+      :where(.candidate-page--index) .nav-link { padding: 0 9px; }
+      :where(.candidate-page--index) .nav-link.active::after { right: 9px; left: 9px; }
+      :where(.candidate-page--index) .topbar-actions { margin-left: 0; }
+      :where(.candidate-page--index) .dashboard-grid { grid-template-columns: 1fr; }
+      :where(.candidate-page--index) .jobs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 640px) {
-      .topbar { height: 64px; }
-      .topbar-inner, .main-content { width: calc(100% - 28px); }
-      .topbar-inner { gap: 9px; }
-      .brand-name { font-size: 16px; }
-      .main-nav { gap: 0; }
-      .nav-link { width: 38px; height: 64px; padding: 0; justify-content: center; font-size: 0; }
-      .nav-link::before { font-size: 17px; }
-      .nav-link:nth-child(1)::before { content: "⌂"; }
-      .nav-link:nth-child(2)::before { content: "▣"; }
-      .nav-link:nth-child(3)::before { content: "◷"; }
-      .nav-link:nth-child(4)::before { content: "◎"; }
-      .nav-link.active::after { right: 7px; left: 7px; }
-      .nav-badge { position: absolute; top: 14px; right: 1px; font-size: 9px; }
-      .topbar-actions { gap: 2px; }
-      .profile-chip { padding: 4px 0; }
-      .main-content { padding-top: 25px; }
-      .welcome-row { display: block; }
-      .search-box { width: 100%; margin-top: 18px; }
-      .application-overview { gap: 15px; padding-right: 18px; padding-left: 18px; }
-      .latest-application { margin-right: 18px; margin-left: 18px; }
-      .panel-header { padding-right: 18px; padding-left: 18px; }
-      .activity-list { padding-right: 18px; padding-left: 18px; }
-      .section-heading { display: block; }
-      .jobs-controls { margin-top: 12px; justify-content: flex-start; }
-      .jobs-section .recommendation-resume-control { flex-basis: 100%; }
-      .jobs-section .recommendation-resume-select { flex: 1; width: 0; }
-      .jobs-grid { grid-template-columns: 1fr; }
-      .job-card { min-height: 210px; }
-      .notification-popover { top: 57px; right: 14px; width: min(320px, calc(100vw - 28px)); }
+      :where(.candidate-page--index) .topbar { height: 64px; }
+      :where(.candidate-page--index) .topbar-inner, :where(.candidate-page--index) .main-content { width: calc(100% - 28px); }
+      :where(.candidate-page--index) .topbar-inner { gap: 9px; }
+      :where(.candidate-page--index) .brand-name { font-size: 16px; }
+      :where(.candidate-page--index) .main-nav { gap: 0; }
+      :where(.candidate-page--index) .nav-link { width: 38px; height: 64px; padding: 0; justify-content: center; font-size: 0; }
+      :where(.candidate-page--index) .nav-link::before { font-size: 17px; }
+      :where(.candidate-page--index) .nav-link:nth-child(1)::before { content: "⌂"; }
+      :where(.candidate-page--index) .nav-link:nth-child(2)::before { content: "▣"; }
+      :where(.candidate-page--index) .nav-link:nth-child(3)::before { content: "◷"; }
+      :where(.candidate-page--index) .nav-link:nth-child(4)::before { content: "◎"; }
+      :where(.candidate-page--index) .nav-link.active::after { right: 7px; left: 7px; }
+      :where(.candidate-page--index) .nav-badge { position: absolute; top: 14px; right: 1px; font-size: 9px; }
+      :where(.candidate-page--index) .topbar-actions { gap: 2px; }
+      :where(.candidate-page--index) .profile-chip { padding: 4px 0; }
+      :where(.candidate-page--index) .main-content { padding-top: 25px; }
+      :where(.candidate-page--index) .welcome-row { display: block; }
+      :where(.candidate-page--index) .search-box { width: 100%; margin-top: 18px; }
+      :where(.candidate-page--index) .application-overview { gap: 15px; padding-right: 18px; padding-left: 18px; }
+      :where(.candidate-page--index) .latest-application { margin-right: 18px; margin-left: 18px; }
+      :where(.candidate-page--index) .panel-header { padding-right: 18px; padding-left: 18px; }
+      :where(.candidate-page--index) .activity-list { padding-right: 18px; padding-left: 18px; }
+      :where(.candidate-page--index) .section-heading { display: block; }
+      :where(.candidate-page--index) .jobs-controls { margin-top: 12px; justify-content: flex-start; }
+      :where(.candidate-page--index) .jobs-section .recommendation-resume-control { flex-basis: 100%; }
+      :where(.candidate-page--index) .jobs-section .recommendation-resume-select { flex: 1; width: 0; }
+      :where(.candidate-page--index) .jobs-grid { grid-template-columns: 1fr; }
+      :where(.candidate-page--index) .job-card { min-height: 210px; }
+      :where(.candidate-page--index) .notification-popover { top: 57px; right: 14px; width: min(320px, calc(100vw - 28px)); }
     }
-    .job-card:focus-visible{outline:3px solid rgba(43,127,255,.22);outline-offset:3px}.job-card .bookmark-button,.job-card .apply-button{cursor:pointer}
+    :where(.candidate-page--index) .job-card:focus-visible{outline:3px solid rgba(43,127,255,.22);outline-offset:3px}:where(.candidate-page--index) .job-card .bookmark-button,:where(.candidate-page--index) .job-card .apply-button{cursor:pointer}
 
     /* 面试安排日历 */
-    .schedule-section { margin-top: 26px; }
-    .schedule-panel { overflow: hidden; }
-    .schedule-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 24px 19px; }
-    .schedule-caption { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .mock-badge { padding: 3px 7px; border: 1px solid #F1D59B; border-radius: 999px; color: #9A6815; background: #FFF8E9; font-size: 9px; font-weight: 700; }
-    .schedule-toolbar { display: flex; align-items: center; gap: 12px; }
-    .calendar-switcher { display: flex; align-items: center; gap: 12px; color: var(--primary); }
-    .calendar-switcher strong { min-width: 88px; color: var(--primary); font-size: 14px; text-align: center; }
-    .calendar-nav { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; color: var(--primary); background: #fff; font-size: 22px; line-height: 1; transition: border .2s, background .2s, color .2s; }
-    .calendar-nav:hover { border-color: #BCD1ED; color: var(--interactive); background: var(--interactive-soft); }
-    .today-button { min-height: 30px; padding: 0 11px; border: 1px solid #BCD1ED; border-radius: 7px; color: var(--interactive); background: #fff; font-size: 11px; font-weight: 700; }
-    .today-button:hover { background: var(--interactive-soft); }
-    .schedule-layout { display: grid; grid-template-columns: minmax(0, 1.28fr) minmax(320px, .72fr); border-top: 1px solid var(--line); }
-    .calendar-area { min-width: 0; padding: 22px 24px 18px; border-right: 1px solid var(--line); }
-    .weekday-row, .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; }
-    .weekday-row { margin-bottom: 7px; color: #93A0B3; font-size: 11px; font-weight: 700; text-align: center; }
-    .calendar-day { position: relative; min-width: 0; min-height: 70px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 7px 8px; border: 1px solid transparent; border-radius: 8px; color: var(--text); background: #fff; text-align: center; transition: border .2s, background .2s, box-shadow .2s; }
-    .calendar-day:hover { border-color: #C8DAF2; background: #F8FBFF; }
-    .calendar-day.outside { color: #B9C2CF; background: #FBFCFE; }
-    .calendar-day.today { border-color: #A7C9F6; background: #F7FBFF; }
-    .calendar-day.today .day-number { color: var(--interactive); font-weight: 800; }
-    .calendar-day.today::before { content: "今"; position: absolute; top: 5px; right: 6px; min-width: 13px; height: 13px; padding: 1px 3px; border-radius: 4px; color: #fff; background: var(--interactive); font-size: 8px; font-weight: 800; line-height: 11px; }
-    .calendar-day.selected { border-color: #8CB6EF; background: var(--interactive-soft); box-shadow: inset 0 0 0 1px rgba(43, 127, 255, .08); }
-    .calendar-day.selected .day-number { color: var(--primary); font-weight: 800; }
-    .day-number { font-size: 13px; line-height: 1.2; }
-    .day-events { display: inline-flex; align-items: center; gap: 5px; min-height: 17px; color: var(--interactive); font-size: 10px; font-weight: 800; }
-    .day-events i, .legend-dot { width: 6px; height: 6px; display: inline-block; border-radius: 50%; background: var(--interactive); }
-    .calendar-legend { display: flex; align-items: center; gap: 16px; margin-top: 14px; color: #718198; font-size: 10px; }
-    .calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
-    .legend-today { width: 12px; height: 12px; display: inline-grid; place-items: center; border: 1px solid #A7C9F6; border-radius: 4px; color: var(--interactive); background: #F7FBFF; font-size: 8px; font-style: normal; }
-    .legend-today::after { content: "今"; }
-    .schedule-details { min-width: 0; padding: 22px 22px 20px; background: #FBFCFE; }
-    .details-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
-    .details-kicker { color: #9AA7B8; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
-    .details-heading h3 { margin: 4px 0 0; color: var(--primary); font-size: 16px; }
-    .loading-label { color: var(--interactive); font-size: 10px; font-weight: 700; }
-    .schedule-list { display: grid; gap: 10px; }
-    .schedule-item { position: relative; display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 12px; padding: 13px; border: 1px solid #E2EAF3; border-radius: 9px; background: #fff; }
-    .schedule-item-time { padding-right: 10px; border-right: 1px solid #E8EDF4; }
-    .schedule-item-time strong { display: block; color: var(--primary); font-size: 16px; line-height: 1.2; }
-    .schedule-item-time span { display: block; margin-top: 5px; color: #9AA7B8; font-size: 10px; white-space: nowrap; }
-    .schedule-item-copy { min-width: 0; }
-    .schedule-item-copy h4 { overflow: hidden; margin: 0; color: var(--primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-    .schedule-item-copy p { overflow: hidden; margin: 4px 0 0; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-    .schedule-item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 8px; color: #8492A5; font-size: 10px; }
-    .schedule-status { padding: 3px 6px; border-radius: 4px; color: #B36B16; background: var(--warning-soft); font-weight: 700; }
-    .schedule-status.in-progress { color: #167554; background: var(--success-soft); }
-    .schedule-status.finished { color: #738197; background: #F0F3F7; }
-    .schedule-item-actions { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 3px; }
-    .schedule-link { padding: 0; border: 0; color: var(--interactive); background: transparent; font-size: 11px; font-weight: 700; }
-    .schedule-link:hover { color: var(--primary); }
-    .schedule-link span { margin-left: 3px; }
-    .schedule-link.secondary { color: #718198; font-weight: 600; }
-    .schedule-link.unavailable { color: #9AA7B8; cursor: default; font-weight: 600; }
-    .schedule-state { min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: var(--muted); font-size: 11px; text-align: center; }
-    .schedule-state strong { color: var(--primary); font-size: 13px; }
-    .schedule-state .outline-button { margin-top: 5px; }
-    .error-state { color: #A95D64; }
-    .empty-calendar-icon { width: 38px; height: 38px; display: grid; place-items: center; margin-bottom: 3px; border-radius: 50%; color: #90A0B5; background: #EEF3F8; font-size: 21px; }
-    .schedule-modal-backdrop { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(16, 45, 83, .32); }
-    .schedule-modal { position: relative; width: min(520px, 100%); padding: 28px; border: 1px solid #DDE7F2; border-radius: 12px; background: #fff; box-shadow: 0 18px 50px rgba(16, 45, 83, .2); }
-    .schedule-modal-close { position: absolute; top: 15px; right: 17px; width: 30px; height: 30px; border: 0; color: #718198; background: transparent; font-size: 25px; line-height: 1; }
-    .schedule-modal h2 { margin: 7px 38px 0 0; color: var(--primary); font-size: 20px; }
-    .schedule-modal-summary { margin: 5px 0 20px; color: var(--muted); font-size: 12px; }
-    .schedule-modal-info { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 11px 13px; border-radius: 7px; background: #F7FAFE; color: #718198; font-size: 11px; }
-    .schedule-modal-info strong { color: var(--primary); font-size: 12px; font-weight: 700; text-align: right; }
-    .schedule-link-field { display: block; margin-top: 17px; color: var(--primary); font-size: 11px; font-weight: 700; }
-    .schedule-link-field input { width: 100%; height: 42px; margin-top: 7px; padding: 0 11px; border: 1px solid #D9E3EF; border-radius: 7px; color: #536985; background: #FBFCFE; font-size: 12px; outline: 0; }
-    .schedule-link-field input:focus { border-color: #8CB6EF; box-shadow: 0 0 0 3px rgba(43, 127, 255, .1); }
-    .schedule-modal-tip { margin: 12px 0 0; color: #718198; font-size: 11px; }
-    .schedule-modal-tip.expired { color: #A95D64; }
-    .schedule-modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
-    .schedule-modal-actions .outline-button, .schedule-modal-actions .primary-button { min-height: 36px; padding: 0 14px; border-radius: 7px; font-size: 11px; font-weight: 700; }
-    .schedule-modal-actions .primary-button { border: 1px solid var(--interactive); color: #fff; background: var(--interactive); }
-    .schedule-modal-actions .primary-button:disabled { border-color: #CBD5E2; color: #93A0B3; background: #E9EEF4; cursor: not-allowed; }
+    :where(.candidate-page--index) .schedule-section { margin-top: 26px; }
+    :where(.candidate-page--index) .schedule-panel { overflow: hidden; }
+    :where(.candidate-page--index) .schedule-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 24px 19px; }
+    :where(.candidate-page--index) .schedule-caption { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    :where(.candidate-page--index) .mock-badge { padding: 3px 7px; border: 1px solid #F1D59B; border-radius: 999px; color: #9A6815; background: #FFF8E9; font-size: 9px; font-weight: 700; }
+    :where(.candidate-page--index) .schedule-toolbar { display: flex; align-items: center; gap: 12px; }
+    :where(.candidate-page--index) .calendar-switcher { display: flex; align-items: center; gap: 12px; color: var(--primary); }
+    :where(.candidate-page--index) .calendar-switcher strong { min-width: 88px; color: var(--primary); font-size: 14px; text-align: center; }
+    :where(.candidate-page--index) .calendar-nav { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; color: var(--primary); background: #fff; font-size: 22px; line-height: 1; transition: border .2s, background .2s, color .2s; }
+    :where(.candidate-page--index) .calendar-nav:hover { border-color: #BCD1ED; color: var(--interactive); background: var(--interactive-soft); }
+    :where(.candidate-page--index) .today-button { min-height: 30px; padding: 0 11px; border: 1px solid #BCD1ED; border-radius: 7px; color: var(--interactive); background: #fff; font-size: 11px; font-weight: 700; }
+    :where(.candidate-page--index) .today-button:hover { background: var(--interactive-soft); }
+    :where(.candidate-page--index) .schedule-layout { display: grid; grid-template-columns: minmax(0, 1.28fr) minmax(320px, .72fr); border-top: 1px solid var(--line); }
+    :where(.candidate-page--index) .calendar-area { min-width: 0; padding: 22px 24px 18px; border-right: 1px solid var(--line); }
+    :where(.candidate-page--index) .weekday-row, :where(.candidate-page--index) .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; }
+    :where(.candidate-page--index) .weekday-row { margin-bottom: 7px; color: #93A0B3; font-size: 11px; font-weight: 700; text-align: center; }
+    :where(.candidate-page--index) .calendar-day { position: relative; min-width: 0; min-height: 70px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 7px 8px; border: 1px solid transparent; border-radius: 8px; color: var(--text); background: #fff; text-align: center; transition: border .2s, background .2s, box-shadow .2s; }
+    :where(.candidate-page--index) .calendar-day:hover { border-color: #C8DAF2; background: #F8FBFF; }
+    :where(.candidate-page--index) .calendar-day.outside { color: #B9C2CF; background: #FBFCFE; }
+    :where(.candidate-page--index) .calendar-day.today { border-color: #A7C9F6; background: #F7FBFF; }
+    :where(.candidate-page--index) .calendar-day.today .day-number { color: var(--interactive); font-weight: 800; }
+    :where(.candidate-page--index) .calendar-day.today::before { content: "今"; position: absolute; top: 5px; right: 6px; min-width: 13px; height: 13px; padding: 1px 3px; border-radius: 4px; color: #fff; background: var(--interactive); font-size: 8px; font-weight: 800; line-height: 11px; }
+    :where(.candidate-page--index) .calendar-day.selected { border-color: #8CB6EF; background: var(--interactive-soft); box-shadow: inset 0 0 0 1px rgba(43, 127, 255, .08); }
+    :where(.candidate-page--index) .calendar-day.selected .day-number { color: var(--primary); font-weight: 800; }
+    :where(.candidate-page--index) .day-number { font-size: 13px; line-height: 1.2; }
+    :where(.candidate-page--index) .day-events { display: inline-flex; align-items: center; gap: 5px; min-height: 17px; color: var(--interactive); font-size: 10px; font-weight: 800; }
+    :where(.candidate-page--index) .day-events i, :where(.candidate-page--index) .legend-dot { width: 6px; height: 6px; display: inline-block; border-radius: 50%; background: var(--interactive); }
+    :where(.candidate-page--index) .calendar-legend { display: flex; align-items: center; gap: 16px; margin-top: 14px; color: #718198; font-size: 10px; }
+    :where(.candidate-page--index) .calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    :where(.candidate-page--index) .legend-today { width: 12px; height: 12px; display: inline-grid; place-items: center; border: 1px solid #A7C9F6; border-radius: 4px; color: var(--interactive); background: #F7FBFF; font-size: 8px; font-style: normal; }
+    :where(.candidate-page--index) .legend-today::after { content: "今"; }
+    :where(.candidate-page--index) .schedule-details { min-width: 0; padding: 22px 22px 20px; background: #FBFCFE; }
+    :where(.candidate-page--index) .details-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
+    :where(.candidate-page--index) .details-kicker { color: #9AA7B8; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
+    :where(.candidate-page--index) .details-heading h3 { margin: 4px 0 0; color: var(--primary); font-size: 16px; }
+    :where(.candidate-page--index) .loading-label { color: var(--interactive); font-size: 10px; font-weight: 700; }
+    :where(.candidate-page--index) .schedule-list { display: grid; gap: 10px; }
+    :where(.candidate-page--index) .schedule-item { position: relative; display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 12px; padding: 13px; border: 1px solid #E2EAF3; border-radius: 9px; background: #fff; }
+    :where(.candidate-page--index) .schedule-item-time { padding-right: 10px; border-right: 1px solid #E8EDF4; }
+    :where(.candidate-page--index) .schedule-item-time strong { display: block; color: var(--primary); font-size: 16px; line-height: 1.2; }
+    :where(.candidate-page--index) .schedule-item-time span { display: block; margin-top: 5px; color: #9AA7B8; font-size: 10px; white-space: nowrap; }
+    :where(.candidate-page--index) .schedule-item-copy { min-width: 0; }
+    :where(.candidate-page--index) .schedule-item-copy h4 { overflow: hidden; margin: 0; color: var(--primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    :where(.candidate-page--index) .schedule-item-copy p { overflow: hidden; margin: 4px 0 0; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    :where(.candidate-page--index) .schedule-item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 8px; color: #8492A5; font-size: 10px; }
+    :where(.candidate-page--index) .schedule-status { padding: 3px 6px; border-radius: 4px; color: #B36B16; background: var(--warning-soft); font-weight: 700; }
+    :where(.candidate-page--index) .schedule-status.in-progress { color: #167554; background: var(--success-soft); }
+    :where(.candidate-page--index) .schedule-status.finished { color: #738197; background: #F0F3F7; }
+    :where(.candidate-page--index) .schedule-item-actions { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 3px; }
+    :where(.candidate-page--index) .schedule-link { padding: 0; border: 0; color: var(--interactive); background: transparent; font-size: 11px; font-weight: 700; }
+    :where(.candidate-page--index) .schedule-link:hover { color: var(--primary); }
+    :where(.candidate-page--index) .schedule-link span { margin-left: 3px; }
+    :where(.candidate-page--index) .schedule-link.secondary { color: #718198; font-weight: 600; }
+    :where(.candidate-page--index) .schedule-link.unavailable { color: #9AA7B8; cursor: default; font-weight: 600; }
+    :where(.candidate-page--index) .schedule-state { min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: var(--muted); font-size: 11px; text-align: center; }
+    :where(.candidate-page--index) .schedule-state strong { color: var(--primary); font-size: 13px; }
+    :where(.candidate-page--index) .schedule-state .outline-button { margin-top: 5px; }
+    :where(.candidate-page--index) .error-state { color: #A95D64; }
+    :where(.candidate-page--index) .empty-calendar-icon { width: 38px; height: 38px; display: grid; place-items: center; margin-bottom: 3px; border-radius: 50%; color: #90A0B5; background: #EEF3F8; font-size: 21px; }
+    :where(.candidate-page--index) .schedule-modal-backdrop { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(16, 45, 83, .32); }
+    :where(.candidate-page--index) .schedule-modal { position: relative; width: min(520px, 100%); padding: 28px; border: 1px solid #DDE7F2; border-radius: 12px; background: #fff; box-shadow: 0 18px 50px rgba(16, 45, 83, .2); }
+    :where(.candidate-page--index) .schedule-modal-close { position: absolute; top: 15px; right: 17px; width: 30px; height: 30px; border: 0; color: #718198; background: transparent; font-size: 25px; line-height: 1; }
+    :where(.candidate-page--index) .schedule-modal h2 { margin: 7px 38px 0 0; color: var(--primary); font-size: 20px; }
+    :where(.candidate-page--index) .schedule-modal-summary { margin: 5px 0 20px; color: var(--muted); font-size: 12px; }
+    :where(.candidate-page--index) .schedule-modal-info { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 11px 13px; border-radius: 7px; background: #F7FAFE; color: #718198; font-size: 11px; }
+    :where(.candidate-page--index) .schedule-modal-info strong { color: var(--primary); font-size: 12px; font-weight: 700; text-align: right; }
+    :where(.candidate-page--index) .schedule-link-field { display: block; margin-top: 17px; color: var(--primary); font-size: 11px; font-weight: 700; }
+    :where(.candidate-page--index) .schedule-link-field input { width: 100%; height: 42px; margin-top: 7px; padding: 0 11px; border: 1px solid #D9E3EF; border-radius: 7px; color: #536985; background: #FBFCFE; font-size: 12px; outline: 0; }
+    :where(.candidate-page--index) .schedule-link-field input:focus { border-color: #8CB6EF; box-shadow: 0 0 0 3px rgba(43, 127, 255, .1); }
+    :where(.candidate-page--index) .schedule-modal-tip { margin: 12px 0 0; color: #718198; font-size: 11px; }
+    :where(.candidate-page--index) .schedule-modal-tip.expired { color: #A95D64; }
+    :where(.candidate-page--index) .schedule-modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
+    :where(.candidate-page--index) .schedule-modal-actions .outline-button, :where(.candidate-page--index) .schedule-modal-actions .primary-button { min-height: 36px; padding: 0 14px; border-radius: 7px; font-size: 11px; font-weight: 700; }
+    :where(.candidate-page--index) .schedule-modal-actions .primary-button { border: 1px solid var(--interactive); color: #fff; background: var(--interactive); }
+    :where(.candidate-page--index) .schedule-modal-actions .primary-button:disabled { border-color: #CBD5E2; color: #93A0B3; background: #E9EEF4; cursor: not-allowed; }
 
     @media (max-width: 980px) {
-      .schedule-layout { grid-template-columns: 1fr; }
-      .calendar-area { border-right: 0; border-bottom: 1px solid var(--line); }
+      :where(.candidate-page--index) .schedule-layout { grid-template-columns: 1fr; }
+      :where(.candidate-page--index) .calendar-area { border-right: 0; border-bottom: 1px solid var(--line); }
     }
 
     @media (max-width: 640px) {
-      .schedule-header { display: block; padding-right: 18px; padding-left: 18px; }
-      .schedule-toolbar { justify-content: space-between; margin-top: 16px; }
-      .calendar-area { padding: 18px 14px 16px; }
-      .weekday-row, .calendar-grid { gap: 4px; }
-      .calendar-day { min-height: 58px; padding: 8px 4px 6px; }
-      .day-number { font-size: 12px; }
-      .schedule-details { padding: 18px; }
-      .schedule-item { grid-template-columns: 60px minmax(0, 1fr); gap: 10px; padding: 11px; }
-      .schedule-item-time strong { font-size: 15px; }
-      .schedule-modal { padding: 24px 18px 20px; }
-      .schedule-modal-info { align-items: flex-start; flex-direction: column; gap: 3px; }
-      .schedule-modal-info strong { text-align: left; }
+      :where(.candidate-page--index) .schedule-header { display: block; padding-right: 18px; padding-left: 18px; }
+      :where(.candidate-page--index) .schedule-toolbar { justify-content: space-between; margin-top: 16px; }
+      :where(.candidate-page--index) .calendar-area { padding: 18px 14px 16px; }
+      :where(.candidate-page--index) .weekday-row, :where(.candidate-page--index) .calendar-grid { gap: 4px; }
+      :where(.candidate-page--index) .calendar-day { min-height: 58px; padding: 8px 4px 6px; }
+      :where(.candidate-page--index) .day-number { font-size: 12px; }
+      :where(.candidate-page--index) .schedule-details { padding: 18px; }
+      :where(.candidate-page--index) .schedule-item { grid-template-columns: 60px minmax(0, 1fr); gap: 10px; padding: 11px; }
+      :where(.candidate-page--index) .schedule-item-time strong { font-size: 15px; }
+      :where(.candidate-page--index) .schedule-modal { padding: 24px 18px 20px; }
+      :where(.candidate-page--index) .schedule-modal-info { align-items: flex-start; flex-direction: column; gap: 3px; }
+      :where(.candidate-page--index) .schedule-modal-info strong { text-align: left; }
     }
 </style>
 

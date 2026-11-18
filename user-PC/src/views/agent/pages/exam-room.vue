@@ -1,4 +1,5 @@
 <template>
+  <div class="candidate-page--exam-room">
   <div class="room">
     <!-- 答题界面 -->
     <template v-if="stage === 'doing'">
@@ -129,6 +130,7 @@
         <a :href="appHref('/exam')">返回笔试列表</a>
       </div>
     </div>
+  </div>
   </div>
 </template>
 
@@ -442,7 +444,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-:global(*){box-sizing:border-box}:global(body){margin:0;color:#172B4D;background:#F5F7FA;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+*{box-sizing:border-box}:where(.candidate-page--exam-room){margin:0;color:#172B4D;background:#F5F7FA;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
 .room{min-height:100vh;display:flex;flex-direction:column}
 .topbar{height:56px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 22px;border-bottom:1px solid #E6EBF2;background:#fff;position:sticky;top:0;z-index:5}
 .top-title{display:flex;flex-direction:column;min-width:0}
@@ -490,11 +492,11 @@ onBeforeUnmount(() => {
 .monitor{margin-top:16px;padding-top:14px;border-top:1px solid #EEF2F7}
 .monitor-bad{border-top-color:#FCA5A5;background:#FFF7F7;border-radius:10px;padding:12px 10px;margin-top:12px}
 .mon-alert{width:min(1240px,100% - 44px);margin:12px auto 0;display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid #FCA5A5;border-left:4px solid #DC2626;border-radius:8px;background:#FEF2F2;color:#991B1B}
-.mon-alert-icon{flex:none;width:20px;height:20px;border-radius:50%;background:#DC2626;color:#fff;font-weight:700;text-align:center;line-height:20px;animation:mon-pulse 1.2s infinite}
+.mon-alert-icon{flex:none;width:20px;height:20px;border-radius:50%;background:#DC2626;color:#fff;font-weight:700;text-align:center;line-height:20px;animation:candidate-page--exam-room-mon-pulse 1.2s infinite}
 .mon-alert-text{display:flex;flex-direction:column;gap:2px;font-size:12px;line-height:1.5}
 .mon-alert-text b{font-size:13px}
 .mon-alert-text span{color:#B4232B}
-@keyframes mon-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes candidate-page--exam-room-mon-pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .monitor .side-title{display:flex;align-items:center;gap:6px}
 .mon-force{padding:1px 6px;border-radius:4px;color:#D94B55;background:#FCEDEF;font-size:9px;font-weight:700}
 .mon-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}
