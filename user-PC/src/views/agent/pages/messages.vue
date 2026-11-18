@@ -49,7 +49,7 @@
             <span class="conversation-avatar">{{ avatarText(session.peerName) }}</span>
             <span class="conversation-copy">
               <span class="conversation-name">{{ session.peerName || '联系人' }}</span>
-              <span class="conversation-preview">{{ session.lastMessage || '暂无消息内容' }}</span>
+              <span class="conversation-preview">{{ messagePreview(session.lastMessage) || '暂无消息内容' }}</span>
             </span>
             <span class="conversation-meta">
               <span class="conversation-time">{{ formatShortTime(session.lastMessageAt) }}</span>
@@ -88,8 +88,9 @@
               <div v-for="message in messages" :key="message.messageId" class="message-row" :class="{ me: message.isMine }">
                  <span v-if="!message.isMine" class="bubble-avatar">{{ avatarText(activeConversation.peerName) }}</span>
                   <div class="bubble-wrap">
-                   <div class="bubble">
-                     <template v-if="isImageMessage(message)">
+                   <div class="bubble" :class="{ 'bubble--card': message.card }">
+                     <MessageContentCard v-if="message.card" :card="message.card" />
+                     <template v-else-if="isImageMessage(message)">
                        <template v-if="!message.attachmentUnavailable">
                          <button class="attachment-image-button" type="button" :aria-label="`查看图片 ${message.content || ''}`" @click="previewAttachment(message)">
                            <img class="attachment-image" :src="message.attachmentUrl" :alt="message.content || '聊天图片'" @load="handleMessageImageLoad" @error="markAttachmentUnavailable(message)" />
@@ -189,7 +190,7 @@
               <span class="notice-dot"></span>
               <div>
                 <div class="notice-title">{{ item.noticeTitle || '系统通知' }}</div>
-                <div class="notice-desc">{{ plainText(item.noticeContent) || item.noticeTitle || '暂无通知内容' }}</div>
+                <div class="notice-desc">{{ messagePreview(plainText(item.noticeContent)) || item.noticeTitle || '暂无通知内容' }}</div>
               </div>
               <span class="notice-tag" :class="{ gray: item.noticeType !== '1' }">{{ item.noticeType === '1' ? '通知' : '公告' }}</span>
               <span class="notice-time">{{ formatShortTime(item.createTime) }}　›</span>
@@ -210,11 +211,11 @@
             <a v-if="activeConversation.peerId" :href="appHref('/contact-profile?id=' + encodeURIComponent(activeConversation.peerId))">查看 HR 公开资料</a>
           </div>
         </div>
-        <div class="person-info">
-          <div>会话编号：{{ activeConversation.sessionId || '发送首条消息后创建' }}</div>
-          <div>最近消息：{{ activeConversation.lastMessage || '暂无消息内容' }}</div>
-          <div>更新时间：{{ formatMessageTime(activeConversation.lastMessageAt) }}</div>
-        </div>
+        <dl class="conversation-facts">
+          <div><dt>会话编号</dt><dd>{{ activeConversation.sessionId || '发送首条消息后创建' }}</dd></div>
+          <div><dt>最近消息</dt><dd>{{ messagePreview(activeConversation.lastMessage) || '暂无消息内容' }}</dd></div>
+          <div><dt>更新时间</dt><dd>{{ formatMessageTime(activeConversation.lastMessageAt) }}</dd></div>
+        </dl>
       </div>
     </aside>
   </main>
@@ -223,7 +224,8 @@
     <div class="call-dialog" role="dialog" aria-modal="true" aria-labelledby="noticeDetailTitle">
       <div class="call-avatar">!</div>
       <h2 id="noticeDetailTitle">{{ activeNotice.noticeTitle || '系统通知' }}</h2>
-      <p>{{ plainText(activeNotice.noticeContent) || '暂无通知内容' }}</p>
+      <MessageContentCard v-if="activeNoticeCard" :card="activeNoticeCard" />
+      <p v-else>{{ plainText(activeNotice.noticeContent) || '暂无通知内容' }}</p>
       <div class="call-actions">
         <button class="call-cancel" type="button" @click="activeNotice = null">关闭</button>
       </div>
@@ -250,10 +252,11 @@ import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
 import { listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
 import AiAssistant from '@/components/agent/AiAssistant.vue'
+import MessageContentCard from '@/components/agent/MessageContentCard.vue'
 import { getToken } from '@/utils/auth'
 import { unreadBadge, unreadCount } from '@/utils/agentUnread'
 import { formatMessageTime, formatShortTime } from '@/utils/agentTime'
-import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageLinkParts, resolveMessageAttachment, uploadedMessageAttachmentPath } from '@/utils/agentMessage'
+import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageContentCard, messageLinkParts, messagePreview, resolveMessageAttachment, uploadedMessageAttachmentPath } from '@/utils/agentMessage'
 
 const sessions = ref([])
 const selectedSessionId = ref(null)
@@ -293,6 +296,7 @@ const noticeItems = ref([])
 const noticesLoading = ref(true)
 const noticesError = ref(false)
 const activeNotice = ref(null)
+const activeNoticeCard = computed(() => messageContentCard({ content: activeNotice.value?.noticeContent }))
 const messagesContainer = ref(null)
 const followLatestMessages = ref(true)
 const toastText = ref('')
@@ -306,7 +310,7 @@ const activeConversation = computed(() => selectedSession.value || newConversati
 const filteredSessions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) return sessions.value
-  return sessions.value.filter(item => `${item.peerName || ''} ${item.lastMessage || ''}`.toLowerCase().includes(query))
+  return sessions.value.filter(item => `${item.peerName || ''} ${messagePreview(item.lastMessage)}`.toLowerCase().includes(query))
 })
 const systemUnreadCount = computed(() => noticeItems.value.filter(item => !item.isRead).length)
 const systemPreview = computed(() => systemUnreadCount.value ? `你有 ${systemUnreadCount.value} 条新的系统通知` : '暂无未读系统通知')
@@ -391,6 +395,7 @@ async function loadMessages(sessionId, { silent = false } = {}) {
         const previous = previousMessages.get(message.messageId)
         return {
           ...message,
+          card: messageContentCard(message),
           type: Number(message.type),
           attachmentUrl: url,
           attachmentUnavailable: previous?.attachmentUrl === url && previous.attachmentUnavailable,
