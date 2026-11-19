@@ -163,6 +163,13 @@ public interface ConferenceMapper
     public int insertAppointment(Map<String, Object> params);
 
     /**
+     * 查询企业名下指定候选人和岗位的预约，开始面试时复用既有预约。
+     */
+    public Map<String, Object> selectAppointmentForConference(@Param("appointmentId") Long appointmentId,
+            @Param("candidateId") Long candidateId, @Param("positionId") Long positionId,
+            @Param("companyId") Long companyId);
+
+    /**
      * 新增面试场次（关联预约记录），回填 ses_id
      */
     public int insertSession(Map<String, Object> params);

@@ -217,6 +217,15 @@ public class ConferenceServiceImpl implements IConferenceService
     public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Long stageId,
             Integer durationMinutes, Integer mode, List<Long> interviewerIds, String startTime)
     {
+        return createRoomLink(userId, peerUserId, positionId, stageId, durationMinutes, mode, interviewerIds,
+                startTime, null);
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Long stageId,
+            Integer durationMinutes, Integer mode, List<Long> interviewerIds, String startTime, Long appointmentId)
+    {
         if (peerUserId == null)
         {
             throw new ServiceException("请选择要面试的候选人");
@@ -263,9 +272,11 @@ public class ConferenceServiceImpl implements IConferenceService
             throw new ServiceException("面试时长需在 1~" + MAX_INTERVIEW_MINUTES + " 分钟之间");
         }
         int duration = durationMinutes == null ? DEFAULT_INTERVIEW_MINUTES : durationMinutes;
-        // 预约时间按 HR 选定的开始时间写入，面试安排据此排序；未指定时沿用当前时间
-        Timestamp appointmentStart = parseInterviewStart(startTime);
-        Timestamp appointmentEnd = new Timestamp(appointmentStart.getTime() + duration * 60_000L);
+        // 新建邀约时按 HR 选定的开始时间写入；从已有预约开始时沿用预约原时间，
+        // 允许预约开始时间已经到达或刚刚过去，避免把当前预约误报为重复安排。
+        Timestamp appointmentStart = appointmentId == null ? parseInterviewStart(startTime) : null;
+        Timestamp appointmentEnd = appointmentStart == null
+                ? null : new Timestamp(appointmentStart.getTime() + duration * 60_000L);
         List<Long> selected = normalizeInterviewers(interviewerIds);
         validateInterviewerCount(interviewMode, selected.size());
         validateInterviewerScope(userId, selected);
@@ -275,36 +286,73 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("候选人不存在，无法发起面试");
         }
-        // 同一候选人同一岗位若已有未开始的面试安排，直接拦截并提示岗位，不再静默顶掉旧安排
+        // 开始已有预约时，只允许复用本次明确指定的预约；若还有另一条有效预约，仍然拦截。
         Map<String, Object> active = conferenceMapper.selectActiveAppointment(candidateId, positionId, companyId);
-        if (active != null)
+        if (active != null && (appointmentId == null
+                || !appointmentId.equals(toLong(active.get("appointmentId")))))
         {
             throw new ServiceException("该候选人在「" + active.get("positionTitle") + "」还有未开始的面试安排（"
                     + active.get("startTime") + "），请先改期或取消后再发起");
         }
 
-        // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
-        // 纯AI 无面试官时，面试官字段回落到发起人，仅用于满足非空约束与发起人权限
-        Long sessionInterviewerId = selected.isEmpty() ? userId : selected.get(0);
-        Map<String, Object> appointment = new HashMap<>();
-        appointment.put("candidateId", candidateId);
-        appointment.put("positionId", positionId);
-        appointment.put("interviewerId", sessionInterviewerId);
-        appointment.put("durationMinutes", duration);
-        appointment.put("startTime", appointmentStart);
-        appointment.put("endTime", appointmentEnd);
-        putStage(appointment, stage);
-        conferenceMapper.insertAppointment(appointment);
+        Map<String, Object> appointment;
+        if (appointmentId != null)
+        {
+            appointment = conferenceMapper.selectAppointmentForConference(appointmentId, candidateId, positionId,
+                    companyId);
+            if (appointment == null || appointment.isEmpty())
+            {
+                throw new ServiceException("面试安排不存在、已取消或无权访问");
+            }
+            if (appointment.get("sessionId") != null)
+            {
+                int sessionStatus = toInt(appointment.get("sessionStatus"));
+                if (sessionStatus >= 2)
+                {
+                    throw new ServiceException("该面试安排已有已结束场次，请重新安排面试");
+                }
+            }
+        }
+        else
+        {
+            // 场次通过 ses_appointment_id 强制关联预约记录（该列 NOT NULL 且唯一）
+            // 纯AI 无面试官时，面试官字段回落到发起人，仅用于满足非空约束与发起人权限
+            Long sessionInterviewerId = selected.isEmpty() ? userId : selected.get(0);
+            appointment = new HashMap<>();
+            appointment.put("candidateId", candidateId);
+            appointment.put("positionId", positionId);
+            appointment.put("interviewerId", sessionInterviewerId);
+            appointment.put("durationMinutes", duration);
+            appointment.put("startTime", appointmentStart);
+            appointment.put("endTime", appointmentEnd);
+            putStage(appointment, stage);
+            conferenceMapper.insertAppointment(appointment);
+        }
 
+        Long existingSessionId = toLong(appointment.get("sessionId"));
+        boolean newSession = existingSessionId == null;
+        Long sessionInterviewerId = selected.isEmpty()
+                ? (toLong(appointment.get("interviewerId")) == null ? userId : toLong(appointment.get("interviewerId")))
+                : selected.get(0);
         Map<String, Object> session = new HashMap<>();
         session.put("appointmentId", toLong(appointment.get("appointmentId")));
         session.put("candidateId", candidateId);
         session.put("positionId", positionId);
         session.put("interviewerId", sessionInterviewerId);
         session.put("mode", interviewMode);
-        // 流程轮次与所选阶段顺序保持一致，未选阶段时按第一轮处理
-        session.put("cascadeRound", stage == null || stage.get("sortOrder") == null ? 1 : toInt(stage.get("sortOrder")));
-        conferenceMapper.insertSession(session);
+        // 流程轮次与所选阶段顺序保持一致，未选阶段时按第一轮处理；已有预约沿用原阶段轮次
+        Object round = appointment.get("stageOrder");
+        session.put("cascadeRound", round == null
+                ? (stage == null || stage.get("sortOrder") == null ? 1 : toInt(stage.get("sortOrder")))
+                : toInt(round));
+        if (!newSession)
+        {
+            session.put("sessionId", existingSessionId);
+        }
+        if (newSession)
+        {
+            conferenceMapper.insertSession(session);
+        }
 
         // 能否发起面试只看「所选岗位」的投递状态（上方 countSchedulableApplication），
         // 候选人全局人才状态已在其他岗位进入终态时不再阻断本岗位面试，仅不再回退推进
@@ -326,19 +374,30 @@ public class ConferenceServiceImpl implements IConferenceService
         }
 
         Long sessionId = toLong(session.get("sessionId"));
-        String roomId = "INTERVIEW-" + sessionId;
-        String roomToken = randomToken();
-        saveRoomToken(sessionId, roomId, roomToken);
+        String roomId = StringUtils.isEmpty(String.valueOf(appointment.get("roomId")))
+                || "null".equals(String.valueOf(appointment.get("roomId")))
+                ? "INTERVIEW-" + sessionId : String.valueOf(appointment.get("roomId"));
+        String roomToken = StringUtils.isEmpty(String.valueOf(appointment.get("roomToken")))
+                || "null".equals(String.valueOf(appointment.get("roomToken")))
+                ? "" : String.valueOf(appointment.get("roomToken"));
+        if (roomToken.isEmpty())
+        {
+            roomToken = randomToken();
+            saveRoomToken(sessionId, roomId, roomToken);
+        }
 
         // 每位被指派面试官：仅写入场次面试官关联（首位为主面试官），预约统一复用主预约，
         // 避免同一时间给同一候选人生成多条重复行程
-        for (int i = 0; i < selected.size(); i++)
+        if (newSession)
         {
-            Map<String, Object> link = new HashMap<>();
-            link.put("sessionId", sessionId);
-            link.put("userId", selected.get(i));
-            link.put("isPrimary", i == 0 ? 1 : 0);
-            conferenceMapper.insertSessionInterviewer(link);
+            for (int i = 0; i < selected.size(); i++)
+            {
+                Map<String, Object> link = new HashMap<>();
+                link.put("sessionId", sessionId);
+                link.put("userId", selected.get(i));
+                link.put("isPrimary", i == 0 ? 1 : 0);
+                conferenceMapper.insertSessionInterviewer(link);
+            }
         }
 
         Map<String, Object> ctx = conferenceMapper.selectSessionContext(sessionId);

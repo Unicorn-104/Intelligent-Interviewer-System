@@ -76,6 +76,7 @@ class InviteHarness {
     int? durationMinutes,
     int? mode,
     List<int>? interviewerIds,
+    int? appointmentId,
   }) async {
     linkCalls.add({
       'peerUserId': peerUserId,
@@ -84,6 +85,7 @@ class InviteHarness {
       'durationMinutes': durationMinutes,
       'mode': mode,
       'interviewerIds': interviewerIds,
+      'appointmentId': appointmentId,
     });
     if (linkFailure != null) throw linkFailure!;
     return {
@@ -142,6 +144,7 @@ void main() {
       'durationMinutes': 30,
       'mode': 2,
       'interviewerIds': [9],
+      'appointmentId': 7,
     });
     expect(source.sends, [expectedInvite]);
     expect(source.newConversations, isEmpty);

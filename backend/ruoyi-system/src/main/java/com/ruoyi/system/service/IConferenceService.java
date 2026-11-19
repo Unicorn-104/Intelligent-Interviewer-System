@@ -48,6 +48,14 @@ public interface IConferenceService
             Integer durationMinutes, Integer mode, List<Long> interviewerIds, String startTime);
 
     /**
+     * HR 从既有面试预约进入会议时，按预约ID复用该预约创建（或复用）会议场次。
+     *
+     * @param appointmentId 已有面试预约ID
+     */
+    public Map<String, Object> createRoomLink(Long userId, Long peerUserId, Long positionId, Long stageId,
+            Integer durationMinutes, Integer mode, List<Long> interviewerIds, String startTime, Long appointmentId);
+
+    /**
      * 本企业全体在职用户（HR 发起面试时选择面试官）
      */
     public List<Map<String, Object>> listInterviewers(Long userId);
