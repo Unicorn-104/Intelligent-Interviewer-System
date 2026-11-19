@@ -20,6 +20,9 @@ public interface ExamMapper
     /** 岗位名称（用于试卷/安排列表展示） */
     public Map<String, Object> selectPositionBrief(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
 
+    /** 岗位上下文（标题/职责描述/技能要求），供 AI 组卷命题使用 */
+    public Map<String, Object> selectPositionContext(@Param("companyId") Long companyId, @Param("positionId") Long positionId);
+
     // ==================== 题库 ====================
 
     public List<Map<String, Object>> selectQuestionList(@Param("type") Integer type,
@@ -66,7 +69,18 @@ public interface ExamMapper
 
     public int selectLastPaperId();
 
+    /** 最近题干（企业可见范围：平台题库 + 本企业题库），用于 AI 命题查重 */
+    public List<String> selectRecentQuestionStems(@Param("companyId") Long companyId, @Param("limit") int limit);
+
+    /** 按关键词检索题干（企业可见范围），供 AI 工具查重 */
+    public List<String> searchQuestionStems(@Param("companyId") Long companyId,
+            @Param("keyword") String keyword, @Param("limit") int limit);
+
     public int updatePaper(Map<String, Object> params);
+
+    /** 启用/禁用试卷（企业隔离：经 t_pos.pos_company_id） */
+    public int updatePaperStatus(@Param("companyId") Long companyId, @Param("paperId") Long paperId,
+            @Param("status") Integer status);
 
     public int deletePaper(@Param("companyId") Long companyId, @Param("paperId") Long paperId);
 

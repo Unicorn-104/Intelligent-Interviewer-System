@@ -5,7 +5,7 @@ import { Plus, Search, Pencil, Trash2, X, Eye, WandSparkles, Save, Timer, FileTe
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import {
   listQuestions, createQuestion, updateQuestion, deleteQuestion, aiExamAnalysis, fillQuestionAnalysis,
-  listPapers, getPaper, createPaper, updatePaper, deletePaper, drawPreview,
+  listPapers, getPaper, createPaper, updatePaper, updatePaperStatus, deletePaper, drawPreview, aiPlanPaper, aiPreviewPaper, aiSavePaper,
   listSchedules, createSchedule, updateSchedule, cancelSchedule,
   saveNotifyConfig, listNotifyTargets, sendExamNotify,
   listExamResults, getExamResult, gradeSubjective
@@ -206,6 +206,17 @@ async function loadPapers() {
   const res = await listPapers(pFilter.positionId || undefined).catch(() => null)
   pList.value = res?.data || []
 }
+function isAiPaper(row) {
+  const rule = row.rule || (() => {
+    if (!row.ruleJson || typeof row.ruleJson !== 'string') return null
+    try { return JSON.parse(row.ruleJson) } catch (e) { return null }
+  })()
+  return !!(rule && rule.type === 'ai')
+}
+function paperMode(row) {
+  if (isAiPaper(row)) return { label: 'AI组卷', cls: 'purple' }
+  return row.ruleJson ? { label: '随机抽题', cls: 'orange' } : { label: '人工组卷', cls: '' }
+}
 
 const paperModal = reactive({
   open: false, view: false, id: null, saving: false,
@@ -230,7 +241,7 @@ async function openEditPaper(row, view) {
   paperModal.open = true; paperModal.view = !!view; paperModal.id = p.paperId; paperModal.preview = null
   paperModal.form = {
     name: p.name, positionId: p.positionId, durationMin: p.durationMin,
-    mode: p.ruleJson ? 'random' : 'manual',
+    mode: p.ruleJson && !isAiPaper(p) ? 'random' : 'manual',
     selected: (p.questions || []).map(q => ({ questionId: q.questionId, score: Number(q.score), type: q.type, content: q.content })),
     rules: (p.rule && p.rule.rules) ? p.rule.rules.map(r => ({ ...r })) : []
   }
@@ -267,6 +278,118 @@ async function savePaper() {
 async function removePaper(row) {
   if (!confirm(`确定删除试卷「${row.name}」？`)) return
   try { await deletePaper(row.paperId); notify('试卷已删除'); loadPapers() } catch (e) { /* 拦截器已提示 */ }
+}
+async function togglePaperStatus(row) {
+  const next = Number(row.status) === 1 ? 0 : 1
+  try {
+    await updatePaperStatus(row.paperId, next)
+    notify(next === 1 ? '试卷已启用' : '试卷已禁用，考试安排中将无法选择')
+    loadPapers()
+  } catch (e) { /* 拦截器已提示 */ }
+}
+
+/* ==================== Agent 组卷 ==================== */
+const AI_SCORES = { 1: 4, 2: 6, 3: 3, 4: 10, 5: 15 }
+const aiPaper = reactive({
+  open: false, step: 'config', loading: false, saving: false,
+  form: blankAiPaper(), questions: [], plan: null
+})
+function blankAiPaper() {
+  return {
+    positionId: pFilter.positionId || '', name: '', difficulty: 0, durationMin: 60,
+    counts: { 1: 8, 2: 2, 3: 5, 4: 2, 5: 1 }, focusPoints: '', focusWeight: 40, saveToBank: true
+  }
+}
+const aiTotal = computed(() => Object.values(aiPaper.form.counts).reduce((a, c) => a + Number(c || 0), 0))
+const aiEstimateScore = computed(() => Object.entries(aiPaper.form.counts)
+  .reduce((a, [t, c]) => a + Number(c || 0) * (AI_SCORES[t] || 0), 0))
+const aiPreviewTotal = computed(() => aiPaper.questions.reduce((a, q) => a + Number(q.score || 0), 0))
+function openAiPaper() {
+  Object.assign(aiPaper, { loading: false, saving: false, step: 'config', questions: [], plan: null })
+  aiPaper.form = blankAiPaper()
+  aiPaper.open = true
+}
+function removeAiQuestion(i) { aiPaper.questions.splice(i, 1) }
+const aiPlanWeight = computed(() => (aiPaper.plan?.points || [])
+  .reduce((a, p) => a + Number(p.weight || 0), 0))
+function addAiPoint() {
+  if (!aiPaper.plan) aiPaper.plan = { note: '', points: [] }
+  aiPaper.plan.points.push({ skillTag: '', weight: 10, focus: false })
+}
+async function planAiPaper() {
+  const f = aiPaper.form
+  if (!f.positionId) { notify('请选择岗位'); return }
+  if (aiTotal.value <= 0) { notify('请至少设置 1 道题'); return }
+  if (aiTotal.value > 30) { notify('总题量不能超过 30 题'); return }
+  aiPaper.loading = true
+  try {
+    const res = await aiPlanPaper({
+      positionId: Number(f.positionId), difficulty: Number(f.difficulty),
+      counts: f.counts, focusPoints: f.focusPoints || undefined,
+      focusWeight: f.focusPoints ? Number(f.focusWeight) : undefined
+    })
+    const plan = res?.data || {}
+    aiPaper.plan = {
+      note: plan.note || '',
+      points: (plan.points || []).map(p => ({
+        skillTag: p.skillTag, weight: Number(p.weight) || 0, focus: !!p.focus
+      }))
+    }
+    aiPaper.step = 'plan'
+    aiPaper.questions = []
+  } catch (e) { /* 拦截器已提示 */ } finally { aiPaper.loading = false }
+}
+async function previewAiPaper() {
+  const f = aiPaper.form
+  if (!f.positionId) { notify('请选择岗位'); return }
+  if (aiTotal.value <= 0) { notify('请至少设置 1 道题'); return }
+  if (aiTotal.value > 30) { notify('总题量不能超过 30 题'); return }
+  if (f.saveToBank) {
+    if (!aiPaper.plan || !aiPaper.plan.points.length) { notify('请先生成命题计划'); return }
+    if (aiPlanWeight.value !== 100) { notify(`知识点权重合计需为 100%（当前 ${aiPlanWeight.value}%）`); return }
+    if (aiPaper.plan.points.some(p => !p.skillTag || !p.skillTag.trim())) { notify('知识点名称不能为空'); return }
+  }
+  aiPaper.loading = true
+  try {
+    const res = await aiPreviewPaper({
+      positionId: Number(f.positionId), difficulty: Number(f.difficulty),
+      counts: f.counts, focusPoints: f.focusPoints || undefined,
+      focusWeight: f.focusPoints ? Number(f.focusWeight) : undefined,
+      saveToBank: f.saveToBank,
+      plan: f.saveToBank ? aiPaper.plan : undefined
+    })
+    const list = res?.data?.questions || []
+    aiPaper.questions = list.map(q => ({
+      ...q,
+      options: Array.isArray(q.options)
+        ? q.options.map(o => (typeof o === 'string' ? o : (o && (o.text || o.label)) || ''))
+        : []
+    }))
+    aiPaper.step = 'preview'
+    aiPaper.plan = res?.data?.plan || null
+    notify(`已生成 ${aiPaper.questions.length} 道题，确认或修改后保存`)
+  } catch (e) { /* 拦截器已提示 */ } finally { aiPaper.loading = false }
+}
+async function saveAiPaper() {
+  if (!aiPaper.questions.length) { notify('至少保留 1 道题'); return }
+  aiPaper.saving = true
+  try {
+    const f = aiPaper.form
+    const res = await aiSavePaper({
+      positionId: Number(f.positionId), name: f.name || undefined,
+      durationMin: Number(f.durationMin), saveToBank: f.saveToBank,
+      questions: aiPaper.questions.map(q => ({
+        questionId: q.questionId, type: Number(q.type), content: q.content,
+        options: f.saveToBank ? q.options : undefined, answer: q.answer, analysis: q.analysis,
+        difficulty: Number(q.difficulty) || 2, skillTag: q.skillTag, score: Number(q.score)
+      }))
+    })
+    const d = res?.data || {}
+    aiPaper.open = false
+    notify(`试卷已保存「${d.name}」：${d.questionCount} 题 / ${d.totalScore} 分`)
+    loadPapers()
+    if (f.saveToBank) loadQuestions()
+  } catch (e) { /* 拦截器已提示 */ } finally { aiPaper.saving = false }
 }
 
 /* ==================== 考试安排 ==================== */
@@ -310,8 +433,8 @@ async function openCreateSched() {
   schedModal.papers = (res?.data || []).filter(p => p.status === 1)
 }
 async function openEditSched(row) {
-  const res = await listPapers().catch(() => null)
-  schedModal.papers = res?.data || []
+  const res = await listPapers(row.positionId).catch(() => null)
+  schedModal.papers = (res?.data || []).filter(p => p.status === 1)
   schedModal.open = true; schedModal.id = row.scheduleId
   const dual = row.dualCameraConfig || {}
   const sub = row.submitRule || {}
@@ -556,19 +679,24 @@ onMounted(() => {
         </select>
         <button class="btn" @click="loadPapers()"><RotateCw :size="15"/>刷新</button>
         <button class="btn primary" @click="openCreatePaper"><Plus :size="15"/>新建试卷</button>
+        <button class="btn agent" @click="openAiPaper"><WandSparkles :size="15"/>Agent 组卷</button>
       </div>
       <table class="tbl">
         <thead><tr><th>ID</th><th class="wide">试卷名称</th><th>岗位</th><th>组卷方式</th><th>题量</th><th>总分</th><th>时长</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-for="row in pList" :key="row.paperId">
             <td>{{ row.paperId }}</td>
-            <td class="wide ellipsis">{{ row.name }}</td>
+            <td class="wide ellipsis" :title="row.name">{{ row.name }}</td>
             <td>{{ row.positionTitle }}</td>
-            <td><span class="pill" :class="row.ruleJson ? 'orange' : ''">{{ row.ruleJson ? '随机抽题' : '人工组卷' }}</span></td>
-            <td>{{ row.ruleJson ? '按规则' : row.questionCount }}</td>
+            <td><span class="pill" :class="paperMode(row).cls">{{ paperMode(row).label }}</span></td>
+            <td>{{ paperMode(row).label === '随机抽题' ? '按规则' : row.questionCount }}</td>
             <td>{{ row.totalScore }}</td>
             <td>{{ row.durationMin }} 分钟</td>
-            <td><span class="pill" :class="row.status === 1 ? 'green' : 'gray'">{{ row.status === 1 ? '启用' : '停用' }}</span></td>
+            <td>
+              <button class="pill status-btn" :class="row.status === 1 ? 'green' : 'gray'"
+                :title="row.status === 1 ? '点击禁用（禁用后不可用于考试安排）' : '点击启用'"
+                @click="togglePaperStatus(row)">{{ row.status === 1 ? '启用' : '停用' }}</button>
+            </td>
             <td class="muted">{{ row.createdAt }}</td>
             <td class="ops">
               <button class="icon-btn" title="查看题目" @click="openEditPaper(row, true)"><Eye :size="14"/></button>
@@ -602,7 +730,7 @@ onMounted(() => {
           <tr v-for="row in sList" :key="row.scheduleId">
             <td>{{ row.scheduleId }}</td>
             <td>{{ row.positionTitle }}</td>
-            <td class="wide ellipsis">{{ row.paperName }}（{{ row.durationMin }}分钟/{{ row.totalScore }}分）</td>
+            <td class="wide ellipsis" :title="row.paperName">{{ row.paperName }}（{{ row.durationMin }}分钟/{{ row.totalScore }}分）</td>
             <td>{{ row.startAt }}</td>
             <td>{{ row.endAt }}</td>
             <td>{{ row.maxAttempts }}</td>
@@ -815,6 +943,152 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- ============ Agent 智能组卷弹层 ============ -->
+    <div v-if="aiPaper.open" class="mask" @click.self="!aiPaper.loading && !aiPaper.saving && (aiPaper.open = false)">
+      <div class="modal wide">
+        <header><h3>Agent 智能组卷</h3><button class="icon-btn" :disabled="aiPaper.loading" @click="aiPaper.open = false"><X :size="15"/></button></header>
+        <div class="body">
+          <template v-if="aiPaper.step === 'config'">
+          <div class="form-grid">
+            <div class="field"><label>关联岗位</label>
+              <select class="select" v-model="aiPaper.form.positionId">
+                <option value="" disabled>请选择岗位</option>
+                <option v-for="p in positions" :key="p.id" :value="p.id">{{ p.title }}</option>
+              </select>
+            </div>
+            <div class="field"><label>试卷名称 <span class="muted tiny">留空自动生成</span></label>
+              <input class="input" v-model="aiPaper.form.name" placeholder="如 Java 后端工程师 AI 笔试"/>
+            </div>
+            <div class="field"><label>难度</label>
+              <div class="seg">
+                <button v-for="d in [{ v: 0, l: '混合' }, { v: 1, l: '简单' }, { v: 2, l: '中等' }, { v: 3, l: '困难' }]" :key="d.v"
+                  :class="['seg-btn', { on: Number(aiPaper.form.difficulty) === d.v }]" @click="aiPaper.form.difficulty = d.v">{{ d.l }}</button>
+              </div>
+            </div>
+            <div class="field"><label>考试时长（分钟）</label><input class="input" type="number" min="1" max="600" v-model.number="aiPaper.form.durationMin"/></div>
+          </div>
+
+          <div class="sub-block">
+            <div class="sub-head"><b>题型配额</b><span class="muted tiny">共 {{ aiTotal }} 题 · 预计 {{ aiEstimateScore }} 分</span></div>
+            <div class="quota-row">
+              <label v-for="t in TYPE_OPTIONS.filter(x => x.code <= 5)" :key="t.code" class="quota-item">
+                <span>{{ t.label }}</span>
+                <input class="input tiny-input" type="number" min="0" max="20" v-model.number="aiPaper.form.counts[t.code]"/>
+                <span class="mini">{{ AI_SCORES[t.code] }} 分/题</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field full" style="margin-top:16px">
+            <label>重点考察方向 <span class="muted tiny">可选，按比例倾斜而非整卷覆盖</span></label>
+            <textarea class="textarea" v-model="aiPaper.form.focusPoints" placeholder="如：Spring Boot 自动配置与事务管理；其余题目由 AI 按岗位 JD 与技能标签覆盖 Java 基础、MySQL、并发、JVM 等其他核心技能"/>
+            <div v-if="aiPaper.form.focusPoints" class="focus-row">
+              <span class="mini">重点方向题目占比</span>
+              <div class="seg">
+                <button v-for="w in [30, 40, 50, 60]" :key="w" :class="['seg-btn', { on: Number(aiPaper.form.focusWeight) === w }]" @click="aiPaper.form.focusWeight = w">{{ w }}%</button>
+              </div>
+              <span class="muted tiny">其余 {{ 100 - Number(aiPaper.form.focusWeight) }}% 覆盖岗位其他核心技能</span>
+            </div>
+          </div>
+
+          <div class="field full" style="margin-top:14px">
+            <label><input type="checkbox" v-model="aiPaper.form.saveToBank"/> AI 生成新题并保存到企业题库</label>
+            <small class="muted tiny">{{ aiPaper.form.saveToBank ? 'AI 将按岗位要求现场命题，题目同时进入题库，可在「题库」Tab 复用与编辑' : '不生成新题，仅从现有题库按题型/难度抽取题目组卷' }}</small>
+          </div>
+
+          <div v-if="aiPaper.loading" class="ai-running"><WandSparkles :size="15"/>Agent 正在规划知识点 → 分题型命题 → 自检补题，约需 1~3 分钟，请勿关闭弹窗…</div>
+          </template>
+
+          <template v-else-if="aiPaper.step === 'plan'">
+            <div class="sub-head"><b>命题计划（可编辑）</b>
+              <span class="muted tiny">知识点与权重决定整卷分布，权重合计需为 100%，重点方向会按占比倾斜</span>
+            </div>
+            <div class="field full"><label>命题策略</label><input class="input" v-model="aiPaper.plan.note"/></div>
+            <div class="plan-list">
+              <div v-for="(p, i) in aiPaper.plan.points" :key="i" class="plan-row">
+                <input class="input" v-model="p.skillTag" placeholder="知识点，如 Spring Boot 事务"/>
+                <input class="input tiny-input" type="number" min="1" max="100" v-model.number="p.weight"/>
+                <span class="muted tiny">%</span>
+                <label class="plan-focus"><input type="checkbox" v-model="p.focus"/> 重点</label>
+                <button class="icon-btn danger" title="删除知识点" @click="aiPaper.plan.points.splice(i, 1)"><Trash2 :size="13"/></button>
+              </div>
+              <button class="btn" @click="addAiPoint"><Plus :size="14"/>新增知识点</button>
+            </div>
+            <div class="tiny" :class="aiPlanWeight === 100 ? 'muted' : 'warn-text'">当前权重合计：{{ aiPlanWeight }}%（需为 100%）</div>
+          </template>
+
+          <template v-else>
+            <div class="sub-head"><b>试卷预览（{{ aiPaper.questions.length }} 题 / {{ aiPreviewTotal }} 分）</b>
+              <span class="muted tiny">{{ aiPaper.form.saveToBank ? '可直接修改题目内容，删除不需要的题目后保存' : '题目来自现有题库，可调整分值、删除题目后保存' }}</span>
+            </div>
+            <div v-if="aiPaper.plan" class="ai-plan">
+              <div class="ai-plan-note">{{ aiPaper.plan.note }}</div>
+              <div v-if="aiPaper.plan.points && aiPaper.plan.points.length" class="ai-plan-points">
+                <span v-for="p in aiPaper.plan.points" :key="p.skillTag" class="pill sm" :class="p.focus ? 'purple' : 'gray'">{{ p.skillTag }} {{ p.weight }}%</span>
+              </div>
+            </div>
+            <div class="qa-list ai-qa-list">
+              <div v-for="(q, i) in aiPaper.questions" :key="i" class="qa-item">
+                <div class="qa-head">
+                  <span class="pill sm">{{ typeLabel(q.type, q.typeName) }}</span>
+                  <span class="qa-no">第 {{ i + 1 }} 题</span>
+                  <span class="qa-score">分值 <input class="input tiny-input" type="number" min="1" v-model.number="q.score"/></span>
+                  <button class="icon-btn danger" title="移除该题" @click="removeAiQuestion(i)"><Trash2 :size="13"/></button>
+                </div>
+                <template v-if="aiPaper.form.saveToBank">
+                  <textarea class="textarea short" v-model="q.content" placeholder="题干"/>
+                  <div v-if="q.type <= 2" class="ai-options">
+                    <div v-for="(o, oi) in q.options" :key="oi" class="opt-row">
+                      <span class="opt-key">{{ optLetter(oi) }}</span>
+                      <input class="input" v-model="q.options[oi]"/>
+                    </div>
+                  </div>
+                  <div v-else-if="q.type === 3" class="muted tiny" style="margin:6px 0">判断题选项固定为「对 / 错」</div>
+                  <div class="form-grid" style="margin-top:8px">
+                    <div class="field"><label>标准答案</label><input class="input" v-model="q.answer" placeholder="单选 A；多选 AC；判断 对/错；简答/编程填写要点"/></div>
+                    <div class="field"><label>难度</label>
+                      <select class="select" v-model.number="q.difficulty"><option v-for="d in DIFF_OPTIONS" :key="d.code" :value="d.code">{{ d.label }}</option></select>
+                    </div>
+                    <div class="field"><label>技能标签</label><input class="input" v-model="q.skillTag"/></div>
+                    <div class="field"><label>{{ q.type >= 4 ? '得分要点与解析' : '解析（选项依据）' }}</label><input class="input" v-model="q.analysis" :placeholder="q.type >= 4 ? '得分要点 + 解析说明' : '正确选项依据 + 其他选项错误原因'"/></div>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="qa-content">{{ q.content }}</div>
+                  <div v-if="q.options && q.options.length" class="qa-options">
+                    <div v-for="(o, oi) in q.options" :key="oi" class="qa-opt"><b>{{ optLetter(oi) }}</b><span>{{ o }}</span></div>
+                  </div>
+                  <div class="qa-std-line">标准答案：{{ q.answer }}</div>
+                </template>
+              </div>
+              <div v-if="!aiPaper.questions.length" class="empty">题目已全部移除，请返回配置重新生成</div>
+            </div>
+          </template>
+        </div>
+        <footer>
+          <template v-if="aiPaper.step === 'config'">
+            <button class="btn" :disabled="aiPaper.loading" @click="aiPaper.open = false">取消</button>
+            <button class="btn primary" :disabled="aiPaper.loading" @click="aiPaper.form.saveToBank ? planAiPaper() : previewAiPaper()">
+              <WandSparkles :size="15"/>{{ aiPaper.loading ? '生成中…' : (aiPaper.form.saveToBank ? '生成命题计划' : '生成试卷预览') }}
+            </button>
+          </template>
+          <template v-else-if="aiPaper.step === 'plan'">
+            <button class="btn" :disabled="aiPaper.loading" @click="aiPaper.step = 'config'">返回配置</button>
+            <button class="btn primary" :disabled="aiPaper.loading" @click="previewAiPaper">
+              <WandSparkles :size="15"/>{{ aiPaper.loading ? '命题中…' : '按计划命题' }}
+            </button>
+          </template>
+          <template v-else>
+            <span class="muted tiny footer-meta">共 {{ aiPaper.questions.length }} 题 · {{ aiPreviewTotal }} 分</span>
+            <button class="btn" :disabled="aiPaper.saving" @click="aiPaper.step = 'config'">返回配置</button>
+            <button class="btn primary" :disabled="aiPaper.saving" @click="saveAiPaper">
+              <Save :size="15"/>{{ aiPaper.saving ? '保存中…' : '保存试卷' }}
+            </button>
+          </template>
+        </footer>
+      </div>
+    </div>
+
     <!-- ============ 考试安排弹层 ============ -->
     <div v-if="schedModal.open" class="mask" @click.self="schedModal.open = false">
       <div class="modal wide">
@@ -827,6 +1101,7 @@ onMounted(() => {
                 <option v-for="p in schedModal.papers" :key="p.paperId" :value="p.paperId">{{ p.name }}（{{ p.positionTitle }} · {{ p.durationMin }}分钟 · {{ p.totalScore }}分）</option>
               </select>
               <small v-if="!schedModal.papers.length" class="muted tiny">当前岗位暂无启用试卷，请先在「试卷」页创建</small>
+              <small v-else-if="schedModal.id && schedModal.form.paperId && !schedModal.papers.some(p => Number(p.paperId) === Number(schedModal.form.paperId))" class="muted tiny">当前试卷已禁用，请重新选择启用中的试卷</small>
             </div>
             <div class="field"><label>开考时间</label><input class="input" type="datetime-local" v-model="schedModal.form.startAt"/></div>
             <div class="field"><label>截止时间</label><input class="input" type="datetime-local" v-model="schedModal.form.endAt"/></div>
@@ -1025,9 +1300,11 @@ onMounted(() => {
 .tbl th{text-align:left;color:var(--subtle);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
 .tbl td{padding:9px 10px;border-bottom:1px solid #eef2f7;vertical-align:middle}
 .tbl tr:hover td{background:#f7faff}
-.tbl .wide{width:30%;min-width:200px}
+.tbl .wide{width:18%;min-width:140px}
 .ellipsis{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ops{white-space:nowrap}.ops .icon-btn{width:28px;height:28px;background:transparent;border:1px solid var(--line)}
+.ops{white-space:nowrap}
+.ops .icon-btn{display:inline-flex;width:28px;height:28px;background:transparent;border:1px solid var(--line)}
+.ops .icon-btn + .icon-btn{margin-left:4px}
 .ops .icon-btn:hover{border-color:#b7caec}
 .icon-btn.danger{color:var(--red)}
 .icon-btn:disabled{opacity:.4;cursor:not-allowed}
@@ -1096,4 +1373,24 @@ onMounted(() => {
 .qa-answer pre.blank{color:#9aa7b8}
 .qa-std-line{margin-top:8px;font-size:11.5px;color:#8392a7;word-break:break-word}
 .comment-box{background:#f7faff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px;white-space:pre-wrap;word-break:break-all}
+.btn.agent{border:1px solid #d5e2f5;color:var(--primary);background:#f3f8ff}
+.btn.agent:hover{background:#e8f1ff}
+.quota-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.quota-item{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:12px;color:#40516a}
+.quota-item .tiny-input{width:100%}
+.focus-row{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+.ai-qa-list{max-height:46vh;margin-top:10px}
+.ai-options{margin-top:6px}
+.footer-meta{margin-right:auto}
+.status-btn{border:0;cursor:pointer;font:inherit}
+.ai-plan{margin-top:8px;padding:8px 10px;border-radius:9px;background:#f6f8ff;border:1px solid #e0e7ff}
+.plan-list{margin-top:12px}
+.plan-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.plan-row .input:first-child{flex:1}
+.plan-row .tiny-input{width:74px;flex:none}
+.plan-focus{display:flex;align-items:center;gap:4px;font-size:12px;color:#40516a;white-space:nowrap}
+.warn-text{color:#d97706}
+.ai-plan-note{font-size:12.5px;color:#40516a}
+.ai-plan-points{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.ai-running{margin-top:14px;padding:10px 12px;border-radius:9px;background:#eef5ff;border:1px solid #cfe0ff;color:var(--primary);font-size:12.5px;display:flex;align-items:center;gap:8px}
 </style>
