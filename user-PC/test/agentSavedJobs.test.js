@@ -2,23 +2,30 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { computed, reactive, ref } from 'vue'
-import { loadSavedJobItems, normalizeSavedJobIds, sortSavedJobItems } from '../src/utils/agentSavedJobs.js'
+import { fetchSavedJobIds, loadSavedJobItems, normalizeSavedJobIds, sortSavedJobItems } from '../src/utils/agentSavedJobs.js'
 
 function jobsPage(overrides = {}) {
   const script = fs.readFileSync(new URL('../src/views/agent/pages/jobs.vue', import.meta.url), 'utf8')
     .match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
   const storage = new Map([['zhipin-ai-saved-jobs', '[1,2,999]']])
+  const serverFavorites = new Set(['1', '2', '999'])
   const dependencies = {
     hasCandidateAccessToken: () => true, requireCandidateLogin: () => true,
-    ref, computed, reactive, loadSavedJobItems, normalizeSavedJobIds, sortSavedJobItems,
+    ref, computed, reactive, fetchSavedJobIds, loadSavedJobItems, normalizeSavedJobIds, sortSavedJobItems,
     onMounted() {}, onBeforeUnmount() {},
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) },
-    window: {}, setTimeout() {}, clearTimeout() {},
+    listJobFavorites: async () => ({ data: { items: [...serverFavorites].map(positionId => ({ positionId })), hasNext: false } }),
+    setJobFavorite: async (id, favorited) => {
+      favorited ? serverFavorites.add(String(id)) : serverFavorites.delete(String(id))
+      return { data: { favorited } }
+    },
+    CustomEvent: globalThis.CustomEvent,
+    window: { dispatchEvent() {} }, setTimeout() {}, clearTimeout() {},
     listJobs: async query => ({ data: { items: query.jobIds ? [{ id: 1 }, { id: 2 }] : [{ id: 1 }], total: query.jobIds ? 2 : 1, hasNext: false } }),
     ...overrides
   }
-  const page = new Function(...Object.keys(dependencies), `${script}\nreturn { loadJobs, jobs, savedJobs, savedOnly, savedJobCount, visibleJobs, toggleSaved, syncSavedJobs, errorMessage, keyword, filters, hotTags, selectHotTag, clearFilter, activeFilterLabels }`)(...Object.values(dependencies))
-  return { page, storage }
+  const page = new Function(...Object.keys(dependencies), `${script}\nreturn { loadJobs, jobs, savedJobs, savedOnly, savedJobCount, visibleJobs, toggleSaved, syncSavedJobs, errorMessage, savedError, keyword, filters, hotTags, selectHotTag, clearFilter, activeFilterLabels }`)(...Object.values(dependencies))
+  return { page, storage, serverFavorites }
 }
 
 test('游客浏览不读取之前账号的收藏，点击收藏只提示登录不写入数据', async () => {
@@ -127,10 +134,10 @@ test('收藏计数与收藏列表来自同一结果，含普通列表尚未加�
   assert.equal(page.savedJobCount.value, 2)
   page.savedOnly.value = true
   assert.equal(page.visibleJobs.value.length, 2)
-  page.toggleSaved(1)
+  await page.toggleSaved(1)
   assert.equal(page.savedJobCount.value, 1)
   assert.deepEqual(page.visibleJobs.value.map(job => job.id), [2])
-  page.toggleSaved(1)
+  await page.toggleSaved(1)
   assert.equal(page.savedJobCount.value, 2)
   assert.equal(page.visibleJobs.value.length, 2)
 })
@@ -150,17 +157,46 @@ test('收藏接口出错显示未知数量及错误，不显示与实际不符�
   const { page } = jobsPage({ listJobs: async query => { if (query.jobIds) throw new Error('收藏暂时不可用'); return { data: { items: [] } } } })
   await page.loadJobs()
   assert.equal(page.savedJobCount.value, null)
-  assert.match(page.errorMessage.value, /收藏暂时不可用/)
+  assert.match(page.savedError.value, /收藏暂时不可用/)
+  assert.equal(page.errorMessage.value, '')
 })
 
-test('跨标签页或返回前台后同步本地收藏变更', async () => {
-  const { page, storage } = jobsPage()
+test('返回前台后从服务器同步其他端的收藏变更，不读取旧本地缓存', async () => {
+  const { page, serverFavorites } = jobsPage()
   await page.loadJobs()
-  storage.set('zhipin-ai-saved-jobs', '[2]')
+  serverFavorites.clear()
+  serverFavorites.add('2')
   page.syncSavedJobs()
   await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual([...page.savedJobs.value], ['2'])
   assert.equal(page.savedJobCount.value, 1)
+})
+
+
+test('服务端收藏支持多页去重，不使用旧浏览器收藏', async () => {
+  const calls = []
+  const ids = await fetchSavedJobIds(async query => {
+    calls.push(query)
+    return { data: { items: query.page === 1 ? [{ positionId: 1 }, { positionId: 2 }] : [{ positionId: 2 }, { positionId: 3 }], hasNext: query.page === 1 } }
+  })
+  assert.deepEqual(ids, ['1', '2', '3'])
+  assert.deepEqual(calls, [{ page: 1, size: 100 }, { page: 2, size: 100 }])
+  await assert.rejects(fetchSavedJobIds(async () => ({ data: { items: [], hasNext: true } })), /分页/)
+})
+
+test('账号切换读取各自服务端收藏，写入失败不乐观修改计数', async () => {
+  let account = 1
+  const { page } = jobsPage({
+    listJobFavorites: async () => ({ data: { items: [{ positionId: account }], hasNext: false } }),
+    setJobFavorite: async () => { throw new Error('写入失败') }
+  })
+  await page.loadJobs()
+  assert.deepEqual([...page.savedJobs.value], ['1'])
+  await page.toggleSaved(1)
+  assert.deepEqual([...page.savedJobs.value], ['1'])
+  account = 2
+  await page.syncSavedJobs()
+  assert.deepEqual([...page.savedJobs.value], ['2'])
 })
 
 test('较早的岗位请求不能覆盖新筛选结果和收藏数量', async () => {

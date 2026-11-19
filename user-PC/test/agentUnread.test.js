@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { computed, nextTick, ref } from 'vue'
 import { createUnreadCounter, unreadBadge, unreadCount } from '../src/utils/agentUnread.js'
+import { messageContentCard, messagePreview } from '../src/utils/agentMessage.js'
+import { mergeMessagePages, messagePageData } from '../src/utils/agentMessagePage.js'
 
 function deferred() {
   let resolve
@@ -22,7 +24,8 @@ function messagePage(overrides = {}) {
   const events = []
   const document = { visibilityState: 'visible' }
   const page = componentScript('../src/views/agent/pages/messages.vue', {
-    ref, computed, nextTick, unreadCount, unreadBadge,
+    mergeMessagePages, messagePageData,
+    ref, computed, nextTick, unreadCount, unreadBadge, messageContentCard, messagePreview,
     onMounted() {}, onBeforeUnmount() {},
     document,
     window: { location: { origin: 'http://app.local' }, dispatchEvent: event => events.push(event.type) },
@@ -33,10 +36,10 @@ function messagePage(overrides = {}) {
     resolveMessageAttachment: value => value || '',
     messageLinkParts: value => [{ text: value }],
     listImSessions: async () => ({ data: [{ sessionId: 1, peerId: 20, unread: 3 }] }),
-    listImMessages: async () => ({ data: [{ messageId: 2, content: '来自 HR 的新消息' }] }),
+    listImMessages: async () => ({ data: { items: [{ messageId: 2, content: '来自 HR 的新消息' }], hasMore: false } }),
     markImSessionRead: async () => {},
     ...overrides
-  }, ['loadSessions', 'selectSession', 'refreshMessages', 'sessions', 'selectedSessionId', 'activeView'])
+  }, ['loadSessions', 'selectSession', 'refreshMessages', 'sessions', 'messages', 'selectedSessionId', 'activeView', 'loadMessages', 'loadOlderMessages', 'hasOlderMessages', 'messagesContainer', 'hasPendingMessages', 'messageSyncError', 'selectSystem'])
   return { page, document, events }
 }
 
@@ -197,6 +200,23 @@ test('成功查看 HR 会话后才清除角标并同步顶部未读总数', asyn
   assert.deepEqual(events, ['agent-notifications-updated'])
 })
 
+test('加载结构化消息卡片后仍正常标记已读，单条异常格式不阻断其他消息', async () => {
+  const { page, events } = messagePage({
+    listImMessages: async () => ({ data: { items: [
+      { messageId: 1, type: 6, content: '{"kind":"job_card","version":1,"positionId":26,"title":"前端工程师"}' },
+      { messageId: 2, type: 5, content: '{broken' },
+      { messageId: 3, type: 1, content: '普通文本消息' }
+    ], hasMore: false } })
+  })
+  await page.loadSessions()
+  await page.selectSession(page.sessions.value[0], false)
+  assert.equal(page.messages.value[0].card.kind, 'job')
+  assert.equal(page.messages.value[1].card.kind, 'notice')
+  assert.equal(page.messages.value[2].card, null)
+  assert.equal(page.sessions.value[0].unread, 0)
+  assert.deepEqual(events, ['agent-notifications-updated'])
+})
+
 test('后台标签页不标记会话已读，也不轮询清除新消息', async () => {
   let reads = 0
   const { page, document } = messagePage({ markImSessionRead: async () => { reads++ } })
@@ -218,7 +238,7 @@ test('加载期间切到其他会话，不误清原会话的未读数', async ()
   await page.loadSessions()
   const loading = page.selectSession(page.sessions.value[0], false)
   page.selectedSessionId.value = 2
-  pending.resolve({ data: [] })
+  pending.resolve({ data: { items: [], hasMore: false } })
   await loading
   assert.equal(reads, 0)
   assert.equal(page.sessions.value[0].unread, 3)
@@ -229,4 +249,60 @@ test('会话未读角标不放在窄屏隐藏的 conversation-meta 内', () => {
   assert.match(source, /<\/span>\s*<span v-if="unreadCount\(session.unread\)" class="unread conversation-unread"/)
   assert.match(source, /\.message-shell \.conversation-unread\{top:2px;right:0;/)
   assert.match(source, /\.message-shell \.conversation-sidebar\{padding:0\}/)
+})
+
+
+test('聊天首次仅请求最新页，轮询携带 afterId，空增量不替换数组', async () => {
+  const calls = []
+  const { page } = messagePage({ listImMessages: async (id, params) => {
+    calls.push({ id, params })
+    return { data: { items: calls.length === 1 ? [{ messageId: 60, content: '最新消息' }] : [], hasMore: calls.length === 1 } }
+  } })
+  await page.loadSessions()
+  await page.selectSession(page.sessions.value[0], false)
+  assert.equal(page.hasOlderMessages.value, true)
+  const original = page.messages.value
+  await page.refreshMessages()
+  assert.deepEqual(calls.map(call => call.params), [{}, { afterId: 60 }])
+  assert.equal(page.messages.value, original)
+})
+
+test('加载更早消息使用 beforeId，保持阅读位置并去重排序', async () => {
+  const calls = []
+  const { page } = messagePage({ listImMessages: async (id, params) => {
+    calls.push(params)
+    return { data: { items: params.beforeId ? [{ messageId: 30, content: '旧消息' }] : [{ messageId: 60, content: '新消息' }], hasMore: !params.beforeId } }
+  } })
+  await page.loadSessions()
+  await page.selectSession(page.sessions.value[0], false)
+  const container = { scrollTop: 120, get scrollHeight() { return 500 + page.messages.value.length * 100 } }
+  page.messagesContainer.value = container
+  await page.loadOlderMessages()
+  assert.deepEqual(calls, [{}, { beforeId: 60 }])
+  assert.deepEqual(page.messages.value.map(item => item.messageId), [30, 60])
+  assert.equal(container.scrollTop, 220)
+  assert.equal(page.hasOlderMessages.value, false)
+})
+
+test('追赶多页增量，未追完不清角标，失败后保持现有消息可重试', async () => {
+  let fail = false
+  const { page } = messagePage({ listImMessages: async (id, params) => {
+    if (fail) throw new Error('网络中断')
+    const next = params.afterId ? Number(params.afterId) + 1 : 1
+    return { data: { items: [{ messageId: next, content: '合成消息' }], hasMore: next < 15 } }
+  } })
+  await page.loadSessions()
+  await page.selectSession(page.sessions.value[0], false)
+  await page.refreshMessages()
+  assert.equal(page.hasPendingMessages.value, true)
+  assert.equal(page.sessions.value[0].unread, 3)
+  fail = true
+  const count = page.messages.value.length
+  await page.refreshMessages()
+  assert.equal(page.messages.value.length, count)
+  assert.match(page.messageSyncError.value, /网络中断/)
+  fail = false
+  await page.refreshMessages()
+  assert.equal(page.messages.value.at(-1).messageId, 15)
+  assert.equal(page.sessions.value[0].unread, 0)
 })
