@@ -47,10 +47,12 @@ class RescheduleRequest {
       return value.substring(0, 16);
     }
 
-    final status = requiredText('status');
-    if (!['pending', 'approved', 'rejected'].contains(status)) {
-      throw const FormatException('改期审批状态不正确');
-    }
+    final status = switch ('${row['status']}'.toLowerCase()) {
+      '0' || 'pending' => 'pending',
+      '1' || 'approved' => 'approved',
+      '2' || 'rejected' => 'rejected',
+      _ => throw const FormatException('改期审批状态不正确'),
+    };
     return RescheduleRequest(
       id: id('requestId'),
       appointmentId: id('appointmentId'),
@@ -109,9 +111,11 @@ class RescheduleReviewDataSource {
             !['pending', 'approved', 'rejected'].contains(status))) {
       throw const FormatException('审批筛选参数不正确');
     }
+    final query = <String, Object?>{'pageNum': page, 'pageSize': 20};
+    if (status != null) query['status'] = status;
     final response = await _client.get(
       '/enterprise/interview/reschedule-requests',
-      query: {'status': status, 'pageNum': page, 'pageSize': 20},
+      query: query,
     );
     final rows = response['rows'];
     final total = int.tryParse('${response['total']}');
