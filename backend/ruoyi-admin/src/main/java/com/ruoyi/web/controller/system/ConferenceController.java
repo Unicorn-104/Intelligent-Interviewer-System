@@ -83,7 +83,8 @@ public class ConferenceController extends BaseController
     {
         return success(conferenceService.createRoomLink(getUserId(), longOf(body, "peerUserId"),
                 longOf(body, "positionId"), longOf(body, "stageId"), intOf(body, "durationMinutes"),
-                intOf(body, "mode"), longListOf(body, "interviewerIds"), str(body, "startTime")));
+                intOf(body, "mode"), longListOf(body, "interviewerIds"), str(body, "startTime"),
+                longOf(body, "appointmentId")));
     }
 
     /**

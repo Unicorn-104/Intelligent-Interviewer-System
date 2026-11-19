@@ -73,11 +73,11 @@ Future<void> startSession(int sessionId) async {
   await _client.post('/system/conference/session/$sessionId/start');
 }
 
-/// HR 发起视频面试：生成会议场次与候选人会议链接（与 PC 端一致）。
+/// HR 发起视频面试：新邀约创建预约；从日程开始时按 appointmentId 复用已有预约。
 /// 已对接：POST /system/conference/link
 ///
-/// 后端每次发起都会新建场次并签发新的随机链接，同时取消该候选人旧的
-/// 待面试预约与未结束场次；发起后候选人流程状态自动推进为「面试中」。
+/// 不带 appointmentId 时创建新的预约和场次；带 appointmentId 时复用已有预约。
+/// 发起后候选人流程状态自动推进为「面试中」。
 /// 面试方式 mode 与面试官人数严格联动：1-纯AI（0人）、2-AI+单面试官（1人）、
 /// 3-AI+多面试官（≥2人）、4-无AI纯人工（≥1人）。
 Future<Map<String, dynamic>> createRoomLink({
@@ -87,6 +87,7 @@ Future<Map<String, dynamic>> createRoomLink({
   int? durationMinutes,
   int? mode,
   List<int>? interviewerIds,
+  int? appointmentId,
 }) async {
   final response = await _client.post(
     '/system/conference/link',
@@ -97,6 +98,7 @@ Future<Map<String, dynamic>> createRoomLink({
       'durationMinutes': durationMinutes,
       'mode': mode,
       'interviewerIds': interviewerIds,
+      'appointmentId': appointmentId,
     },
   );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});

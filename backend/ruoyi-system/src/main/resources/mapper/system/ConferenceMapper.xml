@@ -212,6 +212,35 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
              1, sysdate(), sysdate())
     </insert>
 
+    <!-- 从既有预约开始面试时复用该预约，避免把当前预约误判为重复安排 -->
+    <select id="selectAppointmentForConference" resultType="java.util.LinkedHashMap">
+        select a.apt_id as appointmentId,
+               a.apt_candidate_id as candidateId,
+               a.apt_position_id as positionId,
+               a.apt_interviewer_id as interviewerId,
+               a.apt_stage_id as stageId,
+               a.apt_stage_name as stageName,
+               a.apt_stage_type as stageType,
+               a.apt_stage_order as stageOrder,
+               a.apt_start_time as startTime,
+               a.apt_end_time as endTime,
+               a.apt_status as appointmentStatus,
+               s.ses_id as sessionId,
+               s.ses_status as sessionStatus,
+               s.ses_room_id as roomId,
+               s.ses_room_token as roomToken
+        from t_sch_appointment a
+        join t_pos p on p.pos_id = a.apt_position_id
+        left join t_int_session s on s.ses_appointment_id = a.apt_id
+        where a.apt_id = #{appointmentId}
+          and a.apt_candidate_id = #{candidateId}
+          and a.apt_position_id = #{positionId}
+          and p.pos_company_id = #{companyId}
+          and a.apt_status in (0, 1)
+          and a.apt_end_time &gt; sysdate()
+        limit 1
+    </select>
+
     <insert id="insertSession" parameterType="java.util.Map" useGeneratedKeys="true" keyProperty="sessionId">
         insert into t_int_session
             (ses_appointment_id, ses_candidate_id, ses_position_id, ses_interviewer_id, ses_cascade_round,
