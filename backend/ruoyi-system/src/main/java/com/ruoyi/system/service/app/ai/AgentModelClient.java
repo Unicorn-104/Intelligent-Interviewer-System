@@ -161,6 +161,50 @@ public class AgentModelClient
         }
     }
 
+    public interface ToolExecutor
+    {
+        /** 执行工具调用，返回文本结果（JSON 字符串） */
+        String execute(String name, String arguments);
+    }
+
+    /**
+     * 带工具调用的对话循环：模型请求工具时本地执行并回填结果，最多 6 轮，
+     * 直到模型返回最终内容。tools 为 null 时等价于普通 complete。
+     */
+    public Reply chatWithTools(ModelProvider provider, ArrayNode messages, ArrayNode tools,
+            ToolExecutor executor, long deadlineNanos, int maxOutputTokens) throws Exception
+    {
+        for (int round = 0; round < 6; round++)
+        {
+            Reply reply = complete(provider, messages, tools, null, deadlineNanos, maxOutputTokens);
+            JsonNode message = reply.message();
+            messages.add(message);
+            JsonNode calls = message.path("tool_calls");
+            if (!calls.isArray() || calls.isEmpty())
+            {
+                return reply;
+            }
+            for (JsonNode call : calls)
+            {
+                String id = call.path("id").asText();
+                String name = call.path("function").path("name").asText();
+                String arguments = call.path("function").path("arguments").asText("{}");
+                String output;
+                try
+                {
+                    output = executor.execute(name, arguments);
+                }
+                catch (RuntimeException error)
+                {
+                    output = "{\"error\":\"工具执行失败\"}";
+                }
+                messages.addObject().put("role", "tool").put("tool_call_id", id)
+                        .put("content", output);
+            }
+        }
+        throw new ServiceException("AI 工具调用次数过多，请重试", 503);
+    }
+
     Reply readStream(BufferedReader reader, ArrayNode messages, JsonNode tools,
             Consumer<String> delta, long deadlineNanos) throws Exception
     {

@@ -1,9 +1,11 @@
 package com.ruoyi.enterprise.service.impl;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +19,7 @@ import com.ruoyi.common.enums.ApplicationStatus;
 import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ExamMapper;
 import com.ruoyi.enterprise.service.ApplicationStatusService;
+import com.ruoyi.enterprise.service.IExamAiService;
 import com.ruoyi.enterprise.service.IExamService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
@@ -44,8 +47,17 @@ public class ExamServiceImpl implements IExamService
 
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /** 各题型默认分值（AI 组卷/题库抽题时使用） */
+    private static final java.util.Map<Integer, Integer> DEFAULT_SCORES = java.util.Map.of(
+            1, 4, 2, 6, 3, 3, 4, 10, 5, 15);
+
+    private static final String[] TYPE_LABELS = {"", "单选", "多选", "判断", "简答", "编程"};
+
     @Autowired
     private ExamMapper examMapper;
+
+    @Autowired
+    private IExamAiService examAiService;
 
     @Autowired
     private DashboardMapper dashboardMapper;
@@ -311,6 +323,393 @@ public class ExamServiceImpl implements IExamService
     }
 
     @Override
+    public Map<String, Object> previewGeneratedPaper(Long userId, Map<String, Object> body)
+    {
+        Long companyId = resolveCompanyId(userId);
+        Map<String, Object> position = requirePositionContext(companyId, body.get("positionId"));
+        int difficulty = normalizeDifficulty(body.get("difficulty"));
+        Map<Integer, Integer> counts = parseTypeCounts(body.get("counts"));
+        boolean saveToBank = parseSaveToBank(body.get("saveToBank"));
+        Map<String, Object> plan = null;
+        List<Map<String, Object>> questions;
+        if (saveToBank)
+        {
+            Map<String, Object> request = buildAiRequest(companyId, position, difficulty, counts,
+                    asString(body.get("focusPoints")), normalizeFocusWeight(body.get("focusWeight")));
+            plan = asMap(body.get("plan"));
+            if (plan.isEmpty() || asList(plan.get("points")).isEmpty())
+            {
+                plan = examAiService.planPaper(request);
+            }
+            questions = agentGenerateQuestions(companyId, request, counts, plan);
+        }
+        else
+        {
+            questions = drawQuestionsByType(companyId, difficulty, counts);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("saveToBank", saveToBank);
+        result.put("positionId", asLong(position.get("positionId")));
+        result.put("plan", plan);
+        result.put("questions", questions);
+        result.put("questionCount", questions.size());
+        result.put("totalScore", sumScore(questions));
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> previewPlan(Long userId, Map<String, Object> body)
+    {
+        Long companyId = resolveCompanyId(userId);
+        Map<String, Object> position = requirePositionContext(companyId, body.get("positionId"));
+        int difficulty = normalizeDifficulty(body.get("difficulty"));
+        Map<Integer, Integer> counts = parseTypeCounts(body.get("counts"));
+        return examAiService.planPaper(buildAiRequest(companyId, position, difficulty, counts,
+                asString(body.get("focusPoints")), normalizeFocusWeight(body.get("focusWeight"))));
+    }
+
+    @Override
+    public Map<String, Object> saveGeneratedPaper(Long userId, Map<String, Object> body)
+    {
+        Long companyId = resolveCompanyId(userId);
+        Map<String, Object> position = requirePositionContext(companyId, body.get("positionId"));
+        Long positionId = asLong(position.get("positionId"));
+        int durationMin = asInt(body.get("durationMin"), 60);
+        if (durationMin <= 0 || durationMin > 600)
+        {
+            throw new ServiceException("考试时长应在 1~600 分钟之间");
+        }
+        boolean saveToBank = parseSaveToBank(body.get("saveToBank"));
+        List<Map<String, Object>> questions = asList(body.get("questions"));
+        if (questions.isEmpty())
+        {
+            throw new ServiceException("试卷至少需要 1 道题");
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        List<Map<String, Object>> newQuestions = new ArrayList<>();
+        for (Map<String, Object> q : questions)
+        {
+            BigDecimal score = asDecimal(q.get("score"));
+            if (score == null || score.compareTo(BigDecimal.ZERO) <= 0)
+            {
+                throw new ServiceException("每题分值必须大于0");
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("score", score);
+            if (saveToBank)
+            {
+                Map<String, Object> params = buildQuestionParams(q, null);
+                params.put("companyId", companyId);
+                newQuestions.add(params);
+            }
+            else
+            {
+                Long questionId = asLong(q.get("questionId"));
+                if (questionId == null || examMapper.selectQuestionById(questionId) == null)
+                {
+                    throw new ServiceException("题目不存在：" + questionId);
+                }
+                item.put("questionId", questionId);
+            }
+            items.add(item);
+        }
+        for (int i = 0; i < items.size(); i++)
+        {
+            if (saveToBank)
+            {
+                examMapper.insertQuestion(newQuestions.get(i));
+                items.get(i).put("questionId", (long) examMapper.selectLastQuestionId());
+            }
+        }
+        String name = asString(body.get("name"));
+        if (StringUtils.isEmpty(name))
+        {
+            name = String.valueOf(position.get("positionTitle")) + " AI组卷 " + LocalDate.now();
+        }
+        BigDecimal totalScore = sumScore(items);
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("name", name);
+        params.put("positionId", positionId);
+        params.put("totalScore", totalScore);
+        params.put("durationMin", durationMin);
+        params.put("ruleJson", "{\"type\":\"ai\"}");
+        examMapper.insertPaper(params);
+        Long paperId = (long) examMapper.selectLastPaperId();
+        for (int i = 0; i < items.size(); i++)
+        {
+            Map<String, Object> q = items.get(i);
+            examMapper.insertPaperQuestion(paperId, asLong(q.get("questionId")),
+                    asDecimal(q.get("score")), i + 1);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("paperId", paperId);
+        result.put("name", name);
+        result.put("questionCount", items.size());
+        result.put("totalScore", totalScore);
+        result.put("savedToBank", saveToBank);
+        result.put("durationMin", durationMin);
+        return result;
+    }
+
+    private Map<String, Object> requirePositionContext(Long companyId, Object rawPositionId)
+    {
+        Long positionId = asLong(rawPositionId);
+        if (positionId == null || examMapper.countPosition(companyId, positionId) == 0)
+        {
+            throw new ServiceException("岗位不存在或无权访问");
+        }
+        Map<String, Object> position = examMapper.selectPositionContext(companyId, positionId);
+        if (position == null)
+        {
+            throw new ServiceException("岗位不存在或无权访问");
+        }
+        return position;
+    }
+
+    private boolean parseSaveToBank(Object raw)
+    {
+        return raw == null || Boolean.parseBoolean(String.valueOf(raw));
+    }
+
+    private int normalizeDifficulty(Object raw)
+    {
+        int difficulty = asInt(raw, 0);
+        return difficulty < 0 || difficulty > 3 ? 0 : difficulty;
+    }
+
+    private int normalizeFocusWeight(Object raw)
+    {
+        int weight = asInt(raw, 40);
+        return weight < 10 ? 10 : Math.min(weight, 80);
+    }
+
+    /** AI 命题参数（规划阶段与命题阶段共用） */
+    private Map<String, Object> buildAiRequest(Long companyId, Map<String, Object> position, int difficulty,
+            Map<Integer, Integer> counts, String focusPoints, int focusWeight)
+    {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("companyId", companyId);
+        request.put("positionTitle", position.get("positionTitle"));
+        request.put("description", position.get("description"));
+        request.put("skills", position.get("skills"));
+        request.put("education", position.get("education"));
+        request.put("experience", position.get("experience"));
+        request.put("difficulty", difficulty);
+        request.put("counts", counts);
+        request.put("focusPoints", focusPoints);
+        request.put("focusWeight", focusWeight);
+        return request;
+    }
+
+    /** Agent 组卷：规划 → 分题型命题 → 自检 → 自动补题，返回含默认分值的完整题目 */
+    private List<Map<String, Object>> agentGenerateQuestions(Long companyId, Map<String, Object> request,
+            Map<Integer, Integer> counts, Map<String, Object> plan)
+    {
+        List<String> avoid = new ArrayList<>(examMapper.selectRecentQuestionStems(companyId, 20));
+        List<Map<String, Object>> pool = new ArrayList<>();
+        for (Map.Entry<Integer, Integer> entry : counts.entrySet())
+        {
+            if (entry.getValue() > 0)
+            {
+                pool.addAll(generateTypeQuestions(request, entry.getKey(), entry.getValue(), plan, avoid));
+            }
+        }
+        List<Integer> invalid = reviewSafely(pool, plan);
+        Map<Integer, Integer> acceptedCount = new LinkedHashMap<>();
+        List<Map<String, Object>> accepted = new ArrayList<>();
+        for (int i = 0; i < pool.size(); i++)
+        {
+            if (!invalid.contains(i))
+            {
+                acceptQuestion(pool.get(i), accepted, acceptedCount, avoid);
+            }
+        }
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            List<Map<String, Object>> extra = new ArrayList<>();
+            for (Map.Entry<Integer, Integer> entry : counts.entrySet())
+            {
+                int need = entry.getValue() - acceptedCount.getOrDefault(entry.getKey(), 0);
+                if (need > 0)
+                {
+                    extra.addAll(generateTypeQuestions(request, entry.getKey(), need, plan, avoid));
+                }
+            }
+            if (extra.isEmpty())
+            {
+                break;
+            }
+            List<Integer> bad = reviewSafely(extra, plan);
+            for (int i = 0; i < extra.size(); i++)
+            {
+                if (!bad.contains(i))
+                {
+                    acceptQuestion(extra.get(i), accepted, acceptedCount, avoid);
+                }
+            }
+        }
+        List<String> missing = new ArrayList<>();
+        for (Map.Entry<Integer, Integer> entry : counts.entrySet())
+        {
+            int left = entry.getValue() - acceptedCount.getOrDefault(entry.getKey(), 0);
+            if (left > 0)
+            {
+                missing.add(TYPE_LABELS[entry.getKey()] + " " + left + " 题");
+            }
+        }
+        if (!missing.isEmpty())
+        {
+            throw new ServiceException("Agent 自检后仍缺题：" + String.join("、", missing) + "，请重试或减少题量");
+        }
+        accepted.sort(Comparator.comparingInt(q -> asInt(q.get("type"), 0)));
+        for (Map<String, Object> question : accepted)
+        {
+            question.put("score", BigDecimal.valueOf(defaultScore(asInt(question.get("type"), 0))));
+        }
+        return accepted;
+    }
+
+    /** 单题型命题，题量不足时自动再生成一次 */
+    private List<Map<String, Object>> generateTypeQuestions(Map<String, Object> request, int type, int count,
+            Map<String, Object> plan, List<String> avoid)
+    {
+        List<Map<String, Object>> result = new ArrayList<>();
+        List<String> localAvoid = new ArrayList<>(avoid);
+        for (int attempt = 0; attempt < 2 && result.size() < count; attempt++)
+        {
+            List<Map<String, Object>> batch = examAiService.generateQuestionsByType(request, type,
+                    count - result.size(), plan, localAvoid);
+            for (Map<String, Object> question : batch)
+            {
+                String content = asString(question.get("content"));
+                if (content.isEmpty() || containsStem(localAvoid, content))
+                {
+                    continue;
+                }
+                result.add(question);
+                localAvoid.add(content);
+                if (result.size() == count)
+                {
+                    break;
+                }
+            }
+        }
+        if (result.size() < count)
+        {
+            throw new ServiceException("AI 生成的" + TYPE_LABELS[type] + "题不足（需 " + count
+                    + " 题，实际 " + result.size() + " 题），请重试");
+        }
+        return result;
+    }
+
+    private void acceptQuestion(Map<String, Object> question, List<Map<String, Object>> accepted,
+            Map<Integer, Integer> acceptedCount, List<String> avoid)
+    {
+        accepted.add(question);
+        acceptedCount.merge(asInt(question.get("type"), 0), 1, Integer::sum);
+        avoid.add(asString(question.get("content")));
+    }
+
+    private boolean containsStem(List<String> stems, String content)
+    {
+        String normalized = content.replaceAll("\\s+", "");
+        for (String stem : stems)
+        {
+            if (stem != null && stem.replaceAll("\\s+", "").equals(normalized))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 自检失败时降级为不剔除，避免审校模型异常阻断整个组卷流程 */
+    private List<Integer> reviewSafely(List<Map<String, Object>> questions, Map<String, Object> plan)
+    {
+        try
+        {
+            return examAiService.reviewQuestions(questions, plan);
+        }
+        catch (RuntimeException error)
+        {
+            return List.of();
+        }
+    }
+
+    /** 直接从现有题库按题型/难度抽题，返回含默认分值的完整题目 */
+    private List<Map<String, Object>> drawQuestionsByType(Long companyId, int difficulty,
+            Map<Integer, Integer> counts)
+    {
+        List<Map<String, Object>> selected = new ArrayList<>();
+        Integer filterDifficulty = difficulty == 0 ? null : difficulty;
+        for (Map.Entry<Integer, Integer> entry : counts.entrySet())
+        {
+            int type = entry.getKey();
+            int count = entry.getValue();
+            if (count <= 0)
+            {
+                continue;
+            }
+            List<Map<String, Object>> picked = examMapper.drawQuestions(type, filterDifficulty, null,
+                    null, count, companyId);
+            if (picked.size() < count)
+            {
+                throw new ServiceException("题库中" + TYPE_LABELS[type] + "题不足（需 " + count
+                        + " 题，仅 " + picked.size() + " 题），可减少题量或改用 AI 生成");
+            }
+            BigDecimal score = BigDecimal.valueOf(defaultScore(type));
+            for (Map<String, Object> q : picked)
+            {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("questionId", asLong(q.get("questionId")));
+                item.put("type", asInt(q.get("type"), 0));
+                item.put("typeName", q.get("typeName"));
+                item.put("content", q.get("content"));
+                item.put("options", parseJson(q.get("optionsJson")));
+                item.put("answer", q.get("answer"));
+                item.put("analysis", q.get("analysis"));
+                item.put("difficulty", q.get("difficulty"));
+                item.put("skillTag", q.get("skillTag"));
+                item.put("score", score);
+                selected.add(item);
+            }
+        }
+        return selected;
+    }
+
+    /** 解析题型配额（键为题型 1-5），总题量限制 1~30 */
+    private Map<Integer, Integer> parseTypeCounts(Object raw)
+    {
+        Map<String, Object> source = asMap(raw);
+        Map<Integer, Integer> counts = new LinkedHashMap<>();
+        int total = 0;
+        for (int type = TYPE_MIN; type <= TYPE_MAX; type++)
+        {
+            int count = asInt(source.get(String.valueOf(type)), 0);
+            if (count < 0)
+            {
+                throw new ServiceException("题型题量不能为负数");
+            }
+            counts.put(type, count);
+            total += count;
+        }
+        if (total <= 0)
+        {
+            throw new ServiceException("请至少设置 1 道题");
+        }
+        if (total > 30)
+        {
+            throw new ServiceException("总题量不能超过 30 题");
+        }
+        return counts;
+    }
+
+    private int defaultScore(int type)
+    {
+        return DEFAULT_SCORES.getOrDefault(type, 5);
+    }
+
+    @Override
     public void updatePaper(Long userId, Long paperId, Map<String, Object> body)
     {
         Map<String, Object> paper = requirePaper(resolveCompanyId(userId), paperId);
@@ -338,6 +737,11 @@ public class ExamServiceImpl implements IExamService
         {
             selected = validateManualQuestions(body.get("questions"));
             totalScore = sumScore(selected);
+            Map<String, Object> oldRule = parseJson(paper.get("ruleJson"));
+            if (oldRule != null && "ai".equals(asString(oldRule.get("type"))))
+            {
+                ruleJson = JSON.toJSONString(oldRule);
+            }
         }
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("id", paperId);
@@ -353,6 +757,21 @@ public class ExamServiceImpl implements IExamService
             Map<String, Object> q = selected.get(i);
             examMapper.insertPaperQuestion(paperId, asLong(q.get("questionId")),
                     asDecimal(q.get("score")), i + 1);
+        }
+    }
+
+    @Override
+    public void updatePaperStatus(Long userId, Long paperId, Integer status)
+    {
+        if (status == null || (status != 0 && status != 1))
+        {
+            throw new ServiceException("试卷状态无效");
+        }
+        Long companyId = resolveCompanyId(userId);
+        requirePaper(companyId, paperId);
+        if (examMapper.updatePaperStatus(companyId, paperId, status) == 0)
+        {
+            throw new ServiceException("试卷不存在或无权访问");
         }
     }
 
@@ -578,6 +997,10 @@ public class ExamServiceImpl implements IExamService
     {
         Long paperId = asLong(body.get("paperId"));
         Map<String, Object> paper = requirePaper(companyId, paperId);
+        if (asInt(paper.get("status"), 0) != 1)
+        {
+            throw new ServiceException("该试卷已禁用，请启用后再用于考试安排");
+        }
         Long positionId = asLong(body.get("positionId"));
         if (positionId == null || !String.valueOf(positionId).equals(String.valueOf(paper.get("positionId"))))
         {

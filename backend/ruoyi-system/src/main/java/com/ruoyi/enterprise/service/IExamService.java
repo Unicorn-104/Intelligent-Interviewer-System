@@ -38,8 +38,35 @@ public interface IExamService
     /** 新建试卷（manual=选题组卷，random=规则抽卷），返回 paperId */
     public Long createPaper(Long userId, Map<String, Object> body);
 
+    /**
+     * Agent 组卷预览：AI 生成题目或从现有题库抽题，返回可编辑的题目列表（不落库、不建试卷）。
+     *
+     * @param body positionId/difficulty/counts/focusPoints/focusWeight/saveToBank
+     * @return questions、questionCount、totalScore、saveToBank
+     */
+    public Map<String, Object> previewGeneratedPaper(Long userId, Map<String, Object> body);
+
+    /**
+     * Agent 规划预览：根据岗位与配额生成知识点覆盖计划，供前端编辑后再命题。
+     *
+     * @param body positionId/difficulty/counts/focusPoints/focusWeight
+     * @return note、points（[{skillTag,weight,focus}]）
+     */
+    public Map<String, Object> previewPlan(Long userId, Map<String, Object> body);
+
+    /**
+     * 保存 Agent 组卷预览结果：按编辑后的题目生成试卷；saveToBank=true 时题目同时写入企业题库。
+     *
+     * @param body positionId/name/durationMin/saveToBank/questions
+     * @return paperId、name、questionCount、totalScore
+     */
+    public Map<String, Object> saveGeneratedPaper(Long userId, Map<String, Object> body);
+
     /** 修改试卷（名称/时长/规则/题目） */
     public void updatePaper(Long userId, Long paperId, Map<String, Object> body);
+
+    /** 启用/禁用试卷（禁用后不可用于新的考试安排） */
+    public void updatePaperStatus(Long userId, Long paperId, Integer status);
 
     /** 删除试卷（存在进行中安排时禁止） */
     public void deletePaper(Long userId, Long paperId);
