@@ -24,6 +24,7 @@ import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.enterprise.domain.ProcessStageInstance;
 import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
+import com.ruoyi.enterprise.mapper.RescheduleRequestMapper;
 import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.ProcessStageInstanceService;
@@ -38,6 +39,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
 {
     private static final DateTimeFormatter FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     @Autowired private InterviewScheduleMapper scheduleMapper;
+    @Autowired private RescheduleRequestMapper rescheduleRequestMapper;
     @Autowired private DashboardMapper dashboardMapper;
     @Autowired private EnterpriseJobMapper jobMapper;
     @Autowired private RescheduleMessageService rescheduleMessages;
@@ -264,10 +266,28 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             Integer durationMin, Long interviewerId)
     {
         Map<String, Object> result = moveAppointment(userId, appointmentId, newStartTime, durationMin, interviewerId);
-        if (rescheduleMessages != null && (!parseTime(result.get("originalStartTime")).equals(parseTime(result.get("startTime")))
+        if (!parseTime(result.get("originalStartTime")).equals(parseTime(result.get("startTime")))
                 || !parseTime(result.get("originalEndTime")).equals(parseTime(result.get("endTime")))
-                || !java.util.Objects.equals(result.get("originalInterviewerId"), result.get("interviewerId"))))
-            rescheduleMessages.changed(userId, result);
+                || !java.util.Objects.equals(result.get("originalInterviewerId"), result.get("interviewerId")))
+        {
+            Map<String, Object> history = new java.util.LinkedHashMap<>();
+            history.put("appointmentId", result.get("appointmentId"));
+            history.put("companyId", result.get("companyId"));
+            history.put("candidateId", result.get("candidateId"));
+            history.put("requesterId", userId);
+            history.put("originalStartTime", result.get("originalStartTime"));
+            history.put("originalEndTime", result.get("originalEndTime"));
+            history.put("originalInterviewerId", result.get("originalInterviewerId"));
+            history.put("newStartTime", result.get("startTime"));
+            history.put("newEndTime", result.get("endTime"));
+            history.put("reason", "企业发起改期");
+            history.put("reviewerId", userId);
+            history.put("reviewNote", "企业直接调整面试安排");
+            if (rescheduleRequestMapper != null) {
+                rescheduleRequestMapper.insertEnterpriseRecord(history);
+            }
+            if (rescheduleMessages != null) rescheduleMessages.changed(userId, result);
+        }
         return result;
     }
 

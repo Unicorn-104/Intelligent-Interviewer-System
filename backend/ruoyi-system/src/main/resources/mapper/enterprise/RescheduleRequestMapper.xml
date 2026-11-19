@@ -14,7 +14,10 @@
         r.rsr_reviewer_id as reviewerId, r.rsr_review_note as reviewNote,
         date_format(r.rsr_created_at, '%Y-%m-%d %H:%i:%s') as requestedAt,
         date_format(r.rsr_reviewed_at, '%Y-%m-%d %H:%i:%s') as reviewedAt,
-        u.nick_name as candidateName, p.pos_title as positionName,
+        coalesce(cu.nick_name, u.nick_name) as candidateName,
+        u.nick_name as requesterName,
+        case when t.tal_user_id = r.rsr_requester_id then 'candidate' else 'enterprise' end as source,
+        p.pos_title as positionName,
         iu.nick_name as interviewerName, ru.nick_name as reviewerName
     </sql>
     <sql id="joins">
@@ -23,6 +26,7 @@
         join t_pos p on p.pos_id = a.apt_position_id and p.pos_company_id = r.rsr_company_id
         join t_tal t on t.tal_id = r.rsr_candidate_id and t.tal_id = a.apt_candidate_id
         left join sys_user u on u.user_id = r.rsr_requester_id
+        left join sys_user cu on cu.user_id = t.tal_user_id
         left join sys_user iu on iu.user_id = r.rsr_original_interviewer_id
         left join sys_user ru on ru.user_id = r.rsr_reviewer_id
     </sql>
@@ -63,6 +67,16 @@
         select count(*) from t_sch_reschedule_request
         where rsr_appointment_id = #{appointmentId} and rsr_status = 0
     </select>
+    <insert id="insertEnterpriseRecord" useGeneratedKeys="true" keyProperty="requestId" keyColumn="rsr_id">
+        insert into t_sch_reschedule_request (rsr_appointment_id, rsr_company_id,
+            rsr_candidate_id, rsr_requester_id, rsr_original_start, rsr_original_end,
+            rsr_original_interviewer_id, rsr_new_start, rsr_new_end, rsr_reason,
+            rsr_status, rsr_reviewer_id, rsr_review_note, rsr_reviewed_at)
+        values (#{appointmentId}, #{companyId}, #{candidateId}, #{requesterId},
+            #{originalStartTime}, #{originalEndTime}, #{originalInterviewerId},
+            #{newStartTime}, #{newEndTime}, #{reason}, 1, #{reviewerId},
+            #{reviewNote}, now())
+    </insert>
     <insert id="insertRequest" useGeneratedKeys="true" keyProperty="requestId" keyColumn="rsr_id">
         insert into t_sch_reschedule_request (rsr_appointment_id, rsr_company_id,
             rsr_candidate_id, rsr_requester_id, rsr_original_start, rsr_original_end,
