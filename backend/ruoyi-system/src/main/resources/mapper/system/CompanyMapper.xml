@@ -60,6 +60,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="cmpName != null and cmpName != ''">cmp_name,</if>
             <if test="cmpCreditCode != null">cmp_credit_code,</if>
             <if test="cmpIndustry != null">cmp_industry,</if>
+            <if test="cmpSize != null">cmp_size,</if>
+            <if test="cmpCity != null">cmp_city,</if>
+            <if test="contactName != null">contact_name,</if>
+            <if test="contactPhone != null">contact_phone,</if>
+            <if test="cmpVerifyStatus != null">cmp_verify_status,</if>
             <if test="cmpStatus != null">cmp_status,</if>
             <if test="cmpCreatedAt != null">cmp_created_at,</if>
         </trim>
@@ -67,6 +72,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="cmpName != null and cmpName != ''">#{cmpName},</if>
             <if test="cmpCreditCode != null">#{cmpCreditCode},</if>
             <if test="cmpIndustry != null">#{cmpIndustry},</if>
+            <if test="cmpSize != null">#{cmpSize},</if>
+            <if test="cmpCity != null">#{cmpCity},</if>
+            <if test="contactName != null">#{contactName},</if>
+            <if test="contactPhone != null">#{contactPhone},</if>
+            <if test="cmpVerifyStatus != null">#{cmpVerifyStatus},</if>
             <if test="cmpStatus != null">#{cmpStatus},</if>
             <if test="cmpCreatedAt != null">#{cmpCreatedAt},</if>
         </trim>
@@ -116,5 +126,37 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <select id="selectActiveCompanyCount" resultType="int">
         select count(*) from t_cmp where cmp_status = 1
     </select>
+
+    <select id="selectCompanyByNameExact" resultMap="CompanyResult">
+        <include refid="selectCompanyVo"/>
+        where cmp_name = #{cmpName}
+        limit 1
+    </select>
+
+    <insert id="insertEnterpriseBinding">
+        insert into t_cmp_binding (bnd_user_id, bnd_company_id, bnd_job_title, bnd_status, bnd_created_at, bnd_updated_at)
+        values (#{userId}, #{companyId}, #{jobTitle}, #{status}, now(), now())
+    </insert>
+
+    <select id="selectBindingStatusByUser" resultType="java.util.LinkedHashMap">
+        select b.bnd_company_id as companyId, b.bnd_status as bindingStatus,
+               c.cmp_name as companyName, c.cmp_verify_status as companyVerifyStatus,
+               c.verify_remark as rejectReason
+        from t_cmp_binding b
+        left join t_cmp c on c.cmp_id = b.bnd_company_id
+        where b.bnd_user_id = #{userId}
+        order by b.bnd_id desc
+        limit 1
+    </select>
+
+    <update id="updateBindingStatusByCompany">
+        update t_cmp_binding
+        set bnd_status = #{status}, bnd_updated_at = now()
+        where bnd_company_id = #{companyId}
+    </update>
+
+    <update id="updateUserCompanyId">
+        update sys_user set company_id = #{companyId} where user_id = #{userId}
+    </update>
 
 </mapper>

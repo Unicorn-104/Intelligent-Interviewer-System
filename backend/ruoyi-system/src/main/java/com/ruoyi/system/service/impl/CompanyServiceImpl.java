@@ -62,7 +62,11 @@ public class CompanyServiceImpl implements ICompanyService
         company.setCmpVerifyAt(DateUtils.getNowDate());
         company.setCmpVerifyBy(verifyBy);
         company.setVerifyRemark(verifyStatus != null && verifyStatus == 2 ? rejectReason : null);
-        return companyMapper.verifyCompany(company);
+        int rows = companyMapper.verifyCompany(company);
+        // 企业审核结果同步到成员绑定：通过=1、驳回=2、其他=待审核
+        int bindingStatus = verifyStatus != null && verifyStatus == 1 ? 1 : (verifyStatus != null && verifyStatus == 2 ? 2 : 0);
+        companyMapper.updateBindingStatusByCompany(cmpId, bindingStatus);
+        return rows;
     }
 
     @Override
@@ -74,7 +78,9 @@ public class CompanyServiceImpl implements ICompanyService
         company.setCmpVerifyAt(null);
         company.setCmpVerifyBy(null);
         company.setVerifyRemark(null);
-        return companyMapper.verifyCompany(company);
+        int rows = companyMapper.verifyCompany(company);
+        companyMapper.updateBindingStatusByCompany(cmpId, 0);
+        return rows;
     }
 
     @Override
