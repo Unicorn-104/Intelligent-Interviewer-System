@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.service.jd;
+package com.ruoyi.enterprise.ai.completion.jd;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -25,10 +25,10 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.domain.JdDocumentDraft;
 import com.ruoyi.system.config.JdAiProperties;
 import com.ruoyi.system.domain.ModelProvider;
-import com.ruoyi.system.service.app.ai.AgentModelClient;
+import com.ruoyi.enterprise.ai.agent.client.EnterpriseAgentModelClient;
 
 /**
- * JD 草稿结构化：通过 {@link AgentModelClient} 调用数据库（t_model_provider）中
+ * JD 草稿结构化：通过 {@link EnterpriseAgentModelClient} 调用数据库（t_model_provider）中
  * 配置的模型服务，密钥只存在于数据库与模型客户端边界内，不再读取本地配置。
  * 模型返回的字段仍按岗位约束逐字段校验；本服务从不写业务数据。
  */
@@ -66,14 +66,14 @@ public class JdAiStructurer
         """;
 
     private final JdAiProperties properties;
-    private final AgentModelClient model;
+    private final EnterpriseAgentModelClient model;
     private final Semaphore permits;
     private final ObjectMapper mapper = new ObjectMapper()
             .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     @Autowired
-    public JdAiStructurer(JdAiProperties properties, AgentModelClient model)
+    public JdAiStructurer(JdAiProperties properties, EnterpriseAgentModelClient model)
     {
         this.properties = properties;
         this.model = model;

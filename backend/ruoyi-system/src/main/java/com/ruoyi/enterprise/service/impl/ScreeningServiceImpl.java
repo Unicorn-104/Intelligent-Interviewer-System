@@ -27,7 +27,7 @@ import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.EnterpriseResumeStorage;
 import com.ruoyi.enterprise.service.IScreeningService;
 import com.ruoyi.enterprise.service.TalStatusService;
-import com.ruoyi.enterprise.service.screening.ScreeningAiEvaluator;
+import com.ruoyi.enterprise.ai.completion.screening.ScreeningAiEvaluator;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.service.app.pdf.ResumePdfParser;
 

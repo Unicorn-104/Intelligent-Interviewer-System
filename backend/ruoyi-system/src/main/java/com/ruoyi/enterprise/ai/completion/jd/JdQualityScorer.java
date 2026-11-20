@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.service.jd;
+package com.ruoyi.enterprise.ai.completion.jd;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -19,7 +19,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.system.config.JdAiProperties;
 import com.ruoyi.system.domain.ModelProvider;
-import com.ruoyi.system.service.app.ai.AgentModelClient;
+import com.ruoyi.enterprise.ai.agent.client.EnterpriseAgentModelClient;
 
 /**
  * 岗位画像质量评分：通过数据库中配置的模型服务评估 JD 撰写质量。
@@ -57,13 +57,13 @@ public class JdQualityScorer
         """;
 
     private final JdAiProperties properties;
-    private final AgentModelClient model;
+    private final EnterpriseAgentModelClient model;
     private final Semaphore permits;
     private final ObjectMapper mapper = new ObjectMapper()
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     @Autowired
-    public JdQualityScorer(JdAiProperties properties, AgentModelClient model)
+    public JdQualityScorer(JdAiProperties properties, EnterpriseAgentModelClient model)
     {
         this.properties = properties;
         this.model = model;

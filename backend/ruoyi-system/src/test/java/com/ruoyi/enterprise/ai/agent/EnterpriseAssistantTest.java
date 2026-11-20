@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.service;
+package com.ruoyi.enterprise.ai.agent;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -16,10 +16,10 @@ import java.util.function.Consumer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.ruoyi.common.exception.ServiceException;
-import com.ruoyi.enterprise.mapper.EnterpriseAssistantMapper;
+import com.ruoyi.enterprise.ai.agent.mapper.EnterpriseAssistantMapper;
 import com.ruoyi.system.domain.ModelProvider;
 import com.ruoyi.system.mapper.DashboardMapper;
-import com.ruoyi.system.service.app.ai.AgentModelClient;
+import com.ruoyi.enterprise.ai.agent.client.EnterpriseAgentModelClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,7 +46,7 @@ public class EnterpriseAssistantTest
     private JdbcTemplate db;
     private EnterpriseAssistantMapper mapper;
     private DashboardMapper companies;
-    private AgentModelClient model;
+    private EnterpriseAgentModelClient model;
     private EnterpriseAssistantService service;
 
     public static String dateFormat(Timestamp value, String ignored)
@@ -59,12 +59,12 @@ public class EnterpriseAssistantTest
         var ds = new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID()
             + ";MODE=MySQL;DATABASE_TO_UPPER=false;DB_CLOSE_DELAY=-1", "sa", "");
         db = new JdbcTemplate(ds);
-        db.execute("create alias date_format for 'com.ruoyi.enterprise.service.EnterpriseAssistantTest.dateFormat'");
+        db.execute("create alias date_format for 'com.ruoyi.enterprise.ai.agent.EnterpriseAssistantTest.dateFormat'");
         db.execute("create table t_ai_chat_session(acs_id bigint auto_increment primary key,acs_user_id bigint not null,acs_status tinyint,acs_started_at timestamp default current_timestamp,acs_ended_at timestamp,acs_updated_at timestamp default current_timestamp)");
         db.execute("create table t_ai_chat_message(acm_id bigint auto_increment primary key,acm_session_id bigint not null references t_ai_chat_session(acs_id),acm_role tinyint not null,acm_content text not null,acm_intent varchar(30),acm_created_at timestamp default current_timestamp)");
         db.execute("create table t_pos(pos_id bigint primary key,pos_company_id bigint,pos_title varchar(100),pos_work_city varchar(50),pos_status int,pos_salary_min int,pos_salary_max int,pos_experience_required int,pos_education_required int,pos_jd_json text)");
         db.execute("insert into t_pos values(11,81,'合成研发岗位','合成城市',1,8000,12000,1,3,'脱敏合成JD'),(12,82,'其他企业岗位','合成城市',1,9000,15000,2,4,'不可读取')");
-        String xml = new String(new ClassPathResource("mapper/enterprise/EnterpriseAssistantMapper.xml")
+        String xml = new String(new ClassPathResource("mapper/enterprise/ai/agent/EnterpriseAssistantMapper.xml")
             .getInputStream().readAllBytes(), StandardCharsets.UTF_8)
             .replace("date_sub(current_timestamp,interval 150 second)", "dateadd('SECOND',-150,current_timestamp)");
         var factory = new SqlSessionFactoryBean();
@@ -74,12 +74,12 @@ public class EnterpriseAssistantTest
         companies = mock(DashboardMapper.class);
         when(companies.selectCompanyIdByUser(101L)).thenReturn(81L);
         when(companies.selectCompanyIdByUser(102L)).thenReturn(82L);
-        model = mock(AgentModelClient.class);
+        model = mock(EnterpriseAgentModelClient.class);
         when(model.resolve()).thenReturn(new ModelProvider());
         doAnswer(invocation -> {
             Consumer<String> delta = invocation.getArgument(3);
             delta.accept("合成回答");
-            return new AgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":\"合成回答\"}"), 1);
+            return new EnterpriseAgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":\"合成回答\"}"), 1);
         }).when(model).complete(any(), any(), any(), any(), anyLong());
         service = new EnterpriseAssistantService(mapper, companies, model, new DataSourceTransactionManager(ds));
     }
@@ -158,7 +158,7 @@ public class EnterpriseAssistantTest
         doAnswer(invocation -> {
             Consumer<String> delta = invocation.getArgument(3);
             delta.accept("已生成部分"); entered.countDown(); release.await(3, TimeUnit.SECONDS);
-            return new AgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":\"结束\"}"), 1);
+            return new EnterpriseAgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":\"结束\"}"), 1);
         }).when(model).complete(any(), any(), any(), any(), anyLong());
         long session = create(101L);
         long run = ((Number) service.start(101L, session, REQUEST, "合成问题").get("id")).longValue();
@@ -193,13 +193,13 @@ public class EnterpriseAssistantTest
             ArrayNode context = invocation.getArgument(1);
             if (calls.getAndIncrement() == 0) {
                 assertFalse(context.toString().contains("不可读取"));
-                return new AgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call1\",\"type\":\"function\",\"function\":{\"name\":\"list_company_jobs\",\"arguments\":\"{}\"}},{\"id\":\"call2\",\"type\":\"function\",\"function\":{\"name\":\"get_company_job\",\"arguments\":\"{\\\"id\\\":12}\"}}]}"), 1);
+                return new EnterpriseAgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call1\",\"type\":\"function\",\"function\":{\"name\":\"list_company_jobs\",\"arguments\":\"{}\"}},{\"id\":\"call2\",\"type\":\"function\",\"function\":{\"name\":\"get_company_job\",\"arguments\":\"{\\\"id\\\":12}\"}}]}"), 1);
             }
             assertTrue(context.toString().contains("合成研发岗位"));
             assertFalse(context.toString().contains("其他企业岗位"));
             assertTrue(context.toString().contains("岗位不存在或不属于当前企业"));
             Consumer<String> delta = invocation.getArgument(3); delta.accept("合成岗位建议");
-            return new AgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":\"合成岗位建议\"}"), 1);
+            return new EnterpriseAgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":\"合成岗位建议\"}"), 1);
         }).when(model).complete(any(), any(), any(), any(), anyLong());
         long session = create(101L);
         long run = ((Number) service.start(101L, session, REQUEST, "核对合成岗位").get("id")).longValue();
@@ -239,7 +239,7 @@ public class EnterpriseAssistantTest
             entered.countDown();
             if (!release.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("synthetic timeout");
             delta.accept("，随后生成第二段");
-            return new AgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":\"合成完整回答\"}"), 1);
+            return new EnterpriseAgentModelClient.Reply(json.readTree("{\"role\":\"assistant\",\"content\":\"合成完整回答\"}"), 1);
         }).when(model).complete(any(),any(),any(),any(),anyLong());
         long session = create(101L);
         long run = ((Number)service.start(101L,session,REQUEST,"合成流式问题").get("id")).longValue();

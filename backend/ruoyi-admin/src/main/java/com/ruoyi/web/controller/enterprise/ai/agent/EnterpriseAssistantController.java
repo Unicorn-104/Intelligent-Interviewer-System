@@ -1,11 +1,11 @@
-package com.ruoyi.web.controller.enterprise;
+package com.ruoyi.web.controller.enterprise.ai.agent;
 
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
-import com.ruoyi.enterprise.service.EnterpriseAssistantService;
+import com.ruoyi.enterprise.ai.agent.EnterpriseAssistantService;
 
 /** All identities come from authentication; never accept user/company IDs in a request body. */
 @RestController

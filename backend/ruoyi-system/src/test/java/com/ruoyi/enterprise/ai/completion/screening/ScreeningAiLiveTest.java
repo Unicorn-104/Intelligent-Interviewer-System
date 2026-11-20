@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.service.screening;
+package com.ruoyi.enterprise.ai.completion.screening;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -10,7 +10,7 @@ import com.alibaba.fastjson2.JSON;
 import com.ruoyi.system.config.JdAiProperties;
 import com.ruoyi.system.domain.ModelProvider;
 import com.ruoyi.system.service.IModelProviderService;
-import com.ruoyi.system.service.app.ai.AgentModelClient;
+import com.ruoyi.enterprise.ai.agent.client.EnterpriseAgentModelClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -26,7 +26,7 @@ class ScreeningAiLiveTest
         provider.setMppModelName(System.getenv("SCREENING_LIVE_MODEL"));
         IModelProviderService providers = mock(IModelProviderService.class);
         when(providers.selectModelProviderList(any())).thenReturn(List.of(provider));
-        AgentModelClient client = new AgentModelClient(providers);
+        EnterpriseAgentModelClient client = new EnterpriseAgentModelClient(providers);
         var evaluator = new ScreeningAiEvaluator(new JdAiProperties(), client);
         var candidate = Map.<String, Object>of("candidateId", 11L,
                 "education", List.of(Map.of("degree", "硕士", "major", "计算机科学", "description", "演示数据：完成分布式系统课程研究，设计Raft一致性实验，获得校级科技创新竞赛二等奖。")),

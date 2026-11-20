@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.service.jd;
+package com.ruoyi.enterprise.ai.completion.jd;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -11,7 +11,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.domain.JdDocumentDraft;
 import com.ruoyi.system.config.JdAiProperties;
 import com.ruoyi.system.domain.ModelProvider;
-import com.ruoyi.system.service.app.ai.AgentModelClient;
+import com.ruoyi.enterprise.ai.agent.client.EnterpriseAgentModelClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,14 +26,14 @@ class JdAiStructurerTest
          "summary":"Mobile application development","softRequirements":["Team collaboration"],
          "skills":[{"name":"Flutter","required":1},{"name":"Dart","required":null}],"warnings":[]}
         """;
-    private AgentModelClient model;
+    private EnterpriseAgentModelClient model;
     private ModelProvider provider;
     private JdAiStructurer structurer;
 
     @BeforeEach
     void setup()
     {
-        model = mock(AgentModelClient.class);
+        model = mock(EnterpriseAgentModelClient.class);
         provider = new ModelProvider();
         provider.setMppApiUrl("https://api.deepseek.com/chat/completions");
         provider.setMppApiKey("synthetic-test-credential");
