@@ -669,20 +669,6 @@ public class ExamAiServiceImpl implements IExamAiService
         return new ServiceException("AI 服务连接失败，请稍后重试");
     }
 
-    private String typeLabel(int type)
-    {
-        return switch (type)
-        {
-            case 1 -> "单选";
-            case 2 -> "多选";
-            case 3 -> "判断";
-            case 4 -> "简答";
-            case 5 -> "编程";
-            case 6 -> "自定义";
-            default -> "未知";
-        };
-    }
-
     private String asString(Object value)
     {
         return value == null ? "" : value.toString().trim();
