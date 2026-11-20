@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
@@ -5,12 +7,14 @@ import '../../../widgets/skeleton_list.dart';
 import '../talent/talent_page.dart';
 import '../interview/recording_page.dart';
 import '../schedule/reschedule_review_page.dart';
+import '../schedule/data/reschedule_review_data_source.dart';
 import 'account_settings_page.dart';
 import 'data/profile_data_source.dart';
 import 'models/profile_view_data.dart';
 import 'profile_edit_page.dart';
 import 'settings_page.dart';
 import 'enterprise_management_page.dart';
+import 'integration_settings_page.dart';
 import '../exam/exam_management_page.dart';
 import '../exam/exam_proctor_page.dart';
 import 'widgets/profile_avatar_view.dart';
@@ -34,16 +38,33 @@ class AccountPageState extends State<AccountPage> {
   int _request = 0, _avatarRevision = 0;
   // “我的”列表滚动控制器，用于 Tab 重新选中时回到顶部
   final ScrollController _scrollController = ScrollController();
+  final _rescheduleSource = RescheduleReviewDataSource();
+  int _reschedulePending = 0;
+  Timer? _rescheduleTimer;
   // 回到顶部请求标志（reload 时列表会被骨架替换，controller 无 client，需延迟执行）
   bool _scrollTopRequested = false;
   @override
   void initState() {
     super.initState();
     reload();
+    _rescheduleTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _loadReschedulePending(),
+    );
+  }
+
+  Future<void> _loadReschedulePending() async {
+    try {
+      final count = await _rescheduleSource.pendingCount();
+      if (mounted) setState(() => _reschedulePending = count);
+    } catch (_) {
+      // 角标属于辅助信息，接口暂不可用时不影响“我的”页面主体加载。
+    }
   }
 
   @override
   void dispose() {
+    _rescheduleTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -73,6 +94,7 @@ class AccountPageState extends State<AccountPage> {
   /// 每次进入“我的”重新读取服务端资料，保持企业壳原有刷新入口。
   Future<void> reload() async {
     if (_actionOpen) return;
+    _loadReschedulePending();
     final request = ++_request;
     setState(() {
       _loading = true;
@@ -109,6 +131,7 @@ class AccountPageState extends State<AccountPage> {
     } finally {
       if (mounted) setState(() => _actionOpen = false);
     }
+    _loadReschedulePending();
     if (!mounted || saved != true) return;
     _avatarRevision++;
     _message('个人资料已更新');
@@ -149,6 +172,7 @@ class AccountPageState extends State<AccountPage> {
       '通知模板' => const EnterpriseManagementPage(
         section: EnterpriseManagementSection.templates,
       ),
+      '集成配置' => const IntegrationSettingsPage(),
       _ => null,
     };
     if (page == null) {
@@ -261,6 +285,7 @@ class AccountPageState extends State<AccountPage> {
     } finally {
       if (mounted) setState(() => _actionOpen = false);
     }
+    _loadReschedulePending();
   }
 
   Widget _recruitingTools() => Container(
@@ -319,10 +344,26 @@ class AccountPageState extends State<AccountPage> {
                               color: AppColors.primarySoft,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Icon(
-                              icon,
-                              color: AppColors.interactive,
-                              size: 26,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Icon(icon, color: AppColors.interactive, size: 26),
+                                if (page is RescheduleReviewPage && _reschedulePending > 0)
+                                  Positioned(
+                                    right: -16,
+                                    top: -16,
+                                    child: Container(
+                                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      alignment: Alignment.center,
+                                      decoration: const BoxDecoration(color: AppColors.red, shape: BoxShape.circle),
+                                      child: Text(
+                                        _reschedulePending > 99 ? '99+' : '$_reschedulePending',
+                                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           const SizedBox(height: 10),

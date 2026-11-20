@@ -19,6 +19,7 @@ import com.ruoyi.enterprise.service.IExamAiService;
 import com.ruoyi.enterprise.service.IExamGradeService;
 import com.ruoyi.enterprise.service.IExamMonitorService;
 import com.ruoyi.enterprise.service.IExamService;
+import com.ruoyi.system.service.IEnterpriseSettingsService;
 
 /**
  * 企业端 - 在线笔试配置（题库 CRUD、组卷、随机抽题规则、考试时长/次数、开考/截止时间、交卷规则）
@@ -43,6 +44,9 @@ public class ExamController extends BaseController
 
     @Autowired
     private IExamAiService examAiService;
+
+    @Autowired
+    private IEnterpriseSettingsService settingsService;
 
     // ==================== 题库 ====================
 
@@ -105,7 +109,28 @@ public class ExamController extends BaseController
     @PostMapping("/questions/ai-analysis")
     public AjaxResult aiAnalysis(@RequestBody Map<String, Object> body)
     {
+        Long questionId = asLong(body == null ? null : body.get("questionId"));
+        boolean force = Boolean.TRUE.equals(settingsService
+                .examAnalysisSettings(settingsService.resolveCompanyId(getUserId()))
+                .get("forceRegenerate"));
+        if (!force && questionId != null)
+        {
+            Map<String, Object> question = examService.getQuestion(questionId);
+            String analysis = question.get("analysis") == null ? "" : String.valueOf(question.get("analysis")).trim();
+            if (!analysis.isEmpty())
+            {
+                return success(Map.of("analysis", analysis, "valid", true,
+                        "issues", List.of(), "reused", true));
+            }
+        }
         return success(examAiService.analyzeQuestion(body));
+    }
+
+    private Long asLong(Object value)
+    {
+        if (value == null) return null;
+        try { return Long.valueOf(String.valueOf(value)); }
+        catch (RuntimeException ignored) { return null; }
     }
 
     // ==================== 试卷 ====================

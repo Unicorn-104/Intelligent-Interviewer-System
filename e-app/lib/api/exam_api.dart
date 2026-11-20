@@ -41,6 +41,53 @@ Future<List<Map<String, dynamic>>> listExamQuestions({
   return _rows(response);
 }
 
+/// 题目详情（含选项、标准答案与答案解析）。
+Future<Map<String, dynamic>> getExamQuestion(int questionId) async {
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/exam/questions/$questionId',
+  );
+  final data = response['data'];
+  if (data is! Map) {
+    throw const FormatException('题目详情格式不正确');
+  }
+  return Map<String, dynamic>.from(data);
+}
+
+Future<Map<String, dynamic>> aiAnalyzeExamQuestion({
+  required int questionId,
+  required int type,
+  String? typeName,
+  required String content,
+  List<String>? options,
+  required String answer,
+  int? difficulty,
+  String? skillTag,
+}) async {
+  final response = await EnterpriseApiClient().post(
+    '/enterprise/exam/questions/ai-analysis',
+    body: {
+      'questionId': questionId,
+      'type': type,
+      'typeName': typeName,
+      'content': content,
+      'options': options,
+      'answer': answer,
+      'difficulty': difficulty,
+      'skillTag': skillTag,
+    },
+  );
+  final data = response['data'];
+  if (data is! Map) throw const FormatException('AI 解析响应格式不正确');
+  return Map<String, dynamic>.from(data);
+}
+
+Future<void> fillExamQuestionAnalysis(int questionId, String analysis) async {
+  await EnterpriseApiClient().put(
+    '/enterprise/exam/questions/$questionId/analysis',
+    body: {'analysis': analysis},
+  );
+}
+
 /// 新增题目（归属当前企业题库）。选择题（type<=3）必须提供 [options]。
 /// [options] 形如 [{label: A, text: ...}]；[answer] 单选/判断为选项标签（如 A），
 /// 多选为逗号分隔标签（如 A,B），简答/编程为参考答案文本。
@@ -64,7 +111,7 @@ Future<void> saveExamQuestion({
       'difficulty': difficulty,
       'skillTag': skillTag,
       'analysis': analysis,
-      if (options != null) 'options': options,
+      ...?options == null ? null : {'options': options},
     },
   );
 }
@@ -91,7 +138,7 @@ Future<void> updateExamQuestion(
       'difficulty': difficulty,
       'skillTag': skillTag,
       'analysis': analysis,
-      if (options != null) 'options': options,
+      ...?options == null ? null : {'options': options},
     },
   );
 }
@@ -103,22 +150,25 @@ Future<void> deleteExamQuestion(int questionId) async {
 
 /// 试卷列表（AjaxResult 解包 data）。可按岗位 [positionId] 筛选。
 Future<List<Map<String, dynamic>>> listExamPapers({int? positionId}) async {
+  final query = <String, Object?>{};
+  if (positionId != null) query['positionId'] = positionId;
   final response = await EnterpriseApiClient().get(
     '/enterprise/exam/papers',
-    query: {'positionId': positionId},
+    query: query,
+    timeout: const Duration(seconds: 45),
   );
   final data = response['data'];
   if (data is List) {
-    return data
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
+    return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
   }
   return const <Map<String, dynamic>>[];
 }
 
 /// 试卷详情（含题目与规则）。
 Future<Map<String, dynamic>> getExamPaper(int paperId) async {
-  final response = await EnterpriseApiClient().get('/enterprise/exam/papers/$paperId');
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/exam/papers/$paperId',
+  );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
@@ -140,8 +190,12 @@ Future<int?> createExamPaper({
       'positionId': positionId,
       'durationMin': durationMin,
       'mode': mode,
-      if (rule != null) 'rule': {'rules': rule},
-      if (questions != null) 'questions': questions,
+      ...?rule == null
+          ? null
+          : {
+              'rule': {'rules': rule},
+            },
+      ...?questions == null ? null : {'questions': questions},
     },
   );
   final data = response['data'];
@@ -151,7 +205,9 @@ Future<int?> createExamPaper({
 
 /// 随机抽题预览：按 [rule] 返回会被抽中的题目列表。
 /// 后端 drawPreview 的 body 直接是 {rules:[...]}。
-Future<List<Map<String, dynamic>>> previewExamDraw(List<Map<String, dynamic>> rule) async {
+Future<List<Map<String, dynamic>>> previewExamDraw(
+  List<Map<String, dynamic>> rule,
+) async {
   final response = await EnterpriseApiClient().post(
     '/enterprise/exam/papers/draw-preview',
     body: {'rules': rule},
@@ -190,9 +246,7 @@ Future<List<Map<String, dynamic>>> listOngoingExams() async {
   final response = await EnterpriseApiClient().get('/enterprise/exam/ongoing');
   final data = response['data'];
   if (data is List) {
-    return data
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
+    return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
   }
   return const <Map<String, dynamic>>[];
 }

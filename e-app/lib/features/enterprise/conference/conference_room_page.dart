@@ -150,8 +150,9 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
         token: jwt,
         canPublish: _info.role != 'OBSERVER',
       );
-      // 主面试官成功进入 LiveKit 后，标记面试开始，通知候选人等待室放行。
-      if (_info.role == 'HR' && _isPrimarySelf && !_startSessionTriggered) {
+      // 面试开始权限由后端判定。客户端不提前依赖 LiveKit identity 解析结果，
+      // 否则主面试官字段短暂缺失时，HR 会进入房间但永远不会放行候选人。
+      if (_info.role == 'HR' && !_startSessionTriggered) {
         _startSessionTriggered = true;
         _tryStartSession(sessionId);
       }
@@ -401,8 +402,12 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 1500),
+        content: Text(message),
+      ),
+    );
   }
 
   // ==================== 录制控制 ====================
@@ -717,8 +722,8 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
           child: _selfFocused
               ? _selfMainView(state)
               : state.remotes.isEmpty
-                  ? _waitingView(state)
-                  : _participantGrid(state),
+              ? _waitingView(state)
+              : _participantGrid(state),
         ),
       ),
       Positioned(top: 10, left: 10, child: _statusChip(state)),

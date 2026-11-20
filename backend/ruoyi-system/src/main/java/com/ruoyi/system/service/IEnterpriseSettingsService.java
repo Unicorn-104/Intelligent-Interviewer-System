@@ -41,4 +41,9 @@ public interface IEnterpriseSettingsService
 
     /** 更新当前企业对外展示信息，返回最新企业信息 */
     public Map<String, Object> updateCompanyInfo(Long companyId, Map<String, Object> form);
+
+    /** 笔试 AI 解析策略：关闭时优先复用数据库已有解析，打开时强制重新生成。 */
+    public Map<String, Object> examAnalysisSettings(Long companyId);
+
+    public Map<String, Object> updateExamAnalysisSettings(Long companyId, boolean forceRegenerate);
 }

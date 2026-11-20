@@ -1,10 +1,16 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../api/exam_api.dart';
+import '../../../api/integration_settings_api.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
 import '../talent/widgets/talent_filter_icon.dart';
 import 'exam_paper_create_page.dart';
+import 'exam_paper_detail_page.dart';
+import 'exam_question_detail_page.dart';
 import 'exam_question_form.dart';
 import 'widgets/exam_filter_sheet.dart';
 
@@ -27,6 +33,7 @@ class _ExamManagementPageState extends State<ExamManagementPage>
   // ---- 题库状态 ----
   List<Map<String, dynamic>> _questions = const [];
   bool _loadingQ = true;
+  bool _batchAnalyzing = false;
   String? _errorQ;
   String? _scope; // null=全部 platform=平台 enterprise=企业
   int? _type;
@@ -38,6 +45,8 @@ class _ExamManagementPageState extends State<ExamManagementPage>
   bool _loadingP = true;
   String? _errorP;
   int? _positionId;
+  final _paperKeywordCtrl = TextEditingController();
+  String _paperKeyword = '';
   List<Map<String, dynamic>> _jobs = const [];
 
   @override
@@ -52,6 +61,7 @@ class _ExamManagementPageState extends State<ExamManagementPage>
   void dispose() {
     _tab.dispose();
     _keywordCtrl.dispose();
+    _paperKeywordCtrl.dispose();
     super.dispose();
   }
 
@@ -81,6 +91,84 @@ class _ExamManagementPageState extends State<ExamManagementPage>
         _loadingQ = false;
       });
     }
+  }
+
+  Future<void> _batchFillAnalysis() async {
+    if (_batchAnalyzing) return;
+    final forceRegenerate = await getExamAnalysisForceRegenerate().catchError(
+      (_) => false,
+    );
+    final targets = forceRegenerate
+        ? _questions
+        : _questions
+              .where((question) => '${question['analysis'] ?? ''}'.trim().isEmpty)
+              .toList();
+    if (targets.isEmpty) {
+      _toast(forceRegenerate ? '暂无可解析题目' : '所有题目已有解析');
+      return;
+    }
+    final confirmed = await _confirm(
+      '批量补全解析',
+      forceRegenerate
+          ? '将重新生成当前列表中的 ${targets.length} 道题目解析，是否继续？'
+          : '将为 ${targets.length} 道缺少解析的题目生成 AI 解析，是否继续？',
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _batchAnalyzing = true);
+    var updated = 0;
+    var failed = 0;
+    var continuousFailed = 0;
+    try {
+      for (final question in targets) {
+        try {
+          final id = _asInt(question['questionId']);
+          if (id <= 0) throw const FormatException('题目编号无效');
+          final result = await aiAnalyzeExamQuestion(
+            questionId: id,
+            type: _asInt(question['type']),
+            typeName: question['typeName']?.toString(),
+            content: '${question['content'] ?? ''}',
+            options: _analysisOptions(question),
+            answer: '${question['answer'] ?? ''}',
+            difficulty: _asInt(question['difficulty']),
+            skillTag: question['skillTag']?.toString(),
+          );
+          final analysis = '${result['analysis'] ?? ''}'.trim();
+          if (analysis.isEmpty) throw const FormatException('未返回有效解析');
+          await fillExamQuestionAnalysis(id, analysis);
+          updated++;
+          continuousFailed = 0;
+        } catch (_) {
+          failed++;
+          continuousFailed++;
+          if (continuousFailed >= 3) break;
+        }
+      }
+      await _loadQuestions();
+      _toast('批量解析完成：成功 $updated 道，失败 $failed 道');
+    } finally {
+      if (mounted) setState(() => _batchAnalyzing = false);
+    }
+  }
+
+  List<String>? _analysisOptions(Map<String, dynamic> question) {
+    final type = _asInt(question['type']);
+    if (type > 3 && type != 6) return null;
+    final raw = question['options'];
+    if (raw is! List) return null;
+    final options = raw
+        .map((item) {
+          if (item is Map) {
+            final label = '${item['label'] ?? ''}'.trim();
+            final text = '${item['text'] ?? item['value'] ?? ''}'.trim();
+            return [label, text].where((part) => part.isNotEmpty).join('. ');
+          }
+          return '$item'.trim();
+        })
+        .where((item) => item.isNotEmpty)
+        .toList();
+    return options.isEmpty ? null : options;
   }
 
   Future<void> _loadPapers() async {
@@ -185,18 +273,87 @@ class _ExamManagementPageState extends State<ExamManagementPage>
           ),
         ),
       ),
-      body: TabBarView(
-        controller: _tab,
-        children: [
-          _buildQuestionTab(),
-          _buildPaperTab(),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final left = (_fabLeft ??
+                  constraints.maxWidth - _fabSize - _fabMargin)
+              .clamp(_fabMargin, _maxFabLeft(constraints))
+              .toDouble();
+          final bottom = _fabBottom
+              .clamp(_fabMargin, _maxFabBottom(constraints))
+              .toDouble();
+          return Stack(
+            children: [
+              TabBarView(
+                controller: _tab,
+                children: [
+                  _buildQuestionTab(),
+                  _buildPaperTab(),
+                ],
+              ),
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                left: left,
+                bottom: bottom,
+                child: _buildDraggableFab(constraints),
+              ),
+            ],
+          );
+        },
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.interactive,
+    );
+  }
+
+  static const double _fabSize = 56;
+  static const double _fabMargin = 12;
+  double? _fabLeft;
+  double _fabBottom = 20;
+
+  double _maxFabLeft(BoxConstraints constraints) => math.max(
+        _fabMargin,
+        constraints.maxWidth - _fabSize - _fabMargin,
+      );
+
+  double _maxFabBottom(BoxConstraints constraints) => math.max(
+        _fabMargin,
+        constraints.maxHeight - _fabSize - _fabMargin,
+      );
+
+  Widget _buildDraggableFab(BoxConstraints constraints) {
+    return GestureDetector(
+      key: const ValueKey('exam-floating-add'),
+      behavior: HitTestBehavior.opaque,
+      onTap: _onFab,
+      onPanUpdate: (details) {
+        final currentLeft = _fabLeft ?? _maxFabLeft(constraints);
+        setState(() {
+          _fabLeft = (currentLeft + details.delta.dx)
+              .clamp(_fabMargin, _maxFabLeft(constraints))
+              .toDouble();
+          _fabBottom = (_fabBottom - details.delta.dy)
+              .clamp(_fabMargin, _maxFabBottom(constraints))
+              .toDouble();
+        });
+      },
+      onPanEnd: (_) {
+        final currentLeft = _fabLeft ?? _maxFabLeft(constraints);
+        final center = currentLeft + _fabSize / 2;
+        final snapLeft = center < constraints.maxWidth / 2
+            ? _fabMargin
+            : _maxFabLeft(constraints);
+        setState(() => _fabLeft = snapLeft);
+      },
+      child: Material(
+        color: AppColors.interactive,
+        elevation: 7,
+        shadowColor: AppColors.brand.withValues(alpha: .28),
         shape: const CircleBorder(),
-        onPressed: _onFab,
-        child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+        child: const SizedBox(
+          width: _fabSize,
+          height: _fabSize,
+          child: Icon(Icons.add_rounded, color: Colors.white, size: 28),
+        ),
       ),
     );
   }
@@ -271,6 +428,18 @@ class _ExamManagementPageState extends State<ExamManagementPage>
           ),
         ),
         // 列表
+        Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: OutlinedButton.icon(
+              key: const ValueKey('exam-batch-analysis'),
+              onPressed: _batchAnalyzing ? null : _batchFillAnalysis,
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: Text(_batchAnalyzing ? '解析中…' : '批量补全解析'),
+            ),
+          ),
+        ),
         Expanded(child: _buildQuestionList()),
       ],
     );
@@ -307,8 +476,16 @@ class _ExamManagementPageState extends State<ExamManagementPage>
     final questionId = _asInt(q['questionId']);
     final skillTag = q['skillTag']?.toString();
 
-    return _card(
-      child: Row(
+    return InkWell(
+      key: ValueKey('exam-question-card-$questionId'),
+      onTap: () => Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ExamQuestionDetailPage(question: q),
+        ),
+      ),
+      borderRadius: BorderRadius.circular(14),
+      child: _card(
+        child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 题型圆形图标
@@ -345,15 +522,16 @@ class _ExamManagementPageState extends State<ExamManagementPage>
                       height: 1.4),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  '${_difficultyName(q['difficulty'])} · ${_scoreText(q['score'])}分',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textMuted),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 6,
+                  children: [
+                    _metaTag(_difficultyName(q['difficulty']), AppColors.warning),
+                    _metaTag('${_scoreText(q['score'])}分', AppColors.interactive),
+                    if (skillTag != null && skillTag.isNotEmpty)
+                      _skillTag(skillTag, color),
+                  ],
                 ),
-                if (skillTag != null && skillTag.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _skillTag(skillTag, color),
-                ],
                 if (isEnterprise) ...[
                   const SizedBox(height: 6),
                   Row(
@@ -370,6 +548,7 @@ class _ExamManagementPageState extends State<ExamManagementPage>
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -379,23 +558,84 @@ class _ExamManagementPageState extends State<ExamManagementPage>
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _filterChip(
-                  label: _positionLabel(),
-                  onTap: _pickPosition,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.canvas,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: TextField(
+                    controller: _paperKeywordCtrl,
+                    onChanged: (value) => setState(() => _paperKeyword = value),
+                    decoration: InputDecoration(
+                      hintText: '搜索试卷名称或岗位',
+                      hintStyle: const TextStyle(
+                          fontSize: 13, color: AppColors.textMuted),
+                      prefixIcon: const Icon(Icons.search_rounded,
+                          size: 20, color: AppColors.textMuted),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.arrow_forward_rounded,
+                            size: 18, color: AppColors.interactive),
+                        onPressed: () => setState(() {}),
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 13),
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 8),
-                _filterChip(
-                  label: '刷新',
-                  icon: Icons.refresh_rounded,
-                  onTap: _loadPapers,
+              ),
+              const SizedBox(width: 10),
+              InkWell(
+                key: const ValueKey('exam-position-filter-open'),
+                onTap: _pickPosition,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 11),
+                  decoration: BoxDecoration(
+                    color: _positionId == null
+                        ? AppColors.canvas
+                        : AppColors.interactiveSoft,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _positionId == null
+                          ? AppColors.primarySoft
+                          : AppColors.interactive.withValues(alpha: .35),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.work_outline_rounded,
+                          size: 18,
+                          color: _positionId == null
+                              ? AppColors.textPrimary
+                              : AppColors.interactive),
+                      const SizedBox(width: 5),
+                      Text(
+                        _positionLabel(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _positionId == null
+                              ? AppColors.bodySoft
+                              : AppColors.interactive,
+                          fontWeight: _positionId == null
+                              ? FontWeight.w500
+                              : FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(Icons.keyboard_arrow_down_rounded,
+                          size: 17, color: AppColors.textMuted),
+                    ],
+                  ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
         Expanded(child: _buildPaperList()),
@@ -411,7 +651,15 @@ class _ExamManagementPageState extends State<ExamManagementPage>
     if (_errorP != null) {
       return _errorView(_errorP!, _loadPapers);
     }
-    if (_papers.isEmpty) {
+    final keyword = _paperKeyword.trim().toLowerCase();
+    final papers = keyword.isEmpty
+        ? _papers
+        : _papers.where((paper) {
+            final name = '${paper['name'] ?? ''}'.toLowerCase();
+            final position = '${paper['positionTitle'] ?? ''}'.toLowerCase();
+            return name.contains(keyword) || position.contains(keyword);
+          }).toList();
+    if (papers.isEmpty) {
       return _emptyView('暂无试卷，点击右下角新建');
     }
     return RefreshIndicator(
@@ -420,9 +668,9 @@ class _ExamManagementPageState extends State<ExamManagementPage>
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: _papers.length,
+        itemCount: papers.length,
         separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (context, index) => _paperCard(_papers[index]),
+        itemBuilder: (context, index) => _paperCard(papers[index]),
       ),
     );
   }
@@ -433,8 +681,12 @@ class _ExamManagementPageState extends State<ExamManagementPage>
     final isRandom = (p['ruleJson']?.toString().isNotEmpty ?? false);
     final modeColor = isRandom ? AppColors.orange : AppColors.interactive;
 
-    return _card(
-      child: Column(
+    return InkWell(
+      key: ValueKey('exam-paper-card-$paperId'),
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => _openPaperPage(p),
+      child: _card(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -503,13 +755,12 @@ class _ExamManagementPageState extends State<ExamManagementPage>
                     const TextStyle(fontSize: 11, color: AppColors.textMuted),
               ),
               const Spacer(),
-              _iconAction(Icons.visibility_outlined, () => _viewPaper(paperId)),
-              const SizedBox(width: 16),
               _iconAction(Icons.delete_outline_rounded,
                   () => _deletePaper(paperId)),
             ],
           ),
         ],
+        ),
       ),
     );
   }
@@ -578,7 +829,21 @@ class _ExamManagementPageState extends State<ExamManagementPage>
     }
   }
 
-  Future<void> _viewPaper(int paperId) async {
+  Future<void> _openPaperPage(Map<String, dynamic> paper) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ExamPaperDetailPage(paper: paper),
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Future<void> _viewPaper(Map<String, dynamic> paper) async {
+    final paperId = _asInt(paper['paperId']);
+    if (paperId <= 0) {
+      _toast('试卷信息不完整');
+      return;
+    }
     try {
       final detail = await getExamPaper(paperId);
       if (!mounted) return;
@@ -606,20 +871,162 @@ class _ExamManagementPageState extends State<ExamManagementPage>
                       fontSize: 13, color: AppColors.textMuted)),
               const Divider(height: 24),
               ...questions.asMap().entries.map((entry) {
-                final q = entry.value as Map;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text('${entry.key + 1}. ${q['content'] ?? ''}',
-                      style: const TextStyle(fontSize: 13, height: 1.5)),
-                );
+                final q = Map<String, dynamic>.from(entry.value as Map);
+                return _paperQuestionCard(q, entry.key);
               }),
             ],
           ),
         ),
       );
     } on ApiException catch (error) {
-      _toast(error.message);
+      if (!mounted) return;
+      _showPaperFallback(paper, error.message);
     }
+  }
+
+  Widget _paperQuestionCard(Map<String, dynamic> question, int index) {
+    final type = _asInt(question['type']);
+    final typeColor = _typeColor(type);
+    final answer = '${question['answer'] ?? ''}'.trim();
+    final options = _paperOptions(question);
+    final answerLabels = answer
+        .split(RegExp(r'[,，、\s]+'))
+        .map((item) => item.trim().toUpperCase())
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    final analysis = '${question['analysis'] ?? ''}'.trim();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: typeColor.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text('第 ${index + 1} 题', style: TextStyle(color: typeColor, fontWeight: FontWeight.w700, fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              Text(_typeName(type), style: TextStyle(color: typeColor, fontSize: 12, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Text('${_scoreText(question['score'])} 分', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text('${question['content'] ?? ''}', style: const TextStyle(color: AppColors.body, fontSize: 15, height: 1.5, fontWeight: FontWeight.w600)),
+          if (options.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            for (final option in options)
+              _paperOptionRow(option, answerLabels.contains(option.$1.toUpperCase())),
+          ],
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(color: AppColors.green.withValues(alpha: .1), borderRadius: BorderRadius.circular(9)),
+            child: Text('标准答案：${answer.isEmpty ? '暂无' : answer}', style: const TextStyle(color: AppColors.green, fontSize: 13, fontWeight: FontWeight.w700)),
+          ),
+          if (analysis.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(9)),
+              child: Text('答案解析：$analysis', style: const TextStyle(color: AppColors.bodySoft, fontSize: 12, height: 1.5)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _paperOptionRow((String, String) option, bool correct) => Container(
+    margin: const EdgeInsets.only(bottom: 7),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+    decoration: BoxDecoration(
+      color: correct ? AppColors.green.withValues(alpha: .1) : AppColors.background,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: correct ? AppColors.green : AppColors.hairline),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${option.$1}.', style: TextStyle(color: correct ? AppColors.green : AppColors.body, fontWeight: FontWeight.w800)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(option.$2, style: TextStyle(color: correct ? AppColors.green : AppColors.body, fontSize: 13, height: 1.4))),
+        if (correct) const Icon(Icons.check_circle_rounded, color: AppColors.green, size: 17),
+      ],
+    ),
+  );
+
+  List<(String, String)> _paperOptions(Map<String, dynamic> question) {
+    Object? raw = question['options'];
+    if (raw is! List && question['optionsJson'] != null) {
+      try {
+        raw = jsonDecode('${question['optionsJson']}');
+      } catch (_) {
+        raw = null;
+      }
+    }
+    if (raw is! List) return const [];
+    return raw.map((item) {
+      if (item is Map) return ('${item['label'] ?? ''}', '${item['text'] ?? item['value'] ?? ''}');
+      return ('', '$item');
+    }).where((item) => item.$1.isNotEmpty || item.$2.isNotEmpty).toList();
+  }
+
+  void _showPaperFallback(Map<String, dynamic> paper, String message) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.canvas,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                paper['name']?.toString() ?? '试卷详情',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${paper['positionTitle'] ?? '未关联岗位'} · 题量 ${_asInt(paper['questionCount'])} · 总分 ${_scoreText(paper['totalScore'])} · ${_asInt(paper['durationMin'])}分钟',
+                style: const TextStyle(color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('题目清单暂时加载失败：$message\n可稍后点击查看重试。', style: const TextStyle(color: AppColors.warning)),
+              ),
+            ],
+          ),
+        ),
+      ),
+      ),
+    );
   }
 
   // ==================== 题库筛选（参考人才库弹窗） ====================
@@ -724,32 +1131,6 @@ class _ExamManagementPageState extends State<ExamManagementPage>
     );
   }
 
-  Widget _filterChip({required String label, IconData? icon, VoidCallback? onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: AppColors.canvas,
-          border: Border.all(color: AppColors.primarySoft),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 12, color: AppColors.bodySoft)),
-            const SizedBox(width: 4),
-            Icon(icon ?? Icons.keyboard_arrow_down_rounded,
-                size: 16, color: AppColors.textMuted),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _typeBadge(int? type, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -808,6 +1189,24 @@ class _ExamManagementPageState extends State<ExamManagementPage>
       ),
       child: Text(tag,
           style: TextStyle(fontSize: 11, color: color)),
+    );
+  }
+
+  Widget _metaTag(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 
