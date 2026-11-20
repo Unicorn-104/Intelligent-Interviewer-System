@@ -115,9 +115,11 @@ Future<void> deleteExamQuestion(int questionId) async {
 
 /// 试卷列表（AjaxResult 解包 data）。可按岗位 [positionId] 筛选。
 Future<List<Map<String, dynamic>>> listExamPapers({int? positionId}) async {
+  final query = <String, Object?>{};
+  if (positionId != null) query['positionId'] = positionId;
   final response = await EnterpriseApiClient().get(
     '/enterprise/exam/papers',
-    query: {'positionId': positionId},
+    query: query,
     timeout: const Duration(seconds: 45),
   );
   final data = response['data'];
