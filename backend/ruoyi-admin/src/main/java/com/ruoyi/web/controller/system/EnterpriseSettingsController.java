@@ -156,6 +156,21 @@ public class EnterpriseSettingsController extends BaseController
         return success(settingsService.updateCompanyInfo(settingsService.requireCompanyId(getUserId()), body));
     }
 
+    // ==================== 绗旇瘯 AI 瑙ｆ瀽绛栫暐 ====================
+
+    @GetMapping("/integrations")
+    public AjaxResult integrations()
+    {
+        return success(settingsService.examAnalysisSettings(companyId()));
+    }
+
+    @PutMapping("/integrations")
+    public AjaxResult saveIntegrations(@RequestBody Map<String, Object> body)
+    {
+        boolean force = Boolean.TRUE.equals(body == null ? null : body.get("forceRegenerate"));
+        return success(settingsService.updateExamAnalysisSettings(companyId(), force));
+    }
+
     private String str(Map<String, Object> body, String key)
     {
         Object v = body.get(key);

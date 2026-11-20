@@ -59,6 +59,18 @@ export function aiExamAnalysis(data) {
   })
 }
 
+export function getExamAnalysisSettings() {
+  return request({ url: '/system/enterprise/settings/integrations', method: 'get' })
+}
+
+export function updateExamAnalysisSettings(forceRegenerate) {
+  return request({
+    url: '/system/enterprise/settings/integrations',
+    method: 'put',
+    data: { forceRegenerate }
+  })
+}
+
 // ==================== 试卷 ====================
 
 export function listPapers(positionId) {

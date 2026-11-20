@@ -5,6 +5,7 @@ import { Plus, Search, Pencil, Trash2, X, Eye, WandSparkles, Save, Timer, FileTe
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
 import {
   listQuestions, createQuestion, updateQuestion, deleteQuestion, aiExamAnalysis, fillQuestionAnalysis,
+  getExamAnalysisSettings,
   listPapers, getPaper, createPaper, updatePaper, updatePaperStatus, deletePaper, drawPreview, aiPlanPaper, aiPreviewPaper, aiSavePaper,
   listSchedules, createSchedule, updateSchedule, cancelSchedule,
   saveNotifyConfig, listNotifyTargets, sendExamNotify,
@@ -62,6 +63,7 @@ async function loadQuestions() {
 const qModal = reactive({ open: false, id: null, saving: false, form: blankQuestion() })
 const aiLoading = ref(false)
 const aiIssues = ref([])
+const forceRegenerate = ref(false)
 function blankQuestion() {
   return { type: 1, typeName: '', content: '', options: ['', '', '', ''], answer: '', analysis: '', score: 5, difficulty: 2, skillTag: '' }
 }
@@ -112,6 +114,7 @@ async function aiAnalyze() {
   try {
     const options = (f.type <= 3 || f.type === 6) ? f.options.filter(o => String(o || '').trim()) : []
     const res = await aiExamAnalysis({
+      questionId: qModal.id || undefined,
       type: f.type, typeName: f.typeName, content: f.content, options,
       answer: f.answer, difficulty: f.difficulty, skillTag: f.skillTag
     })
@@ -141,7 +144,7 @@ async function fetchAllQuestions() {
 async function batchAnalyze() {
   if (batchRunning.value) return
   const all = await fetchAllQuestions()
-  const targets = all.filter(q => !String(q.analysis || '').trim())
+  const targets = forceRegenerate.value ? all : all.filter(q => !String(q.analysis || '').trim())
   if (!targets.length) { notify('题库中所有题目都已有解析'); return }
   if (!confirm(`将为 ${targets.length} 道缺少解析的题目逐题生成 AI 解析，耗时较长，是否继续？`)) return
   batchRunning.value = true
@@ -156,6 +159,7 @@ async function batchAnalyze() {
           ? (Array.isArray(q.options) ? q.options.map(optText).filter(o => String(o).trim()) : [])
           : undefined
         const ai = await aiExamAnalysis({
+          questionId: q.questionId,
           type: q.type, typeName: q.typeName, content: q.content, options,
           answer: q.answer, difficulty: q.difficulty, skillTag: q.skillTag
         })
@@ -596,7 +600,9 @@ function switchTab(t) {
   if (t === 'results') loadResults()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  const settings = await getExamAnalysisSettings().catch(() => null)
+  forceRegenerate.value = Boolean(settings?.data?.forceRegenerate)
   loadPositions()
   loadQuestions()
   loadPapers()

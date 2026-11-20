@@ -22,6 +22,7 @@ import com.ruoyi.system.service.IEnterpriseSettingsService;
 @Service
 public class EnterpriseSettingsServiceImpl implements IEnterpriseSettingsService
 {
+    private static final String EXAM_FORCE_REGENERATE = "enterprise.exam.analysis.force-regenerate";
     @Autowired
     private EnterpriseSettingsMapper settingsMapper;
 
@@ -224,5 +225,36 @@ public class EnterpriseSettingsServiceImpl implements IEnterpriseSettingsService
             throw new ServiceException("字段长度超过限制（" + maxLength + " 字）");
         }
         return text;
+    }
+
+    @Override
+    public Map<String, Object> examAnalysisSettings(Long companyId)
+    {
+        String value = settingsMapper.selectConfigValue(configKey(companyId));
+        boolean force = "true".equalsIgnoreCase(value) || "1".equals(value);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("forceRegenerate", force);
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> updateExamAnalysisSettings(Long companyId, boolean forceRegenerate)
+    {
+        String key = configKey(companyId);
+        String value = Boolean.toString(forceRegenerate);
+        if (settingsMapper.selectConfigValue(key) == null)
+        {
+            settingsMapper.insertConfig("笔试 AI 解析策略", key, value);
+        }
+        else
+        {
+            settingsMapper.updateConfigValue(key, value);
+        }
+        return examAnalysisSettings(companyId);
+    }
+
+    private String configKey(Long companyId)
+    {
+        return EXAM_FORCE_REGENERATE + "." + (companyId == null ? 1L : companyId);
     }
 }

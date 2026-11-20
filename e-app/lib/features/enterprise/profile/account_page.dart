@@ -14,6 +14,7 @@ import 'models/profile_view_data.dart';
 import 'profile_edit_page.dart';
 import 'settings_page.dart';
 import 'enterprise_management_page.dart';
+import 'integration_settings_page.dart';
 import '../exam/exam_management_page.dart';
 import '../exam/exam_proctor_page.dart';
 import 'widgets/profile_avatar_view.dart';
@@ -171,6 +172,7 @@ class AccountPageState extends State<AccountPage> {
       '通知模板' => const EnterpriseManagementPage(
         section: EnterpriseManagementSection.templates,
       ),
+      '集成配置' => const IntegrationSettingsPage(),
       _ => null,
     };
     if (page == null) {
