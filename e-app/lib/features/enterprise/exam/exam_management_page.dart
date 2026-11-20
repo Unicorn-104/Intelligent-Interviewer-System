@@ -8,6 +8,7 @@ import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
 import '../talent/widgets/talent_filter_icon.dart';
 import 'exam_paper_create_page.dart';
+import 'exam_paper_detail_page.dart';
 import 'exam_question_detail_page.dart';
 import 'exam_question_form.dart';
 import 'widgets/exam_filter_sheet.dart';
@@ -588,8 +589,12 @@ class _ExamManagementPageState extends State<ExamManagementPage>
     final isRandom = (p['ruleJson']?.toString().isNotEmpty ?? false);
     final modeColor = isRandom ? AppColors.orange : AppColors.interactive;
 
-    return _card(
-      child: Column(
+    return InkWell(
+      key: ValueKey('exam-paper-card-$paperId'),
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => _openPaperPage(p),
+      child: _card(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -658,13 +663,12 @@ class _ExamManagementPageState extends State<ExamManagementPage>
                     const TextStyle(fontSize: 11, color: AppColors.textMuted),
               ),
               const Spacer(),
-              _iconAction(Icons.visibility_outlined, () => _viewPaper(p)),
-              const SizedBox(width: 16),
               _iconAction(Icons.delete_outline_rounded,
                   () => _deletePaper(paperId)),
             ],
           ),
         ],
+        ),
       ),
     );
   }
@@ -733,6 +737,15 @@ class _ExamManagementPageState extends State<ExamManagementPage>
     }
   }
 
+  Future<void> _openPaperPage(Map<String, dynamic> paper) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ExamPaperDetailPage(paper: paper),
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Future<void> _viewPaper(Map<String, dynamic> paper) async {
     final paperId = _asInt(paper['paperId']);
     if (paperId <= 0) {
