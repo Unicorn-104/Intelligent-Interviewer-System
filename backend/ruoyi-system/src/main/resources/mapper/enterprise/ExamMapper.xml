@@ -171,13 +171,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                p.epa_duration_min as durationMin, p.epa_rule_json as ruleJson,
                p.epa_status as status,
                date_format(p.epa_created_at, '%Y-%m-%d %H:%i') as createdAt,
-               (select count(1) from t_exam_paper_question q where q.epq_paper_id = p.epa_id) as questionCount
+               count(q.epq_id) as questionCount
         from t_exam_paper p
         join t_pos pos on pos.pos_id = p.epa_position_id
+        left join t_exam_paper_question q on q.epq_paper_id = p.epa_id
         where pos.pos_company_id = #{companyId}
         <if test="positionId != null">
             and p.epa_position_id = #{positionId}
         </if>
+        group by p.epa_id, p.epa_name, p.epa_position_id, pos.pos_title,
+                 p.epa_total_score, p.epa_duration_min, p.epa_rule_json,
+                 p.epa_status, p.epa_created_at
         order by p.epa_id desc
     </select>
 
