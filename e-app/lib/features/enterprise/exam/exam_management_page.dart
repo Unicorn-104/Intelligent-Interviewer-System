@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../api/exam_api.dart';
+import '../../../api/integration_settings_api.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
 import '../talent/widgets/talent_filter_icon.dart';
@@ -32,6 +33,7 @@ class _ExamManagementPageState extends State<ExamManagementPage>
   // ---- 题库状态 ----
   List<Map<String, dynamic>> _questions = const [];
   bool _loadingQ = true;
+  bool _batchAnalyzing = false;
   String? _errorQ;
   String? _scope; // null=全部 platform=平台 enterprise=企业
   int? _type;
@@ -89,6 +91,84 @@ class _ExamManagementPageState extends State<ExamManagementPage>
         _loadingQ = false;
       });
     }
+  }
+
+  Future<void> _batchFillAnalysis() async {
+    if (_batchAnalyzing) return;
+    final forceRegenerate = await getExamAnalysisForceRegenerate().catchError(
+      (_) => false,
+    );
+    final targets = forceRegenerate
+        ? _questions
+        : _questions
+              .where((question) => '${question['analysis'] ?? ''}'.trim().isEmpty)
+              .toList();
+    if (targets.isEmpty) {
+      _toast(forceRegenerate ? '暂无可解析题目' : '所有题目已有解析');
+      return;
+    }
+    final confirmed = await _confirm(
+      '批量补全解析',
+      forceRegenerate
+          ? '将重新生成当前列表中的 ${targets.length} 道题目解析，是否继续？'
+          : '将为 ${targets.length} 道缺少解析的题目生成 AI 解析，是否继续？',
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _batchAnalyzing = true);
+    var updated = 0;
+    var failed = 0;
+    var continuousFailed = 0;
+    try {
+      for (final question in targets) {
+        try {
+          final id = _asInt(question['questionId']);
+          if (id <= 0) throw const FormatException('题目编号无效');
+          final result = await aiAnalyzeExamQuestion(
+            questionId: id,
+            type: _asInt(question['type']),
+            typeName: question['typeName']?.toString(),
+            content: '${question['content'] ?? ''}',
+            options: _analysisOptions(question),
+            answer: '${question['answer'] ?? ''}',
+            difficulty: _asInt(question['difficulty']),
+            skillTag: question['skillTag']?.toString(),
+          );
+          final analysis = '${result['analysis'] ?? ''}'.trim();
+          if (analysis.isEmpty) throw const FormatException('未返回有效解析');
+          await fillExamQuestionAnalysis(id, analysis);
+          updated++;
+          continuousFailed = 0;
+        } catch (_) {
+          failed++;
+          continuousFailed++;
+          if (continuousFailed >= 3) break;
+        }
+      }
+      await _loadQuestions();
+      _toast('批量解析完成：成功 $updated 道，失败 $failed 道');
+    } finally {
+      if (mounted) setState(() => _batchAnalyzing = false);
+    }
+  }
+
+  List<String>? _analysisOptions(Map<String, dynamic> question) {
+    final type = _asInt(question['type']);
+    if (type > 3 && type != 6) return null;
+    final raw = question['options'];
+    if (raw is! List) return null;
+    final options = raw
+        .map((item) {
+          if (item is Map) {
+            final label = '${item['label'] ?? ''}'.trim();
+            final text = '${item['text'] ?? item['value'] ?? ''}'.trim();
+            return [label, text].where((part) => part.isNotEmpty).join('. ');
+          }
+          return '$item'.trim();
+        })
+        .where((item) => item.isNotEmpty)
+        .toList();
+    return options.isEmpty ? null : options;
   }
 
   Future<void> _loadPapers() async {
@@ -348,6 +428,18 @@ class _ExamManagementPageState extends State<ExamManagementPage>
           ),
         ),
         // 列表
+        Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: OutlinedButton.icon(
+              key: const ValueKey('exam-batch-analysis'),
+              onPressed: _batchAnalyzing ? null : _batchFillAnalysis,
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: Text(_batchAnalyzing ? '解析中…' : '批量补全解析'),
+            ),
+          ),
+        ),
         Expanded(child: _buildQuestionList()),
       ],
     );

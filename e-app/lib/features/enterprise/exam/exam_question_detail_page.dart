@@ -18,40 +18,6 @@ class ExamQuestionDetailPage extends StatefulWidget {
   final Map<String, dynamic> question;
   final Future<Map<String, dynamic>> Function(int questionId) loadQuestion;
 
-  Future<void> _generateAnalysis() async {
-    if (_aiLoading) return;
-    final q = _detail ?? widget.question;
-    final id = _asInt(q['questionId']);
-    if (id == null) return;
-    setState(() => _aiLoading = true);
-    try {
-      final result = await aiAnalyzeExamQuestion(
-        questionId: id,
-        type: _asInt(q['type']) ?? 0,
-        typeName: q['typeName']?.toString(),
-        content: '${q['content'] ?? ''}',
-        options: _options(q).map((item) => '${item.$1}. ${item.$2}').toList(),
-        answer: '${q['answer'] ?? ''}',
-        difficulty: _asInt(q['difficulty']),
-        skillTag: q['skillTag']?.toString(),
-      );
-      final analysis = '${result['analysis'] ?? ''}'.trim();
-      if (analysis.isEmpty) throw const FormatException('AI 未返回有效解析');
-      final previous = '${q['analysis'] ?? ''}'.trim();
-      if (previous.isEmpty) await fillExamQuestionAnalysis(id, analysis);
-      if (!mounted) return;
-      setState(() => _detail = {...q, 'analysis': analysis});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['reused'] == true ? '已读取数据库中的解析' : 'AI 解析已生成并保存')),
-      );
-    } on ApiException catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
-    } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
-    } finally {
-      if (mounted) setState(() => _aiLoading = false);
-    }
-  }
 
   @override
   State<ExamQuestionDetailPage> createState() => _ExamQuestionDetailPageState();
@@ -137,6 +103,56 @@ class _ExamQuestionDetailPageState extends State<ExamQuestionDetailPage> {
       if (saved == true && mounted) await _load();
     } finally {
       _editing = false;
+    }
+  }
+
+  Future<void> _generateAnalysis() async {
+    if (_aiLoading) return;
+    final q = _detail ?? widget.question;
+    final id = _asInt(q['questionId']);
+    if (id == null) return;
+    setState(() => _aiLoading = true);
+    try {
+      final result = await aiAnalyzeExamQuestion(
+        questionId: id,
+        type: _asInt(q['type']) ?? 0,
+        typeName: q['typeName']?.toString(),
+        content: '${q['content'] ?? ''}',
+        options: _options(q).map((item) => '${item.$1}. ${item.$2}').toList(),
+        answer: '${q['answer'] ?? ''}',
+        difficulty: _asInt(q['difficulty']),
+        skillTag: q['skillTag']?.toString(),
+      );
+      final analysis = '${result['analysis'] ?? ''}'.trim();
+      if (analysis.isEmpty) {
+        throw const FormatException('AI 未返回有效解析');
+      }
+      if (result['reused'] != true) {
+        await fillExamQuestionAnalysis(id, analysis);
+      }
+      if (!mounted) return;
+      setState(() => _detail = {...q, 'analysis': analysis});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result['reused'] == true ? '已读取数据库中的解析' : 'AI 解析已生成并保存',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _aiLoading = false);
     }
   }
 
@@ -322,13 +338,28 @@ class _ExamQuestionDetailPageState extends State<ExamQuestionDetailPage> {
       title: '答案解析',
       icon: Icons.lightbulb_outline_rounded,
       color: AppColors.warning,
-      child: Text(
-        analysis.isEmpty ? '暂无答案解析' : analysis,
-        style: TextStyle(
-          color: analysis.isEmpty ? AppColors.textMuted : AppColors.bodySoft,
-          fontSize: 14,
-          height: 1.6,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              key: const ValueKey('exam-question-ai-analysis'),
+              onPressed: _aiLoading ? null : _generateAnalysis,
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: Text(_aiLoading ? '生成中…' : 'AI补全解析'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            analysis.isEmpty ? '暂无答案解析' : analysis,
+            style: TextStyle(
+              color: analysis.isEmpty ? AppColors.textMuted : AppColors.bodySoft,
+              fontSize: 14,
+              height: 1.6,
+            ),
+          ),
+        ],
       ),
     );
   }
