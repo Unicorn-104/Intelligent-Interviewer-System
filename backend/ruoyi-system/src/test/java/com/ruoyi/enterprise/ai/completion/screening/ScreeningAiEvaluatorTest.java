@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.service.screening;
+package com.ruoyi.enterprise.ai.completion.screening;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -12,14 +12,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.config.JdAiProperties;
 import com.ruoyi.system.domain.ModelProvider;
-import com.ruoyi.system.service.app.ai.AgentModelClient;
+import com.ruoyi.enterprise.ai.agent.client.EnterpriseAgentModelClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class ScreeningAiEvaluatorTest
 {
     final ObjectMapper json = new ObjectMapper();
-    AgentModelClient model;
+    EnterpriseAgentModelClient model;
     ModelProvider provider;
     ScreeningAiEvaluator evaluator;
     final List<Map<String, Object>> candidates = List.of(Map.of("candidateId", 11L,
@@ -27,7 +27,7 @@ class ScreeningAiEvaluatorTest
 
     @BeforeEach void setup()
     {
-        model = mock(AgentModelClient.class);
+        model = mock(EnterpriseAgentModelClient.class);
         provider = new ModelProvider();
         provider.setMppApiUrl("https://api.deepseek.com/chat/completions");
         provider.setMppApiKey("synthetic-test-key");

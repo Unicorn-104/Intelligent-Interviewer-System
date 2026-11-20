@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.service.impl;
+package com.ruoyi.enterprise.ai.agent.exam;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -17,9 +17,9 @@ import org.springframework.stereotype.Service;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.enterprise.mapper.ExamMapper;
-import com.ruoyi.enterprise.service.IExamAiService;
+import com.ruoyi.enterprise.ai.agent.exam.IExamAiService;
 import com.ruoyi.system.domain.ModelProvider;
-import com.ruoyi.system.service.app.ai.AgentModelClient;
+import com.ruoyi.enterprise.ai.agent.client.EnterpriseAgentModelClient;
 
 /**
  * 题库 AI 辅助实现：复用 t_model_provider 中配置的模型服务。
@@ -78,7 +78,7 @@ public class ExamAiServiceImpl implements IExamAiService
         """;
 
     @Autowired
-    private AgentModelClient model;
+    private EnterpriseAgentModelClient model;
 
     @Autowired
     private ExamMapper examMapper;
@@ -97,7 +97,7 @@ public class ExamAiServiceImpl implements IExamAiService
         }
         ModelProvider provider = model.resolve();
         ObjectNode payload = mapper.createObjectNode();
-        payload.put("type", typeLabel(asInt(body.get("type"), 0)));
+        payload.put("type", analysisTypeLabel(asInt(body.get("type"), 0)));
         payload.put("typeName", asString(body.get("typeName")));
         payload.put("content", content);
         payload.put("answer", asString(body.get("answer")));
@@ -229,7 +229,7 @@ public class ExamAiServiceImpl implements IExamAiService
                 + payload.toPrettyString());
         Object rawCompanyId = request.get("companyId");
         Long companyId = rawCompanyId == null ? null : Long.valueOf(String.valueOf(rawCompanyId));
-        AgentModelClient.ToolExecutor executor = (name, arguments) -> {
+        EnterpriseAgentModelClient.ToolExecutor executor = (name, arguments) -> {
             if (!"search_question_bank".equals(name))
             {
                 return "{\"error\":\"未支持的工具\"}";
@@ -389,7 +389,7 @@ public class ExamAiServiceImpl implements IExamAiService
         return payload;
     }
 
-    private String typeLabel(int type)
+    private String analysisTypeLabel(int type)
     {
         return switch (type)
         {

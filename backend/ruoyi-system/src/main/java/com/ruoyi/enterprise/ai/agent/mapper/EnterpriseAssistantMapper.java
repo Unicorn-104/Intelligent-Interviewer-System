@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.mapper;
+package com.ruoyi.enterprise.ai.agent.mapper;
 
 import java.util.List;
 import java.util.Map;

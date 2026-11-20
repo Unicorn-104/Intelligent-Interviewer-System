@@ -17,7 +17,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.domain.JdDocumentDraft;
-import com.ruoyi.enterprise.service.jd.JdAiStructurer;
+import com.ruoyi.enterprise.ai.completion.jd.JdAiStructurer;
 import com.ruoyi.system.config.JdAiProperties;
 import com.ruoyi.system.config.ResumePdfProperties;
 import com.ruoyi.system.mapper.DashboardMapper;

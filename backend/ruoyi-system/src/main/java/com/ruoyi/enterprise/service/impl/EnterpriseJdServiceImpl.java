@@ -49,7 +49,7 @@ public class EnterpriseJdServiceImpl implements IEnterpriseJdService
     private com.ruoyi.system.mapper.DashboardMapper dashboardMapper;
 
     @Autowired
-    private com.ruoyi.enterprise.service.jd.JdQualityScorer qualityScorer;
+    private com.ruoyi.enterprise.ai.completion.jd.JdQualityScorer qualityScorer;
 
     @Override
     public Map<String, Object> analyzeJd(String jdText)

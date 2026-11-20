@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.service.screening;
+package com.ruoyi.enterprise.ai.completion.screening;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -13,12 +13,12 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.config.JdAiProperties;
 import com.ruoyi.system.domain.ModelProvider;
-import com.ruoyi.system.service.app.ai.AgentModelClient;
+import com.ruoyi.enterprise.ai.agent.client.EnterpriseAgentModelClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * 人岗匹配独立评分：通过 {@link AgentModelClient} 调用数据库（t_model_provider）中
+ * 人岗匹配独立评分：通过 {@link EnterpriseAgentModelClient} 调用数据库（t_model_provider）中
  * 配置的模型服务，优先解析 scene=screening 的专用 Provider，未配置时回退通用 Provider；
  * 密钥只存在于数据库与模型客户端边界内；规则评分兜底，从不被替换。
  */
@@ -61,12 +61,12 @@ public class ScreeningAiEvaluator
     private static final long CALL_TIMEOUT_SECONDS = 85;
 
     private final JdAiProperties properties;
-    private final AgentModelClient model;
+    private final EnterpriseAgentModelClient model;
     private final ObjectMapper json = new ObjectMapper();
     private final Semaphore permits;
 
     @Autowired
-    public ScreeningAiEvaluator(JdAiProperties properties, AgentModelClient model)
+    public ScreeningAiEvaluator(JdAiProperties properties, EnterpriseAgentModelClient model)
     {
         this.properties = properties;
         this.model = model;

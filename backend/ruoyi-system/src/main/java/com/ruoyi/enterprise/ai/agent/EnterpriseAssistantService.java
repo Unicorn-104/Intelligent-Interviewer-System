@@ -1,4 +1,4 @@
-package com.ruoyi.enterprise.service;
+package com.ruoyi.enterprise.ai.agent;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,10 +18,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.ruoyi.common.exception.ServiceException;
-import com.ruoyi.enterprise.mapper.EnterpriseAssistantMapper;
+import com.ruoyi.enterprise.ai.agent.mapper.EnterpriseAssistantMapper;
+import com.ruoyi.enterprise.ai.agent.tools.EnterpriseAssistantToolPackage;
 import com.ruoyi.system.domain.ModelProvider;
 import com.ruoyi.system.mapper.DashboardMapper;
-import com.ruoyi.system.service.app.ai.AgentModelClient;
+import com.ruoyi.enterprise.ai.agent.client.EnterpriseAgentModelClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 import org.springframework.http.MediaType;
@@ -43,7 +45,8 @@ public class EnterpriseAssistantService
         + "没有候选人资料时请用户提供已获授权的脱敏摘要，不主动抓取候选人。只输出必要结论和简短进度，不输出内部推理。";
     private final EnterpriseAssistantMapper mapper;
     private final DashboardMapper companies;
-    private final AgentModelClient model;
+    private final EnterpriseAgentModelClient model;
+    private final EnterpriseAssistantToolPackage toolPackage;
     private final TransactionTemplate transaction;
     private final ObjectMapper json = new ObjectMapper();
     private final ThreadPoolExecutor workers = new ThreadPoolExecutor(2,4,30,TimeUnit.SECONDS,
@@ -73,9 +76,16 @@ public class EnterpriseAssistantService
         }
         synchronized String text() {return output.toString();}
     }
+    @Autowired
     public EnterpriseAssistantService(EnterpriseAssistantMapper mapper,DashboardMapper companies,
-        AgentModelClient model,PlatformTransactionManager manager)
-    {this.mapper=mapper;this.companies=companies;this.model=model;transaction=new TransactionTemplate(manager);}
+        EnterpriseAgentModelClient model,PlatformTransactionManager manager,
+        EnterpriseAssistantToolPackage toolPackage)
+    {this.mapper=mapper;this.companies=companies;this.model=model;this.toolPackage=toolPackage;transaction=new TransactionTemplate(manager);}
+
+    /** Compatibility constructor retained for focused unit tests and local callers. */
+    EnterpriseAssistantService(EnterpriseAssistantMapper mapper,DashboardMapper companies,
+        EnterpriseAgentModelClient model,PlatformTransactionManager manager)
+    {this(mapper,companies,model,manager,new EnterpriseAssistantToolPackage(mapper));}
 
     public Map<String,Object> sessions(Long user,Long before)
     {
@@ -267,7 +277,7 @@ public class EnterpriseAssistantService
             for(int step=0;step<4;step++)
             {
                 if(task.finished.get()||Thread.currentThread().isInterrupted())return;
-                var reply=model.complete(provider,context,tools(),task::append,deadline).message();
+                var reply=model.complete(provider,context,toolPackage.definitions(),task::append,deadline).message();
                 if(task.finished.get()||Thread.currentThread().isInterrupted())return;
                 JsonNode calls=reply.path("tool_calls");
                 if(!calls.isArray()||calls.isEmpty()) {
@@ -281,13 +291,7 @@ public class EnterpriseAssistantService
                     task.progress="正在核对本企业岗位";
                     JsonNode args=json.readTree(call.path("function").path("arguments").asText("{}"));
                     if(company(task.userId)!=task.companyId)throw new ServiceException("企业绑定已变化",403);
-                    Object result;
-                    if("list_company_jobs".equals(name))result=fields("jobs",mapper.jobs(task.companyId,clean(args.path("keyword").asText(null),100)),"limit",15);
-                    else if("get_company_job".equals(name)) {
-                        var job=mapper.job(task.companyId,number(args.path("id").asText()));
-                        result=job==null?fields("error","岗位不存在或不属于当前企业"):job;
-                    }
-                    else result=fields("error","不支持的只读工具");
+                    Object result=toolPackage.execute(name,task.companyId,args);
                     context.addObject().put("role","tool").put("tool_call_id",call.path("id").asText()).put("content",json.writeValueAsString(result));
                 }
                 task.progress="正在整理回答";
@@ -302,10 +306,6 @@ public class EnterpriseAssistantService
         if(!task.finished.compareAndSet(false,true))return;
         try {mapper.updateRun(task.id,task.text(),state);mapper.touch(task.sessionId);}
         finally {live.remove(task.id,task);userRuns.remove(task.userId,task.token);}
-    }
-    private ArrayNode tools() throws Exception
-    {
-        return (ArrayNode)json.readTree("[{\"type\":\"function\",\"function\":{\"name\":\"list_company_jobs\",\"description\":\"只读查看当前登录招聘者企业的岗位，最多15条，不是完整统计\",\"parameters\":{\"type\":\"object\",\"properties\":{\"keyword\":{\"type\":\"string\"}}}}},{\"type\":\"function\",\"function\":{\"name\":\"get_company_job\",\"description\":\"只读查看本企业指定岗位的JD，不接受其他企业数据\",\"parameters\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\"}},\"required\":[\"id\"]}}}]");
     }
     private Map<String,Object> snapshot(Map<String,Object> row,LiveRun task)
     {

@@ -19,7 +19,7 @@ import com.ruoyi.common.enums.ApplicationStatus;
 import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ExamMapper;
 import com.ruoyi.enterprise.service.ApplicationStatusService;
-import com.ruoyi.enterprise.service.IExamAiService;
+import com.ruoyi.enterprise.ai.agent.exam.IExamAiService;
 import com.ruoyi.enterprise.service.IExamService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;

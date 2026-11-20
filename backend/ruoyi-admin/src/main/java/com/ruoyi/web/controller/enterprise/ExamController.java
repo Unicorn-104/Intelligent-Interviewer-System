@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
-import com.ruoyi.enterprise.service.IExamAiService;
+import com.ruoyi.enterprise.ai.agent.exam.IExamAiService;
 import com.ruoyi.enterprise.service.IExamGradeService;
 import com.ruoyi.enterprise.service.IExamMonitorService;
 import com.ruoyi.enterprise.service.IExamService;
