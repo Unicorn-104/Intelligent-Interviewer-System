@@ -737,7 +737,7 @@ public class ExamServiceImpl implements IExamService
         {
             selected = validateManualQuestions(body.get("questions"));
             totalScore = sumScore(selected);
-            Map<String, Object> oldRule = parseJson(paper.get("ruleJson"));
+            Map<String, Object> oldRule = asMap(parseJson(paper.get("ruleJson")));
             if (oldRule != null && "ai".equals(asString(oldRule.get("type"))))
             {
                 ruleJson = JSON.toJSONString(oldRule);
