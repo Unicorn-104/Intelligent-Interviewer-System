@@ -208,7 +208,7 @@ public class ExamAiServiceImpl implements IExamAiService
     {
         ModelProvider provider = model.resolve("exam");
         ObjectNode payload = buildPayload(request);
-        payload.put("type", typeLabel(type));
+        payload.put("type", analysisTypeLabel(type));
         payload.put("typeCode", type);
         payload.put("count", count);
         payload.set("plan", mapper.valueToTree(plan == null ? Map.of() : plan));
@@ -315,7 +315,7 @@ public class ExamAiServiceImpl implements IExamAiService
             Map<String, Object> q = questions.get(i);
             ObjectNode item = items.addObject();
             item.put("index", i);
-            item.put("type", typeLabel(asInt(q.get("type"), 0)));
+            item.put("type", analysisTypeLabel(asInt(q.get("type"), 0)));
             item.put("content", asString(q.get("content")));
             item.put("answer", asString(q.get("answer")));
             item.put("skillTag", asString(q.get("skillTag")));
