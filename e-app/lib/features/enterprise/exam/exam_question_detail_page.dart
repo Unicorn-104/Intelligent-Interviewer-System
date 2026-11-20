@@ -18,6 +18,41 @@ class ExamQuestionDetailPage extends StatefulWidget {
   final Map<String, dynamic> question;
   final Future<Map<String, dynamic>> Function(int questionId) loadQuestion;
 
+  Future<void> _generateAnalysis() async {
+    if (_aiLoading) return;
+    final q = _detail ?? widget.question;
+    final id = _asInt(q['questionId']);
+    if (id == null) return;
+    setState(() => _aiLoading = true);
+    try {
+      final result = await aiAnalyzeExamQuestion(
+        questionId: id,
+        type: _asInt(q['type']) ?? 0,
+        typeName: q['typeName']?.toString(),
+        content: '${q['content'] ?? ''}',
+        options: _options(q).map((item) => '${item.$1}. ${item.$2}').toList(),
+        answer: '${q['answer'] ?? ''}',
+        difficulty: _asInt(q['difficulty']),
+        skillTag: q['skillTag']?.toString(),
+      );
+      final analysis = '${result['analysis'] ?? ''}'.trim();
+      if (analysis.isEmpty) throw const FormatException('AI 未返回有效解析');
+      final previous = '${q['analysis'] ?? ''}'.trim();
+      if (previous.isEmpty) await fillExamQuestionAnalysis(id, analysis);
+      if (!mounted) return;
+      setState(() => _detail = {...q, 'analysis': analysis});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['reused'] == true ? '已读取数据库中的解析' : 'AI 解析已生成并保存')),
+      );
+    } on ApiException catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+    } finally {
+      if (mounted) setState(() => _aiLoading = false);
+    }
+  }
+
   @override
   State<ExamQuestionDetailPage> createState() => _ExamQuestionDetailPageState();
 }
@@ -27,6 +62,7 @@ class _ExamQuestionDetailPageState extends State<ExamQuestionDetailPage> {
   String? _error;
   bool _loading = true;
   bool _editing = false;
+  bool _aiLoading = false;
 
   bool get _isEnterprise => (_detail ?? widget.question)['companyId'] != null;
 

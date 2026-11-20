@@ -53,6 +53,41 @@ Future<Map<String, dynamic>> getExamQuestion(int questionId) async {
   return Map<String, dynamic>.from(data);
 }
 
+Future<Map<String, dynamic>> aiAnalyzeExamQuestion({
+  required int questionId,
+  required int type,
+  String? typeName,
+  required String content,
+  List<String>? options,
+  required String answer,
+  int? difficulty,
+  String? skillTag,
+}) async {
+  final response = await EnterpriseApiClient().post(
+    '/enterprise/exam/questions/ai-analysis',
+    body: {
+      'questionId': questionId,
+      'type': type,
+      'typeName': typeName,
+      'content': content,
+      'options': options,
+      'answer': answer,
+      'difficulty': difficulty,
+      'skillTag': skillTag,
+    },
+  );
+  final data = response['data'];
+  if (data is! Map) throw const FormatException('AI 解析响应格式不正确');
+  return Map<String, dynamic>.from(data);
+}
+
+Future<void> fillExamQuestionAnalysis(int questionId, String analysis) async {
+  await EnterpriseApiClient().put(
+    '/enterprise/exam/questions/$questionId/analysis',
+    body: {'analysis': analysis},
+  );
+}
+
 /// 新增题目（归属当前企业题库）。选择题（type<=3）必须提供 [options]。
 /// [options] 形如 [{label: A, text: ...}]；[answer] 单选/判断为选项标签（如 A），
 /// 多选为逗号分隔标签（如 A,B），简答/编程为参考答案文本。

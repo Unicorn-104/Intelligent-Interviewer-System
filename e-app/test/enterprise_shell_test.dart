@@ -23,7 +23,7 @@ Future<void> verifyBatch(
   await tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.light,
-      home: EnterpriseModuleShell(onLogout: () {}),
+      home: EnterpriseModuleShell(onLogout: () {}, pollMessageUnread: false),
     ),
   );
   await tester.tap(find.byTooltip('更多功能'));
@@ -79,7 +79,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
-        home: EnterpriseModuleShell(onLogout: () {}),
+        home: EnterpriseModuleShell(onLogout: () {}, pollMessageUnread: false),
       ),
     );
     await tester.tap(find.byTooltip('更多功能'));
@@ -95,6 +95,7 @@ void main() {
         theme: AppTheme.light,
         home: EnterpriseModuleShell(
           onLogout: () {},
+          pollMessageUnread: false,
           tabBuilders: [
             for (var i = 0; i < 4; i++) (context) => _TestRoot(index: i),
           ],
@@ -124,6 +125,23 @@ void main() {
       expect(find.text('打开详情 $index'), findsOneWidget);
       expect(find.text('详情 $index'), findsNothing);
     }
+  });
+
+  testWidgets('消息 Tab 展示未读数量并在超过99条时显示99+', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: EnterpriseModuleShell(
+          onLogout: () {},
+          loadMessageUnread: () async => 120,
+          pollMessageUnread: false,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('message-unread-badge')), findsOneWidget);
+    expect(find.text('99+'), findsOneWidget);
   });
 }
 
