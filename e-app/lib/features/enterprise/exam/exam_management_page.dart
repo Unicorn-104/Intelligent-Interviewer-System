@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -765,12 +766,8 @@ class _ExamManagementPageState extends State<ExamManagementPage>
                       fontSize: 13, color: AppColors.textMuted)),
               const Divider(height: 24),
               ...questions.asMap().entries.map((entry) {
-                final q = entry.value as Map;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text('${entry.key + 1}. ${q['content'] ?? ''}',
-                      style: const TextStyle(fontSize: 13, height: 1.5)),
-                );
+                final q = Map<String, dynamic>.from(entry.value as Map);
+                return _paperQuestionCard(q, entry.key);
               }),
             ],
           ),
@@ -780,6 +777,108 @@ class _ExamManagementPageState extends State<ExamManagementPage>
       if (!mounted) return;
       _showPaperFallback(paper, error.message);
     }
+  }
+
+  Widget _paperQuestionCard(Map<String, dynamic> question, int index) {
+    final type = _asInt(question['type']);
+    final typeColor = _typeColor(type);
+    final answer = '${question['answer'] ?? ''}'.trim();
+    final options = _paperOptions(question);
+    final answerLabels = answer
+        .split(RegExp(r'[,，、\s]+'))
+        .map((item) => item.trim().toUpperCase())
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    final analysis = '${question['analysis'] ?? ''}'.trim();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: typeColor.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text('第 ${index + 1} 题', style: TextStyle(color: typeColor, fontWeight: FontWeight.w700, fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              Text(_typeName(type), style: TextStyle(color: typeColor, fontSize: 12, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Text('${_scoreText(question['score'])} 分', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text('${question['content'] ?? ''}', style: const TextStyle(color: AppColors.body, fontSize: 15, height: 1.5, fontWeight: FontWeight.w600)),
+          if (options.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            for (final option in options)
+              _paperOptionRow(option, answerLabels.contains(option.$1.toUpperCase())),
+          ],
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(color: AppColors.green.withValues(alpha: .1), borderRadius: BorderRadius.circular(9)),
+            child: Text('标准答案：${answer.isEmpty ? '暂无' : answer}', style: const TextStyle(color: AppColors.green, fontSize: 13, fontWeight: FontWeight.w700)),
+          ),
+          if (analysis.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(9)),
+              child: Text('答案解析：$analysis', style: const TextStyle(color: AppColors.bodySoft, fontSize: 12, height: 1.5)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _paperOptionRow((String, String) option, bool correct) => Container(
+    margin: const EdgeInsets.only(bottom: 7),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+    decoration: BoxDecoration(
+      color: correct ? AppColors.green.withValues(alpha: .1) : AppColors.background,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: correct ? AppColors.green : AppColors.hairline),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${option.$1}.', style: TextStyle(color: correct ? AppColors.green : AppColors.body, fontWeight: FontWeight.w800)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(option.$2, style: TextStyle(color: correct ? AppColors.green : AppColors.body, fontSize: 13, height: 1.4))),
+        if (correct) const Icon(Icons.check_circle_rounded, color: AppColors.green, size: 17),
+      ],
+    ),
+  );
+
+  List<(String, String)> _paperOptions(Map<String, dynamic> question) {
+    Object? raw = question['options'];
+    if (raw is! List && question['optionsJson'] != null) {
+      try {
+        raw = jsonDecode('${question['optionsJson']}');
+      } catch (_) {
+        raw = null;
+      }
+    }
+    if (raw is! List) return const [];
+    return raw.map((item) {
+      if (item is Map) return ('${item['label'] ?? ''}', '${item['text'] ?? item['value'] ?? ''}');
+      return ('', '$item');
+    }).where((item) => item.$1.isNotEmpty || item.$2.isNotEmpty).toList();
   }
 
   void _showPaperFallback(Map<String, dynamic> paper, String message) {
