@@ -21,10 +21,9 @@ const menus = reactive([
       { label: '岗位导入与草稿', to: '/enterprise/jobs/import', match: ['EnterpriseJobImport'] }
     ] },
   { label: '候选人与AI评分', to: '/enterprise/candidates', icon: markRaw(UsersRound),
-    match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess', 'EnterpriseResumeScreening', 'EnterpriseResumeScreeningAi', 'EnterpriseTalent'],
+    match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess', 'EnterpriseResumeScreeningAi', 'EnterpriseTalent'],
     children: [
       { label: '候选人列表', to: '/enterprise/candidates', match: ['EnterpriseCandidates', 'EnterpriseCandidateProcess'] },
-      { label: '投递详情', to: '/enterprise/resume-screening', match: ['EnterpriseResumeScreening'] },
       { label: 'AI 评分详情', to: '/enterprise/resume-screening/ai', match: ['EnterpriseResumeScreeningAi'] },
       { label: '人才库', to: '/enterprise/talent', match: ['EnterpriseTalent'] }
     ] },
