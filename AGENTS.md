@@ -1,5 +1,15 @@
 # Project Memory
 
+## E-App 多面试官与多人会议交付（2026-11-23）
+
+- 本轮功能为「邀请面试多选面试官 + 多人视频会议」，范围仅 `backend/` 与 `e-app/`；不修改 `c-app`、企业 PC 等其他端。继续使用现有功能分支 `feature/eapp-core-services-zx`，按 `feature/* -> dev -> main` 流转。
+- 邀约阶段按预约保存完整名单到 `t_sch_appointment_interviewer`，保留 `apt_interviewer_id` 作为主面试官；冲突校验、日历占用、改期、系统消息和邮件均覆盖全部面试官。旧单面试官预约通过主面试官字段回退兼容。
+- 从已有预约开始面试时，以预约名单为权威来源；场次写入完整面试官关联，人数大于 1 时自动采用多面试官模式，并向发起人以外的面试官发送带 `/conference-join?token=` 的聊天入口卡片。聊天入口必须按 token 进入指定场次，不得使用可能命中其他候选人的 `/session/current`。
+- 多人会议人数大于 2 时，首页保留候选人主画面与当前登录面试官小窗；横向进入全员宫格，点击任意参会人切换主画面。人数不大于 2 时保持原双人界面。
+- 迁移脚本 `backend/doc/migration_multi_interviewer_20261125.sql`、回滚脚本 `backend/doc/rollback_multi_interviewer_20261125.sql` 已生成但未由 Agent 执行；必须先迁移再部署新后端，否则预约名单相关查询会因表不存在失败。
+- 已验证：后端 `InterviewScheduleServiceImplTest` 29 项通过，`ruoyi-admin` 编译通过；E-App 定向测试通过，`flutter analyze` 无 error，Debug APK 已构建并安装到模拟器。尚未完成真实“2 位 HR + 1 位候选人”联调；远端旧后端、数据库新表和部署结果必须单独记录，不能以本地测试替代。
+- 工作区仍有企业 AI 记忆/RAG、考试、筛选等其他未提交增量，不得夹带入本功能提交或 PR；不提交构建产物、真实数据、凭据和本地配置。
+
 ## RAG 与游客登录联合交付（2026-11-10）
 
 - 用户指定功能为「RAG 和游客登录」，姓名缩写 `MZR`；两个功能共用 `feature/capp-rag-guest-login-MZR`，从最新 `origin/dev` 创建，每个子功能单独 Conventional Commit，完整功能统一一个 PR 到 dev。
