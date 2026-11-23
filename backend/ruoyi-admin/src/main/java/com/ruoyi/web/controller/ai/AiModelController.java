@@ -240,7 +240,8 @@ public class AiModelController extends BaseController {
         m.setMppApiKey(encryptKey(str(body, "apiKey")));
         m.setMppParamsJson(buildParamsJson(body));
         Object status = body.get("status");
-        m.setMppStatus(status == null ? 0 : Integer.valueOf(status.toString()));
+        // 与新增表单默认值保持一致：未传状态时按启用处理
+        m.setMppStatus(status == null ? 1 : Integer.valueOf(status.toString()));
         return toAjax(modelProviderService.insertModelProvider(m));
     }
 

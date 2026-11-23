@@ -1,9 +1,13 @@
 package com.ruoyi.web.controller.ai;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -12,6 +16,8 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -69,6 +75,26 @@ class AiModelStatusStatsTest
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rows.length()").value(1))
                 .andExpect(jsonPath("$.rows[0].modelId").value(2));
+    }
+
+    @Test
+    void addDefaultsToEnabledAndKeepsExplicitStatus() throws Exception
+    {
+        when(service.insertModelProvider(any())).thenReturn(1);
+        ArgumentCaptor<ModelProvider> captor = ArgumentCaptor.forClass(ModelProvider.class);
+
+        mvc.perform(post("/ai/model").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"modelName\":\"synthetic\",\"model\":\"synthetic-model\",\"apiUrl\":\"http://localhost\",\"apiKey\":\"\"}"))
+                .andExpect(status().isOk());
+        verify(service).insertModelProvider(captor.capture());
+        assertEquals(1, captor.getValue().getMppStatus());
+
+        mvc.perform(post("/ai/model").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"modelName\":\"synthetic2\",\"model\":\"synthetic-model\",\"apiUrl\":\"http://localhost\",\"apiKey\":\"\",\"status\":0}"))
+                .andExpect(status().isOk());
+        ArgumentCaptor<ModelProvider> both = ArgumentCaptor.forClass(ModelProvider.class);
+        verify(service, times(2)).insertModelProvider(both.capture());
+        assertEquals(0, both.getAllValues().get(1).getMppStatus());
     }
 
     private ModelProvider provider(Long id, Integer status)
