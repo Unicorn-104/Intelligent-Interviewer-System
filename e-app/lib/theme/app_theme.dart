@@ -1,14 +1,55 @@
 import 'package:flutter/material.dart';
 
 SnackBar compactSnackBar(String message) {
-  final width = (message.characters.length * 16 + 40).clamp(128, 320).toDouble();
+  final width = (message.characters.length * 16 + 40)
+      .clamp(128, 320)
+      .toDouble();
   return SnackBar(
     duration: const Duration(milliseconds: 1500),
     width: width,
-    content: Center(
-      child: Text(message, textAlign: TextAlign.center),
+    content: Center(child: Text(message, textAlign: TextAlign.center)),
+  );
+}
+
+/// 红色错误提示：自动消失，只保留一句直观结论。
+SnackBar compactErrorSnackBar(String message) {
+  final width = (message.characters.length * 14 + 76)
+      .clamp(220, 340)
+      .toDouble();
+  return SnackBar(
+    duration: const Duration(seconds: 2),
+    width: width,
+    elevation: 8,
+    backgroundColor: AppColors.red,
+    behavior: SnackBarBehavior.floating,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    content: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            message,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     ),
   );
+}
+
+void showCompactError(BuildContext context, String message) {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(compactErrorSnackBar(message));
 }
 
 abstract final class AppColors {
@@ -25,12 +66,15 @@ abstract final class AppColors {
   static const primarySoft = Color(0xFFEAF2FF);
   static const purple = Color(0xFF7A3DFF);
   static const orange = Color(0xFFFF6B00);
+
   /// 岗位详情/发布页主强调色（青绿色），参考 BOSS 直聘风格。
   static const teal = Color(0xFF00BFA5);
   static const tealDeep = Color(0xFF009688);
   static const tealSoft = Color(0xFFE0F5F2);
+
   /// 危险操作的浅红底。
   static const dangerSoft = Color(0xFFFDECEC);
+
   /// 表单页浅灰蓝背景与浅色输入框底。
   static const pageBackground = Color(0xFFF4F7FB);
   static const fieldBackground = Color(0xFFF6F8FC);
