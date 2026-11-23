@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -21,6 +22,15 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
+import com.ruoyi.ai.core.AgentActionStore;
+import com.ruoyi.ai.core.AgentTool;
+import com.ruoyi.ai.core.AgentToolPackage;
+import com.ruoyi.ai.core.PendingAction;
+import com.ruoyi.ai.core.PendingActionHandler;
+import com.ruoyi.ai.core.ToolArgs;
+import com.ruoyi.ai.core.ToolContext;
+import com.ruoyi.ai.core.ToolResult;
+import com.ruoyi.ai.audit.AgentStepRecorder;
 import com.ruoyi.system.domain.ModelProvider;
 import com.ruoyi.system.service.IModelProviderService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,24 +62,14 @@ public class AdminAssistantController extends BaseController {
 
     private static final String ENC_PREFIX = "ENC:";
     private static volatile ModelProvider cachedProvider;
+    /** Provider selection has a single source: AgentModelClient.resolve() (status 1 = enabled, api_key non-blank). */
     private ModelProvider activeProvider() {
         if (cachedProvider != null) return cachedProvider;
         try {
-            List<Long> ids = jdbc.queryForList(
-                    "SELECT mpp_id FROM t_model_provider WHERE mpp_status = 0 " +
-                    "ORDER BY (mpp_api_url LIKE '%volces.com%') DESC, mpp_id LIMIT 1",
-                    Long.class);
-            if (ids.isEmpty()) {
-                List<Long> any = jdbc.queryForList(
-                        "SELECT mpp_id FROM t_model_provider ORDER BY mpp_id LIMIT 1", Long.class);
-                if (any.isEmpty()) return null;
-                cachedProvider = providerService.selectModelProviderByMppId(any.get(0));
-            } else {
-                cachedProvider = providerService.selectModelProviderByMppId(ids.get(0));
-            }
+            cachedProvider = agentModelClient.resolve();
             return cachedProvider;
         } catch (Exception e) {
-            logger.error("activeProvider error", e);
+            logger.error("resolve provider error", e);
             return null;
         }
     }
@@ -110,23 +110,60 @@ public class AdminAssistantController extends BaseController {
     @Autowired
     private KbEmbeddingService kbEmbedding;
 
+    @Autowired
+    private com.ruoyi.system.service.app.ai.AgentModelClient agentModelClient;
+
+    /** 按端注册的工具包：工具 schema 与执行都从这里取，编排层不再关心具体有哪些工具。 */
+    @Autowired
+    private List<AgentToolPackage> toolPackages;
+
+    @Autowired
+    private AgentActionStore actionStore;
+
+    /** 各端写工具自报的草稿执行器。 */
+    @Autowired
+    private List<PendingActionHandler> pendingHandlers;
+
+    /** 工具调用审计：默认关闭，审计表执行后由配置打开。 */
+    @Autowired
+    private AgentStepRecorder stepRecorder;
+
+    /** 单次对话内收集的待确认卡片（ThreadLocal，请求结束即清除）。 */
+    private static final ThreadLocal<List<Map<String, Object>>> PENDING_CARDS =
+            ThreadLocal.withInitial(ArrayList::new);
+
+    /** 本端标识：只加载同 scope 的工具包，避免跨端串用。 */
+    private static final String SCOPE = "admin";
+
+    /** 兼容模型把工具调用写成文本标记（如 <｜｜DSML｜｜ invoke name="x">）的情况。 */
+    private static final java.util.regex.Pattern TEXT_INVOKE_PATTERN =
+            java.util.regex.Pattern.compile("<[^<>]*invoke\\s+name=\"([A-Za-z0-9_]+)\"([\\s\\S]*?)(?=<[^<>]*invoke\\s+name=\"|$)");
+    private static final java.util.regex.Pattern TEXT_PARAM_PATTERN =
+            java.util.regex.Pattern.compile("<[^<>]*parameter\\s+name=\"([A-Za-z0-9_]+)\"[^>]*>([^<]*)");
+    private static final java.util.regex.Pattern TEXT_TAG_PATTERN =
+            java.util.regex.Pattern.compile("<[^<>]*(?:invoke|parameter|calls)[^<>]*>");
+
     public AdminAssistantController(IModelProviderService providerService) {
         this.providerService = providerService;
     }
 
     private static final String SYSTEM_PROMPT = """
-            你是招聘管理系统后台AI助手。介绍模块用途、操作指引，用只读工具查业务数据。
+            你是招聘管理系统后台AI助手。既能查业务数据，也能代用户起草题库题目与调整分类。
             严格要求：
-            1. 只问答和只读查询，不执行写操作；
+            0. 调用工具必须使用工具调用接口（tool_calls），禁止把调用写成任何文本标记或伪标签；
+            1. 任何写操作都必须先调用 create_questions / classify_questions / undo_import_batch 生成待确认草稿，
+               然后告诉用户"请点击下方卡片确认"，绝不能声称已经写入或已经撤销；
             2. 业务数字优先用工具查真实数据，不编造；
             3. 中文简洁分点回答；
-            4. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
+            4. 题库口径：分类 1-5；题型 1 单选、2 多选、3 判断、4 简答、5 编程；
+            5. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
             /dashboard /company/company/list /company/user /business/list /business/verify
             /recruit/job /recruit/candidate /recruit/resume /recruit/interview /recruit/exam
             /msg/template /msg/record /msg/channel /msg/sent
             /ai/provider-list /ai/agent /ai/quota
             /system/role /system/menu /monitor/online /monitor/job /monitor/cache /monitor/operlog /monitor/logininfor
             /content/advert /content/question /content/feedback
+            /question/platform
             """;
 
     @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
@@ -163,14 +200,20 @@ public class AdminAssistantController extends BaseController {
             }
             messages.addObject().put("role", "user").put("content", message);
 
-            // 2) 第一次请求：带只读工具定义
+            // 2) 带工具请求：只读工具直查，写工具只生成待确认草稿
+            PENDING_CARDS.remove();
             ArrayNode tools = buildTools();
             String answer = callModel(provider.getMppModelName(), provider.getMppApiUrl(), apiKey, messages, tools);
 
-            return success(Map.of("answer", answer == null ? "" : answer));
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("answer", answer == null ? "" : answer);
+            data.put("pendings", new ArrayList<>(PENDING_CARDS.get()));
+            return success(data);
         } catch (Exception e) {
             logger.error("admin assistant chat error", e);
             return error("AI 助手暂时不可用：" + e.getMessage());
+        } finally {
+            PENDING_CARDS.remove();
         }
     }
 
@@ -202,6 +245,26 @@ public class AdminAssistantController extends BaseController {
                     ? history.subList(history.size() - 5, history.size())
                     : history;
             ArrayNode messages = buildMessages(message, shortHistory);
+
+            // 题库类问题走工具路径：可查库、可生成待确认草稿；普通问答仍走流式
+            if (needsQuestionTools(message)) {
+                PENDING_CARDS.remove();
+                ArrayNode tools = buildTools();
+                String answer = callModel(model, url, apiKey, messages, tools);
+                Map<String, Object> answerEvent = new java.util.LinkedHashMap<>();
+                answerEvent.put("text", answer == null ? "" : answer);
+                out.write("event: answer\ndata: " + json.writeValueAsString(answerEvent) + "\n\n");
+                out.flush();
+                List<Map<String, Object>> cards = new ArrayList<>(PENDING_CARDS.get());
+                if (!cards.isEmpty()) {
+                    out.write("event: pending\ndata: " + json.writeValueAsString(cards) + "\n\n");
+                    out.flush();
+                }
+                PENDING_CARDS.remove();
+                out.write("data: [DONE]\n\n");
+                out.flush();
+                return;
+            }
 
             // 预判：需要工具时后端直接查SQL注入消息，省掉一轮非流式等模型判断
             boolean needTools = needsToolCall(message);
@@ -339,6 +402,53 @@ public class AdminAssistantController extends BaseController {
         return false;
     }
 
+    /** 题库相关意图：这类问题需要带工具跑，才能查到真实题目或生成待确认草稿。 */
+    private boolean needsQuestionTools(String q) {
+        if (q == null) return false;
+        String[] keywords = {"题库", "题目", "出题", "出几道", "生成题", "加题", "新增题", "导入记录",
+                "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干"};
+        for (String kw : keywords) {
+            if (q.contains(kw)) return true;
+        }
+        return false;
+    }
+
+    /** 用户确认后执行待确认动作；写权限复用题库新增权限。 */
+    @PreAuthorize("@ss.hasPermi('content:question:add')")
+    @PostMapping("/pending/apply")
+    public AjaxResult applyPending(@RequestBody Map<String, Object> body) {
+        String id = body.get("id") == null ? "" : body.get("id").toString();
+        if (id.isBlank()) {
+            return error("缺少待确认编号");
+        }
+        PendingAction action = actionStore.take(id);
+        if (action == null) {
+            return error("草稿已过期或已提交，请让助手重新生成");
+        }
+        if (!SCOPE.equals(action.scope)) {
+            return error("该草稿不属于当前端，无法执行");
+        }
+        try {
+            for (PendingActionHandler handler : pendingHandlers) {
+                if (handler.supports(action)) {
+                    return success(handler.apply(action, toolContext()));
+                }
+            }
+            return error("没有可执行该草稿的工具");
+        } catch (Exception e) {
+            logger.error("apply pending error id={}", id, e);
+            return error("执行失败：" + e.getMessage());
+        }
+    }
+
+    /** 放弃待确认动作（用户点"取消"）。 */
+    @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
+    @PostMapping("/pending/discard")
+    public AjaxResult discardPending(@RequestBody Map<String, Object> body) {
+        String id = body.get("id") == null ? "" : body.get("id").toString();
+        return success(Map.of("discarded", actionStore.discard(id)));
+    }
+
     private ArrayNode buildMessages(String message, List<Map<String, String>> history) throws Exception {
         ArrayNode messages = json.createArrayNode();
         String ragCtx = searchKnowledge(message);
@@ -362,7 +472,7 @@ public class AdminAssistantController extends BaseController {
         reqBody.set("messages", messages);
         reqBody.put("stream", false);
         reqBody.put("temperature", 0.3);
-        reqBody.put("max_tokens", 1024);
+        reqBody.put("max_tokens", withTools && tools != null ? 3000 : 1024);
         if (withTools && tools != null && tools.size() > 0) {
             reqBody.set("tools", tools);
         }
@@ -432,7 +542,7 @@ public class AdminAssistantController extends BaseController {
         reqBody.set("messages", messages);
         reqBody.put("stream", false);
         reqBody.put("temperature", 0.3);
-        reqBody.put("max_tokens", 1024);
+        reqBody.put("max_tokens", tools != null && tools.size() > 0 ? 3000 : 1024);
         reqBody.set("thinking", json.createObjectNode().put("type", "disabled"));
         if (tools != null && tools.size() > 0) {
             reqBody.set("tools", tools);
@@ -452,9 +562,28 @@ public class AdminAssistantController extends BaseController {
         JsonNode msg = root.path("choices").path(0).path("message");
         JsonNode toolCalls = msg.path("tool_calls");
 
-        // 无工具调用，直接返回内容
+        // 无工具调用：先看模型是否把调用写成了文本标记，命中则按工具流程执行
         if (toolCalls.isMissingNode() || !toolCalls.isArray() || toolCalls.size() == 0) {
-            return msg.path("content").asText("");
+            String raw = msg.path("content").asText("");
+            List<ObjectNode> textCalls = parseTextToolCalls(raw);
+            if (textCalls.isEmpty()) {
+                return raw;
+            }
+            ObjectNode assistantMsg = json.createObjectNode();
+            assistantMsg.put("role", "assistant");
+            String cleaned = TEXT_TAG_PATTERN.matcher(raw).replaceAll("").trim();
+            assistantMsg.put("content", cleaned.isEmpty() ? "（已调用工具）" : cleaned);
+            messages.add(assistantMsg);
+            // 文本形式没有 tool_call_id，不能拼 role=tool 消息（模型会 400），改为注入工具结果
+            StringBuilder results = new StringBuilder("【工具执行结果】\n");
+            for (ObjectNode call : textCalls) {
+                String name = call.path("function").path("name").asText("");
+                String args = call.path("function").path("arguments").asText("{}");
+                results.append("- ").append(name).append(" → ").append(executeTool(name, args)).append("\n");
+            }
+            results.append("\n请基于以上工具结果回答用户，不要再输出任何工具标记文本。");
+            messages.addObject().put("role", "user").put("content", results.toString());
+            return callModel(model, url, apiKey, messages, null);
         }
 
         // 有工具调用：把 assistant(tool_calls) 消息追加，逐个执行工具
@@ -474,65 +603,138 @@ public class AdminAssistantController extends BaseController {
         return callModel(model, url, apiKey, messages, null);
     }
 
-    /** 只读工具定义。 */
+    /** 从文本里解析出工具调用列表；解析不到返回空。 */
+    private List<ObjectNode> parseTextToolCalls(String text) throws Exception {
+        List<ObjectNode> calls = new ArrayList<>();
+        if (text == null || text.isEmpty()) {
+            return calls;
+        }
+        java.util.regex.Matcher inv = TEXT_INVOKE_PATTERN.matcher(text);
+        int seq = 0;
+        while (inv.find()) {
+            String name = inv.group(1);
+            ObjectNode args = json.createObjectNode();
+            java.util.regex.Matcher pm = TEXT_PARAM_PATTERN.matcher(inv.group(2));
+            while (pm.find()) {
+                String key = pm.group(1);
+                String value = pm.group(2).trim();
+                if (value.startsWith("[") || value.contains(",")) {
+                    ArrayNode arr = parseArrayValue(value);
+                    if (arr != null) {
+                        args.set(key, arr);
+                        continue;
+                    }
+                }
+                args.put(key, value);
+            }
+            ObjectNode call = json.createObjectNode();
+            call.put("id", "text_call_" + (++seq));
+            ObjectNode fn = call.putObject("function");
+            fn.put("name", name);
+            fn.put("arguments", json.writeValueAsString(args));
+            calls.add(call);
+        }
+        return calls;
+    }
+
+    /** 把 [1,2] 或 1,2 或 1、2 解析成数组；不是数字列表则返回 null。 */
+    private ArrayNode parseArrayValue(String raw) {
+        String v = raw.trim();
+        if (v.startsWith("[") && v.endsWith("]")) {
+            try {
+                JsonNode node = json.readTree(v);
+                if (node != null && node.isArray()) {
+                    return (ArrayNode) node;
+                }
+            } catch (Exception ignore) {
+                // 非法 JSON 继续按逗号切分
+            }
+            v = v.substring(1, v.length() - 1);
+        }
+        ArrayNode arr = json.createArrayNode();
+        boolean any = false;
+        for (String part : v.split("[,，、\\s]+")) {
+            String p = part.trim().replace("\"", "");
+            if (p.matches("-?\\d+")) {
+                arr.add(Long.parseLong(p));
+                any = true;
+            }
+        }
+        return any ? arr : null;
+    }
+
+    /** 工具定义全部由工具包提供，编排层不再手写 schema。 */
     private ArrayNode buildTools() {
         ArrayNode tools = json.createArrayNode();
-
-        ObjectNode p1 = json.createObjectNode();
-        p1.put("type", "object");
-        p1.set("properties", json.createObjectNode());
-        ObjectNode t1 = json.createObjectNode();
-        t1.put("type", "function");
-        ObjectNode f1 = t1.putObject("function");
-        f1.put("name", "get_dashboard_stats");
-        f1.put("description", "查询平台真实业务统计：岗位总数、候选人总数、最近7天新增候选人");
-        f1.set("parameters", p1);
-
-        ObjectNode p2 = json.createObjectNode();
-        p2.put("type", "object");
-        p2.set("properties", json.createObjectNode());
-        ObjectNode t2 = json.createObjectNode();
-        t2.put("type", "function");
-        ObjectNode f2 = t2.putObject("function");
-        f2.put("name", "get_recent_login_alerts");
-        f2.put("description", "查询最近的登录失败/异常记录，用于安全诊断");
-        f2.set("parameters", p2);
-
-        tools.add(t1);
-        tools.add(t2);
+        for (AgentToolPackage pkg : toolPackages) {
+            if (SCOPE.equals(pkg.scope())) {
+                tools.addAll(pkg.definitions(json));
+            }
+        }
         return tools;
     }
 
-    /** 执行只读工具，任何异常都吞掉返回说明，绝不写库。 */
-    private String executeTool(String name, String args) {
-        try {
-            switch (name) {
-                case "get_dashboard_stats": {
-                    Integer pos = jdbc.queryForObject("SELECT COUNT(*) FROM t_pos", Integer.class);
-                    Integer tal = jdbc.queryForObject("SELECT COUNT(*) FROM t_tal", Integer.class);
-                    Integer recent = jdbc.queryForObject(
-                            "SELECT COUNT(*) FROM t_tal WHERE tal_created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)",
-                            Integer.class);
-                    return "岗位总数=" + pos + "；候选人总数=" + tal + "；近7天新增候选人=" + recent;
-                }
-                case "get_recent_login_alerts": {
-                    List<Map<String, Object>> rows = jdbc.queryForList(
-                            "SELECT login_name, ipaddr, msg, login_time FROM sys_logininfor " +
-                            "WHERE status = '1' ORDER BY login_time DESC LIMIT 5");
-                    if (rows.isEmpty()) return "最近没有登录失败记录";
-                    StringBuilder sb = new StringBuilder("最近登录失败记录：\n");
-                    for (Map<String, Object> r : rows) {
-                        sb.append("- ").append(r.get("login_time")).append(" 用户=").append(r.get("login_name"))
-                          .append(" IP=").append(r.get("ipaddr")).append(" 原因=").append(r.get("msg")).append("\n");
-                    }
-                    return sb.toString();
-                }
-                default:
-                    return "未知工具";
+    private AgentTool findTool(String name) {
+        for (AgentToolPackage pkg : toolPackages) {
+            if (!SCOPE.equals(pkg.scope())) {
+                continue;
             }
+            AgentTool tool = pkg.find(name);
+            if (tool != null) {
+                return tool;
+            }
+        }
+        return null;
+    }
+
+    private ToolContext toolContext() {
+        return ToolContext.of(SCOPE, operatorName());
+    }
+
+    /** 执行工具：在工具包里按名查找并执行。写工具只登记草稿，不产生业务副作用。 */
+    private String executeTool(String name, String args) {
+        long start = System.currentTimeMillis();
+        ToolContext ctx = toolContext();
+        try {
+            logger.debug("assistant tool call name={} argsLen={} args={}", name,
+                    args == null ? 0 : args.length(),
+                    args != null && args.length() > 1000 ? args.substring(0, 1000) : args);
+            AgentTool tool = findTool(name);
+            if (tool == null) {
+                return "未知工具";
+            }
+            ToolResult result = tool.execute(ctx, ToolArgs.parse(json, args));
+            if (result.hasPending()) {
+                collectPendingCard(result.getPending());
+            }
+            stepRecorder.record(ctx, name, args, result.getText(), 0,
+                    System.currentTimeMillis() - start,
+                    result.hasPending() ? result.getPending().id : null);
+            return result.getText();
         } catch (Exception e) {
+            stepRecorder.record(ctx, name, args, e.getMessage(), 1,
+                    System.currentTimeMillis() - start, null);
             return "工具查询失败：" + e.getMessage();
         }
+    }
+
+    private String operatorName() {
+        try {
+            String username = com.ruoyi.common.utils.SecurityUtils.getUsername();
+            return username == null || username.isBlank() ? "system" : username;
+        } catch (Exception e) {
+            return "system";
+        }
+    }
+
+    /** 草稿直接转前端确认卡片，不再从工具文本里反解析 pendingId。 */
+    private void collectPendingCard(PendingAction action) {
+        Map<String, Object> card = new java.util.LinkedHashMap<>();
+        card.put("id", action.id);
+        card.put("kind", action.kind);
+        card.put("title", action.title);
+        card.put("summary", action.summary);
+        PENDING_CARDS.get().add(card);
     }
 
     /** RAG：优先向量语义检索，fallback全文索引，返回Top3相关知识。 */
