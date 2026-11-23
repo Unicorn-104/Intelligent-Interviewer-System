@@ -15,6 +15,8 @@ Map<String, dynamic> roomSession({String role = 'HR'}) => {
   'interviewerName': '李面试官',
   'mode': 2,
   'status': 1,
+  'durationMinutes': 30,
+  'roomId': 'INTERVIEW-101',
   'role': role,
   'appointmentStartAt': '2026-10-28 20:00',
   'appointmentEndAt': '2026-10-28 20:30',
@@ -220,7 +222,7 @@ void main() {
     expect(find.text('已进入会议室，等待候选人加入…'), findsOneWidget);
     expect(find.text('Flutter 工程师'), findsOneWidget);
     expect(find.text('张三 · AI+单面试官'), findsOneWidget);
-    expect(find.text('00:00'), findsOneWidget);
+    expect(find.text('剩余 30:00'), findsOneWidget);
     expect(find.byKey(const ValueKey('conference-toggle-mic')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('conference-toggle-camera')),
@@ -246,6 +248,94 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('conference-flip-camera')));
     await tester.pumpAndSettle();
     expect(harness.engine.flips, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('多人会议：默认双人首页，右滑宫格并点击切换主画面', (tester) async {
+    final session = roomSession();
+    session['interviewers'] = [
+      {'userId': 5, 'userName': '李面试官', 'isPrimary': 1, 'joinStatus': 1},
+      {'userId': 6, 'userName': '王面试官', 'isPrimary': 0, 'joinStatus': 1},
+    ];
+    final harness = await mountRoom(tester, session: session);
+    harness.engine.emit(
+      const ConferenceRoomState(
+        stage: ConferenceRoomStage.connected,
+        localIdentity: 'u5',
+        micEnabled: true,
+        cameraEnabled: true,
+        canPublish: true,
+        remotes: [
+          ConferenceRemoteParticipant(
+            identity: 'u104',
+            cameraEnabled: true,
+            micEnabled: true,
+          ),
+          ConferenceRemoteParticipant(
+            identity: 'u6',
+            cameraEnabled: true,
+            micEnabled: true,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('已连接 · 3人'), findsOneWidget);
+    expect(find.byKey(const ValueKey('conference-pip-toggle')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('conference-participant-self')),
+      findsNothing,
+    );
+
+    await tester.drag(
+      find.byKey(const ValueKey('conference-stage-pager')),
+      const Offset(-360, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('conference-participant-self')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('conference-participant-6')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('conference-pip-toggle')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('conference-participant-6')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('conference-stage-pager')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('conference-participant-6')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('conference-pip-toggle')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('远端关闭摄像头后展示占位而不是冻结最后一帧', (tester) async {
+    final harness = await mountRoom(tester);
+    harness.engine.emit(
+      const ConferenceRoomState(
+        stage: ConferenceRoomStage.connected,
+        localIdentity: 'u5',
+        micEnabled: true,
+        cameraEnabled: true,
+        canPublish: true,
+        remotes: [
+          ConferenceRemoteParticipant(
+            identity: 'u104',
+            cameraEnabled: false,
+            micEnabled: true,
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(find.text('摄像头已关闭'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -275,7 +365,7 @@ void main() {
     expect(find.text('应聘岗位'), findsOneWidget);
     expect(find.text('示例科技'), findsOneWidget);
     expect(find.text('AI+单面试官'), findsWidgets);
-    expect(find.text('#101'), findsOneWidget);
+    expect(find.text('#101 · INTERVIEW-101'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -352,11 +442,29 @@ void main() {
     expect(find.text('打开会议室'), findsOneWidget);
   });
 
-  testWidgets('会议计时与心跳周期性推进', (tester) async {
+  testWidgets('倒计时与心跳周期性推进', (tester) async {
     final harness = await mountRoom(tester);
     await tester.pump(const Duration(seconds: 65));
-    expect(find.text('01:05'), findsOneWidget);
+    expect(find.text('剩余 28:55'), findsOneWidget);
     expect(harness.heartbeatCalls, greaterThanOrEqualTo(5));
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('最后一分钟提醒并在归零后结束会话退出会议', (tester) async {
+    final session = roomSession()
+      ..['durationMinutes'] = 2
+      ..['status'] = 0;
+    final harness = await mountRoom(tester, session: session);
+    await tester.pump(const Duration(seconds: 60));
+    expect(find.text('面试剩余不足 1 分钟，请尽快收尾'), findsOneWidget);
+    expect(find.text('剩余 01:00'), findsOneWidget);
+    expect(harness.finishCalls, isEmpty);
+    await tester.pump(const Duration(seconds: 62));
+    await tester.pumpAndSettle();
+    expect(harness.finishCalls, hasLength(1));
+    expect(harness.finishCalls.single.$2, {'endReason': 'timeout'});
+    expect(harness.engine.disconnects, 1);
+    expect(find.text('打开会议室'), findsOneWidget);
+    expect(find.byType(ConferenceRoomPage), findsNothing);
   });
 }

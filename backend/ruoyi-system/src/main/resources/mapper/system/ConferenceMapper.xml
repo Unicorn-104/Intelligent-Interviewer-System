@@ -807,6 +807,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by si.isi_is_primary desc, si.isi_id asc
     </select>
 
+    <select id="selectAppointmentInterviewerIds" resultType="long">
+        select ai.asi_user_id
+        from t_sch_appointment_interviewer ai
+        where ai.asi_appointment_id = #{appointmentId}
+        order by ai.asi_is_primary desc, ai.asi_id asc
+    </select>
+
     <select id="selectInterviewerNotices" parameterType="Long" resultType="java.util.LinkedHashMap">
         select si.isi_session_id as sessionId,
                si.isi_is_primary as isPrimary,

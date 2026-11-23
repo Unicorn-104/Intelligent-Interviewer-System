@@ -25,9 +25,10 @@ Map<String, dynamic> sessionContext() => {
 };
 
 class InviteChatSource extends FakeMessageSource {
-  Map<String, dynamic> currentSession = sessionContext();
-  Object? sessionFailure;
-  int sessionCalls = 0;
+  Map<String, dynamic> inviteSession = sessionContext();
+  Object? inviteFailure;
+  int inviteCalls = 0;
+  String? lastToken;
 }
 
 /// 记录「进入面试」收到的场次上下文，替代真实音视频会议室。
@@ -37,8 +38,10 @@ class FakeConferenceRoom extends StatelessWidget {
   final Map<String, dynamic> session;
 
   @override
-  Widget build(BuildContext context) =>
-      Scaffold(body: Text('视频会议室#${session['sessionId']}'));
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(leading: const BackButton()),
+    body: Text('视频会议室#${session['sessionId']}'),
+  );
 }
 
 Future<void> mountChat(WidgetTester tester, InviteChatSource source) async {
@@ -53,10 +56,11 @@ Future<void> mountChat(WidgetTester tester, InviteChatSource source) async {
         session: sessionJson(),
         source: source,
         pollInterval: Duration.zero,
-        loadCurrentSession: () async {
-          source.sessionCalls++;
-          if (source.sessionFailure != null) throw source.sessionFailure!;
-          return source.currentSession;
+        joinInterviewInvite: (token) async {
+          source.inviteCalls++;
+          source.lastToken = token;
+          if (source.inviteFailure != null) throw source.inviteFailure!;
+          return source.inviteSession;
         },
         conferenceRoomBuilder: (session) =>
             FakeConferenceRoom(session: session),
@@ -74,7 +78,7 @@ void main() {
         'messageId': 1,
         'type': 1,
         'content': '$inviteBody：$inviteUrl',
-        'isMine': true,
+        'isMine': false,
         'sendTime': '2026-10-28 20:00',
       }),
       ConversationMessage.fromJson({
@@ -88,7 +92,7 @@ void main() {
         'messageId': 3,
         'type': 1,
         'content': '$inviteBody：/conference-join?token=relative123',
-        'isMine': true,
+        'isMine': false,
         'sendTime': '2026-10-28 20:02',
       }),
     ];
@@ -109,7 +113,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('点击进入面试查询当前场次并直接打开视频会议室', (tester) async {
+  testWidgets('点击进入面试按邀请 token 打开对应会议室', (tester) async {
     final source = InviteChatSource();
     source.messages = [
       ConversationMessage.fromJson({
@@ -123,7 +127,8 @@ void main() {
     await mountChat(tester, source);
     await tester.tap(find.byKey(const ValueKey('chat-enter-interview-1')));
     await tester.pumpAndSettle();
-    expect(source.sessionCalls, 1);
+    expect(source.inviteCalls, 1);
+    expect(source.lastToken, 'token123');
     final page = tester.widget<FakeConferenceRoom>(
       find.byType(FakeConferenceRoom),
     );
@@ -134,8 +139,45 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('不同邀请 token 使用各自返回的场次', (tester) async {
+    final source = InviteChatSource();
+    source.messages = [
+      ConversationMessage.fromJson({
+        'messageId': 1,
+        'type': 1,
+        'content': '$inviteBody：$inviteUrl',
+        'isMine': true,
+        'sendTime': '2026-10-28 20:00',
+      }),
+      ConversationMessage.fromJson({
+        'messageId': 3,
+        'type': 1,
+        'content': '$inviteBody：/conference-join?token=relative123',
+        'isMine': true,
+        'sendTime': '2026-10-28 20:02',
+      }),
+    ];
+    await mountChat(tester, source);
+    await tester.tap(find.byKey(const ValueKey('chat-enter-interview-1')));
+    await tester.pumpAndSettle();
+    expect(source.lastToken, 'token123');
+    expect(find.text('视频会议室#77'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    source.inviteSession = sessionContext()
+      ..['sessionId'] = 157
+      ..['candidateName'] = '若依'
+      ..['positionTitle'] = 'a';
+    await tester.tap(find.byKey(const ValueKey('chat-enter-interview-3')));
+    await tester.pumpAndSettle();
+    expect(source.lastToken, 'relative123');
+    expect(find.text('视频会议室#157'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('面试已结束时提示本场面试已结束', (tester) async {
-    final source = InviteChatSource()..currentSession = {};
+    final source = InviteChatSource()..inviteSession = {};
     source.messages = [
       ConversationMessage.fromJson({
         'messageId': 1,
@@ -148,15 +190,16 @@ void main() {
     await mountChat(tester, source);
     await tester.tap(find.byKey(const ValueKey('chat-enter-interview-1')));
     await tester.pumpAndSettle();
-    expect(source.sessionCalls, 1);
+    expect(source.inviteCalls, 1);
+    expect(source.lastToken, 'token123');
     expect(find.text('本场面试已结束'), findsOneWidget);
     expect(find.byType(FakeConferenceRoom), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('查询会话失败时提示原因且不打开会议室', (tester) async {
+  testWidgets('邀请 token 兑换失败时提示原因且不打开会议室', (tester) async {
     final source = InviteChatSource()
-      ..sessionFailure = const ApiException('合成查询失败');
+      ..inviteFailure = const ApiException('合成兑换失败');
     source.messages = [
       ConversationMessage.fromJson({
         'messageId': 1,
@@ -169,8 +212,9 @@ void main() {
     await mountChat(tester, source);
     await tester.tap(find.byKey(const ValueKey('chat-enter-interview-1')));
     await tester.pumpAndSettle();
-    expect(source.sessionCalls, 1);
-    expect(find.text('查询面试状态失败：合成查询失败'), findsOneWidget);
+    expect(source.inviteCalls, 1);
+    expect(source.lastToken, 'token123');
+    expect(find.text('进入面试失败，请重试'), findsOneWidget);
     expect(find.byType(FakeConferenceRoom), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });

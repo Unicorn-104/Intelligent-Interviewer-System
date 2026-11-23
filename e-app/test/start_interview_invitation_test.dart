@@ -1,3 +1,4 @@
+import 'package:enterprise_recruiter/config/app_config.dart';
 import 'package:enterprise_recruiter/core/network/api_exception.dart';
 import 'package:enterprise_recruiter/features/enterprise/dashboard/home_models.dart';
 import 'package:enterprise_recruiter/features/enterprise/interview/start_interview_invitation.dart';
@@ -31,9 +32,9 @@ HomeInterview interview(Map<String, dynamic> raw) => HomeInterview(
   status: 1,
 );
 
-const expectedInvite =
+final expectedInvite =
     '【面试邀请·AI技术面试·AI+单面试官】示例企业 示例岗位 视频面试，'
-    '请点击链接进入：http://localhost:5180/conference-join?token=t123';
+    '请点击链接进入：${AppConfig.candidateAppUrl}/conference-join?token=t123';
 
 class InviteSource extends FakeMessageSource {
   int? existingSession;
@@ -157,6 +158,23 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('conference-join'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('多人面试按预约名单传全量面试官并自动使用多面试官模式', (tester) async {
+    final source = InviteSource()..existingSession = 8;
+    final harness = InviteHarness(linkResult: {'mode': 3});
+    final raw = {
+      ...interviewRow(),
+      'interviewers': [
+        {'userId': 9, 'userName': '面试官甲', 'isPrimary': 1},
+        {'userId': 10, 'userName': '面试官乙', 'isPrimary': 0},
+      ],
+    };
+    await mountInvite(tester, source, harness, raw: raw);
+    expect(harness.linkCalls.single['mode'], 3);
+    expect(harness.linkCalls.single['interviewerIds'], [9, 10]);
+    expect(source.sends.single, contains('AI+多面试官'));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

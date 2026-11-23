@@ -12,6 +12,7 @@ class ConferenceRemoteParticipant {
   const ConferenceRemoteParticipant({
     required this.identity,
     this.videoTrack,
+    this.cameraEnabled = true,
     this.micEnabled = true,
     this.speaking = false,
   });
@@ -19,6 +20,7 @@ class ConferenceRemoteParticipant {
   /// LiveKit identity，形如 `u{userId}`，用于映射回业务用户。
   final String identity;
   final lk.VideoTrack? videoTrack;
+  final bool cameraEnabled;
   final bool micEnabled;
   final bool speaking;
 }
@@ -253,10 +255,12 @@ class LiveKitConferenceEngine extends ConferenceRoomEngine {
         lk.TrackSource.camera,
       );
       final track = publication?.track;
+      final cameraEnabled = participant.isCameraEnabled();
       remotes.add(
         ConferenceRemoteParticipant(
           identity: participant.identity,
-          videoTrack: _asVideoTrack(track),
+          videoTrack: cameraEnabled ? _asVideoTrack(track) : null,
+          cameraEnabled: cameraEnabled,
           micEnabled: participant.isMicrophoneEnabled(),
           speaking: _speaking.contains(participant.identity),
         ),
