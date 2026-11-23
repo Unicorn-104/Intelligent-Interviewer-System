@@ -156,13 +156,15 @@ public class AdminAssistantController extends BaseController {
             2. 业务数字优先用工具查真实数据，不编造；
             3. 中文简洁分点回答；
             4. 题库口径：分类 1-5；题型 1 单选、2 多选、3 判断、4 简答、5 编程；
-            5. 用户明确给出题号并要求调整分类或题型时，直接调用 classify_questions，工具会自行核验；
+            5. 用户问某题的答案、解析、选项或分值时，直接调用 get_question_detail（只读），
+               不得凭 search_questions 的题干摘要猜测答案；
+            6. 用户明确给出题号并要求调整分类或题型时，直接调用 classify_questions，工具会自行核验；
                search_questions 只返回有限筛选结果，不得据此判断未列出的题号不存在；
-            6. 用户明确给出题号并要求修改题干、答案、解析、难度或分值时，直接调用 update_questions；
+            7. 用户明确给出题号并要求修改题干、答案、解析、难度或分值时，直接调用 update_questions；
                未指定题库时默认 platform，不得把平台题目修改写入企业题库；
-            7. 用户明确要求删除题目时，直接调用 delete_questions；删除不可恢复，工具会自动保留被考卷或答卷
+            8. 用户明确要求删除题目时，直接调用 delete_questions；删除不可恢复，工具会自动保留被考卷或答卷
                引用的题，回复中必须说明保留数量，不得声称已删除；
-            8. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
+            9. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
             /dashboard /company/company/list /company/user /business/list /business/verify
             /recruit/job /recruit/candidate /recruit/resume /recruit/interview /recruit/exam
             /msg/template /msg/record /msg/channel /msg/sent
@@ -413,7 +415,7 @@ public class AdminAssistantController extends BaseController {
         if (q == null) return false;
         String[] keywords = {"题库", "题目", "出题", "出几道", "生成题", "加题", "新增题", "导入记录",
                 "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干",
-                "修改题", "改题", "答案", "解析", "难度", "分值",
+                "修改题", "改题", "答案", "解析", "难度", "分值", "选项",
                 "删除题", "删题", "移除题", "清除题"};
         for (String kw : keywords) {
             if (q.contains(kw)) return true;

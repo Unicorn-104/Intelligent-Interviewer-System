@@ -20,6 +20,7 @@ public class AdminToolPackage implements AgentToolPackage
     public AdminToolPackage(GetDashboardStatsTool dashboardStats,
             GetRecentLoginAlertsTool loginAlerts,
             SearchQuestionsTool searchQuestions,
+            GetQuestionDetailTool questionDetail,
             GetQuestionStatsTool questionStats,
             ListImportBatchesTool listBatches,
             CreateQuestionsTool createQuestions,
@@ -28,7 +29,7 @@ public class AdminToolPackage implements AgentToolPackage
             DeleteQuestionsTool deleteQuestions,
             UndoImportBatchTool undoImportBatch)
     {
-        this.tools = List.of(dashboardStats, loginAlerts, searchQuestions, questionStats,
+        this.tools = List.of(dashboardStats, loginAlerts, searchQuestions, questionDetail, questionStats,
                 listBatches, createQuestions, classifyQuestions, updateQuestions, deleteQuestions,
                 undoImportBatch);
     }
