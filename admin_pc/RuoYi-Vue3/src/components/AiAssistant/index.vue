@@ -39,8 +39,8 @@
             <el-upload
               :show-file-list="false"
               :before-upload="beforeUpload"
-              action="/prod-api/ai/kb/upload"
-              :headers="{ Authorization: 'Bearer ' + token }"
+              :action="BASE_API + '/ai/kb/upload'"
+              :headers="{ Authorization: 'Bearer ' + getToken() }"
               name="file"
               :data="{ category: '操作手册' }"
               accept=".txt,.md"
@@ -170,6 +170,8 @@ import { getToken } from '@/utils/auth'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
+/** 与全局请求一致：dev 为 /dev-api，生产为 /prod-api */
+const BASE_API = import.meta.env.VITE_APP_BASE_API || '/prod-api'
 const open = ref(false)
 const isLoginPage = computed(
   () => router.currentRoute.value.path === '/login' || router.currentRoute.value.path.startsWith('/login')
@@ -368,6 +370,10 @@ function exportMd() {
 // Markdown 渲染（表格/标题/加粗/行内code/代码块/有序无序列表/链接）
 function renderMd(src) {
   if (!src) return '<span class="ai-cursor"></span>'
+  src = String(src)
+    .replace(/<tool_call[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/<[^>]*(?:invoke|parameter|calls)[^>]*>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
   let s = src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   // 代码块
   s = s.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
@@ -406,13 +412,23 @@ function renderMd(src) {
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
   // 链接
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+  const toList = (tag, mark, m) => {
+    const re = new RegExp(`<${mark}>[\\s\\S]*?</${mark}>`, 'g')
+    const items = (m.match(re) || [])
+      .map((x) => `<li>${x.replace(new RegExp(`</?${mark}>`, 'g'), '')}</li>`)
+      .join('')
+    return `<${tag}>${items}</${tag}>`
+  }
   // 有序列表（先处理，用临时标记避免和无序列表混淆）
   s = s.replace(/^\d+\. (.*)$/gm, '<olist>$1</olist>')
-  s = s.replace(/(?:<olist>[\s\S]*?<\/olist>)+/g, (m) => '<ol>' + m.replace(/<\/?olist>/g, '<li>') + '</ol>')
+  s = s.replace(/(?:<olist>[\s\S]*?<\/olist>\n?)+/g, (m) => toList('ol', 'olist', m))
   // 无序列表
   s = s.replace(/^[-•] (.*)$/gm, '<ulist>$1</ulist>')
-  s = s.replace(/(?:<ulist>[\s\S]*?<\/ulist>)+/g, (m) => '<ul>' + m.replace(/<\/?ulist>/g, '<li>') + '</ul>')
-  // 换行
+  s = s.replace(/(?:<ulist>[\s\S]*?<\/ulist>\n?)+/g, (m) => toList('ul', 'ulist', m))
+  // 换行：块级元素前后不重复产生 <br/>，连续空行只保留一个段间距
+  s = s.replace(/(<\/(?:h3|h4|ul|ol|table|pre)>)\n+/g, '$1')
+  s = s.replace(/\n+(?=<(?:h3|h4|ul|ol|table|pre)>)/g, '')
+  s = s.replace(/\n{2,}/g, '<br/><br/>')
   s = s.replace(/\n/g, '<br/>')
   s += '<span class="ai-cursor"></span>'
   return s
@@ -440,7 +456,7 @@ async function send(preset) {
       .slice(-10)
       .map((m) => ({ role: m.role, content: m.content }))
     abortCtrl = new AbortController()
-    const resp = await fetch('/prod-api/ai/assistant/chat/stream', {
+    const resp = await fetch(`${BASE_API}/ai/assistant/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
       body: JSON.stringify({ message: text, history: hist }),
@@ -494,7 +510,16 @@ async function send(preset) {
           expectTool = false
         } else {
           if (aiMsg.tool) aiMsg.tool = ''
-          aiMsg.content += d
+          let seg = d
+          try {
+            const j = JSON.parse(d)
+            if (typeof j === 'string') seg = j
+            else if (j && j.error) seg = '（' + j.error + '）'
+            else seg = ''
+          } catch (e) {
+            /* 非 JSON 的旧格式按原文追加 */
+          }
+          aiMsg.content += seg
           await scrollBottom()
         }
       }
@@ -532,7 +557,7 @@ async function applyPending(msg, card) {
   if (card.loading || card.done) return
   card.loading = true
   try {
-    const resp = await fetch('/prod-api/ai/assistant/pending/apply', {
+    const resp = await fetch(`${BASE_API}/ai/assistant/pending/apply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
       body: JSON.stringify({ id: card.id })
@@ -566,7 +591,7 @@ async function applyPending(msg, card) {
 async function discardPending(msg, card) {
   if (card.loading) return
   try {
-    await fetch('/prod-api/ai/assistant/pending/discard', {
+    await fetch(`${BASE_API}/ai/assistant/pending/discard`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
       body: JSON.stringify({ id: card.id })
@@ -816,6 +841,55 @@ onBeforeUnmount(() => {
   font-size: 13.5px;
   line-height: 1.65;
   word-break: break-word;
+}
+.ai-bubble :deep(h3),
+.ai-bubble :deep(h4) {
+  margin: 10px 0 4px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: #1f2329;
+}
+.ai-bubble :deep(ul),
+.ai-bubble :deep(ol) {
+  margin: 4px 0 6px;
+  padding-left: 18px;
+}
+.ai-bubble :deep(li) {
+  margin: 1px 0;
+  line-height: 1.6;
+}
+.ai-bubble :deep(table) {
+  width: 100%;
+  margin: 6px 0;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.ai-bubble :deep(table th),
+.ai-bubble :deep(table td) {
+  padding: 4px 8px;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+}
+.ai-bubble :deep(table th) {
+  background: #f7f8fa;
+  font-weight: 600;
+}
+.ai-bubble :deep(pre) {
+  margin: 6px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  background: #f6f7f9;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ai-bubble :deep(code) {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+.ai-bubble :deep(a) {
+  color: #3b82f6;
 }
 .ai-row.assistant .ai-bubble {
   background: #fff;

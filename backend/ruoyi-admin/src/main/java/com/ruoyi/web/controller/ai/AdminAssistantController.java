@@ -141,7 +141,11 @@ public class AdminAssistantController extends BaseController {
     private static final java.util.regex.Pattern TEXT_PARAM_PATTERN =
             java.util.regex.Pattern.compile("<[^<>]*parameter\\s+name=\"([A-Za-z0-9_]+)\"[^>]*>([^<]*)");
     private static final java.util.regex.Pattern TEXT_TAG_PATTERN =
-            java.util.regex.Pattern.compile("<[^<>]*(?:invoke|parameter|calls)[^<>]*>");
+            java.util.regex.Pattern.compile("<[^<>]*(?:invoke|parameter|calls|tool_call)[^<>]*>");
+
+    /** 兼容 <tool_call name="x">JSON</tool_call> 与模型常写的 <tool_callname="x">JSON</tool_call>。 */
+    private static final java.util.regex.Pattern TEXT_TOOL_CALL_PATTERN =
+            java.util.regex.Pattern.compile("<tool_call\\s*name=\"([A-Za-z0-9_]+)\">([\\s\\S]*?)</tool_call>");
 
     public AdminAssistantController(IModelProviderService providerService) {
         this.providerService = providerService;
@@ -173,6 +177,9 @@ public class AdminAssistantController extends BaseController {
             /system/role /system/menu /monitor/online /monitor/job /monitor/cache /monitor/operlog /monitor/logininfor
             /content/advert /content/question /content/feedback
             /question/platform
+            10. 输出排版：结论放第一行；用「### 小标题」或「- 要点」组织，一条一行；
+                段落之间最多一个空行，禁止连续空行与行尾空格；不把 JSON、工具名或参数原文贴给用户；
+                不复述用户问题；简单查询不超过 8 行，复杂查询不超过 15 行，用户要求详细时除外。
             """;
 
     @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
@@ -215,7 +222,7 @@ public class AdminAssistantController extends BaseController {
             String answer = callModel(provider.getMppModelName(), provider.getMppApiUrl(), apiKey, messages, tools);
 
             Map<String, Object> data = new java.util.LinkedHashMap<>();
-            data.put("answer", answer == null ? "" : answer);
+            data.put("answer", normalizeAnswer(answer));
             data.put("pendings", new ArrayList<>(PENDING_CARDS.get()));
             return success(data);
         } catch (Exception e) {
@@ -261,7 +268,7 @@ public class AdminAssistantController extends BaseController {
                 ArrayNode tools = buildTools();
                 String answer = callModel(model, url, apiKey, messages, tools);
                 Map<String, Object> answerEvent = new java.util.LinkedHashMap<>();
-                answerEvent.put("text", answer == null ? "" : answer);
+                answerEvent.put("text", normalizeAnswer(answer));
                 out.write("event: answer\ndata: " + json.writeValueAsString(answerEvent) + "\n\n");
                 out.flush();
                 List<Map<String, Object>> cards = new ArrayList<>(PENDING_CARDS.get());
@@ -417,7 +424,7 @@ public class AdminAssistantController extends BaseController {
         String[] keywords = {"题库", "题目", "出题", "出几道", "生成题", "加题", "新增题", "导入记录",
                 "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干",
                 "修改题", "改题", "答案", "解析", "难度", "分值", "选项",
-                "删除题", "删题", "移除题", "清除题"};
+                "删除题", "删题", "移除题", "清除题", "删除", "删掉", "移除", "清除"};
         for (String kw : keywords) {
             if (q.contains(kw)) return true;
         }
@@ -513,9 +520,8 @@ public class AdminAssistantController extends BaseController {
         reqBody.set("messages", messages);
         reqBody.put("stream", true);
         reqBody.put("temperature", 0.3);
-        reqBody.put("max_tokens", 1024);
+        reqBody.put("max_tokens", 2048);
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(280))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(reqBody)))
@@ -539,7 +545,8 @@ public class AdminAssistantController extends BaseController {
                 JsonNode node = json.readTree(data);
                 String delta = node.path("choices").path(0).path("delta").path("content").asText("");
                 if (!delta.isEmpty()) {
-                    out.write("data: " + delta + "\n\n");
+                    // JSON 编码后再写入：正文含换行时不会破坏 SSE 帧，前端可原样还原
+                    out.write("data: " + json.writeValueAsString(delta) + "\n\n");
                     out.flush();
                 }
             }
@@ -620,8 +627,30 @@ public class AdminAssistantController extends BaseController {
         if (text == null || text.isEmpty()) {
             return calls;
         }
-        java.util.regex.Matcher inv = TEXT_INVOKE_PATTERN.matcher(text);
         int seq = 0;
+        // 先解析 <tool_call name="x">{...}</tool_call>（含无空格的 <tool_callname="x">）
+        java.util.regex.Matcher tc = TEXT_TOOL_CALL_PATTERN.matcher(text);
+        while (tc.find()) {
+            String body = tc.group(2).trim();
+            ObjectNode args = json.createObjectNode();
+            if (body.startsWith("{")) {
+                try {
+                    JsonNode parsed = json.readTree(body);
+                    if (parsed != null && parsed.isObject()) {
+                        args = (ObjectNode) parsed;
+                    }
+                } catch (Exception ignore) {
+                    // 非法 JSON 按空参数处理，交给工具自身兜底
+                }
+            }
+            ObjectNode call = json.createObjectNode();
+            call.put("id", "text_call_" + (++seq));
+            ObjectNode fn = call.putObject("function");
+            fn.put("name", tc.group(1));
+            fn.put("arguments", json.writeValueAsString(args));
+            calls.add(call);
+        }
+        java.util.regex.Matcher inv = TEXT_INVOKE_PATTERN.matcher(text);
         while (inv.find()) {
             String name = inv.group(1);
             ObjectNode args = json.createObjectNode();
@@ -703,6 +732,16 @@ public class AdminAssistantController extends BaseController {
     }
 
     /** 执行工具：在工具包里按名查找并执行。写工具只登记草稿，不产生业务副作用。 */
+    /** 输出规范化：压缩多余空行、去行尾空格、清除残留的伪工具标签。 */
+    private String normalizeAnswer(String text) {
+        if (text == null) return "";
+        String s = text.replace("\r\n", "\n").replaceAll("[ \t]+\n", "\n");
+        s = s.replaceAll("(?is)<tool_call[^>]*>.*?</tool_call>", "");
+        s = TEXT_TAG_PATTERN.matcher(s).replaceAll("");
+        s = s.replaceAll("\n{3,}", "\n\n").trim();
+        return s.isEmpty() ? "（没有可展示的回答内容，请重试）" : s;
+    }
+
     private String executeTool(String name, String args) {
         long start = System.currentTimeMillis();
         ToolContext ctx = toolContext();
