@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.ai.agent.mapper.EnterpriseAssistantMapper;
+import com.ruoyi.enterprise.ai.knowledge.EnterpriseKnowledgeService;
+import com.ruoyi.system.mapper.DashboardMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -20,9 +23,22 @@ public class EnterpriseAssistantToolPackage
 
     public EnterpriseAssistantToolPackage(EnterpriseAssistantMapper mapper)
     {
-        List<EnterpriseAssistantTool> definitions = List.of(
-                new ListCompanyJobsTool(mapper),
-                new GetCompanyJobTool(mapper));
+        this(mapper, null, null);
+    }
+
+    @Autowired
+    public EnterpriseAssistantToolPackage(EnterpriseAssistantMapper mapper, DashboardMapper dashboard,
+            EnterpriseKnowledgeService knowledge)
+    {
+        List<EnterpriseAssistantTool> definitions = new java.util.ArrayList<>(List.of(
+                new ListCompanyJobsTool(mapper), new GetCompanyJobTool(mapper),
+                new ListCompanyCandidatesTool(mapper), new ListUpcomingInterviewsTool(mapper)));
+        if (dashboard != null)
+        {
+            definitions.add(new GetRecruitingDashboardTool(dashboard));
+            definitions.add(new GetRecruitingFunnelTool(dashboard));
+        }
+        if (knowledge != null) definitions.add(new SearchCompanyKnowledgeTool(knowledge));
         Map<String, EnterpriseAssistantTool> byName = new LinkedHashMap<>();
         for (EnterpriseAssistantTool tool : definitions)
         {

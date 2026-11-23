@@ -29,6 +29,8 @@ public interface IExamService
     /** 补全空解析（平台题库与企业题库均可，已有解析不覆盖） */
     public void fillQuestionAnalysis(Long questionId, String analysis, Long userId);
 
+    public void fillQuestionAnalysis(Long questionId, String analysis, Long userId, boolean forceRegenerate);
+
     /** 试卷列表（按岗位过滤，企业隔离） */
     public List<Map<String, Object>> listPapers(Long userId, Long positionId);
 

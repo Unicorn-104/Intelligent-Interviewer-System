@@ -5,11 +5,12 @@ import '../../../../widgets/page_states.dart';
 import '../../../../widgets/skeleton_list.dart';
 import '../../talent/widgets/talent_status_badge.dart';
 import '../../talent/widgets/talent_candidate_actions.dart';
+import '../../talent/widgets/talent_filter_icon.dart';
 import '../../talent/data/talent_detail_data_source.dart';
 import '../../talent/models/talent_detail_view_data.dart';
 import '../models/job_detail_view_data.dart';
 
-class JobCandidatesTab extends StatelessWidget {
+class JobCandidatesTab extends StatefulWidget {
   const JobCandidatesTab({
     super.key,
     required this.detail,
@@ -18,8 +19,8 @@ class JobCandidatesTab extends StatelessWidget {
     required this.onReloadDetail,
     required this.onReloadScores,
     required this.onScreen,
-    this.onFullScreen,
     required this.onOpen,
+    this.beforeInvite,
     required this.loadResume,
     required this.actionsSource,
     required this.job,
@@ -31,12 +32,223 @@ class JobCandidatesTab extends StatelessWidget {
   final Future<void> Function() onReloadDetail;
   final Future<void> Function() onReloadScores;
   final VoidCallback onScreen;
-  final VoidCallback? onFullScreen;
   final ValueChanged<Map<String, dynamic>> onOpen;
+  final Future<bool> Function(Map<String, dynamic> candidate)? beforeInvite;
   final Future<Map<String, dynamic>> Function(int) loadResume;
   final TalentDetailDataSource actionsSource;
   final TalentJobContext job;
   final int workflowRevision;
+
+  @override
+  State<JobCandidatesTab> createState() => _JobCandidatesTabState();
+}
+
+class _JobCandidatesTabState extends State<JobCandidatesTab> {
+  final _searchController = TextEditingController();
+  String _query = '';
+  String? _statusFilter;
+  String? _stageFilter;
+  bool? _scoredFilter;
+  bool _sortDescending = true;
+
+  bool get _hasFilters =>
+      _statusFilter != null || _stageFilter != null || _scoredFilter != null;
+
+  JobSectionState<JobDetailViewData> get detail => widget.detail;
+  JobSectionState<List<Map<String, dynamic>>> get scores => widget.scores;
+  bool get screening => widget.screening;
+  Future<void> Function() get onReloadDetail => widget.onReloadDetail;
+  Future<void> Function() get onReloadScores => widget.onReloadScores;
+  VoidCallback get onScreen => widget.onScreen;
+  ValueChanged<Map<String, dynamic>> get onOpen => widget.onOpen;
+  Future<Map<String, dynamic>> Function(int) get loadResume =>
+      widget.loadResume;
+  Future<bool> Function(Map<String, dynamic> candidate)? get beforeInvite =>
+      widget.beforeInvite;
+  TalentDetailDataSource get actionsSource => widget.actionsSource;
+  TalentJobContext get job => widget.job;
+  int get workflowRevision => widget.workflowRevision;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _candidateText(Map<String, dynamic> candidate) => [
+    candidate['candidateName'],
+    candidate['nickName'],
+    candidate['name'],
+    candidate['realName'],
+    candidate['phone'],
+    candidate['statusLabel'],
+    candidate['currentStage'],
+    candidate['desiredPosition'],
+  ].whereType<Object>().join(' ').toLowerCase();
+
+  bool _matches(JobRankedCandidate row) {
+    final query = _query.trim().toLowerCase();
+    final status = '${row.candidate['statusLabel'] ?? ''}'.trim();
+    final stage = '${row.candidate['currentStage'] ?? ''}'.trim();
+    final hasScore = row.resultScore != null || row.score != null;
+    return (query.isEmpty || _candidateText(row.candidate).contains(query)) &&
+        (_statusFilter == null || status == _statusFilter) &&
+        (_stageFilter == null || stage == _stageFilter) &&
+        (_scoredFilter == null || hasScore == _scoredFilter);
+  }
+
+  int _compareScore(JobRankedCandidate a, JobRankedCandidate b) {
+    final left = a.resultScore ?? a.score;
+    final right = b.resultScore ?? b.score;
+    if (left == null && right != null) return 1;
+    if (left != null && right == null) return -1;
+    if (left == null && right == null) {
+      return a.originalIndex.compareTo(b.originalIndex);
+    }
+    final comparison = right!.compareTo(left!);
+    return _sortDescending ? comparison : -comparison;
+  }
+
+  Future<void> _chooseFilters(List<JobRankedCandidate> ranked) async {
+    final statuses =
+        ranked
+            .map((row) => '${row.candidate['statusLabel'] ?? ''}'.trim())
+            .where((status) => status.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    final stages =
+        ranked
+            .map((row) => '${row.candidate['currentStage'] ?? ''}'.trim())
+            .where((stage) => stage.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    var status = _statusFilter;
+    var stage = _stageFilter;
+    var scored = _scoredFilter;
+    final selected = await showModalBottomSheet<Map<String, Object?>>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            children: [
+              const Text(
+                '筛选求职者',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 14),
+              _filterGroup(
+                '求职状态',
+                ['全部', ...statuses],
+                status ?? '全部',
+                (value) =>
+                    setSheetState(() => status = value == '全部' ? null : value),
+              ),
+              if (stages.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _filterGroup(
+                  '招聘阶段',
+                  ['全部', ...stages],
+                  stage ?? '全部',
+                  (value) =>
+                      setSheetState(() => stage = value == '全部' ? null : value),
+                ),
+              ],
+              const SizedBox(height: 12),
+              _filterGroup(
+                'AI评分',
+                const ['全部', '已有评分', '待分析'],
+                scored == null ? '全部' : (scored! ? '已有评分' : '待分析'),
+                (value) => setSheetState(
+                  () => scored = value == '全部' ? null : value == '已有评分',
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => setSheetState(() {
+                        status = null;
+                        stage = null;
+                        scored = null;
+                      }),
+                      child: const Text('重置'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(context, {
+                        'status': status,
+                        'stage': stage,
+                        'scored': scored,
+                      }),
+                      child: const Text('确定'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    setState(() {
+      _statusFilter = selected['status'] as String?;
+      _stageFilter = selected['stage'] as String?;
+      _scoredFilter = selected['scored'] as bool?;
+    });
+  }
+
+  Widget _filterGroup(
+    String title,
+    List<String> options,
+    String selected,
+    ValueChanged<String> onSelected,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        title,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final option in options)
+            ChoiceChip(
+              label: Text(option),
+              selected: option == selected,
+              onSelected: (_) => onSelected(option),
+              selectedColor: AppColors.primarySoft,
+              labelStyle: TextStyle(
+                color: option == selected
+                    ? AppColors.interactive
+                    : AppColors.bodySoft,
+              ),
+            ),
+        ],
+      ),
+    ],
+  );
+
+  String _detailMessage(String message) {
+    final text = message.trim();
+    if (text.contains('网络异常') ||
+        text.contains('connection') ||
+        text.contains('XMLHttpRequest')) {
+      return '请检查网络后重试';
+    }
+    return text.length > 24 ? '加载失败，请稍后重试' : text;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +259,7 @@ class JobCandidatesTab extends StatelessWidget {
       return PageMessage(
         icon: Icons.cloud_off_outlined,
         title: '求职者加载失败',
-        message: detail.error!,
+        message: _detailMessage(detail.error!),
         onAction: onReloadDetail,
       );
     }
@@ -69,11 +281,9 @@ class JobCandidatesTab extends StatelessWidget {
         onAction: onReloadDetail,
       );
     }
-    final ranked = rankJobCandidates(
-      data.candidates,
-      scores.error == null ? scores.data ?? const [] : const [],
-    );
-    final hasScores = ranked.any((row) => row.resultScore != null);
+    final ranked = rankJobCandidates(data.candidates, scores.data ?? const []);
+    final filtered = ranked.where(_matches).toList()..sort(_compareScore);
+    final hasScores = filtered.any((row) => row.resultScore != null);
     return RefreshIndicator(
       onRefresh: () async {
         await onReloadDetail();
@@ -84,123 +294,141 @@ class JobCandidatesTab extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(20),
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Material(
-              color: AppColors.interactive,
-              borderRadius: BorderRadius.circular(4),
-              clipBehavior: Clip.antiAlias,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  InkWell(
-                    key: const Key('job-rescreen'),
-                    onTap: screening || scores.loading ? null : onScreen,
-                    child: Container(
-                      constraints: const BoxConstraints(minHeight: 46),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.auto_awesome_outlined,
-                            size: 18,
-                            color: Colors.white,
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) => setState(() => _query = value),
+                  decoration: InputDecoration(
+                    hintText: '搜索姓名 / 求职方向',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            screening ? '分析中…' : '增量分析',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
                     ),
                   ),
-                  Container(
-                    width: 1,
-                    height: 24,
-                    color: Colors.white.withValues(alpha: .45),
-                  ),
-                  PopupMenuButton<String>(
-                    key: const Key('job-analysis-menu'),
-                    tooltip: '选择分析方式',
-                    enabled: !screening && !scores.loading,
-                    constraints: const BoxConstraints(minWidth: 210),
-                    padding: EdgeInsets.zero,
-                    iconSize: 24,
-                    icon: const Icon(
-                      Icons.arrow_drop_down,
-                      color: Colors.white,
-                    ),
-                    onSelected: (mode) {
-                      if (mode == 'full') {
-                        onFullScreen?.call();
-                      } else {
-                        onScreen();
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(
-                        value: 'incremental',
-                        child: Text('增量分析（优先读取，补充新增）'),
-                      ),
-                      PopupMenuItem(
-                        value: 'full',
-                        enabled: onFullScreen != null,
-                        child: const Text('全量分析（耗时较长）'),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              IconButton(
+                key: const ValueKey('job-candidate-filter'),
+                tooltip: '筛选',
+                onPressed: () => _chooseFilters(ranked),
+                icon: TalentFilterIcon(
+                  color: _hasFilters ? AppColors.interactive : AppColors.ink,
+                  size: 25,
+                ),
+              ),
+            ],
           ),
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text(
-              '进入页面自动读取已有结果；增量分析会先刷新，只有缺少分析的求职者才调用模型。简历或岗位更新后可选择全量分析。',
-              style: TextStyle(fontSize: 12, color: AppColors.muted),
-            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  key: const ValueKey('job-candidate-sort'),
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () =>
+                      setState(() => _sortDescending = !_sortDescending),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 5, 7, 5),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'AI\u8bc4\u5206',
+                          style: TextStyle(
+                            color: AppColors.ink,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.arrow_drop_up,
+                              size: 17,
+                              color: _sortDescending
+                                  ? AppColors.interactive.withValues(alpha: .28)
+                                  : AppColors.interactive,
+                            ),
+                            Icon(
+                              Icons.arrow_drop_down,
+                              size: 17,
+                              color: _sortDescending
+                                  ? AppColors.interactive
+                                  : AppColors.interactive.withValues(
+                                      alpha: .28,
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SizedBox(
+                  height: 42,
+                  child: FilledButton.icon(
+                    key: const Key('job-rescreen'),
+                    onPressed: screening || scores.loading ? null : onScreen,
+                    icon: const Icon(Icons.auto_awesome_outlined, size: 17),
+                    label: Text(
+                      screening
+                          ? '\u5206\u6790\u4e2d\u2026'
+                          : '\u4eba\u5c97\u5339\u914d',
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           if (scores.loading)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: LinearProgressIndicator(),
-            ),
-          if (scores.error != null) ...[
-            const SizedBox(height: 8),
-            Text(scores.error!, style: const TextStyle(color: AppColors.error)),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton(
-                key: const Key('job-scores-retry'),
-                onPressed: scores.loading ? null : onReloadScores,
-                child: const Text('加载筛选结果失败，重试'),
+              padding: EdgeInsets.only(top: 6),
+              child: SizedBox(
+                height: 2,
+                child: LinearProgressIndicator(minHeight: 2),
               ),
             ),
-          ] else if (!scores.loading && !hasScores) ...[
+          if (!scores.loading && !hasScores) ...[
             const SizedBox(height: 12),
             const Text('暂无评分数据', style: TextStyle(fontWeight: FontWeight.w600)),
           ],
           const SizedBox(height: 12),
-          for (var index = 0; index < ranked.length; index++) ...[
+          for (var index = 0; index < filtered.length; index++) ...[
             JobCandidateCard(
               key: ValueKey(
-                'job-candidate-${ranked[index].candidate['talId'] ?? index}',
+                'job-candidate-${filtered[index].candidate['talId'] ?? index}',
               ),
-              candidate: ranked[index].candidate,
+              candidate: filtered[index].candidate,
               loadResume: loadResume,
               actionsSource: actionsSource,
               job: job,
               workflowRevision: workflowRevision,
-              score: ranked[index].score,
-              onOpen: () => onOpen(ranked[index].candidate),
+              score: filtered[index].score,
+              beforeInvite: beforeInvite == null
+                  ? null
+                  : () => beforeInvite!(filtered[index].candidate),
+              onOpen: () => onOpen(filtered[index].candidate),
             ),
             // 紧凑化：卡片间距由 12 略减到 10，连续排列更密集但仍可区分
             const SizedBox(height: 10),
@@ -217,6 +445,7 @@ class JobCandidateCard extends StatefulWidget {
     required this.candidate,
     required this.score,
     required this.onOpen,
+    this.beforeInvite,
     required this.loadResume,
     required this.actionsSource,
     required this.job,
@@ -225,6 +454,7 @@ class JobCandidateCard extends StatefulWidget {
   final Map<String, dynamic> candidate;
   final num? score;
   final VoidCallback onOpen;
+  final Future<bool> Function()? beforeInvite;
   final Future<Map<String, dynamic>> Function(int) loadResume;
   final TalentDetailDataSource actionsSource;
   final TalentJobContext job;
@@ -395,11 +625,14 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
                   name: jobValue(widget.candidate['name'], fallback: '姓名未填写'),
                   source: widget.actionsSource,
                   appStatusCode: widget.candidate['statusCode'],
+                  beforeInvite: widget.beforeInvite,
                   job: TalentJobContext(
                     positionId: widget.job.positionId,
                     title: widget.job.title,
                     currentStage: widget.candidate['currentStage']?.toString(),
-                    applicationId: jobPositiveId(widget.candidate['applicationId']),
+                    applicationId: jobPositiveId(
+                      widget.candidate['applicationId'],
+                    ),
                   ),
                 ),
               ],

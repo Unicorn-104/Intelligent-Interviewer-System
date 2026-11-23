@@ -167,8 +167,14 @@ public class EnterpriseSettingsController extends BaseController
     @PutMapping("/integrations")
     public AjaxResult saveIntegrations(@RequestBody Map<String, Object> body)
     {
-        boolean force = Boolean.TRUE.equals(body == null ? null : body.get("forceRegenerate"));
-        return success(settingsService.updateExamAnalysisSettings(companyId(), force));
+        Long companyId = companyId();
+        Map<String, Object> current = settingsService.examAnalysisSettings(companyId);
+        boolean force = body != null && body.containsKey("forceRegenerate")
+                ? Boolean.TRUE.equals(body.get("forceRegenerate"))
+                : Boolean.TRUE.equals(current.get("forceRegenerate"));
+        Object rawMode = body == null ? null : body.get("screeningAnalysisMode");
+        String mode = rawMode == null ? null : String.valueOf(rawMode);
+        return success(settingsService.updateExamAnalysisSettings(companyId, force, mode));
     }
 
     private String str(Map<String, Object> body, String key)

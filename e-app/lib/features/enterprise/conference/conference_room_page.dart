@@ -65,7 +65,9 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
   String? _fatalError;
   bool _leaving = false;
   bool _ending = false;
-  int _seconds = 0;
+  int _remainingSeconds = 0;
+  bool _minuteWarningShown = false;
+  bool _autoEnding = false;
   Timer? _clock;
   Timer? _heartbeat;
   String? _lastNotice;
@@ -77,6 +79,13 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
   /// 主体画面焦点：false=求职者为主体、面试官为右上角小窗；
   /// true=面试官为主体、求职者为右上角小窗（点击小窗切换）。
   bool _selfFocused = false;
+
+  /// 多人会议：当前主画面远端（identity）；为空时默认候选人。
+  String? _mainRemoteIdentity;
+
+  /// 多人会议左右页：0=双人首页，1=全部参会者宫格。
+  final PageController _stageController = PageController();
+  int _stagePage = 0;
 
   /// 录制阶段：未录制 / 录制中 / 已暂停。
   _RecordPhase _recordPhase = _RecordPhase.idle;
@@ -103,6 +112,7 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     _heartbeat?.cancel();
     _recordTimer?.cancel();
     _startSessionRetryTimer?.cancel();
+    _stageController.dispose();
     _engine.removeListener(_onEngineUpdate);
     _engine.dispose();
     super.dispose();
@@ -224,8 +234,22 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
 
   void _startTimers() {
     _clock?.cancel();
+    final initial = _initialRemainingSeconds();
+    if (mounted) setState(() => _remainingSeconds = initial);
+    if (initial <= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_autoEnd());
+      });
+    }
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _seconds++);
+      if (!mounted || _leaving || _remainingSeconds <= 0) return;
+      final next = _remainingSeconds - 1;
+      setState(() => _remainingSeconds = next);
+      if (next == 60 && _info.role == 'HR' && !_minuteWarningShown) {
+        _minuteWarningShown = true;
+        _toast('面试剩余不足 1 分钟，请尽快收尾');
+      }
+      if (next <= 0) unawaited(_autoEnd());
     });
     final sessionId = _sessionId;
     if (sessionId == null) return;
@@ -233,6 +257,26 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     beat();
     _heartbeat?.cancel();
     _heartbeat = Timer.periodic(const Duration(seconds: 15), (_) => beat());
+  }
+
+  int _initialRemainingSeconds() {
+    final duration = _info.durationMinutes * 60;
+    if (_info.status != 1) return duration;
+    final start = _parseLocalTime(_info.sessionStartAt);
+    if (start == null) return duration;
+    final elapsed = DateTime.now().difference(start).inSeconds;
+    if (elapsed <= 0) return duration;
+    return elapsed >= duration ? 0 : duration - elapsed;
+  }
+
+  Future<void> _autoEnd() async {
+    if (_autoEnding || _leaving || !mounted) return;
+    _autoEnding = true;
+    _clock?.cancel();
+    _toast('面试时间已到，正在结束会议');
+    await Future<void>.delayed(const Duration(seconds: 1));
+    if (!mounted) return;
+    await _leave(endSession: _info.role == 'HR', endReason: 'timeout');
   }
 
   Future<void> _quietly(Future<void> Function() action) async {
@@ -260,7 +304,9 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     setState(() {
       _engine = widget.engineFactory();
       _engine.addListener(_onEngineUpdate);
-      _seconds = 0;
+      _remainingSeconds = 0;
+      _minuteWarningShown = false;
+      _autoEnding = false;
       _lastNotice = null;
       _fatalError = null;
       _booting = true;
@@ -368,7 +414,10 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     );
   }
 
-  Future<void> _leave({required bool endSession}) async {
+  Future<void> _leave({
+    required bool endSession,
+    String endReason = 'normal',
+  }) async {
     if (_leaving) return;
     _leaving = true;
     _clock?.cancel();
@@ -380,7 +429,7 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
       unawaited(_stopRecordingQuietly(sessionId));
     }
     if (endSession && sessionId != null) {
-      unawaited(_finishQuietly(sessionId));
+      await _finishQuietly(sessionId, endReason: endReason);
     }
     try {
       await _engine.disconnect();
@@ -392,9 +441,12 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     Navigator.of(context).pop();
   }
 
-  Future<void> _finishQuietly(int sessionId) async {
+  Future<void> _finishQuietly(
+    int sessionId, {
+    required String endReason,
+  }) async {
     try {
-      await widget.finish(sessionId, payload: const {'endReason': 'normal'});
+      await widget.finish(sessionId, payload: {'endReason': endReason});
     } catch (_) {
       // 与 PC 端一致：结束接口不阻塞退出会议。
     }
@@ -685,22 +737,31 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
         ),
         const SizedBox(width: 8),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          key: const ValueKey('conference-countdown'),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
           decoration: BoxDecoration(
-            color: _line,
+            color: _remainingSeconds <= 60
+                ? _red.withValues(alpha: 0.16)
+                : _line,
             borderRadius: BorderRadius.circular(999),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.timer_outlined, size: 13, color: _muted),
+              Icon(
+                _remainingSeconds <= 60
+                    ? Icons.alarm_rounded
+                    : Icons.timer_outlined,
+                size: 13,
+                color: _remainingSeconds <= 60 ? _red : _muted,
+              ),
               const SizedBox(width: 4),
               Text(
-                _clockText(_seconds),
-                style: const TextStyle(
-                  color: _text,
+                '剩余 ${_clockText(_remainingSeconds)}',
+                style: TextStyle(
+                  color: _remainingSeconds <= 60 ? _red : _text,
                   fontSize: 12,
-                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
@@ -714,42 +775,228 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     ),
   );
 
-  Widget _buildStage(ConferenceRoomState state) => Stack(
-    children: [
-      Positioned.fill(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-          child: _selfFocused
-              ? _selfMainView(state)
-              : state.remotes.isEmpty
-              ? _waitingView(state)
-              : _participantGrid(state),
+  Widget _buildStage(ConferenceRoomState state) {
+    final multi = _isMulti(state);
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+            child: multi ? _multiStage(state) : _twoPersonStage(state),
+          ),
         ),
+        Positioned(top: 10, left: 10, child: _statusChip(state)),
+        if (!multi || _stagePage == 0)
+          Positioned(top: 10, right: 10, child: _stagePip(state)),
+        if (multi)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 8,
+            child: Center(child: _pageDots()),
+          ),
+        if (_recordPhase != _RecordPhase.idle)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: multi ? 40 : 14,
+            child: Center(child: _recordBar()),
+          ),
+      ],
+    );
+  }
+
+  bool _isMulti(ConferenceRoomState state) => state.remotes.length + 1 > 2;
+
+  Widget _twoPersonStage(ConferenceRoomState state) {
+    if (_selfFocused) return _selfMainView(state);
+    if (state.remotes.isEmpty) return _waitingView(state);
+    final active = _candidateRemote(state) ?? state.remotes.first;
+    return Padding(
+      padding: const EdgeInsets.only(top: 42),
+      child: _remoteTile(active),
+    );
+  }
+
+  Widget _multiStage(ConferenceRoomState state) => PageView(
+    key: const ValueKey('conference-stage-pager'),
+    controller: _stageController,
+    onPageChanged: (page) => setState(() => _stagePage = page),
+    children: [_multiHomePage(state), _allParticipantsPage(state)],
+  );
+
+  Widget _multiHomePage(ConferenceRoomState state) {
+    if (_selfFocused) return _selfMainView(state);
+    final active = _activeRemote(state);
+    if (active == null) return _waitingView(state);
+    return Padding(
+      padding: const EdgeInsets.only(top: 42, bottom: 24),
+      child: _remoteTile(active),
+    );
+  }
+
+  Widget _allParticipantsPage(ConferenceRoomState state) {
+    final candidate = _candidateRemote(state);
+    final others = state.remotes
+        .where((participant) => participant.identity != candidate?.identity)
+        .toList(growable: false);
+    final total = state.remotes.length + 1;
+    final columns = total <= 4 ? 2 : (total <= 9 ? 3 : 4);
+    final active = _activeRemote(state);
+    final tiles = <Widget>[
+      if (candidate != null)
+        _participantCell(
+          key: ValueKey(
+            'conference-participant-${_userIdFromIdentity(candidate.identity)}',
+          ),
+          selected: !_selfFocused && active?.identity == candidate.identity,
+          onTap: () => _focusRemote(candidate),
+          child: _remoteTile(candidate),
+        ),
+      _participantCell(
+        key: const ValueKey('conference-participant-self'),
+        selected: _selfFocused,
+        onTap: _focusSelf,
+        child: _selfGridTile(state),
       ),
-      Positioned(top: 10, left: 10, child: _statusChip(state)),
-      Positioned(top: 10, right: 10, child: _stagePip(state)),
-      if (_recordPhase != _RecordPhase.idle)
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 14,
-          child: Center(child: _recordBar()),
+      for (final participant in others)
+        _participantCell(
+          key: ValueKey(
+            'conference-participant-${_userIdFromIdentity(participant.identity)}',
+          ),
+          selected: !_selfFocused && active?.identity == participant.identity,
+          onTap: () => _focusRemote(participant),
+          child: _remoteTile(participant),
         ),
+    ];
+    return Column(
+      children: [
+        Expanded(
+          child: GridView.count(
+            padding: const EdgeInsets.fromLTRB(0, 42, 0, 24),
+            crossAxisCount: columns,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 0.86,
+            children: tiles,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _participantCell({
+    required Key key,
+    required bool selected,
+    required VoidCallback onTap,
+    required Widget child,
+  }) => GestureDetector(
+    key: key,
+    behavior: HitTestBehavior.opaque,
+    onTap: onTap,
+    child: Stack(
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? _green : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: child,
+        ),
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: const SizedBox.expand(),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _selfGridTile(ConferenceRoomState state) {
+    final selfName = _info.interviewerName.isEmpty
+        ? '我'
+        : _info.interviewerName;
+    return _ParticipantSurface(
+      name: '我 · $selfName',
+      role: '面试官',
+      initial: _initial(selfName),
+      video: state.canPublish && state.cameraEnabled
+          ? state.localVideoTrack
+          : null,
+      micEnabled: state.micEnabled,
+      mirror: true,
+      placeholderText: state.canPublish
+          ? (state.cameraEnabled ? '连接摄像头…' : '摄像头已关闭')
+          : '旁听中',
+    );
+  }
+
+  void _focusRemote(ConferenceRemoteParticipant participant) {
+    setState(() {
+      _selfFocused = false;
+      _mainRemoteIdentity = participant.identity;
+    });
+    _goHome();
+  }
+
+  void _focusSelf() {
+    setState(() {
+      _selfFocused = true;
+      _mainRemoteIdentity = null;
+    });
+    _goHome();
+  }
+
+  void _goHome() {
+    if (!_stageController.hasClients) return;
+    _stageController.animateToPage(
+      0,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _pageDots() => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (var index = 0; index < 2; index++) ...[
+        if (index > 0) const SizedBox(width: 6),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: _stagePage == index ? 14 : 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: _stagePage == index
+                ? _green
+                : Colors.white.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+      ],
     ],
   );
 
-  /// 右上角小窗：点击在「求职者主体 + 面试官小窗」与「面试官主体 + 求职者小窗」之间切换。
+  /// 右上角小窗：默认面试官本人；点击在「候选人主体 + 本人小窗」与
+  /// 「本人主体 + 候选人小窗」之间切换。
   Widget _stagePip(ConferenceRoomState state) {
     return Stack(
       children: [
         _selfFocused ? _remotePip(state) : _selfPreview(state),
-        // 透明手势覆盖层：LiveKit 视频画面是原生视图，会拦截触摸，
-        // 覆盖一层透明手势，确保点击视频区域（而不仅是顶部文字）也能切换。
         Positioned.fill(
           child: GestureDetector(
             key: const ValueKey('conference-pip-toggle'),
             behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _selfFocused = !_selfFocused),
+            onTap: () => setState(() {
+              _selfFocused = !_selfFocused;
+              if (_selfFocused) _mainRemoteIdentity = null;
+            }),
             child: const SizedBox.expand(),
           ),
         ),
@@ -777,10 +1024,10 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     );
   }
 
-  /// 求职者小窗（面试官为主体时，右上角展示求职者）。
+  /// 候选人小窗（面试官为主体时，右上角展示候选人）。
   Widget _remotePip(ConferenceRoomState state) {
-    if (state.remotes.isEmpty) {
-      // 候选人未加入时，小窗显示占位提示。
+    final participant = _candidateRemote(state);
+    if (participant == null) {
       return SizedBox(
         width: 96,
         height: 130,
@@ -793,7 +1040,6 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
         ),
       );
     }
-    final participant = state.remotes.first;
     final userId = _userIdFromIdentity(participant.identity);
     final name = _nameForUserId(userId);
     return SizedBox(
@@ -805,15 +1051,35 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
             child: _ParticipantSurface(
               name: name,
               initial: _initial(name),
-              video: participant.videoTrack,
+              video: participant.cameraEnabled ? participant.videoTrack : null,
               micEnabled: participant.micEnabled,
               compact: true,
+              placeholderText: participant.cameraEnabled ? null : '摄像头已关闭',
             ),
           ),
           Positioned(top: 4, left: 4, child: _miniTag(name)),
         ],
       ),
     );
+  }
+
+  ConferenceRemoteParticipant? _candidateRemote(ConferenceRoomState state) {
+    final candidateId = _info.candidateUserId;
+    if (candidateId != null) return _remoteFor(state, candidateId);
+    return null;
+  }
+
+  ConferenceRemoteParticipant? _activeRemote(ConferenceRoomState state) {
+    if (_selfFocused) return null;
+    final identity = _mainRemoteIdentity;
+    if (identity != null) {
+      for (final participant in state.remotes) {
+        if (participant.identity == identity) return participant;
+      }
+    }
+    final candidate = _candidateRemote(state);
+    if (candidate != null) return candidate;
+    return state.remotes.length == 1 ? state.remotes.first : null;
   }
 
   Widget _waitingView(ConferenceRoomState state) {
@@ -876,29 +1142,6 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
     );
   }
 
-  Widget _participantGrid(ConferenceRoomState state) {
-    final remotes = state.remotes;
-    if (remotes.length == 1) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 42),
-        child: _remoteTile(remotes.first),
-      );
-    }
-    final columns = remotes.length <= 4 ? 2 : 3;
-    return GridView.builder(
-      padding: const EdgeInsets.only(top: 42),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: 0.78,
-      ),
-      itemCount: remotes.length,
-      itemBuilder: (context, index) =>
-          _remoteTile(remotes[index], compact: true),
-    );
-  }
-
   Widget _remoteTile(
     ConferenceRemoteParticipant participant, {
     bool compact = false,
@@ -909,10 +1152,11 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
       name: name,
       role: _roleForUserId(userId),
       initial: _initial(name),
-      video: participant.videoTrack,
+      video: participant.cameraEnabled ? participant.videoTrack : null,
       micEnabled: participant.micEnabled,
       speaking: participant.speaking,
       compact: compact,
+      placeholderText: participant.cameraEnabled ? null : '摄像头已关闭',
     );
   }
 
@@ -1078,7 +1322,12 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
                     ? _info.startAt
                     : '${_info.startAt} - ${_info.endAt}',
               ),
-            _InfoRow(label: '场次号', value: '#${_info.sessionId ?? '—'}'),
+            _InfoRow(
+              label: '会议号',
+              value: _info.sessionId == null
+                  ? _info.roomId
+                  : '#${_info.sessionId} · ${_info.roomId}',
+            ),
             const Divider(color: _line, height: 1),
             if (_recordPhase == _RecordPhase.idle)
               ListTile(
@@ -1182,6 +1431,8 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
       ConferenceRoomStage.failed => ('已断开', _red),
       ConferenceRoomStage.closed => ('已离开', _muted),
     };
+    final total = state.remotes.length + 1;
+    final text = total > 2 ? '$label · $total人' : label;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
@@ -1197,7 +1448,7 @@ class _ConferenceRoomPageState extends State<ConferenceRoomPage> {
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 6),
-          Text(label, style: const TextStyle(color: _text, fontSize: 11)),
+          Text(text, style: const TextStyle(color: _text, fontSize: 11)),
         ],
       ),
     );
@@ -1543,6 +1794,7 @@ class _InfoRow extends StatelessWidget {
 class _SessionInfo {
   const _SessionInfo({
     required this.sessionId,
+    required this.roomId,
     required this.candidateUserId,
     required this.candidateName,
     required this.positionTitle,
@@ -1552,8 +1804,11 @@ class _SessionInfo {
     required this.primaryInterviewerId,
     required this.mode,
     required this.role,
+    required this.status,
+    required this.durationMinutes,
     required this.startAt,
     required this.endAt,
+    required this.sessionStartAt,
     required this.interviewers,
   });
 
@@ -1574,8 +1829,14 @@ class _SessionInfo {
         );
       }
     }
+    final sessionId = _asInt(json['sessionId']);
+    final duration = _asInt(json['durationMinutes']);
     return _SessionInfo(
-      sessionId: _asInt(json['sessionId']),
+      sessionId: sessionId,
+      roomId: _asText(
+        json['roomId'],
+        sessionId == null ? '—' : 'INTERVIEW-$sessionId',
+      ),
       candidateUserId: _asInt(json['candidateUserId']),
       candidateName: _asText(json['candidateName'], '候选人'),
       positionTitle: _asText(json['positionTitle'], '视频面试'),
@@ -1585,13 +1846,19 @@ class _SessionInfo {
       primaryInterviewerId: _asInt(json['primaryInterviewerId']),
       mode: _asInt(json['mode']),
       role: _asText(json['role'], 'HR'),
+      status: _asInt(json['status']) ?? 0,
+      durationMinutes: duration == null || duration <= 0
+          ? _durationFromContext(json)
+          : duration,
       startAt: _asText(json['appointmentStartAt']),
       endAt: _asText(json['appointmentEndAt']),
+      sessionStartAt: _asText(json['startAt']),
       interviewers: List<_InterviewerInfo>.unmodifiable(interviewers),
     );
   }
 
   final int? sessionId;
+  final String roomId;
   final int? candidateUserId;
   final String candidateName;
   final String positionTitle;
@@ -1603,8 +1870,13 @@ class _SessionInfo {
 
   /// 本人在场次中的角色：CANDIDATE / HR / OBSERVER。
   final String role;
+  final int status;
+  final int durationMinutes;
   final String startAt;
   final String endAt;
+
+  /// 实际开始时间（ses_start_at），未开始时为空。
+  final String sessionStartAt;
   final List<_InterviewerInfo> interviewers;
 }
 
@@ -1630,6 +1902,23 @@ int? _asInt(Object? value) => int.tryParse('${value ?? ''}');
 String _asText(Object? value, [String fallback = '']) {
   final text = value?.toString().trim() ?? '';
   return text.isEmpty ? fallback : text;
+}
+
+int _durationFromContext(Map<String, dynamic> json) {
+  final start = _parseLocalTime(_asText(json['appointmentStartAt']));
+  final end = _parseLocalTime(_asText(json['appointmentEndAt']));
+  if (start == null || end == null || end.isBefore(start)) return 30;
+  final minutes = end.difference(start).inMinutes;
+  return minutes <= 0 ? 30 : minutes;
+}
+
+DateTime? _parseLocalTime(String value) {
+  final raw = value.trim();
+  if (raw.isEmpty) return null;
+  final normalized = raw.contains('T') ? raw : raw.replaceFirst(' ', 'T');
+  final parsed = DateTime.tryParse(normalized);
+  if (parsed == null) return null;
+  return parsed.isUtc ? parsed.toLocal() : parsed;
 }
 
 String _initial(String name) {

@@ -289,8 +289,6 @@ public class ConferenceServiceImpl implements IConferenceService
         Timestamp appointmentEnd = appointmentStart == null
                 ? null : new Timestamp(appointmentStart.getTime() + duration * 60_000L);
         List<Long> selected = normalizeInterviewers(interviewerIds);
-        validateInterviewerCount(interviewMode, selected.size());
-        validateInterviewerScope(userId, selected);
 
         // 锁候选人，串行化同一候选人的并发发起请求，避免同时插入多个活跃场次
         if (conferenceMapper.lockCandidateForUpdate(candidateId) == null)
@@ -304,6 +302,13 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("该候选人在「" + active.get("positionTitle") + "」还有未开始的面试安排（"
                     + active.get("startTime") + "），请先改期或取消后再发起");
+        }
+
+        if (appointmentId == null)
+        {
+            if (selected.size() > 1 && interviewMode == MODE_AI_ONE) interviewMode = MODE_AI_MULTI;
+            validateInterviewerCount(interviewMode, selected.size());
+            validateInterviewerScope(userId, selected);
         }
 
         Map<String, Object> appointment;
@@ -339,6 +344,22 @@ public class ConferenceServiceImpl implements IConferenceService
             putStage(appointment, stage);
             conferenceMapper.insertAppointment(appointment);
         }
+
+        // 从已有预约开始时，预约上已保存的多人名单是权威来源；调用方额外传入的 ID 做并集。
+        if (appointmentId != null)
+        {
+            LinkedHashSet<Long> merged = new LinkedHashSet<>(
+                    conferenceMapper.selectAppointmentInterviewerIds(appointmentId));
+            merged.addAll(selected);
+            selected = new ArrayList<>(merged);
+        }
+        // 阶段预约已指派多位面试官时自动采用「AI + 多面试官」模式，避免旧客户端仍传 mode=2 被误拦。
+        if (selected.size() > 1 && interviewMode == MODE_AI_ONE)
+        {
+            interviewMode = MODE_AI_MULTI;
+        }
+        validateInterviewerCount(interviewMode, selected.size());
+        validateInterviewerScope(userId, selected);
 
         Long existingSessionId = toLong(appointment.get("sessionId"));
         boolean newSession = existingSessionId == null;
@@ -399,15 +420,25 @@ public class ConferenceServiceImpl implements IConferenceService
 
         // 每位被指派面试官：仅写入场次面试官关联（首位为主面试官），预约统一复用主预约，
         // 避免同一时间给同一候选人生成多条重复行程
-        if (newSession)
+        if (!selected.isEmpty())
         {
+            // 场次首次创建时写入完整名单；已有场次只补齐新增面试官，不覆盖既有主面试官。
+            Set<Long> assigned = new LinkedHashSet<>();
+            for (Map<String, Object> item : conferenceMapper.selectSessionInterviewers(sessionId))
+            {
+                Long assignedId = toLong(item.get("userId"));
+                if (assignedId != null) assigned.add(assignedId);
+            }
             for (int i = 0; i < selected.size(); i++)
             {
+                Long interviewerId = selected.get(i);
+                if (interviewerId == null || assigned.contains(interviewerId)) continue;
                 Map<String, Object> link = new HashMap<>();
                 link.put("sessionId", sessionId);
-                link.put("userId", selected.get(i));
-                link.put("isPrimary", i == 0 ? 1 : 0);
+                link.put("userId", interviewerId);
+                link.put("isPrimary", newSession && i == 0 ? 1 : 0);
                 conferenceMapper.insertSessionInterviewer(link);
+                assigned.add(interviewerId);
             }
         }
 
@@ -427,6 +458,10 @@ public class ConferenceServiceImpl implements IConferenceService
         result.put("mode", ctx.get("mode"));
         result.put("status", ctx.get("status"));
         result.put("interviewers", conferenceMapper.selectSessionInterviewers(sessionId));
+        if (newSession && !selected.isEmpty())
+        {
+            notifyInterviewEntryCards(userId, sessionId, selected, ctx, roomToken);
+        }
         return result;
     }
 
@@ -796,6 +831,30 @@ public class ConferenceServiceImpl implements IConferenceService
         return result;
     }
 
+    /** 场次创建后给发起人以外的已指派面试官发送可直接入会的入口卡片。 */
+    private void notifyInterviewEntryCards(Long senderId, Long sessionId, List<Long> selected,
+            Map<String, Object> ctx, String roomToken)
+    {
+        if (imService == null) return;
+        String text = "【面试邀请·" + ctx.get("positionTitle") + "】"
+                + ctx.get("companyName") + " 候选人：" + ctx.get("candidateName")
+                + "，面试已开始。请点击链接进入：/conference-join?token=" + roomToken;
+        for (Long interviewerId : selected)
+        {
+            if (interviewerId != null && !interviewerId.equals(senderId))
+            {
+                try
+                {
+                    sendNotice(senderId, interviewerId, text);
+                }
+                catch (Exception ignored)
+                {
+                    // 入口卡片失败不阻断面试场次创建，面试官仍可从日程进入。
+                }
+            }
+        }
+    }
+
     /** 面试官确认邀约的提示文案（含岗位、候选人、时间） */
     private String interviewNoticeText(Map<String, Object> ctx)
     {
@@ -807,6 +866,7 @@ public class ConferenceServiceImpl implements IConferenceService
     /** 以当前用户身份给指定用户发送一条站内文本消息 */
     private void sendNotice(Long senderId, Long receiverId, String text)
     {
+        if (imService == null || receiverId == null) return;
         com.ruoyi.system.domain.ImMessage message = new com.ruoyi.system.domain.ImMessage();
         message.setType(1);
         message.setContent(text.length() > 1000 ? text.substring(0, 1000) : text);

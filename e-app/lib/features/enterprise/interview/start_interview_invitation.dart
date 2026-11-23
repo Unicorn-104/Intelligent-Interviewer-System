@@ -51,6 +51,26 @@ Future<void> _invite(
   final peerUserId = messageId(raw['candidateUserId']);
   final positionId = interview.positionId;
   final interviewerId = messageId(raw['interviewerId']);
+  final interviewerIds = <int>[];
+  final rawIds = raw['interviewerIds'];
+  if (rawIds is List) {
+    for (final item in rawIds) {
+      final id = messageId(item);
+      if (id != null && !interviewerIds.contains(id)) interviewerIds.add(id);
+    }
+  }
+  final rawInterviewers = raw['interviewers'];
+  if (rawInterviewers is List) {
+    for (final item in rawInterviewers) {
+      if (item is Map) {
+        final id = messageId(item['userId']);
+        if (id != null && !interviewerIds.contains(id)) interviewerIds.add(id);
+      }
+    }
+  }
+  if (interviewerIds.isEmpty && interviewerId != null) {
+    interviewerIds.add(interviewerId);
+  }
   final stageType = messageId(raw['stageType']);
   final stageName = homeText(raw['stageName'], '');
   if (peerUserId == null || positionId == null) {
@@ -62,8 +82,10 @@ Future<void> _invite(
     );
     return;
   }
-  final mode = stageTypeMode[stageType];
-  if (mode != 1 && interviewerId == null) {
+  final mappedMode = stageTypeMode[stageType];
+  var mode = mappedMode ?? (interviewerIds.length > 1 ? 3 : 2);
+  if (interviewerIds.length > 1 && mode == 2) mode = 3;
+  if (mode != 1 && interviewerIds.isEmpty) {
     messenger.showSnackBar(
       SnackBar(
         duration: const Duration(milliseconds: 1500),
@@ -80,7 +102,7 @@ Future<void> _invite(
       stageId: messageId(raw['stageId']),
       durationMinutes: _appointmentMinutes(raw),
       mode: mode,
-      interviewerIds: mode == 1 ? const <int>[] : <int>[interviewerId!],
+      interviewerIds: mode == 1 ? const <int>[] : interviewerIds,
       appointmentId: messageId(raw['appointmentId']),
     );
   } catch (error) {

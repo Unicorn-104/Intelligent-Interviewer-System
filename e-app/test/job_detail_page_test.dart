@@ -133,7 +133,10 @@ void main() {
     await tester.tap(find.text('取消').last);
     await tester.pumpAndSettle();
     expect(source.savedWorkflows, isEmpty);
-    expect(find.byKey(const PageStorageKey('job-workflow-expansion-1')), findsNothing);
+    expect(
+      find.byKey(const PageStorageKey('job-workflow-expansion-1')),
+      findsNothing,
+    );
     expect(find.text('招聘流程'), findsNothing);
     expect(find.byKey(const Key('job-workflow-node-0')), findsOneWidget);
   });
@@ -177,15 +180,16 @@ void main() {
     expect(find.byKey(const Key('job-refresh-analysis')), findsNothing);
   });
 
-  testWidgets('AI 评分失败保留同批候选人并显示重试，不清空名单', (tester) async {
+  testWidgets('AI评分失败保留同批候选人并弹出红色提示，不显示内联重试', (tester) async {
     final source = DetailFakeSource(scoreFailure: true);
     await pumpDetail(tester, source, initialTab: 1);
     expect(find.text('候选人甲'), findsOneWidget);
     expect(find.text('候选人乙'), findsOneWidget);
-    expect(find.text('加载筛选结果失败，重试'), findsOneWidget);
+    expect(find.text('评分加载失败，请稍后重试'), findsOneWidget);
+    expect(find.byKey(const Key('job-scores-retry')), findsNothing);
+    expect(find.textContaining('分析方式已移至'), findsNothing);
     expect(find.text('通用评分，非岗位维度'), findsNothing);
     expect(find.text('AI 结果仅供参考'), findsNothing);
-    expect(find.text('增量分析'), findsOneWidget);
   });
 
   testWidgets('AI辅助筛选点击即执行，不弹出确认框', (tester) async {
@@ -288,7 +292,7 @@ void main() {
     expect(find.text('增量分析'), findsOneWidget);
   });
 
-  testWidgets('AI后台失败保留名单并显示错误，不自动重发任务', (tester) async {
+  testWidgets('AI后台失败保留名单并弹出简短错误，不自动重发任务', (tester) async {
     final source = DetailFakeSource()..asyncScreening = true;
     source.screeningStatuses = [
       {
@@ -306,7 +310,7 @@ void main() {
     expect(source.screenCalls, 1);
     expect(source.statusCalls, 1);
     expect(find.text('候选人甲'), findsOneWidget);
-    expect(find.text('模型暂不可用，原有结果未变更'), findsOneWidget);
+    expect(find.text('模型暂不可用'), findsOneWidget);
   });
 
   testWidgets('JD画像与招聘流程模块已彻底移除，页面以技能模块结束', (tester) async {
@@ -318,8 +322,14 @@ void main() {
           matching: find.byType(Scrollable),
         )
         .first;
-    expect(find.byKey(const PageStorageKey('job-jd-expansion-1')), findsNothing);
-    expect(find.byKey(const PageStorageKey('job-workflow-expansion-1')), findsNothing);
+    expect(
+      find.byKey(const PageStorageKey('job-jd-expansion-1')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const PageStorageKey('job-workflow-expansion-1')),
+      findsNothing,
+    );
     expect(find.text('JD画像'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('技能'),

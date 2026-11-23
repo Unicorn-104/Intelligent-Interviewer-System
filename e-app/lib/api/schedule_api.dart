@@ -86,6 +86,7 @@ Future<Map<String, dynamic>> rescheduleInterview(
   required String newStartTime,
   int? durationMin,
   int? interviewerId,
+  List<int>? interviewerIds,
 }) async {
   final response = await EnterpriseApiClient().put(
     '/enterprise/interview/$appointmentId/reschedule',
@@ -93,6 +94,7 @@ Future<Map<String, dynamic>> rescheduleInterview(
       'newStartTime': newStartTime,
       ...?durationMin == null ? null : {'durationMin': durationMin},
       ...?interviewerId == null ? null : {'interviewerId': interviewerId},
+      ...?interviewerIds == null ? null : {'interviewerIds': interviewerIds},
     },
   );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});

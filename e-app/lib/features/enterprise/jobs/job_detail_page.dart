@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../api/send_center_api.dart';
 import '../../../core/network/api_exception.dart';
 
 import '../../../theme/app_theme.dart';
@@ -15,6 +16,7 @@ import 'widgets/job_basic_info_tab.dart';
 import 'widgets/job_candidates_tab.dart';
 import 'widgets/job_workflow_section.dart';
 import 'widgets/job_workflow_timeline.dart';
+import 'widgets/job_exam_invite_sheet.dart';
 
 /// 岗位详情页浅灰蓝背景，参考 BOSS 直聘风格。
 const jobDetailBackground = Color(0xFFF3F7FA);
@@ -153,8 +155,9 @@ class _JobDetailPageState extends State<JobDetailPage>
 
   Future<void> _load<T>(
     JobSectionState<T> state,
-    Future<T> Function() fetch,
-  ) async {
+    Future<T> Function() fetch, {
+    void Function(Object error)? onError,
+  }) async {
     final request = ++state.request;
     setState(() {
       state.loading = true;
@@ -171,6 +174,7 @@ class _JobDetailPageState extends State<JobDetailPage>
         return;
       }
       setState(() => state.error = jobDetailError(error));
+      onError?.call(error);
     } finally {
       if (mounted && request == state.request) {
         setState(() => state.loading = false);
@@ -179,15 +183,21 @@ class _JobDetailPageState extends State<JobDetailPage>
   }
 
   Future<void> _loadDetail() async {
-    await _load(_detail, () async {
-      final data = JobDetailViewData.fromJson(
-        await widget.source.loadDetail(_positionId),
-      );
-      if (jobPositiveId(data.job['posId']) != _positionId) {
-        throw const FormatException('岗位详情标识不一致');
-      }
-      return data;
-    });
+    await _load(
+      _detail,
+      () async {
+        final data = JobDetailViewData.fromJson(
+          await widget.source.loadDetail(_positionId),
+        );
+        if (jobPositiveId(data.job['posId']) != _positionId) {
+          throw const FormatException('岗位详情标识不一致');
+        }
+        return data;
+      },
+      onError: (_) {
+        if (mounted) showCompactError(context, '加载失败，请检查网络后重试');
+      },
+    );
     if (mounted && _tabs.index == 1) {
       _ensureScores();
     }
@@ -210,7 +220,43 @@ class _JobDetailPageState extends State<JobDetailPage>
     return _load(
       _scores,
       () async => jobMaps(await widget.source.loadScores(_positionId), '评分'),
+      onError: (_) {
+        if (mounted) showCompactError(context, '评分加载失败，请稍后重试');
+      },
     );
+  }
+
+  /// 弹窗只展示一句用户能理解的原因，不把后台长提示堆到页面上。
+  String _conciseErrorMessage(Object error, {String fallback = '操作失败，请稍后重试'}) {
+    final raw = jobDetailError(error);
+    if (raw.contains('AI 服务未配置') || raw.contains('AI服务未配置')) {
+      return 'AI 模型未启用，请联系管理员';
+    }
+    if (raw.contains('鉴权')) return 'AI 模型鉴权失败，请联系管理员';
+    if (raw.contains('限流') || raw.contains('额度')) {
+      return 'AI 模型额度不足，请稍后重试';
+    }
+    if (raw.contains('超时')) return 'AI 分析超时，请稍后重试';
+    if (raw.contains('尚未部署新版AI筛选服务') || raw.contains('No static resource')) {
+      return '服务版本过低，请更新后端';
+    }
+    final message = raw
+        .split('；')
+        .first
+        .replaceAll(RegExp(r'，?原有结果未变更'), '')
+        .trim();
+    if (message.isEmpty || message.length > 18) return fallback;
+    return message;
+  }
+
+  String _conciseSuccessMessage(String message) {
+    if (message.contains('没有待补充') || message.contains('已优先读取')) {
+      return '分析结果已是最新';
+    }
+    if (message.contains('完成') || message.contains('成功')) {
+      return '人岗匹配完成';
+    }
+    return '人岗匹配已更新';
   }
 
   Future<bool> _saveWorkflow(Map<String, Object?> body) async {
@@ -276,33 +322,7 @@ class _JobDetailPageState extends State<JobDetailPage>
     }
   }
 
-  Future<void> _fullRescreen() async {
-    if (_screening) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认全量分析'),
-        content: const Text(
-          '全量分析将重新分析该岗位下所有求职者，覆盖已保存的分析结果，'
-          '会耗费大量时间和模型调用额度。每位求职者仍独立与岗位要求匹配，不进行横向比较。是否继续？',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            key: const Key('job-full-analysis-confirm'),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('开始全量分析'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) await _rescreen(fullAnalysis: true);
-  }
-
-  Future<void> _rescreen({bool fullAnalysis = false}) async {
+  Future<void> _rescreen() async {
     final data = _detail.data;
     if (_screening ||
         _detail.loading ||
@@ -314,42 +334,12 @@ class _JobDetailPageState extends State<JobDetailPage>
     }
     setState(() => _screening = true);
     try {
-      // Re-read both sources before incremental analysis. If every current candidate
-      // already has an LLM result, this action is read-only and does not spend model calls.
-      if (!fullAnalysis) {
-        await Future.wait([_loadDetail(), _loadScores()]);
-        if (!mounted) return;
-        if (_detail.error != null) throw ApiException(_detail.error!);
-        if (_scores.error != null) throw ApiException(_scores.error!);
-        final candidates =
-            _detail.data?.candidates ?? const <Map<String, dynamic>>[];
-        final analyzedIds = <int>{
-          for (final result in _scores.data ?? const <Map<String, dynamic>>[])
-            if (result['source'] == 'llm')
-              if (jobPositiveId(result['resultId']) case final int id) id,
-        };
-        final hasUnanalyzedCandidate = candidates.any((candidate) {
-          final id = jobPositiveId(candidate['talId']);
-          return id == null || !analyzedIds.contains(id);
-        });
-        if (!hasUnanalyzedCandidate) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              duration: const Duration(milliseconds: 1500),
-              content: Text('已读取已有分析结果，没有待补充的求职者'),
-            ),
-          );
-          return;
-        }
-      }
-      final summary = fullAnalysis
-          ? await widget.source.startFullScreening(_positionId)
-          : await widget.source.startScreening(_positionId);
+      final summary = await widget.source.startScreening(_positionId);
       if (!mounted) {
         return;
       }
       if (jobPositiveId(summary['taskId']) != _positionId) {
-        setState(() => _scores.error = '筛选已响应，但没有返回可核对的任务标识。请刷新评分，避免重复提交。');
+        showCompactError(context, '分析结果异常，请重试');
         return;
       }
       if (summary['processing'] is! bool) {
@@ -373,16 +363,20 @@ class _JobDetailPageState extends State<JobDetailPage>
       }
       await Future.wait([_loadDetail(), _loadScores()]);
       if (mounted && summary['message'] is String) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(milliseconds: 1500),
-            content: Text(summary['message'] as String),
-          ),
-        );
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            compactSnackBar(
+              _conciseSuccessMessage(summary['message'] as String),
+            ),
+          );
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _scores.error = jobDetailError(error));
+        showCompactError(
+          context,
+          _conciseErrorMessage(error, fallback: '人岗匹配失败，请稍后重试'),
+        );
       }
     } finally {
       if (mounted) {
@@ -410,7 +404,7 @@ class _JobDetailPageState extends State<JobDetailPage>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            duration: const Duration(milliseconds: 1500),
+            duration: Duration(milliseconds: 1500),
             content: Text('岗位信息已更新'),
           ),
         );
@@ -443,6 +437,119 @@ class _JobDetailPageState extends State<JobDetailPage>
             ),
       ),
     );
+  }
+
+  bool get _hasExamStage {
+    final raw = _workflow.data?['stages'];
+    if (raw is! List) return false;
+    return raw.any((stage) {
+      if (stage is! Map) return false;
+      final type = int.tryParse('${stage['type']}');
+      final skipped =
+          stage['skip'] == true ||
+          '${stage['skip']}' == '1' ||
+          '${stage['skip']}' == 'true';
+      return type == 1 && !skipped;
+    });
+  }
+
+  Future<void> _openExamInvite() async {
+    final candidates =
+        _detail.data?.candidates ?? const <Map<String, dynamic>>[];
+    if (!_hasExamStage || candidates.isEmpty) return;
+    final sent = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => FractionallySizedBox(
+        heightFactor: .88,
+        child: JobExamInviteSheet(
+          positionId: _positionId,
+          candidates: candidates,
+        ),
+      ),
+    );
+    if (sent == true && mounted) {
+      await _loadDetail();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('笔试链接已发送给选中求职者')));
+    }
+  }
+
+  Future<bool> _beforeInvite(Map<String, dynamic> candidate) async {
+    final candidateId = jobPositiveId(candidate['talId']);
+    if (candidateId == null) return false;
+    try {
+      final contextData = await getSendCenterContext(
+        candidateId: candidateId,
+        positionId: _positionId,
+      );
+      if (contextData['examPassed'] == true) return true;
+      final stages = contextData['stages'];
+      final examStages = stages is List
+          ? stages
+                .whereType<Map>()
+                .where((stage) => int.tryParse('${stage['type']}') == 1)
+                .toList()
+          : const <Map>[];
+      if (examStages.isEmpty) return true;
+      final required = examStages.any(
+        (stage) =>
+            stage['required'] == true ||
+            '${stage['required']}' == '1' ||
+            '${stage['required']}' == 'true',
+      );
+      if (required) {
+        if (mounted) {
+          await showDialog<void>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('暂不能邀请面试'),
+              content: const Text('该岗位的笔试阶段为必选流程，请先发起笔试并等待求职者完成。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('知道了'),
+                ),
+              ],
+            ),
+          );
+        }
+        return false;
+      }
+      if (!mounted) return false;
+      return await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('确认跳过笔试'),
+              content: Text(
+                '求职者“${candidate['name'] ?? '未填写姓名'}”尚未完成笔试，是否跳过笔试并继续邀请面试？',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('跳过并邀请'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+    } on ApiException catch (error) {
+      if (mounted) {
+        showCompactError(context, _conciseErrorMessage(error));
+      }
+      return false;
+    } catch (_) {
+      if (mounted) {
+        showCompactError(context, '无法读取笔试流程，请重试');
+      }
+      return false;
+    }
   }
 
   Future<void> _preview() async {
@@ -498,7 +605,7 @@ class _JobDetailPageState extends State<JobDetailPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          duration: const Duration(milliseconds: 1500),
+          duration: Duration(milliseconds: 1500),
           content: Text('岗位已删除'),
         ),
       );
@@ -619,6 +726,13 @@ class _JobDetailPageState extends State<JobDetailPage>
         ),
       ),
       actions: [
+        if (_hasExamStage && (_detail.data?.candidates.isNotEmpty ?? false))
+          TextButton.icon(
+            key: const Key('job-start-exam'),
+            onPressed: _openExamInvite,
+            icon: const Icon(Icons.assignment_outlined, size: 18),
+            label: const Text('发起笔试'),
+          ),
         PopupMenuButton<_JobDetailAction>(
           key: const Key('job-action-menu'),
           icon: const Icon(Icons.add_circle_outline, size: 30),
@@ -723,7 +837,7 @@ class _JobDetailPageState extends State<JobDetailPage>
             onReloadDetail: _loadDetail,
             onReloadScores: _loadScores,
             onScreen: _rescreen,
-            onFullScreen: _fullRescreen,
+            beforeInvite: _beforeInvite,
             onOpen: _openCandidate,
           ),
         ),

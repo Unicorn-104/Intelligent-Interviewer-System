@@ -33,7 +33,7 @@ class ChatPage extends StatefulWidget {
     this.source = const MessageDataSource(),
     this.pollInterval = const Duration(seconds: 8),
     this.rescheduleSource,
-    this.loadCurrentSession = room.getCurrentSession,
+    this.joinInterviewInvite = room.joinRoomToken,
     this.conferenceRoomBuilder = _buildConferenceRoom,
   });
   final Map<String, dynamic> session;
@@ -41,8 +41,8 @@ class ChatPage extends StatefulWidget {
   final Duration pollInterval;
   final RescheduleReviewDataSource? rescheduleSource;
 
-  /// 查询当前待开始/进行中面试会话（可注入以隔离网络，测试用）。
-  final Future<Map<String, dynamic>> Function() loadCurrentSession;
+  /// 按邀请链接中的 token 换回精确场次（可注入以隔离网络，测试用）。
+  final Future<Map<String, dynamic>> Function(String token) joinInterviewInvite;
 
   /// 「进入面试」打开的会议室页面（可注入以隔离音视频/网络，测试用）。
   final Widget Function(Map<String, dynamic> session) conferenceRoomBuilder;
@@ -248,16 +248,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
 
     if (_contextLoading) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('正在读取求职者资料，请稍候')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(milliseconds: 1500),
+          content: Text('正在读取求职者资料，请稍候'),
+        ),
+      );
       return;
     }
     if (_contextError != null) {
       await _loadContext();
       if (!mounted || _contextError != null) {
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(_contextError!)));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              duration: const Duration(milliseconds: 1500),
+              content: Text(_contextError!),
+            ),
+          );
         }
         return;
       }
@@ -270,9 +278,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (talent == null) return;
     }
     if (talent == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('当前企业暂无该求职者的关联资料，请稍后刷新重试')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(milliseconds: 1500),
+          content: Text('当前企业暂无该求职者的关联资料，请稍后刷新重试'),
+        ),
+      );
       return;
     }
     final job = _selectedJob;
@@ -501,8 +512,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _sendAttachment(bool image) async {
     if (_sending || _fetching || _uncertain || !_ready) return;
     if (_id == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('请先发送一条文字消息，再发送图片或文件')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(milliseconds: 1500),
+          content: Text('请先发送一条文字消息，再发送图片或文件'),
+        ),
+      );
       return;
     }
     var messageAttempted = false;
@@ -856,23 +871,52 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
     final invite = _interviewInviteLink(item.content);
     if (invite != null) {
-      if (item.mine) return _recruiterInterviewInvite(item.id, invite.text);
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            invite.text,
-            style: const TextStyle(color: color, fontSize: 16, height: 1.55),
-          ),
-          const SizedBox(height: 10),
-          FilledButton.icon(
-            key: ValueKey('chat-enter-interview-${item.id}'),
-            onPressed: _entering ? null : _enterInterview,
-            icon: const Icon(Icons.videocam_outlined, size: 20),
-            label: const Text('进入面试'),
-          ),
-        ],
+      if (item.mine) {
+        return _recruiterInterviewInvite(item.id, invite.text, invite.url);
+      }
+      return Container(
+        key: ValueKey('chat-interview-card-${item.id}'),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        decoration: BoxDecoration(
+          color: AppColors.primarySoft.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.hairline),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.video_camera_front_outlined,
+                  color: AppColors.interactive,
+                  size: 18,
+                ),
+                SizedBox(width: 6),
+                Text(
+                  '面试邀请',
+                  style: TextStyle(
+                    color: AppColors.brand,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              invite.text,
+              style: const TextStyle(color: color, fontSize: 15, height: 1.45),
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              key: ValueKey('chat-enter-interview-${item.id}'),
+              onPressed: _entering ? null : () => _enterInterview(invite.url),
+              icon: const Icon(Icons.videocam_outlined, size: 20),
+              label: const Text('进入面试'),
+            ),
+          ],
+        ),
       );
     }
     return Text(
@@ -881,93 +925,105 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _recruiterInterviewInvite(int messageId, String text) {
+  Widget _recruiterInterviewInvite(int messageId, String text, String url) {
     final detail = _inviteDetail(text);
-    return Column(
-      key: ValueKey('chat-interview-invite-$messageId'),
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 4),
-        Row(
+    return Semantics(
+      button: true,
+      label: '进入面试',
+      child: InkWell(
+        key: ValueKey('chat-enter-interview-$messageId'),
+        onTap: _entering ? null : () => _enterInterview(url),
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.primarySoft,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.video_camera_front_outlined,
-                color: AppColors.interactive,
-                size: 23,
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                '面试邀请',
-                style: TextStyle(
-                  color: AppColors.brand,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Text(
-          detail.title,
-          style: const TextStyle(
-            color: AppColors.brand,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        if (detail.subtitle.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(
-            detail.subtitle,
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.bodySoft,
-              fontSize: 13,
-              height: 1.5,
-            ),
-          ),
-        ],
-        const Padding(
-          padding: EdgeInsets.only(top: 12, bottom: 10),
-          child: Divider(height: 1),
-        ),
-        SizedBox(
-          width: double.infinity,
-          child: InkWell(
-            key: ValueKey('chat-enter-interview-$messageId'),
-            onTap: _entering ? null : _enterInterview,
-            child: const Row(
+            const SizedBox(height: 4),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.video_camera_front_outlined,
+                    color: AppColors.interactive,
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
                   child: Text(
-                    '查看安排 · 进入面试',
+                    '面试邀请',
                     style: TextStyle(
-                      color: AppColors.interactive,
-                      fontSize: 13,
+                      color: AppColors.brand,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
-                Icon(
-                  Icons.chevron_right,
-                  color: AppColors.interactive,
-                  size: 20,
-                ),
               ],
             ),
-          ),
+            const SizedBox(height: 14),
+            Text(
+              detail.title,
+              style: const TextStyle(
+                color: AppColors.brand,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (detail.subtitle.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                detail.subtitle,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.bodySoft,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+              ),
+            ],
+            const Padding(
+              padding: EdgeInsets.only(top: 12, bottom: 10),
+              child: Divider(height: 1),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _entering ? '正在进入…' : '查看安排 · 进入面试',
+                      style: const TextStyle(
+                        color: AppColors.interactive,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  if (_entering)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    const Icon(
+                      Icons.chevron_right,
+                      color: AppColors.interactive,
+                      size: 20,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -979,9 +1035,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final tagDetail = tagText == null
         ? ''
         : tagText
-            .substring(1, tagText.length - 1)
-            .replaceFirst('面试邀请·', '')
-            .trim();
+              .substring(1, tagText.length - 1)
+              .replaceFirst('面试邀请·', '')
+              .trim();
     final normalized = body
         .replaceFirst(RegExp(r'视频面试[，,。]?请点击链接进入[:：]?\s*$'), '')
         .trim();
@@ -994,7 +1050,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final parts = normalized.split(RegExp(r'\s+'));
     if (parts.length >= 2) {
       return (
-        title: tagDetail.isEmpty ? parts.take(parts.length - 1).join(' ') : tagDetail,
+        title: tagDetail.isEmpty
+            ? parts.take(parts.length - 1).join(' ')
+            : tagDetail,
         subtitle: tagDetail.isEmpty ? parts.last : normalized,
       );
     }
@@ -1018,23 +1076,42 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return (text: text, url: url);
   }
 
-  /// 「进入面试」：查询当前待开始/进行中的面试场次，直接进入 LiveKit 视频会议室。
-  Future<void> _enterInterview() async {
+  static String? _conferenceToken(String url) {
+    final token = Uri.tryParse(url)?.queryParameters['token']?.trim();
+    return token == null || token.isEmpty ? null : token;
+  }
+
+  /// 「进入面试」：只按当前邀请消息里的 token 解析场次，避免企业有多场
+  /// 未结束面试时进到其他候选人的房间。
+  Future<void> _enterInterview(String inviteUrl) async {
     if (_entering) return;
-    _entering = true;
+    final token = _conferenceToken(inviteUrl);
+    if (token == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(compactErrorSnackBar('邀请链接无效'));
+      return;
+    }
+    setState(() => _entering = true);
     try {
       final Map<String, dynamic> session;
       try {
-        session = await widget.loadCurrentSession();
+        session = await widget.joinInterviewInvite(token);
       } catch (error) {
         if (!mounted) return;
+        final text = error is ApiException ? error.message : '$error';
+        final message = text.contains('已结束')
+            ? '本场面试已结束'
+            : text.contains('登录')
+            ? '登录已过期，请重新登录'
+            : '进入面试失败，请重试';
         ScaffoldMessenger.of(context)
-            .showSnackBar(compactSnackBar('查询面试状态失败：$error'));
+            .showSnackBar(compactErrorSnackBar(message));
         return;
       }
       if (messageId(session['sessionId']) == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(compactSnackBar('本场面试已结束'));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(compactErrorSnackBar('本场面试已结束'));
         return;
       }
       if (!mounted) return;
@@ -1044,7 +1121,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ),
       );
     } finally {
-      _entering = false;
+      if (mounted) setState(() => _entering = false);
     }
   }
 
@@ -1135,8 +1212,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-          SizedBox(
-            width: _chatAvatarSlot,
+        SizedBox(
+          width: _chatAvatarSlot,
           child: item.mine
               ? null
               : Align(
@@ -1190,44 +1267,44 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       Stack(
                         clipBehavior: Clip.none,
                         children: [
-                      Container(
-                        key: ValueKey('chat-bubble-${item.id}'),
-                        width: bodyWidth,
-                        constraints: BoxConstraints(maxWidth: maxBodyWidth),
-                        padding: richContent
-                            ? EdgeInsets.zero
-                            : const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                        decoration: richContent
-                            ? null
-                            : BoxDecoration(
-                                color: recruiterInvite
-                                    ? Colors.white
-                                    : item.mine
-                                    ? _ownBubble
-                                    : Colors.white,
-                                borderRadius: BorderRadius.only(
-                                  topLeft: const Radius.circular(12),
-                                  topRight: const Radius.circular(12),
-                                  bottomLeft: Radius.circular(
-                                    item.mine ? 12 : 3,
+                          Container(
+                            key: ValueKey('chat-bubble-${item.id}'),
+                            width: bodyWidth,
+                            constraints: BoxConstraints(maxWidth: maxBodyWidth),
+                            padding: richContent
+                                ? EdgeInsets.zero
+                                : const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
                                   ),
-                                  bottomRight: Radius.circular(
-                                    item.mine ? 3 : 12,
+                            decoration: richContent
+                                ? null
+                                : BoxDecoration(
+                                    color: recruiterInvite
+                                        ? Colors.white
+                                        : item.mine
+                                        ? _ownBubble
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.only(
+                                      topLeft: const Radius.circular(12),
+                                      topRight: const Radius.circular(12),
+                                      bottomLeft: Radius.circular(
+                                        item.mine ? 12 : 3,
+                                      ),
+                                      bottomRight: Radius.circular(
+                                        item.mine ? 3 : 12,
+                                      ),
+                                    ),
+                                    border: item.mine && !recruiterInvite
+                                        ? null
+                                        : Border.all(color: AppColors.hairline),
                                   ),
-                                ),
-                                border: item.mine && !recruiterInvite
-                                    ? null
-                                    : Border.all(color: AppColors.hairline),
-                              ),
-                        child: GestureDetector(
-                          onLongPress: () => _messageDetails(item),
-                          child: _messageContent(item),
-                        ),
-                      ),
-                      // 仅标识尖角布局位置；填色和描边由气泡的完整轮廓统一绘制。
+                            child: GestureDetector(
+                              onLongPress: () => _messageDetails(item),
+                              child: _messageContent(item),
+                            ),
+                          ),
+                          // 仅标识尖角布局位置；填色和描边由气泡的完整轮廓统一绘制。
                         ],
                       ),
                       if (item.time != null)
@@ -1242,9 +1319,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                             child: Text(
                               '${_chatMetaTime(item.time)}${item.mine && ['read', 'delivered'].contains(item.deliveryStatus) ? ' · ${item.deliveryStatus == 'read' ? '已读' : '送达'}' : ''}',
                               key: ValueKey('chat-receipt-${item.id}'),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
+                              style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(fontSize: 10),
                             ),
                           ),

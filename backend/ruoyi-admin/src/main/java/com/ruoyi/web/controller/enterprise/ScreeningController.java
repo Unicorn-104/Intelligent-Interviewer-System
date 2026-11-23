@@ -15,6 +15,7 @@ import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.enterprise.service.IScreeningService;
+import com.ruoyi.system.service.IEnterpriseSettingsService;
 
 /**
  * 企业端 - AI 初筛与智能匹配
@@ -32,6 +33,9 @@ public class ScreeningController extends BaseController
 {
     @Autowired
     private IScreeningService screeningService;
+
+    @Autowired
+    private IEnterpriseSettingsService settingsService;
 
     /**
      * UC-04/UC-05 步骤1：触发 AI 初筛任务（按岗位发起，taskId 即岗位ID）
@@ -64,6 +68,12 @@ public class ScreeningController extends BaseController
         Object full = body.get("fullAnalysis");
         if (full != null && !(full instanceof Boolean))
             throw new com.ruoyi.common.exception.ServiceException("fullAnalysis须为布尔值");
+        if (full == null)
+        {
+            Map<String, Object> settings = settingsService
+                    .examAnalysisSettings(settingsService.resolveCompanyId(getUserId()));
+            full = "full".equals(settings.get("screeningAnalysisMode"));
+        }
         return success(Boolean.TRUE.equals(full)
                 ? screeningService.triggerScreeningAsync(getUserId(), positionId, topN, true)
                 : screeningService.triggerScreeningAsync(getUserId(), positionId, topN));

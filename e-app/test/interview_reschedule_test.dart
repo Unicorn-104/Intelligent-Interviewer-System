@@ -63,12 +63,14 @@ class RescheduleSource extends TalentFakeSource {
     required String newStartTime,
     int? durationMin,
     int? interviewerId,
+    List<int>? interviewerIds,
   }) async {
     reschedules.add({
       'appointmentId': id,
       'newStartTime': newStartTime,
       'durationMin': durationMin,
       'interviewerId': interviewerId,
+      'interviewerIds': interviewerIds,
     });
     await saveGate?.future;
     if (timeout) throw const ApiException('网络超时');

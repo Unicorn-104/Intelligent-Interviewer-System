@@ -82,7 +82,8 @@ public class InterviewScheduleController extends BaseController
     {
         return success(scheduleService.reschedule(getUserId(), appointmentId,
                 body.get("newStartTime") == null ? null : String.valueOf(body.get("newStartTime")),
-                asInt(body.get("durationMin"), null), asLong(body.get("interviewerId"))));
+                asInt(body.get("durationMin"), null), asLong(body.get("interviewerId")),
+                asLongList(body.get("interviewerIds"))));
     }
 
     /**
@@ -160,5 +161,20 @@ public class InterviewScheduleController extends BaseController
         }
         String s = v.toString().trim();
         return s.isEmpty() ? defaultValue : Integer.valueOf(s);
+    }
+
+    private List<Long> asLongList(Object value)
+    {
+        if (!(value instanceof List<?> rows))
+        {
+            return null;
+        }
+        List<Long> ids = new java.util.ArrayList<>();
+        for (Object row : rows)
+        {
+            Long id = asLong(row);
+            if (id != null && !ids.contains(id)) ids.add(id);
+        }
+        return ids;
     }
 }
