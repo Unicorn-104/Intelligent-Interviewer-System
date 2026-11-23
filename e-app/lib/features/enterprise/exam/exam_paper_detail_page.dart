@@ -235,11 +235,46 @@ class _ExamPaperDetailPageState extends State<ExamPaperDetailPage> {
       }
     }
     if (raw is! List) return const [];
-    return raw.map((item) {
-      if (item is Map) return ('${item['label'] ?? ''}', '${item['text'] ?? item['value'] ?? ''}');
-      return ('', '$item');
-    }).where((item) => item.$1.isNotEmpty || item.$2.isNotEmpty).toList();
+    final options = <(String, String)>[];
+    for (var index = 0; index < raw.length; index++) {
+      final item = raw[index];
+      var label = '';
+      var text = '';
+      if (item is Map) {
+        label = _normalizeOptionLabel(item['label']);
+        text = '${item['text'] ?? item['value'] ?? ''}'.trim();
+      } else {
+        text = '$item'.trim();
+      }
+
+      final parsed = _parseOptionPrefix(text);
+      if (label.isEmpty && parsed != null) {
+        label = parsed.$1;
+        text = parsed.$2;
+      }
+      if (text.isEmpty && label.isEmpty) continue;
+      options.add((
+        label.isEmpty ? String.fromCharCode(65 + index) : label,
+        _stripOptionBullet(text),
+      ));
+    }
+    return options;
   }
+
+  String _normalizeOptionLabel(Object? value) {
+    final label = '${value ?? ''}'.trim().toUpperCase();
+    return RegExp(r'^[A-Z]$').hasMatch(label) ? label : '';
+  }
+
+  (String, String)? _parseOptionPrefix(String value) {
+    final match = RegExp(r'^\s*([A-Za-z])\s*[\.、)、:：]\s*(.+)$')
+        .firstMatch(value);
+    if (match == null) return null;
+    return (match.group(1)!.toUpperCase(), match.group(2)!.trim());
+  }
+
+  String _stripOptionBullet(String value) =>
+      value.replaceFirst(RegExp(r'^\s*[•·●▪◦‣]\s*'), '').trim();
 
   Widget _notice(String message) => Container(
         width: double.infinity,

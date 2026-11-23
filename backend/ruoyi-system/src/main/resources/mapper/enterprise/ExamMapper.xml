@@ -115,7 +115,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <update id="updateQuestionAnalysis">
         update t_exam_question
         set eqs_analysis = #{analysis}, eqs_updated_at = now()
-        where eqs_id = #{id} and (eqs_analysis is null or trim(eqs_analysis) = '')
+        where eqs_id = #{id}
+        <if test="!forceRegenerate">
+            and (eqs_analysis is null or trim(eqs_analysis) = '')
+        </if>
     </update>
 
     <select id="drawQuestions" resultType="java.util.LinkedHashMap">

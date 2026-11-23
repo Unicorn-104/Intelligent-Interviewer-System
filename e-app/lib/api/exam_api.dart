@@ -164,6 +164,44 @@ Future<List<Map<String, dynamic>>> listExamPapers({int? positionId}) async {
   return const <Map<String, dynamic>>[];
 }
 
+Future<int?> createExamSchedule({
+  required int positionId,
+  required int paperId,
+  required String startAt,
+  required String endAt,
+  required num passThreshold,
+  int maxAttempts = 1,
+}) async {
+  final response = await EnterpriseApiClient().post(
+    '/enterprise/exam/schedules',
+    body: {
+      'positionId': positionId,
+      'paperId': paperId,
+      'startAt': startAt,
+      'endAt': endAt,
+      'maxAttempts': maxAttempts,
+      'passThreshold': passThreshold,
+    },
+  );
+  final data = response['data'];
+  if (data is int) return data;
+  return int.tryParse('$data');
+}
+
+Future<Map<String, dynamic>> sendExamNotify(
+  int scheduleId, {
+  required List<int> candidateIds,
+}) async {
+  final response = await EnterpriseApiClient().post(
+    '/enterprise/exam/schedules/$scheduleId/notify',
+    body: {
+      'candidateIds': candidateIds,
+      'channels': const ['inapp', 'email'],
+    },
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
 /// 试卷详情（含题目与规则）。
 Future<Map<String, dynamic>> getExamPaper(int paperId) async {
   final response = await EnterpriseApiClient().get(

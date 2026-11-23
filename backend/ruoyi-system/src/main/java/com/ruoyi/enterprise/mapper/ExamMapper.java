@@ -41,7 +41,8 @@ public interface ExamMapper
     public int deleteQuestion(@Param("id") Long id, @Param("companyId") Long companyId);
 
     /** 仅补全空解析 */
-    public int updateQuestionAnalysis(@Param("id") Long id, @Param("analysis") String analysis);
+    public int updateQuestionAnalysis(@Param("id") Long id, @Param("analysis") String analysis,
+            @Param("forceRegenerate") boolean forceRegenerate);
 
     /** 按条件随机抽题（只含平台题目与本企业题目，排除已选题目ID） */
     public List<Map<String, Object>> drawQuestions(@Param("type") Integer type,
