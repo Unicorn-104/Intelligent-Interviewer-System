@@ -29,6 +29,7 @@ class TalentCandidateActions extends StatefulWidget {
     this.peerId,
     this.job,
     this.onInvited,
+    this.beforeInvite,
     this.workflowRevision = 0,
     this.keyPrefix = 'talent',
     this.appStatusCode,
@@ -43,6 +44,7 @@ class TalentCandidateActions extends StatefulWidget {
   final int? peerId;
   final TalentJobContext? job;
   final VoidCallback? onInvited;
+  final Future<bool> Function()? beforeInvite;
   final String keyPrefix;
   final int workflowRevision;
 
@@ -67,7 +69,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
     if (_busy || peerId == null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('求职者信息缺失，暂时无法发起对话')));
+        ..showSnackBar(const SnackBar(duration: Duration(milliseconds: 1500), content: Text('求职者信息缺失，暂时无法发起对话')));
       return;
     }
     // 仅需对方真实 userId；无历史会话时聊天页允许直接编辑首条消息，
@@ -89,6 +91,8 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
   /// 邀请面试：打开分阶段邀约面板（保留原有流程）。
   Future<void> _openInvite() async {
     if (!_enabled) return;
+    if (widget.beforeInvite != null && !await widget.beforeInvite!()) return;
+    if (!mounted) return;
     setState(() => _busy = true);
     try {
       final result = await showModalBottomSheet<bool>(
@@ -111,7 +115,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
       setState(() => _workflowRevision++);
       widget.onInvited?.call();
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('请在面试安排中核对邀约结果')));
+          .showSnackBar(const SnackBar(duration: Duration(milliseconds: 1500), content: Text('请在面试安排中核对邀约结果')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -166,14 +170,14 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
     if (positionId == null || candidateId == null) {
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('岗位信息缺失，无法淘汰')));
+        ..showSnackBar(const SnackBar(duration: Duration(milliseconds: 1500), content: Text('岗位信息缺失，无法淘汰')));
       return;
     }
     // 必须有精确投递ID，缺失时明确报错，不让后端猜测
     if (applicationId == null) {
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('当前投递ID缺失，无法淘汰，请刷新后重试')));
+        ..showSnackBar(const SnackBar(duration: Duration(milliseconds: 1500), content: Text('当前投递ID缺失，无法淘汰，请刷新后重试')));
       return;
     }
     setState(() => _busy = true);
@@ -189,13 +193,13 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
       widget.onInvited?.call();
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已标记为未录用（${reason.label}）')));
+        ..showSnackBar(SnackBar(duration: Duration(milliseconds: 1500), content: Text('已标记为未录用（${reason.label}）')));
     } catch (error) {
       if (!mounted) return;
       final message = error is ApiException ? error.message : '淘汰失败，请刷新后重试';
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(message)));
+        ..showSnackBar(SnackBar(duration: Duration(milliseconds: 1500), content: Text(message)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -209,7 +213,7 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
     }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('$action功能开发中')));
+      ..showSnackBar(SnackBar(duration: Duration(milliseconds: 1500), content: Text('$action功能开发中')));
   }
 
   /// 按投递状态生成「更多」操作项；终态不提供推进类操作。
