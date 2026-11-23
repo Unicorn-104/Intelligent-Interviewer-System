@@ -25,7 +25,7 @@ public interface InterviewScheduleMapper
     int countApplication(@Param("candidateId") Long candidateId, @Param("positionId") Long positionId);
     int countSchedulableApplication(@Param("candidateId") Long candidateId, @Param("positionId") Long positionId);
     /** 岗位流程中排在目标阶段之前、类型为笔试(1) 的阶段数量 */
-    int countExamStagesBefore(@Param("positionId") Long positionId, @Param("stageOrder") Integer stageOrder);
+    int countRequiredExamStagesBefore(@Param("positionId") Long positionId, @Param("stageOrder") Integer stageOrder);
     List<Map<String, Object>> selectConflicts(@Param("candidateId") Long candidateId,
             @Param("interviewerId") Long interviewerId, @Param("startTime") String startTime,
             @Param("endTime") String endTime, @Param("excludeAppointmentId") Long excludeAppointmentId,

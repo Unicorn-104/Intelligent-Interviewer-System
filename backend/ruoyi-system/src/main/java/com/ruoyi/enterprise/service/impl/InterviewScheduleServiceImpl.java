@@ -262,7 +262,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
                 if (stage == null) throw new ServiceException("招聘阶段已变更，请刷新后重新排期");
                 values.putAll(stage);
                 // 岗位流程中先有笔试阶段时，必须笔试节点通过才能安排后续面试（当前环节由真实节点计算）
-                if (scheduleMapper.countExamStagesBefore(positionId, integer(stage.get("stageOrder"), 0)) > 0
+                if (scheduleMapper.countRequiredExamStagesBefore(positionId, integer(stage.get("stageOrder"), 0)) > 0
                         && !hasPassedExamNode(candidateId, positionId))
                 {
                     throw new ServiceException("该岗位流程中笔试阶段尚未通过，暂不能安排后续面试");
