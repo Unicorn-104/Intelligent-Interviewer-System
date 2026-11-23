@@ -44,7 +44,7 @@ public class ClassifyQuestionsTool extends AbstractAgentTool implements PendingA
         params.putArray("required").add("ids");
         props.putObject("category").put("type", "integer").put("minimum", 1).put("maximum", 5);
         props.putObject("type").put("type", "integer").put("minimum", 1).put("maximum", 5);
-        return toolDef("批量调整题目分类或题型（生成待确认草稿）", params);
+        return toolDef("批量调整题目分类或题型（生成待确认草稿）。用户已明确给出题号时直接调用本工具，工具会自行核验，无需先查询", params);
     }
 
     @Override

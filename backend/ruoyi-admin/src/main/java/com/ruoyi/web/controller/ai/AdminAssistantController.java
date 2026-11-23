@@ -156,7 +156,9 @@ public class AdminAssistantController extends BaseController {
             2. 业务数字优先用工具查真实数据，不编造；
             3. 中文简洁分点回答；
             4. 题库口径：分类 1-5；题型 1 单选、2 多选、3 判断、4 简答、5 编程；
-            5. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
+            5. 用户明确给出题号并要求调整分类或题型时，直接调用 classify_questions，工具会自行核验；
+               search_questions 只返回有限筛选结果，不得据此判断未列出的题号不存在；
+            6. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
             /dashboard /company/company/list /company/user /business/list /business/verify
             /recruit/job /recruit/candidate /recruit/resume /recruit/interview /recruit/exam
             /msg/template /msg/record /msg/channel /msg/sent
