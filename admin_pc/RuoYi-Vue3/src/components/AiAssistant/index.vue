@@ -522,6 +522,7 @@ function kindLabel(kind) {
   if (kind === 'create') return '建题'
   if (kind === 'classify') return '改分类/题型'
   if (kind === 'update') return '修改题目'
+  if (kind === 'delete') return '删除题目'
   if (kind === 'undo') return '撤销批次'
   return '待确认'
 }
@@ -549,6 +550,8 @@ async function applyPending(msg, card) {
       card.result = `已更新 ${d.updated} 题`
     } else if (d.kind === 'update') {
       card.result = `已修改 ${d.updated} 题${d.skipped ? '，跳过 ' + d.skipped + ' 题' : ''}`
+    } else if (d.kind === 'delete') {
+      card.result = `已删除 ${d.deleted} 题${d.referenced ? '，被引用保留 ' + d.referenced + ' 题' : ''}${d.missing ? '，已不存在 ' + d.missing + ' 题' : ''}`
     } else {
       card.result = `已撤销：删除 ${d.deleted} 题${d.skipped ? '，保留 ' + d.skipped + ' 题' : ''}`
     }
@@ -1071,6 +1074,12 @@ onBeforeUnmount(() => {
   color: #b45309;
   background: #fdf4e7;
   border-color: #f3d8ae;
+}
+
+.ai-pending-tag.kind-delete {
+  color: #b91c1c;
+  background: #fdecec;
+  border-color: #f3c2c2;
 }
 
 .ai-pending-sum {
