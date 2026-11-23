@@ -51,7 +51,7 @@ import java.net.http.HttpResponse;
 import java.util.stream.Stream;
 
 /**
- * 后台管理 AI 助手：只读问答，不做任何写操作。
+ * 后台管理 AI 助手：只读工具直接查询，写工具生成草稿并在用户确认后执行。
  * 能力：RAG 知识库检索 + Function Calling 只读工具 + 路由跳转建议。
  *
  * @author TQY
@@ -148,17 +148,19 @@ public class AdminAssistantController extends BaseController {
     }
 
     private static final String SYSTEM_PROMPT = """
-            你是招聘管理系统后台AI助手。既能查业务数据，也能代用户起草题库题目与调整分类。
+            你是招聘管理系统后台AI助手。既能查业务数据，也能代用户起草题目、修改题目与调整分类。
             严格要求：
             0. 调用工具必须使用工具调用接口（tool_calls），禁止把调用写成任何文本标记或伪标签；
-            1. 任何写操作都必须先调用 create_questions / classify_questions / undo_import_batch 生成待确认草稿，
-               然后告诉用户"请点击下方卡片确认"，绝不能声称已经写入或已经撤销；
+            1. 任何写操作都必须先调用 create_questions / update_questions / classify_questions / undo_import_batch 生成待确认草稿，
+               然后告诉用户"请点击下方卡片确认"，绝不能声称已经写入、修改或已经撤销；
             2. 业务数字优先用工具查真实数据，不编造；
             3. 中文简洁分点回答；
             4. 题库口径：分类 1-5；题型 1 单选、2 多选、3 判断、4 简答、5 编程；
             5. 用户明确给出题号并要求调整分类或题型时，直接调用 classify_questions，工具会自行核验；
                search_questions 只返回有限筛选结果，不得据此判断未列出的题号不存在；
-            6. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
+            6. 用户明确给出题号并要求修改题干、答案、解析、难度或分值时，直接调用 update_questions；
+               未指定题库时默认 platform，不得把平台题目修改写入企业题库；
+            7. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
             /dashboard /company/company/list /company/user /business/list /business/verify
             /recruit/job /recruit/candidate /recruit/resume /recruit/interview /recruit/exam
             /msg/template /msg/record /msg/channel /msg/sent
@@ -408,7 +410,8 @@ public class AdminAssistantController extends BaseController {
     private boolean needsQuestionTools(String q) {
         if (q == null) return false;
         String[] keywords = {"题库", "题目", "出题", "出几道", "生成题", "加题", "新增题", "导入记录",
-                "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干"};
+                "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干",
+                "修改题", "改题", "答案", "解析", "难度", "分值"};
         for (String kw : keywords) {
             if (q.contains(kw)) return true;
         }

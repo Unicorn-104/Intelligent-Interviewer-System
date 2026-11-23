@@ -521,6 +521,7 @@ async function send(preset) {
 function kindLabel(kind) {
   if (kind === 'create') return '建题'
   if (kind === 'classify') return '改分类/题型'
+  if (kind === 'update') return '修改题目'
   if (kind === 'undo') return '撤销批次'
   return '待确认'
 }
@@ -546,6 +547,8 @@ async function applyPending(msg, card) {
       card.result = `已入库 ${d.inserted} 题${d.failed ? '，失败 ' + d.failed + ' 题' : ''}，批次 #${d.batchId}`
     } else if (d.kind === 'classify') {
       card.result = `已更新 ${d.updated} 题`
+    } else if (d.kind === 'update') {
+      card.result = `已修改 ${d.updated} 题${d.skipped ? '，跳过 ' + d.skipped + ' 题' : ''}`
     } else {
       card.result = `已撤销：删除 ${d.deleted} 题${d.skipped ? '，保留 ' + d.skipped + ' 题' : ''}`
     }
