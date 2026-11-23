@@ -23,4 +23,7 @@ public interface EnterpriseAssistantMapper
     int deleteSession(@Param("id") Long id,@Param("userId") Long userId);
     List<Map<String,Object>> jobs(@Param("companyId") Long companyId,@Param("keyword") String keyword);
     Map<String,Object> job(@Param("companyId") Long companyId,@Param("id") Long id);
+    List<Map<String,Object>> candidates(@Param("companyId") Long companyId,@Param("keyword") String keyword,
+        @Param("limit") int limit);
+    List<Map<String,Object>> upcomingInterviews(@Param("companyId") Long companyId,@Param("limit") int limit);
 }

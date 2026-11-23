@@ -46,4 +46,7 @@ public interface IEnterpriseSettingsService
     public Map<String, Object> examAnalysisSettings(Long companyId);
 
     public Map<String, Object> updateExamAnalysisSettings(Long companyId, boolean forceRegenerate);
+
+    public Map<String, Object> updateExamAnalysisSettings(Long companyId, boolean forceRegenerate,
+            String screeningAnalysisMode);
 }

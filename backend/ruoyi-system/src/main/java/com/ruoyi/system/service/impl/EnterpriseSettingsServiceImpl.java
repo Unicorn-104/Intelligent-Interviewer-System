@@ -23,6 +23,7 @@ import com.ruoyi.system.service.IEnterpriseSettingsService;
 public class EnterpriseSettingsServiceImpl implements IEnterpriseSettingsService
 {
     private static final String EXAM_FORCE_REGENERATE = "enterprise.exam.analysis.force-regenerate";
+    private static final String SCREENING_ANALYSIS_MODE = "enterprise.screening.analysis.mode";
     @Autowired
     private EnterpriseSettingsMapper settingsMapper;
 
@@ -232,13 +233,22 @@ public class EnterpriseSettingsServiceImpl implements IEnterpriseSettingsService
     {
         String value = settingsMapper.selectConfigValue(configKey(companyId));
         boolean force = "true".equalsIgnoreCase(value) || "1".equals(value);
+        String screeningMode = settingsMapper.selectConfigValue(screeningModeKey(companyId));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("forceRegenerate", force);
+        result.put("screeningAnalysisMode", normalizeScreeningMode(screeningMode));
         return result;
     }
 
     @Override
     public Map<String, Object> updateExamAnalysisSettings(Long companyId, boolean forceRegenerate)
+    {
+        return updateExamAnalysisSettings(companyId, forceRegenerate, null);
+    }
+
+    @Override
+    public Map<String, Object> updateExamAnalysisSettings(Long companyId, boolean forceRegenerate,
+            String screeningAnalysisMode)
     {
         String key = configKey(companyId);
         String value = Boolean.toString(forceRegenerate);
@@ -250,11 +260,34 @@ public class EnterpriseSettingsServiceImpl implements IEnterpriseSettingsService
         {
             settingsMapper.updateConfigValue(key, value);
         }
+        if (screeningAnalysisMode != null)
+        {
+            String mode = normalizeScreeningMode(screeningAnalysisMode);
+            String modeKey = screeningModeKey(companyId);
+            if (settingsMapper.selectConfigValue(modeKey) == null)
+            {
+                settingsMapper.insertConfig("人岗匹配分析策略", modeKey, mode);
+            }
+            else
+            {
+                settingsMapper.updateConfigValue(modeKey, mode);
+            }
+        }
         return examAnalysisSettings(companyId);
     }
 
     private String configKey(Long companyId)
     {
         return EXAM_FORCE_REGENERATE + "." + (companyId == null ? 1L : companyId);
+    }
+
+    private String screeningModeKey(Long companyId)
+    {
+        return SCREENING_ANALYSIS_MODE + "." + (companyId == null ? 1L : companyId);
+    }
+
+    private String normalizeScreeningMode(String value)
+    {
+        return "full".equalsIgnoreCase(value) ? "full" : "incremental";
     }
 }
