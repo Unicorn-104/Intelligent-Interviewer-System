@@ -1016,16 +1016,24 @@ async function onFilesPicked(e) {
     for (let i = 0; i < accepted.length; i += IMPORT_BATCH) {
       const fd = new FormData()
       accepted.slice(i, i + IMPORT_BATCH).forEach((f) => fd.append('files', f))
-      const res = await parseExamQuestionFiles(fd)
-      const data = res?.data || res
-      allItems.push(...(data?.items || []))
-      allFiles.push(...(data?.files || []))
+      try {
+        const res = await parseExamQuestionFiles(fd)
+        const data = res?.data || res
+        const items = Array.isArray(data?.items) ? data.items : []
+        const files = Array.isArray(data?.files) ? data.files : []
+        allItems.push(...items.filter((it) => it && typeof it === 'object'))
+        allFiles.push(...files)
+      } catch (err) {
+        // 单批失败不打断其他批次：坏文件只记一条失败，避免整轮解析中断
+        const batch = accepted.slice(i, i + IMPORT_BATCH).map((f) => f.name).join('、')
+        allFiles.push({ name: batch, status: 'error', message: err?.message || '上传或解析失败' })
+      }
     }
     importItems.value = allItems.map((it) => ({
-      content: it.content,
-      options: it.options || [],
-      answer: it.answer || '',
-      analysis: it.analysis || '',
+      content: String(it.content ?? ''),
+      options: Array.isArray(it.options) ? it.options : [],
+      answer: String(it.answer ?? ''),
+      analysis: String(it.analysis ?? ''),
       score: it.score,
       type: it.type,
       typeName: it.typeName,
