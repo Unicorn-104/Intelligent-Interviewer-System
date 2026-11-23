@@ -84,9 +84,14 @@ final class QuestionBankSupport
         return itemsNode;
     }
 
-    /** 卡片摘要：与原实现一致，保留换行，超长截断。 */
+    /** 卡片摘要：保留换行并截断；同时剥离工具内部的 pendingId 交接提示，避免直接展示给用户。 */
     static String summarize(String text)
     {
-        return text.length() > 220 ? text.substring(0, 220) + "…" : text;
+        String clean = text == null ? "" : text.replaceAll("\\s*pendingId=[^；\\n]*(；[^。\\n]*。)?", "").trim();
+        if (clean.isEmpty())
+        {
+            clean = "已生成待确认草稿。";
+        }
+        return clean.length() > 220 ? clean.substring(0, 220) + "…" : clean;
     }
 }

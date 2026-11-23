@@ -109,6 +109,46 @@ public class KbUploadController extends BaseController {
         return success("导入完成：" + success + " 个成功，" + failed + " 个失败").put("data", data);
     }
 
+    /**
+     * 解析随对话上传的附件，只返回文本内容，不写入知识库。
+     * 用法：POST /ai/kb/parse  表单 files 传多个文件
+     */
+    @PostMapping("/parse")
+    public AjaxResult parse(@RequestParam("files") MultipartFile[] files) {
+        if (files == null || files.length == 0) {
+            return error("请选择文件");
+        }
+        if (files.length > 5) {
+            return error("单次最多 5 个附件");
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (MultipartFile file : files) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
+            item.put("name", name);
+            try {
+                if (file.isEmpty()) {
+                    throw new IllegalArgumentException("文件内容为空");
+                }
+                if (file.getSize() > MAX_FILE_SIZE) {
+                    throw new IllegalArgumentException("超过 10MB 限制");
+                }
+                String text = extractText(name, file);
+                if (text == null || text.isBlank()) {
+                    throw new IllegalArgumentException("未解析到文本内容");
+                }
+                // 单个附件最多 3000 字，避免超模型上下文
+                item.put("text", text.length() > 3000 ? text.substring(0, 3000) + "\n…（已截断）" : text);
+            } catch (Exception e) {
+                item.put("error", e.getMessage() == null ? "解析失败" : e.getMessage());
+            }
+            out.add(item);
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("files", out);
+        return success(data);
+    }
+
     /** 解析单个文件并入库，返回写入的知识段数。 */
     private int importFile(MultipartFile file, String category) throws Exception {
         if (file == null || file.isEmpty()) {

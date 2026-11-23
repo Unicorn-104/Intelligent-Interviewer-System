@@ -28,11 +28,12 @@ public class AdminToolPackage implements AgentToolPackage
             ClassifyQuestionsTool classifyQuestions,
             UpdateQuestionsTool updateQuestions,
             DeleteQuestionsTool deleteQuestions,
-            UndoImportBatchTool undoImportBatch)
+            UndoImportBatchTool undoImportBatch,
+            CreateCompaniesTool createCompanies)
     {
         this.tools = List.of(dashboardStats, loginAlerts, searchQuestions, questionDetail, checkDuplicates,
                 questionStats, listBatches, createQuestions, classifyQuestions, updateQuestions,
-                deleteQuestions, undoImportBatch);
+                deleteQuestions, undoImportBatch, createCompanies);
     }
 
     @Override

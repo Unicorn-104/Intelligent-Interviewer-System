@@ -155,7 +155,7 @@ public class AdminAssistantController extends BaseController {
             你是招聘管理系统后台AI助手。既能查业务数据，也能代用户起草题目、修改题目与调整分类。
             严格要求：
             0. 调用工具必须使用工具调用接口（tool_calls），禁止把调用写成任何文本标记或伪标签；
-            1. 任何写操作都必须先调用 create_questions / update_questions / classify_questions / delete_questions / undo_import_batch
+            1. 任何写操作都必须先调用 create_questions / update_questions / classify_questions / delete_questions / undo_import_batch / create_companies
                生成待确认草稿，然后告诉用户"请点击下方卡片确认"，绝不能声称已经写入、修改或已经撤销；
             2. 业务数字优先用工具查真实数据，不编造；
             3. 中文简洁分点回答；
@@ -181,6 +181,12 @@ public class AdminAssistantController extends BaseController {
             10. 输出排版：结论放第一行；用「### 小标题」或「- 要点」组织，一条一行；
                 段落之间最多一个空行，禁止连续空行与行尾空格；不把 JSON、工具名或参数原文贴给用户；
                 不复述用户问题；简单查询不超过 8 行，复杂查询不超过 15 行，用户要求详细时除外。
+            11. 附件处理：用户随消息带附件时，先读附件文本再判断意图：
+                - 要求提取/整理题目：按题库口径整理成 items，调用 create_questions 生成草稿，默认 platform，不得编造附件未出现的题干、答案或选项；
+                - 要求录入公司/企业：提取名称、信用代码、行业、规模、城市、地址、官网、简介、联系人、电话，调用 create_companies 生成草稿；
+                - 其他要求：基于附件内容回答；附件里没有的信息一律留空，不得猜测。
+            12. 修改类请求先定位对象再改：题目先用 search_questions 确认 questionId 再调用 update_questions；
+                命中多条时先列候选让用户选择，不得批量修改不明确的记录。
             """;
 
     @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
@@ -208,6 +214,10 @@ public class AdminAssistantController extends BaseController {
             ArrayNode messages = json.createArrayNode();
             String sysContent = SYSTEM_PROMPT + (ragCtx.isEmpty() ? "" : "\n\n【知识库参考资料】\n" + ragCtx);
             messages.addObject().put("role", "system").put("content", sysContent);
+            String attachCtx = attachmentContext(body.get("attachments"), 6000);
+            if (!attachCtx.isEmpty()) {
+                messages.addObject().put("role", "system").put("content", attachCtx);
+            }
             for (Map<String, String> h : history) {
                 String r = h.get("role");
                 String c = h.get("content");
@@ -261,7 +271,7 @@ public class AdminAssistantController extends BaseController {
             List<Map<String, String>> shortHistory = history.size() > 5
                     ? history.subList(history.size() - 5, history.size())
                     : history;
-            ArrayNode messages = buildMessages(message, shortHistory);
+            ArrayNode messages = buildMessages(message, shortHistory, body.get("attachments"));
 
             // 题库类问题走工具路径：可查库、可生成待确认草稿；普通问答仍走流式
             if (needsQuestionTools(message)) {
@@ -425,7 +435,8 @@ public class AdminAssistantController extends BaseController {
         String[] keywords = {"题库", "题目", "出题", "出几道", "生成题", "加题", "新增题", "导入记录",
                 "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干",
                 "修改题", "改题", "答案", "解析", "难度", "分值", "选项",
-                "删除题", "删题", "移除题", "清除题", "删除", "删掉", "移除", "清除"};
+                "删除题", "删题", "移除题", "清除题", "删除", "删掉", "移除", "清除",
+                "附件", "这个文件", "这份文档", "提取题", "整理题", "录入", "新增企业", "企业信息", "公司信息", "导入企业"};
         for (String kw : keywords) {
             if (q.contains(kw)) return true;
         }
@@ -468,11 +479,35 @@ public class AdminAssistantController extends BaseController {
         return success(Map.of("discarded", actionStore.discard(id)));
     }
 
-    private ArrayNode buildMessages(String message, List<Map<String, String>> history) throws Exception {
+    /** 把随消息上传的附件文本整理为上下文；总量受限，避免挤压对话预算。 */
+    private String attachmentContext(Object raw, int limit) {
+        if (!(raw instanceof List<?> list) || list.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        int total = 0;
+        for (Object o : list) {
+            if (!(o instanceof Map<?, ?> m)) continue;
+            String name = m.get("name") == null ? "附件" : String.valueOf(m.get("name"));
+            String text = m.get("text") == null ? "" : String.valueOf(m.get("text")).trim();
+            if (text.isEmpty() || total >= limit) continue;
+            int room = Math.min(2000, limit - total);
+            if (text.length() > room) {
+                text = text.substring(0, room) + "\n…（已截断）";
+            }
+            sb.append("\n### 附件：").append(name).append('\n').append(text).append('\n');
+            total += text.length();
+        }
+        return sb.length() == 0 ? "" : "【用户随消息上传的附件内容】" + sb;
+    }
+
+    private ArrayNode buildMessages(String message, List<Map<String, String>> history, Object attachRaw) throws Exception {
         ArrayNode messages = json.createArrayNode();
         String ragCtx = searchKnowledge(message);
         String sysContent = SYSTEM_PROMPT + (ragCtx.isEmpty() ? "" : "\n\n【知识库参考资料】\n" + ragCtx);
         messages.addObject().put("role", "system").put("content", sysContent);
+        String attachCtx = attachmentContext(attachRaw, 6000);
+        if (!attachCtx.isEmpty()) {
+            messages.addObject().put("role", "system").put("content", attachCtx);
+        }
         for (Map<String, String> h : history) {
             String r = h.get("role");
             String c = h.get("content");

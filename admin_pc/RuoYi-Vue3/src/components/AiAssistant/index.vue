@@ -51,7 +51,7 @@
             <div v-if="messages.length === 0" class="ai-empty">
               <div class="ai-empty-avatar">AI</div>
               <h3>你好，我是后台助手</h3>
-              <p>业务数据统计、模块入口、操作指引、登录异常排查，问我就行。</p>
+              <p>查业务数据、找功能入口、起草改动；点左下「+」上传附件，可提取题库、录入企业信息。</p>
               <div class="ai-quick">
                 <div v-for="q in quickQuestions" :key="q" class="ai-chip" @click="quickAsk(q)">
                   {{ q }}
@@ -115,9 +115,10 @@
             </div>
           </div>
 
-          <div class="ai-input">
+          <div class="ai-composer">
             <el-input
               v-model="input"
+              class="ai-composer-text"
               placeholder="输入问题，Enter 发送，Shift+Enter 换行"
               type="textarea"
               :autosize="{ minRows: 1, maxRows: 4 }"
@@ -125,10 +126,30 @@
               resize="none"
               @keydown.enter.exact.prevent="send()"
             />
-            <button v-if="!loading" class="ai-send" @click="send()">
-              <el-icon :size="16"><Promotion /></el-icon>
-            </button>
-            <button v-else class="ai-send ai-stop" @click="stop"><span class="stop-square"></span></button>
+            <div class="ai-composer-bar">
+              <el-popover v-model:visible="attachMenuVisible" placement="top-start" :width="150" trigger="click">
+                <template #reference>
+                  <button class="ai-plus" :disabled="loading" title="添加附件">+</button>
+                </template>
+                <div class="attach-menu">
+                  <div class="attach-menu-item" @click="pickChatFiles">选择文件</div>
+                  <div class="attach-menu-item" @click="pickChatFolder">选择文件夹</div>
+                  <div class="attach-menu-item" @click="attachMenuVisible = false; kbDialogVisible = true">导入知识库</div>
+                </div>
+              </el-popover>
+              <div class="ai-attach-chips">
+                <span v-for="(a, i) in chatAttachments" :key="a.name + i" class="attach-chip">
+                  <el-icon :size="12"><Document /></el-icon>
+                  <span class="chip-name">{{ a.name }}</span>
+                  <el-icon class="chip-del" @click="removeChatAttachment(i)"><Close /></el-icon>
+                </span>
+                <span v-if="attachParsing" class="attach-chip attach-parsing">解析中…</span>
+              </div>
+              <button v-if="!loading" class="ai-composer-send" @click="send()">
+                <el-icon :size="15"><Top /></el-icon>
+              </button>
+              <button v-else class="ai-composer-send ai-stop" @click="stop"><span class="stop-square"></span></button>
+            </div>
           </div>
           <div class="ai-foot">查数据直接答 · 写题库需你点卡片确认</div>
         </div>
@@ -164,6 +185,10 @@
       accept=".txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.sql,.log,.java,.py,.js,.ts,.html,.css,.pdf,.docx,.xlsx"
       @change="onKbPick" />
     <input ref="kbDirInput" type="file" webkitdirectory multiple hidden @change="onKbPick" />
+    <input ref="chatFileInput" type="file" multiple hidden
+      accept=".txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.sql,.log,.java,.py,.js,.ts,.html,.css,.pdf,.docx,.xlsx"
+      @change="onChatPick" />
+    <input ref="chatDirInput" type="file" webkitdirectory multiple hidden @change="onChatPick" />
   </div>
 </template>
 
@@ -174,16 +199,17 @@ import { useRouter } from 'vue-router'
 import {
   ChatDotRound,
   DocumentCopy,
+  Document,
   RefreshRight,
   Position,
   Download,
   Delete,
   Close,
   Loading,
-  Promotion,
   Microphone,
   Plus,
   Clock,
+  Top,
   UploadFilled
 } from '@element-plus/icons-vue'
 import { getToken } from '@/utils/auth'
@@ -208,6 +234,11 @@ const kbCategory = ref('操作手册')
 const kbUploading = ref(false)
 const kbFileInput = ref(null)
 const kbDirInput = ref(null)
+const chatAttachments = ref([])
+const attachParsing = ref(false)
+const attachMenuVisible = ref(false)
+const chatFileInput = ref(null)
+const chatDirInput = ref(null)
 const KB_EXT = ['txt', 'md', 'markdown', 'csv', 'json', 'xml', 'yml', 'yaml', 'sql', 'log',
   'java', 'py', 'js', 'ts', 'html', 'css', 'pdf', 'docx', 'xlsx']
 let abortCtrl = null
@@ -218,7 +249,7 @@ const messages = computed(() => {
 })
 
 const HISTORY_KEY = 'ai-assistant-sessions-v2'
-const quickQuestions = ['平台现在有多少岗位和候选人？', '待审核的企业和岗位有哪些？', '最近有没有登录失败的异常？', 'Offer 即将到期的有几个？', 'AI 调用量今天用了多少？', '帮我看看哪个企业快到期了']
+const quickQuestions = ['平台现在有多少岗位和候选人？', '待审核的企业和岗位有哪些？', '最近有没有登录失败的异常？', 'Offer 即将到期的有几个？', 'AI 调用量今天用了多少？', '把附件里的题目提取到题库', '把附件里的公司信息录入系统']
 
 const drawerSize = computed(() => (window.innerWidth < 768 ? '100%' : '440px'))
 
@@ -374,6 +405,64 @@ async function submitKb() {
     ElMessage.error('导入失败：' + (err.message || '网络异常'))
   } finally {
     kbUploading.value = false
+  }
+}
+
+/** 输入框「+」：选择随本次对话使用的附件 */
+function pickChatFiles() {
+  attachMenuVisible.value = false
+  if (chatFileInput.value) chatFileInput.value.click()
+}
+
+function pickChatFolder() {
+  attachMenuVisible.value = false
+  if (chatDirInput.value) chatDirInput.value.click()
+}
+
+function removeChatAttachment(i) {
+  chatAttachments.value.splice(i, 1)
+}
+
+/** 选中文件后交给后端解析成文本，仅用于本次对话，不写入知识库 */
+async function onChatPick(e) {
+  const picked = Array.from(e.target.files || [])
+  e.target.value = ''
+  if (!picked.length) return
+  const valid = picked.filter((f) => {
+    const ext = (f.name.split('.').pop() || '').toLowerCase()
+    return KB_EXT.includes(ext) && f.size <= 10 * 1024 * 1024
+  })
+  if (!valid.length) {
+    ElMessage.warning('没有可解析的文件（格式不支持或超过 10MB）')
+    return
+  }
+  if (valid.length < picked.length) {
+    ElMessage.warning(`已过滤 ${picked.length - valid.length} 个不支持或超限的文件`)
+  }
+  attachParsing.value = true
+  try {
+    const fd = new FormData()
+    valid.forEach((f) => fd.append('files', f, f.webkitRelativePath || f.name))
+    const resp = await fetch(`${BASE_API}/ai/kb/parse`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + getToken() },
+      body: fd
+    })
+    const j = await resp.json()
+    if (j.code !== 200) throw new Error(j.msg || '解析失败')
+    const list = (j.data && j.data.files) || []
+    list.forEach((x) => {
+      if (x.error) {
+        ElMessage.warning(`${x.name}：${x.error}`)
+        return
+      }
+      if (chatAttachments.value.some((a) => a.name === x.name)) return
+      chatAttachments.value.push({ name: x.name, text: x.text })
+    })
+  } catch (err) {
+    ElMessage.error('附件解析失败：' + (err.message || '网络异常'))
+  } finally {
+    attachParsing.value = false
   }
 }
 
@@ -548,7 +637,11 @@ async function send(preset) {
     const resp = await fetch(`${BASE_API}/ai/assistant/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
-      body: JSON.stringify({ message: text, history: hist }),
+      body: JSON.stringify({
+        message: text,
+        history: hist,
+        attachments: chatAttachments.value.map((a) => ({ name: a.name, text: a.text }))
+      }),
       signal: abortCtrl.signal
     })
     const reader = resp.body.getReader()
@@ -613,6 +706,7 @@ async function send(preset) {
         }
       }
     }
+    chatAttachments.value = []
     const m = aiMsg.content.match(/\[\[route:([^\]]+)\]\]/)
     if (m) {
       aiMsg.route = m[1].trim()
@@ -638,6 +732,7 @@ function kindLabel(kind) {
   if (kind === 'update') return '修改题目'
   if (kind === 'delete') return '删除题目'
   if (kind === 'undo') return '撤销批次'
+  if (kind === 'create_companies') return '录入企业'
   return '待确认'
 }
 
@@ -694,7 +789,7 @@ async function discardPending(msg, card) {
 
 function focusInput() {
   nextTick(() => {
-    const el = document.querySelector('.ai-input textarea')
+    const el = document.querySelector('.ai-composer textarea')
     if (el) el.focus()
   })
 }
@@ -1204,39 +1299,120 @@ onBeforeUnmount(() => {
   margin: 6px 0 3px;
 }
 
-.ai-input {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  padding: 10px 14px;
+.ai-composer {
+  margin: 0 14px;
+  padding: 8px 10px 8px 12px;
   background: #fff;
-  border-top: 1px solid #eef0f5;
+  border: 1px solid #e3e6ec;
+  border-radius: 14px;
+  transition: border-color 0.18s, box-shadow 0.18s;
 }
-.ai-send {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+.ai-composer:focus-within {
+  border-color: #4f6ef7;
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.08);
+}
+.ai-composer-text .el-textarea__inner {
+  padding: 0;
   border: none;
+  box-shadow: none;
+  font-size: 13.5px;
+  line-height: 1.6;
+  background: transparent;
+  resize: none;
+}
+.ai-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.ai-plus {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #e3e6ec;
+  border-radius: 50%;
+  background: #fff;
+  color: #5c6472;
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
-  background: linear-gradient(135deg, #4f6ef7, #7c3aed);
+  flex-shrink: 0;
+}
+.ai-plus:hover:not(:disabled) {
+  border-color: #4f6ef7;
+  color: #4f6ef7;
+}
+.ai-plus:disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+.ai-attach-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 190px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #eff3ff;
+  color: #3b5bdb;
+  font-size: 12px;
+}
+.attach-chip .chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.attach-chip .chip-del {
+  cursor: pointer;
+  color: #8fa3e8;
+}
+.attach-chip .chip-del:hover {
+  color: #ef4444;
+}
+.attach-parsing {
+  color: #8a8f99;
+  background: #f5f6f8;
+}
+.ai-composer-send {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #2563eb;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
   flex-shrink: 0;
 }
-.ai-stop {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
+.ai-composer-send:hover {
+  background: #1d4ed8;
+}
+.ai-composer-send.ai-stop {
   background: #ef4444;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+}
+.attach-menu {
+  padding: 4px 0;
+}
+.attach-menu-item {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #1f2329;
+  cursor: pointer;
+}
+.attach-menu-item:hover {
+  background: #f4f6fb;
+  color: #4f6ef7;
 }
 .stop-square {
   width: 12px;
