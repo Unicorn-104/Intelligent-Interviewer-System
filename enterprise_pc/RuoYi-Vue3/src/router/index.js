@@ -168,7 +168,7 @@ export const constantRoutes = [
       },
       {
         path: 'candidates/unscreened',
-        redirect: { path: '/enterprise/resume-screening' },
+        redirect: { path: '/enterprise/resume-screening/ai', query: { group: 'unscored' } },
         name: 'EnterpriseCandidateUnscreened'
       },
       {
@@ -176,12 +176,6 @@ export const constantRoutes = [
         component: () => import('@/views/enterprise/candidates/process.vue'),
         name: 'EnterpriseCandidateProcess',
         meta: { title: '候选人流程' }
-      },
-      {
-        path: 'resume-screening',
-        component: () => import('@/views/enterprise/screening/index.vue'),
-        name: 'EnterpriseResumeScreening',
-        meta: { title: '投递详情' }
       },
       {
         path: 'resume-screening/ai',

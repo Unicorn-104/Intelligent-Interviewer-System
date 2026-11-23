@@ -60,6 +60,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         </choose>
     </sql>
 
+    <!-- 抽题场景没有 scope 参数，只能按企业范围过滤（平台题 + 本企业题） -->
+    <sql id="questionScopeByCompany">
+        <choose>
+            <when test="companyId != null">
+                and (eqs_company_id is null or eqs_company_id = #{companyId})
+            </when>
+            <otherwise>
+                and eqs_company_id is null
+            </otherwise>
+        </choose>
+    </sql>
+
     <select id="selectQuestionList" resultType="java.util.LinkedHashMap">
         <include refid="questionColumns"/>
         where 1 = 1
@@ -136,7 +148,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 #{exId}
             </foreach>
         </if>
-        <include refid="questionScopeFilter"/>
+        <include refid="questionScopeByCompany"/>
         order by rand()
         limit #{limit}
     </select>
@@ -153,7 +165,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <if test="skillTag != null and skillTag != ''">
             and eqs_skill_tag like concat('%', #{skillTag}, '%')
         </if>
-        <include refid="questionScopeFilter"/>
+        <include refid="questionScopeByCompany"/>
     </select>
 
     <!-- 投递记录所属企业，用于候选人考试抽题时限定题库范围 -->
