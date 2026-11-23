@@ -26,10 +26,10 @@ import com.ruoyi.ai.core.ToolResult;
 public class GetQuestionDetailTool extends AbstractAgentTool
 {
     private static final int MAX_IDS = 5;
-    private static final int MAX_CONTENT = 600;
+    private static final int MAX_CONTENT = 1000;
     private static final int MAX_ANSWER = 400;
     private static final int MAX_ANALYSIS = 600;
-    private static final int MAX_OPTIONS = 300;
+    private static final int MAX_OPTIONS = 1000;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -170,12 +170,9 @@ public class GetQuestionDetailTool extends AbstractAgentTool
                 StringBuilder sb = new StringBuilder();
                 for (int i = 0; i < node.size(); i++)
                 {
-                    if (i > 0)
-                    {
-                        sb.append(" | ");
-                    }
-                    sb.append((char) ('A' + i)).append(". ")
-                            .append(ToolArgs.cut(node.get(i).asText(""), 60));
+                    // 每个选项独占一行，避免模型二次改写时漏项或合并
+                    sb.append('\n').append("  ").append((char) ('A' + i)).append(". ")
+                            .append(ToolArgs.cut(node.get(i).asText(""), 120));
                 }
                 return ToolArgs.cut(sb.toString(), MAX_OPTIONS);
             }
