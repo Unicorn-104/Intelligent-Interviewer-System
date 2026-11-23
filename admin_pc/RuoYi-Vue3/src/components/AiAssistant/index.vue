@@ -80,6 +80,30 @@
                 </div>
                 <div v-if="!m.content && m.role==='assistant'" class="ai-typing-dots"><span></span><span></span><span></span></div>
                 <div v-else class="ai-bubble" v-html="renderMd(m.content)"></div>
+                <div v-if="m.pending && m.pending.length" class="ai-pending">
+                  <div v-for="c in m.pending" :key="c.id" class="ai-pending-card">
+                    <div class="ai-pending-head">
+                      <span class="ai-pending-title">{{ c.title }}</span>
+                      <span class="ai-pending-tag" :class="'kind-' + c.kind">{{ kindLabel(c.kind) }}</span>
+                    </div>
+                    <div class="ai-pending-sum">{{ c.summary }}</div>
+                    <div v-if="c.result" class="ai-pending-res">{{ c.result }}</div>
+                    <div class="ai-pending-ops">
+                      <el-button
+                        v-if="!c.done"
+                        size="small"
+                        type="primary"
+                        :loading="c.loading"
+                        @click="applyPending(m, c)"
+                        >确认执行</el-button
+                      >
+                      <el-button v-if="!c.done" size="small" :disabled="c.loading" @click="discardPending(m, c)"
+                        >取消</el-button
+                      >
+                      <span v-if="c.done" class="ai-pending-done">已提交</span>
+                    </div>
+                  </div>
+                </div>
                 <div v-if="m.content" class="ai-actions">
                   <span @click="copyText(m.content)"
                     ><el-icon :size="12"><DocumentCopy /></el-icon>复制</span
@@ -116,7 +140,7 @@
             </button>
             <button v-else class="ai-send ai-stop" @click="stop"><span class="stop-square"></span></button>
           </div>
-          <div class="ai-foot">只读查询 · 不会修改业务数据</div>
+          <div class="ai-foot">查数据直接答 · 写题库需你点卡片确认</div>
         </div>
       </div>
     </el-drawer>
@@ -405,7 +429,7 @@ async function send(preset) {
   const s = sessions.value.find((x) => x.id === currentId.value)
   if (s.msgs.length === 0) s.title = text.slice(0, 12)
   s.msgs.push({ role: 'user', content: text })
-  const aiMsg = { role: 'assistant', content: '', route: null, tool: '' }
+  const aiMsg = { role: 'assistant', content: '', route: null, tool: '', pending: [] }
   s.msgs.push(aiMsg)
   loading.value = true
   toolTip.value = ''
@@ -426,6 +450,8 @@ async function send(preset) {
     const decoder = new TextDecoder('utf-8')
     let buf = ''
     let expectTool = false
+    let expectAnswer = false
+    let expectPending = false
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -434,12 +460,34 @@ async function send(preset) {
       buf = lines.pop()
       for (const line of lines) {
         if (line.startsWith('event:')) {
-          expectTool = line.trim().endsWith('tool')
+          const evName = line.slice(6).trim()
+          expectTool = evName === 'tool'
+          expectAnswer = evName === 'answer'
+          expectPending = evName === 'pending'
           continue
         }
         if (!line.startsWith('data:')) continue
         const d = line.slice(5).trim()
         if (!d || d === '[DONE]') continue
+        if (expectPending) {
+          try {
+            aiMsg.pending = JSON.parse(d)
+          } catch (e) {
+            /* 解析失败忽略，不影响正文 */
+          }
+          expectPending = false
+          continue
+        }
+        if (expectAnswer) {
+          try {
+            aiMsg.content += JSON.parse(d).text || ''
+          } catch (e) {
+            /* 解析失败忽略 */
+          }
+          expectAnswer = false
+          await scrollBottom()
+          continue
+        }
         if (expectTool) {
           aiMsg.tool = d
           toolTip.value = d
@@ -468,6 +516,60 @@ async function send(preset) {
     await scrollBottom()
     focusInput()
   }
+}
+
+function kindLabel(kind) {
+  if (kind === 'create') return '建题'
+  if (kind === 'classify') return '改分类/题型'
+  if (kind === 'undo') return '撤销批次'
+  return '待确认'
+}
+
+/** 用户点"确认执行"：真正落库，权限由后端 content:question:add 校验。 */
+async function applyPending(msg, card) {
+  if (card.loading || card.done) return
+  card.loading = true
+  try {
+    const resp = await fetch('/prod-api/ai/assistant/pending/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
+      body: JSON.stringify({ id: card.id })
+    })
+    const payload = await resp.json()
+    if (!payload || payload.code !== 200) {
+      card.result = '执行失败：' + ((payload && payload.msg) || '接口异常')
+      return
+    }
+    const d = payload.data || {}
+    card.done = true
+    if (d.kind === 'create') {
+      card.result = `已入库 ${d.inserted} 题${d.failed ? '，失败 ' + d.failed + ' 题' : ''}，批次 #${d.batchId}`
+    } else if (d.kind === 'classify') {
+      card.result = `已更新 ${d.updated} 题`
+    } else {
+      card.result = `已撤销：删除 ${d.deleted} 题${d.skipped ? '，保留 ' + d.skipped + ' 题' : ''}`
+    }
+  } catch (e) {
+    card.result = '请求失败：' + (e.message || '网络错误')
+  } finally {
+    card.loading = false
+  }
+}
+
+/** 用户点"取消"：作废草稿，不落库。 */
+async function discardPending(msg, card) {
+  if (card.loading) return
+  try {
+    await fetch('/prod-api/ai/assistant/pending/discard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
+      body: JSON.stringify({ id: card.id })
+    })
+  } catch (e) {
+    /* 取消失败不影响界面状态 */
+  }
+  card.done = true
+  card.result = '已取消，未写入'
 }
 
 function focusInput() {
@@ -920,5 +1022,81 @@ onBeforeUnmount(() => {
   color: #c0c4cc;
   padding: 6px;
   background: #fff;
+}
+
+/* 待确认动作卡片：写操作必须在这里点确认才落库 */
+.ai-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  max-width: 520px;
+}
+
+.ai-pending-card {
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #1f4e79;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.ai-pending-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-pending-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f4e79;
+}
+
+.ai-pending-tag {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+  color: #2f7a6b;
+  background: #e8f5f1;
+  border: 1px solid #bfe3da;
+}
+
+.ai-pending-tag.kind-undo {
+  color: #b45309;
+  background: #fdf4e7;
+  border-color: #f3d8ae;
+}
+
+.ai-pending-sum {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: #4b5563;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ai-pending-res {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #2f7a6b;
+  background: #f5fbf9;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.ai-pending-ops {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-pending-done {
+  font-size: 12px;
+  color: #9ca3af;
 }
 </style>
