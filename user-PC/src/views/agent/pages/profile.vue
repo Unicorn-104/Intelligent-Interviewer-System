@@ -105,6 +105,7 @@ function renderAvatar(avatar) {
 }
 
 function renderProfileSummary(profile) {
+  userStore.avatar = resolveAvatarUrl(profile.avatar)
   const name = getDisplayName(profile)
   const meta = document.querySelectorAll('.identity-meta span')
   byId('profileTitle').textContent = name

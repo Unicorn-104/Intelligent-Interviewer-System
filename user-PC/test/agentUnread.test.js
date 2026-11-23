@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, reactive, ref } from 'vue'
 import { createUnreadCounter, unreadBadge, unreadCount } from '../src/utils/agentUnread.js'
 import { messageContentCard, messagePreview } from '../src/utils/agentMessage.js'
 import { mergeMessagePages, messagePageData } from '../src/utils/agentMessagePage.js'
@@ -42,6 +42,41 @@ function messagePage(overrides = {}) {
   }, ['loadSessions', 'selectSession', 'refreshMessages', 'sessions', 'messages', 'selectedSessionId', 'activeView', 'loadMessages', 'loadOlderMessages', 'hasOlderMessages', 'messagesContainer', 'hasPendingMessages', 'messageSyncError', 'selectSystem'])
   return { page, document, events }
 }
+
+function avatarTopbar(store) {
+  return componentScript('../src/components/agent/AgentTopbar.vue', {
+    ref, computed, createUnreadCounter, unreadBadge,
+    defaultAvatar: '/assets/default-avatar.jpg',
+    defineProps() {}, useRouter: () => ({}), useRoute: () => ({ fullPath: '/index' }),
+    hasCandidateAccessToken: () => true, useUserStore: () => store,
+    onMounted() {}, onBeforeUnmount() {}
+  }, ['displayAvatar', 'handleAvatarError'])
+}
+
+test('顶部头像读取账号资料并响应上传、删除和切换账号，不再显示昵称首字', () => {
+  const store = reactive({ avatar: 'https://app.local/dev-api/profile/avatar.png' })
+  const topbar = avatarTopbar(store)
+  assert.equal(topbar.displayAvatar.value, store.avatar)
+  store.avatar = 'https://app.local/dev-api/profile/new-avatar.png'
+  assert.equal(topbar.displayAvatar.value, store.avatar)
+  store.avatar = ''
+  assert.equal(topbar.displayAvatar.value, '/assets/default-avatar.jpg')
+  store.avatar = undefined
+  assert.equal(topbar.displayAvatar.value, '/assets/default-avatar.jpg')
+})
+
+test('顶部头像加载失败回退默认图，更换头像后恢复，旧图片错误不覆盖新头像', () => {
+  const store = reactive({ avatar: '/dev-api/profile/missing.png' })
+  const topbar = avatarTopbar(store)
+  const failed = store.avatar
+  topbar.handleAvatarError({ currentTarget: { getAttribute: () => failed } })
+  assert.equal(topbar.displayAvatar.value, '/assets/default-avatar.jpg')
+  topbar.handleAvatarError({ currentTarget: { getAttribute: () => '/assets/default-avatar.jpg' } })
+  assert.equal(topbar.displayAvatar.value, '/assets/default-avatar.jpg')
+  store.avatar = '/dev-api/profile/replacement.png'
+  topbar.handleAvatarError({ currentTarget: { getAttribute: () => failed } })
+  assert.equal(topbar.displayAvatar.value, store.avatar)
+})
 
 test('未读数规范化并将大计数截为 99+，零未读不显示角标', () => {
   assert.equal(unreadCount('12'), 12)
@@ -108,7 +143,7 @@ test('实际导航读取 IM 的顶层 count，定时刷新、恢复可见及卸�
   }
   window.clearInterval = timer => { cleared = timer === 11 }
   const topbar = componentScript('../src/components/agent/AgentTopbar.vue', {
-    ref, computed, createUnreadCounter, unreadBadge, window, document,
+    ref, computed, createUnreadCounter, unreadBadge, window, document, defaultAvatar: '/assets/default-avatar.jpg',
     defineProps() {}, useRouter: () => ({}), useRoute: () => ({ fullPath: '/index' }), hasCandidateAccessToken: () => true, useUserStore: () => ({}),
     onMounted: callback => mounted.push(callback),
     onBeforeUnmount: callback => unmounted.push(callback),
@@ -151,7 +186,7 @@ test('游客导航不查询未读数也不启动定时轮询', () => {
   let privateRequests = 0
   let timers = 0
   const topbar = componentScript('../src/components/agent/AgentTopbar.vue', {
-    ref, computed, createUnreadCounter, unreadBadge,
+    ref, computed, createUnreadCounter, unreadBadge, defaultAvatar: '/assets/default-avatar.jpg',
     window: { setInterval: () => { timers++ } }, document: { visibilityState: 'visible' },
     defineProps() {}, useRouter: () => ({}), useRoute: () => ({ fullPath: '/index' }),
     hasCandidateAccessToken: () => false, useUserStore: () => ({}),
