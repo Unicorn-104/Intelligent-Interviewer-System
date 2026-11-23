@@ -219,7 +219,7 @@ class EvaluationReportPage extends StatelessWidget {
             // 完整回放链接（UC-12 步骤7：推送至终审工作台）
             OutlinedButton.icon(
               onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
+                SnackBar(duration: const Duration(milliseconds: 1500),
                   content: Text('打开完整面试回放：${comment['recordingUrl']}（模拟）'),
                 ),
               ),

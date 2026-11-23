@@ -405,7 +405,7 @@ class _EnterpriseAiPageState extends State<EnterpriseAiPage>
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context)
-                          .showSnackBar(const SnackBar(content: Text('已复制回答')));
+                          .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已复制回答')));
                     }
                   },
                   icon: const Icon(Icons.copy_outlined, size: 14),

@@ -10,6 +10,7 @@ import com.ruoyi.system.domain.app.AppJob;
 import com.ruoyi.system.mapper.app.AppJobMapper;
 import com.ruoyi.system.service.IEnterpriseJobService;
 import com.ruoyi.system.service.app.IAppJobService;
+import com.ruoyi.enterprise.service.EntResumeSnapshotService;
 
 @Service
 public class AppJobServiceImpl implements IAppJobService
@@ -19,6 +20,9 @@ public class AppJobServiceImpl implements IAppJobService
 
     @Autowired
     private IEnterpriseJobService enterpriseJobService;
+
+    @Autowired
+    private EntResumeSnapshotService entResumeSnapshotService;
 
     @Override
     public AppHomeData selectHomeData(Long userId, String filter)
@@ -83,6 +87,15 @@ public class AppJobServiceImpl implements IAppJobService
         {
             throw new ServiceException("投递失败，请稍后重试");
         }
+        // 生成企业独立投递快照：与 Agent 投递一致，复制源简历 PDF 与结构化内容为企业不可变对象，
+        // 缺快照会导致企业端投递详情 SNAPSHOT_NOT_AVAILABLE。countApplication 查重保证候选人+岗位唯一。
+        Long applicationId = jobMapper.selectAppId(candidateId, positionId);
+        if (applicationId == null)
+        {
+            throw new ServiceException("投递记录读取失败，请稍后重试");
+        }
+        entResumeSnapshotService.createForApplication(
+                applicationId, userId, candidateId, companyId, positionId, resumeId);
         // 同步创建投递流程实例，企业端岗位详情/漏斗/筛选均以实例为候选人来源
         enterpriseJobService.ensureProcessInstance(companyId, candidateId, positionId);
     }

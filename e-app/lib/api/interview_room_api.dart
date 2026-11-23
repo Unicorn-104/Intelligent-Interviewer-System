@@ -73,11 +73,11 @@ Future<void> startSession(int sessionId) async {
   await _client.post('/system/conference/session/$sessionId/start');
 }
 
-/// HR 发起视频面试：生成会议场次与候选人会议链接（与 PC 端一致）。
+/// HR 发起视频面试：新邀约创建预约；从日程开始时按 appointmentId 复用已有预约。
 /// 已对接：POST /system/conference/link
 ///
-/// 后端每次发起都会新建场次并签发新的随机链接，同时取消该候选人旧的
-/// 待面试预约与未结束场次；发起后候选人流程状态自动推进为「面试中」。
+/// 不带 appointmentId 时创建新的预约和场次；带 appointmentId 时复用已有预约。
+/// 发起后候选人流程状态自动推进为「面试中」。
 /// 面试方式 mode 与面试官人数严格联动：1-纯AI（0人）、2-AI+单面试官（1人）、
 /// 3-AI+多面试官（≥2人）、4-无AI纯人工（≥1人）。
 Future<Map<String, dynamic>> createRoomLink({
@@ -87,6 +87,7 @@ Future<Map<String, dynamic>> createRoomLink({
   int? durationMinutes,
   int? mode,
   List<int>? interviewerIds,
+  int? appointmentId,
 }) async {
   final response = await _client.post(
     '/system/conference/link',
@@ -97,6 +98,7 @@ Future<Map<String, dynamic>> createRoomLink({
       'durationMinutes': durationMinutes,
       'mode': mode,
       'interviewerIds': interviewerIds,
+      'appointmentId': appointmentId,
     },
   );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
@@ -212,6 +214,24 @@ Future<Map<String, dynamic>> getSessionResult(int sessionId) async {
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
+/// 开始录制（LiveKit Egress 服务端房间合成录制，仅主面试官可操作）。
+/// 已对接：POST /system/conference/session/{sessionId}/recording/start
+Future<Map<String, dynamic>> startRecording(int sessionId) async {
+  final response = await _client.post(
+    '/system/conference/session/$sessionId/recording/start',
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
+/// 停止录制（停止 Egress 任务，文件落盘结果由 Webhook 回填）。
+/// 已对接：POST /system/conference/session/{sessionId}/recording/stop
+Future<Map<String, dynamic>> stopRecording(int sessionId) async {
+  final response = await _client.post(
+    '/system/conference/session/$sessionId/recording/stop',
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
 /// UC-12 后置条件1：面试录制列表（合规存档）。
 /// 已对接：GET /system/conference/recordings
 Future<List<Map<String, dynamic>>> listRecordings({
@@ -235,11 +255,11 @@ Future<List<Map<String, dynamic>>> listRecordings({
       const <Map<String, dynamic>>[];
 }
 
-/// UC-12：面试回放。
-/// 已对接：GET /system/conference/recordings/{sessionId}
-Future<Map<String, dynamic>> getRecordingPlayback(int sessionId) async {
+/// UC-12：录制详情（含面试官、时间轴打点、录制地址、访问级别）。
+/// 已对接：GET /system/conference/recordings/{recordingId}
+Future<Map<String, dynamic>> getRecordingDetail(int recordingId) async {
   final response = await _client.get(
-    '/system/conference/recordings/$sessionId',
+    '/system/conference/recordings/$recordingId',
   );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
@@ -272,6 +292,13 @@ Future<void> downloadRecording(
     '/system/conference/recordings/$sessionId/download',
     body: payload,
   );
+}
+
+/// UC-12：录制存储空间占用（已用/上限/使用率/保留天数）。
+/// 已对接：GET /system/conference/recordings/storage
+Future<Map<String, dynamic>> getStorageUsage() async {
+  final response = await _client.get('/system/conference/recordings/storage');
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
 /// UC-12：录制存储策略查看。

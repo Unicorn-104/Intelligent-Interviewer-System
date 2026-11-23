@@ -53,7 +53,7 @@ class _InterviewEntrancePageState extends State<InterviewEntrancePage> {
     final messenger = ScaffoldMessenger.of(context);
     await Future<void>.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
-    messenger.showSnackBar(const SnackBar(content: Text('面试须知已确认（模拟）')));
+    messenger.showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('面试须知已确认（模拟）')));
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const DeviceCheckPage()),

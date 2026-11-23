@@ -202,7 +202,8 @@ class JobCandidatesTab extends StatelessWidget {
               score: ranked[index].score,
               onOpen: () => onOpen(ranked[index].candidate),
             ),
-            const SizedBox(height: 12),
+            // 紧凑化：卡片间距由 12 略减到 10，连续排列更密集但仍可区分
+            const SizedBox(height: 10),
           ],
         ],
       ),
@@ -354,12 +355,16 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
   @override
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
+    // 轻微柔和阴影：仅 1 级高度，阴影用低透明度深蓝，避免过重
+    elevation: 1,
+    shadowColor: const Color(0x141A3C6E),
     child: Stack(
       children: [
         Padding(
           padding: const EdgeInsets.only(right: 44),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            // 紧凑化：卡片内边距由 12 收紧到 10
+            padding: const EdgeInsets.all(10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -407,7 +412,8 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
           right: 0,
           width: 44,
           child: Material(
-            color: AppColors.hairline,
+            // 右侧展开区背景改用白色（与卡片同色），不再显示浅灰竖条，仅保留 chevron 图标
+            color: AppColors.canvas,
             child: InkWell(
               key: ValueKey('job-candidate-expand-$_id'),
               onTap: _id == null ? null : widget.onOpen,
@@ -448,30 +454,51 @@ class _CandidateScore extends StatelessWidget {
       label: '通用评分：${score ?? '暂无评分'}',
       excludeSemantics: true,
       child: SizedBox.square(
-        dimension: 56,
+        // 紧凑化：评分圆环由 56 缩小到 48，与设计稿右上角圆环占比一致
+        dimension: 48,
         child: Stack(
           alignment: Alignment.center,
           children: [
             SizedBox.expand(
               child: CircularProgressIndicator(
                 value: score == null ? 0 : score!.clamp(0, 100) / 100,
-                strokeWidth: 4,
+                // 环条随尺寸略收细，避免小圆环下显得过粗
+                strokeWidth: 3.5,
                 backgroundColor: AppColors.hairline,
                 color: color,
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(7),
+              // 内边距同步收小，保证内容居中且不压环
+              padding: const EdgeInsets.all(6),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Text(
-                  score?.toStringAsFixed(1) ?? '—',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: color,
-                    fontWeight: FontWeight.w700,
-                  ),
+                // 纵向排列：分数在上、极小「ai评分」提示在下，整体随圆环自适应缩放
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      score?.toStringAsFixed(1) ?? '—',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        // 字号随圆环缩小，保持视觉平衡
+                        fontSize: 14,
+                        color: color,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    // 数字下方极小提示文字，标明此处为 AI 评分（无评分「—」时同样展示）
+                    const Text(
+                      'ai评分',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 7,
+                        height: 1,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

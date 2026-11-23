@@ -17,6 +17,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where pos_id = #{positionId} and pos_company_id = #{companyId}
     </select>
 
+    <select id="selectPositionContext" resultType="java.util.LinkedHashMap">
+        select p.pos_id as positionId, p.pos_title as positionTitle,
+               json_unquote(json_extract(p.pos_jd_json, '$.description')) as description,
+               p.pos_education_required as education, p.pos_experience_required as experience,
+               (select group_concat(distinct ps.psk_name order by ps.psk_required desc separator ',')
+                from t_pos_skill ps where ps.psk_position_id = p.pos_id) as skills
+        from t_pos p
+        where p.pos_id = #{positionId} and p.pos_company_id = #{companyId}
+    </select>
+
     <!-- 题库：eqs_company_id 为空表示平台题库，非空表示企业私有题库 -->
     <sql id="questionColumns">
         select eqs_id as questionId, eqs_type as type, eqs_type_name as typeName,
@@ -161,13 +171,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                p.epa_duration_min as durationMin, p.epa_rule_json as ruleJson,
                p.epa_status as status,
                date_format(p.epa_created_at, '%Y-%m-%d %H:%i') as createdAt,
-               (select count(1) from t_exam_paper_question q where q.epq_paper_id = p.epa_id) as questionCount
+               count(q.epq_id) as questionCount
         from t_exam_paper p
         join t_pos pos on pos.pos_id = p.epa_position_id
+        left join t_exam_paper_question q on q.epq_paper_id = p.epa_id
         where pos.pos_company_id = #{companyId}
         <if test="positionId != null">
             and p.epa_position_id = #{positionId}
         </if>
+        group by p.epa_id, p.epa_name, p.epa_position_id, pos.pos_title,
+                 p.epa_total_score, p.epa_duration_min, p.epa_rule_json,
+                 p.epa_status, p.epa_created_at
         order by p.epa_id desc
     </select>
 
@@ -203,11 +217,33 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select max(epa_id) from t_exam_paper
     </select>
 
+    <select id="selectRecentQuestionStems" resultType="java.lang.String">
+        select eqs_content from t_exam_question
+        where (eqs_company_id is null or eqs_company_id = #{companyId})
+        order by eqs_id desc
+        limit #{limit}
+    </select>
+
+    <select id="searchQuestionStems" resultType="java.lang.String">
+        select eqs_content from t_exam_question
+        where (eqs_company_id is null or eqs_company_id = #{companyId})
+          and eqs_content like concat('%', #{keyword}, '%')
+        order by eqs_id desc
+        limit #{limit}
+    </select>
+
     <update id="updatePaper">
         update t_exam_paper
         set epa_name = #{name}, epa_total_score = #{totalScore}, epa_duration_min = #{durationMin},
             epa_rule_json = #{ruleJson}, epa_status = #{status}, epa_updated_at = now()
         where epa_id = #{id}
+    </update>
+
+    <update id="updatePaperStatus">
+        update t_exam_paper p
+        join t_pos pos on pos.pos_id = p.epa_position_id
+        set p.epa_status = #{status}, p.epa_updated_at = now()
+        where p.epa_id = #{paperId} and pos.pos_company_id = #{companyId}
     </update>
 
     <delete id="deletePaper">

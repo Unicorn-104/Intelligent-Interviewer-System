@@ -16,6 +16,7 @@ public interface RescheduleRequestMapper
     Map<String, Object> selectAppointment(@Param("appointmentId") Long appointmentId);
     Long lockAppointment(@Param("appointmentId") Long appointmentId);
     int countPending(@Param("appointmentId") Long appointmentId);
+    int insertEnterpriseRecord(Map<String, Object> request);
     int insertRequest(Map<String, Object> request);
     List<Long> selectCompanyUserIds(@Param("companyId") Long companyId);
     int insertNotification(@Param("receiverId") Long receiverId, @Param("title") String title,

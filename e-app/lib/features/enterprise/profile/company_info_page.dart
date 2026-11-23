@@ -118,7 +118,7 @@ class _CompanyInfoPageState extends State<CompanyInfoPage> {
     if (_name.text.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('企业名称不能为空')));
+      ).showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('企业名称不能为空')));
       return;
     }
     setState(() => _saving = true);
@@ -138,13 +138,13 @@ class _CompanyInfoPageState extends State<CompanyInfoPage> {
       setState(() => _editing = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('企业信息已更新')));
+      ).showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('企业信息已更新')));
       await reload();
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+        ).showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(_friendlyError(error))));
       }
     } finally {
       if (mounted) setState(() => _saving = false);

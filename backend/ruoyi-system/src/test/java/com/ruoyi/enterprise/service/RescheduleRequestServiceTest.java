@@ -25,10 +25,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;import com.github.pagehelper.PageHelper;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.enterprise.domain.ProcessStageInstance;
+import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.mapper.RescheduleRequestMapper;
-import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.impl.InterviewScheduleServiceImpl;
+import com.ruoyi.enterprise.service.ApplicationStatusService;
+import com.ruoyi.enterprise.service.ProcessStageInstanceService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
@@ -115,7 +118,8 @@ public class RescheduleRequestServiceTest
             "create table t_int_session(ses_id bigint, ses_appointment_id bigint, ses_candidate_id bigint, ses_position_id bigint, ses_status int)",
             "create table t_int_evaluation(evl_session_id bigint, evl_hr_status int)",
             "create table t_tal_status_log(tsl_id bigint auto_increment primary key, tsl_candidate_id bigint, tsl_from_status int, tsl_to_status int, tsl_created_at timestamp)",
-            "create table t_app_record(app_id bigint auto_increment primary key, app_candidate_id bigint, app_position_id bigint, app_status int, app_updated_at timestamp)",
+            // app_created_at 与生产 t_app_record 对齐，供面试日程 applicationId 关联子查询按业务时间过滤
+            "create table t_app_record(app_id bigint auto_increment primary key, app_candidate_id bigint, app_position_id bigint, app_status int, app_created_at timestamp default current_timestamp, app_updated_at timestamp)",
             "create table t_sch_slot(slt_id bigint auto_increment primary key, slt_interviewer_id bigint, slt_position_id bigint, slt_start_time timestamp, slt_end_time timestamp, slt_status int, slt_updated_at timestamp)",
             "create table t_sch_appointment(apt_id bigint auto_increment primary key, apt_candidate_id bigint, apt_position_id bigint, apt_stage_id bigint, apt_stage_name varchar(100), apt_stage_type int, apt_stage_order int, apt_interviewer_id bigint, apt_slot_id bigint, apt_start_time timestamp, apt_end_time timestamp, apt_status int, apt_notified int default 0, apt_meeting_url varchar(255), apt_room_id varchar(100), apt_updated_at timestamp)",
             "insert into sys_user values(19,'0','合成面试官'),(20,'0','合成面试官二'),(101,'0','合成候选人'),(102,'0','合成候选人二'),(9,'0','合成HR')",
@@ -165,9 +169,26 @@ public class RescheduleRequestServiceTest
         ReflectionTestUtils.setField(scheduleTarget,"scheduleMapper",scheduleMapper);
         ReflectionTestUtils.setField(scheduleTarget,"dashboardMapper",companies);
         ReflectionTestUtils.setField(scheduleTarget,"jobMapper",jobs);
-        ReflectionTestUtils.setField(scheduleTarget,"screeningMapper",mock(ScreeningMapper.class));
         ReflectionTestUtils.setField(scheduleTarget,"rescheduleMessages",notifications);
-        ReflectionTestUtils.setField(scheduleTarget,"screeningMapper",mock(ScreeningMapper.class));
+        // screeningMapper 字段已移除（原有两行重复注入）；对齐「流程节点 + 状态机」模型：
+        // 1) applicationStatusMapper：selectAppId 返回投递主键，selectApplicationById 返回状态与流程实例
+        var appStatusMapper = mock(ApplicationStatusMapper.class);
+        when(appStatusMapper.selectAppId(anyLong(), anyLong())).thenAnswer(inv -> inv.getArgument(0));
+        when(appStatusMapper.selectApplicationById(anyLong())).thenReturn(Map.of(
+                "appId", 1L, "status", 1, "instanceId", 900L));
+        ReflectionTestUtils.setField(scheduleTarget, "applicationStatusMapper", appStatusMapper);
+        ReflectionTestUtils.setField(scheduleTarget, "applicationStatusService", mock(ApplicationStatusService.class));
+        // 2) stageInstanceService：节点服务为 mock，listNodes 含「已通过笔试节点」，使后续面试的笔试闸门放行
+        var stageInstances = mock(ProcessStageInstanceService.class);
+        var examPassed = new ProcessStageInstance();
+        examPassed.setNodeType(ProcessStageInstance.TYPE_EXAM);
+        examPassed.setResult(ProcessStageInstance.RESULT_PASS);
+        var createdNode = new ProcessStageInstance();
+        createdNode.setId(1L);
+        when(stageInstances.getOrCreate(anyLong(), any(), anyInt(), anyString(), anyLong(), any()))
+                .thenReturn(createdNode);
+        when(stageInstances.listNodes(anyLong())).thenReturn(List.of(examPassed));
+        ReflectionTestUtils.setField(scheduleTarget, "stageInstanceService", stageInstances);
         var status = mock(TalStatusService.class);
         when(status.change(anyLong(), anyInt(), anyList(), anyLong(), any(), any(), anyLong())).thenReturn(true);
         ReflectionTestUtils.setField(scheduleTarget,"talStatusService",status);

@@ -349,7 +349,7 @@ class _TalentInterviewRescheduleSheetState
       await _loadCalendar();
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('面试已改期')));
+            .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('面试已改期')));
       }
     } catch (error) {
       if (mounted) {

@@ -9,10 +9,12 @@ class MessageAvatar extends StatelessWidget {
     this.url,
     this.system = false,
     this.square = false,
+    this.size = 48,
   });
   final String name;
   final String? url;
   final bool system, square;
+  final double size;
   @override
   Widget build(BuildContext context) {
     final fallback = Center(
@@ -31,22 +33,26 @@ class MessageAvatar extends StatelessWidget {
               ),
             ),
     );
+    final content = ColoredBox(
+      color: AppColors.interactiveSoft,
+      child: url == null
+          ? fallback
+          : Image.network(
+              url!,
+              fit: BoxFit.cover,
+              headers: const {'Referer': 'http://localhost/'},
+              errorBuilder: (_, _, _) => fallback,
+            ),
+    );
     return SizedBox(
-      width: 48,
-      height: 48,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(square ? 6 : 24),
-        child: ColoredBox(
-          color: AppColors.interactiveSoft,
-          child: url == null
-              ? fallback
-              : Image.network(
-                  url!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => fallback,
-                ),
-        ),
-      ),
+      width: size,
+      height: size,
+      child: square
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: content,
+            )
+          : ClipOval(child: content),
     );
   }
 }

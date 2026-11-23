@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
+import '../../api/message_api.dart' as message_api;
 import 'interview/interview_workbench_page.dart';
 import 'interview/device_check_page.dart';
 import 'interview/practice_preload_page.dart';
@@ -41,17 +44,26 @@ class EnterpriseModuleShell extends StatefulWidget {
     super.key,
     required this.onLogout,
     this.tabBuilders,
+    this.loadMessageUnread = message_api.getMessageCenterUnreadCount,
+    this.pollMessageUnread = true,
   }) : assert(tabBuilders == null || tabBuilders.length == 4);
   final VoidCallback onLogout;
 
   /// Optional roots let navigation tests run without a network service.
   final List<WidgetBuilder>? tabBuilders;
 
+  /// IM 未读总数，用于底部消息 Tab 角标；可注入测试数据源。
+  final Future<int> Function() loadMessageUnread;
+
+  /// 是否周期刷新未读数；测试可关闭以避免定时器阻塞 pumpAndSettle。
+  final bool pollMessageUnread;
+
   @override
   State<EnterpriseModuleShell> createState() => _EnterpriseModuleShellState();
 }
 
-class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
+class _EnterpriseModuleShellState extends State<EnterpriseModuleShell>
+    with WidgetsBindingObserver {
   final _navigatorKeys = List.generate(4, (_) => GlobalKey<NavigatorState>());
   final _accountKey = GlobalKey<AccountPageState>();
   // 4 个根页面的 key，用于在 Tab 选中时调用各自的 scrollToTop()
@@ -60,6 +72,9 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
   final _messageKey = GlobalKey<MessageCenterPageState>();
   final _visited = <int>{0};
   int _index = 0;
+  int _messageUnread = 0;
+  bool _messageUnreadLoading = false;
+  Timer? _messageUnreadTimer;
   // 底部导航栏是否可见：进入子页面（嵌套 Navigator 有子路由）时隐藏、
   // 回到根页面时恢复，从而实现子页面全屏。
   bool _barVisible = true;
@@ -67,6 +82,50 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
   late final List<_TabBarObserver> _observers = [
     for (var i = 0; i < 4; i++) _TabBarObserver(_syncBarVisibility),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshMessageUnread();
+    if (widget.pollMessageUnread) {
+      _messageUnreadTimer = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) => _refreshMessageUnread(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _messageUnreadTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshMessageUnread();
+    }
+  }
+
+  Future<void> _refreshMessageUnread() async {
+    if (_messageUnreadLoading) return;
+    _messageUnreadLoading = true;
+    try {
+      final count = await widget.loadMessageUnread();
+      if (!mounted) return;
+      final next = count < 0 ? 0 : count;
+      if (next != _messageUnread) {
+        setState(() => _messageUnread = next);
+      }
+    } catch (_) {
+      // 未读数失败不阻断主导航，下一轮轮询或进入消息 Tab 时重试。
+    } finally {
+      _messageUnreadLoading = false;
+    }
+  }
 
   List<List<_FeatureEntry>> get _featureGroups => [
     [
@@ -184,6 +243,7 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
       });
     }
     if (index == 3) _accountKey.currentState?.reload();
+    if (index == 2) _refreshMessageUnread();
     // 同步底部栏显隐（根页面应显示底部栏）
     _syncBarVisibility();
     // 下一帧再让目标根页面回到顶部（首次访问时页面本帧才挂载）
@@ -225,8 +285,12 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
       case '/enterprise/meeting/ai':
         _openFeature(_interviews);
       default:
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('该功能请在 Web 端操作')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(milliseconds: 1500),
+            content: const Text('该功能请在 Web 端操作'),
+          ),
+        );
     }
   }
 
@@ -413,23 +477,23 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
         ? NavigationBar(
             selectedIndex: _index,
             onDestinationSelected: _selectTab,
-            destinations: const [
-              NavigationDestination(
+            destinations: [
+              const NavigationDestination(
                 icon: Icon(Icons.home_outlined),
                 selectedIcon: Icon(Icons.home),
                 label: '首页',
               ),
-              NavigationDestination(
+              const NavigationDestination(
                 icon: Icon(Icons.work_outline),
                 selectedIcon: Icon(Icons.work),
                 label: '岗位',
               ),
               NavigationDestination(
-                icon: Icon(Icons.chat_bubble_outline),
-                selectedIcon: Icon(Icons.chat_bubble),
+                icon: _messageIcon(selected: false),
+                selectedIcon: _messageIcon(selected: true),
                 label: '消息',
               ),
-              NavigationDestination(
+              const NavigationDestination(
                 icon: Icon(Icons.person_outline),
                 selectedIcon: Icon(Icons.person),
                 label: '我的',
@@ -437,6 +501,17 @@ class _EnterpriseModuleShellState extends State<EnterpriseModuleShell> {
             ],
           )
         : null,
+  );
+
+  Widget _messageIcon({required bool selected}) => Badge(
+    key: const ValueKey('message-unread-badge'),
+    backgroundColor: AppColors.error,
+    textColor: AppColors.canvas,
+    isLabelVisible: _messageUnread > 0,
+    label: Text(_messageUnread > 99 ? '99+' : '$_messageUnread'),
+    alignment: AlignmentDirectional.topEnd,
+    offset: const Offset(7, -5),
+    child: Icon(selected ? Icons.chat_bubble : Icons.chat_bubble_outline),
   );
 }
 

@@ -101,6 +101,20 @@
         select <include refid="publicColumns"/> <include refid="profileJoins"/>
         where <include refid="eligible"/> and u.user_id=#{userId}
     </select>
+    <select id="selectInterestedUsers" resultType="java.util.LinkedHashMap">
+        select <include refid="publicColumns"/>,
+               date_format((select max(i.int_updated_at) from t_usr_interest i
+                   where i.int_user_id = u.user_id and i.int_target_type = 1
+                     and i.int_target_id = #{positionId} and i.int_status = 1), '%Y-%m-%d %H:%i') as interestedAt
+        <include refid="profileJoins"/>
+        where <include refid="eligible"/>
+          and exists (select 1 from t_usr_interest i
+                      join t_pos p on p.pos_id = i.int_target_id
+                      where i.int_user_id = u.user_id and i.int_target_type = 1
+                        and i.int_target_id = #{positionId} and i.int_status = 1
+                        and p.pos_company_id = #{companyId})
+        order by interestedAt desc, u.user_id desc
+    </select>
     <select id="selectDirections" resultType="string">
         select distinct <include refid="intent"/> as direction <include refid="base"/>
         where <include refid="eligible"/> and <include refid="intent"/> is not null order by 1

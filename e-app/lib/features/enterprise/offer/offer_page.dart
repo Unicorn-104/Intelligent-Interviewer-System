@@ -91,7 +91,7 @@ class _OfferPageState extends State<OfferPage> {
       });
     });
     messenger.showSnackBar(
-      const SnackBar(content: Text('Offer 已发送（模拟），等待候选人确认')),
+      const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('Offer 已发送（模拟），等待候选人确认')),
     );
     await _load();
   }

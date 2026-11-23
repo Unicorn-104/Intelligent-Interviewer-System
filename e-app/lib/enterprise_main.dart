@@ -16,7 +16,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (AppConfig.trustBaotaCertificate) {
     final certificate = await rootBundle.load(
-      'assets/certificates/baota_root.pem',
+      'assets/certificates/p14_root.pem',
     );
     HttpOverrides.global = BackendHttpOverrides(
       origin: Uri.parse(AppConfig.apiBaseUrl),

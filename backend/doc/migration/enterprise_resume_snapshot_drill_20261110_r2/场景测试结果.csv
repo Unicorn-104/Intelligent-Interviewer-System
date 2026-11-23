@@ -1,0 +1,15 @@
+﻿scenario,test_case,expected_result,actual_result,status,evidence,detail
+Smoke,mysqlStartsAndReportsVersion8,一次性容器启动并报告MySQL8版本,MySQL 8.0.46,PASS,Testcontainers mysql:8.0,隔离容器约11秒就绪 版本经VERSION()核实
+A,scenarioA_firstMigration,首次迁移全流程通过,守卫与DDL/DML执行成功,PASS,ruoyi-system surefire,企业五表与分析表新列建立
+B,scenarioB_legacyUpgrade,旧版结构可幂等升级,升级路径校验通过,PASS,ruoyi-system surefire,兼容旧结构无重复执行
+C,scenarioC_repeatedApplicationAndAiBinding,重复投递与AI精确绑定,app_id/snapshot_id绑定正确,PASS,ruoyi-system surefire,多次投递不串用
+D,scenarioD_hashAndMultiset,哈希一致与多重集计数,双向COUNT无差异,PASS,ruoyi-system surefire,utf8mb4_bin口径
+E,scenarioE_classificationAndEvidence,PDF五分类与证据分层,分类结果符合预期,PASS,ruoyi-system surefire,FakeSource/Target纯算法验证
+F,f1_realCompositePkBlockedByGuard,未重构复合主键表CALL应被守卫中止,守卫2消息含单列主键且未RENAME,PASS,异常被捕获断言通过,安全机制正确拦截 无数据损失
+F,f2_singlePkFullRollback,单列主键完整归档回滚,归档4行新表2行manual-only不写入,PASS,容器内真实CALL,结构恢复经information_schema断言
+G,g_lifecycleIndependence,生命周期与快照独立性,五表独立不互相覆盖,PASS,ruoyi-system surefire,快照不可变
+H,h1_compositePkBlocksSecondInsert,第二条同三元组INSERT应被拒绝,Duplicate entry已捕获仍仅基线1行,PASS,MySQL 8.0.46,复合主键物理阻断证明方案A不可行
+H,h2_rebuildAllowsThreeVersions,重构后基线1加新3共4行共存,group4 llm3 manual1不覆盖,PASS,容器内真实重构,app_id/snapshot_id精确查询排序稳定
+H,h3_preciseUpdateAndSourceIsolation,asr_id精确更新与来源隔离,triple命中4 asr_id命中1,PASS,容器内真实UPDATE,llm与manual互不影响
+H,h4_tieTimestampDeterministicOrdering,同时间戳排序确定性,两次执行一致稳定取tieB,PASS,容器内真实查询,asr_id DESC消除同时间戳不确定性
+06,zeroSix_generatedSqlAndDbWriteback,06生成SQL与库回写,生成与回写校验通过,PASS,ruoyi-system surefire,放行规则与回写正确

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
@@ -5,11 +7,16 @@ import '../../../widgets/skeleton_list.dart';
 import '../talent/talent_page.dart';
 import '../interview/recording_page.dart';
 import '../schedule/reschedule_review_page.dart';
+import '../schedule/data/reschedule_review_data_source.dart';
 import 'account_settings_page.dart';
 import 'data/profile_data_source.dart';
 import 'models/profile_view_data.dart';
 import 'profile_edit_page.dart';
 import 'settings_page.dart';
+import 'enterprise_management_page.dart';
+import 'integration_settings_page.dart';
+import '../exam/exam_management_page.dart';
+import '../exam/exam_proctor_page.dart';
 import 'widgets/profile_avatar_view.dart';
 
 class AccountPage extends StatefulWidget {
@@ -31,16 +38,33 @@ class AccountPageState extends State<AccountPage> {
   int _request = 0, _avatarRevision = 0;
   // “我的”列表滚动控制器，用于 Tab 重新选中时回到顶部
   final ScrollController _scrollController = ScrollController();
+  final _rescheduleSource = RescheduleReviewDataSource();
+  int _reschedulePending = 0;
+  Timer? _rescheduleTimer;
   // 回到顶部请求标志（reload 时列表会被骨架替换，controller 无 client，需延迟执行）
   bool _scrollTopRequested = false;
   @override
   void initState() {
     super.initState();
     reload();
+    _rescheduleTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _loadReschedulePending(),
+    );
+  }
+
+  Future<void> _loadReschedulePending() async {
+    try {
+      final count = await _rescheduleSource.pendingCount();
+      if (mounted) setState(() => _reschedulePending = count);
+    } catch (_) {
+      // 角标属于辅助信息，接口暂不可用时不影响“我的”页面主体加载。
+    }
   }
 
   @override
   void dispose() {
+    _rescheduleTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -70,6 +94,7 @@ class AccountPageState extends State<AccountPage> {
   /// 每次进入“我的”重新读取服务端资料，保持企业壳原有刷新入口。
   Future<void> reload() async {
     if (_actionOpen) return;
+    _loadReschedulePending();
     final request = ++_request;
     setState(() {
       _loading = true;
@@ -106,6 +131,7 @@ class AccountPageState extends State<AccountPage> {
     } finally {
       if (mounted) setState(() => _actionOpen = false);
     }
+    _loadReschedulePending();
     if (!mounted || saved != true) return;
     _avatarRevision++;
     _message('个人资料已更新');
@@ -132,6 +158,28 @@ class AccountPageState extends State<AccountPage> {
       if (mounted) setState(() => _actionOpen = false);
     }
     if (mounted) await reload();
+  }
+
+  Future<void> _openEnterpriseSection(String name) async {
+    if (_actionOpen) return;
+    final page = switch (name) {
+      '部门管理' => const EnterpriseManagementPage(
+        section: EnterpriseManagementSection.departments,
+      ),
+      '成员管理' => const EnterpriseManagementPage(
+        section: EnterpriseManagementSection.members,
+      ),
+      '通知模板' => const EnterpriseManagementPage(
+        section: EnterpriseManagementSection.templates,
+      ),
+      '集成配置' => const IntegrationSettingsPage(),
+      _ => null,
+    };
+    if (page == null) {
+      _message('$name功能开发中，请在 Web 端操作');
+      return;
+    }
+    await _openTool(page);
   }
 
   @override
@@ -209,7 +257,9 @@ class AccountPageState extends State<AccountPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const EnterpriseManagementPanel(),
+                EnterpriseManagementPanel(
+                  onOpenSection: _openEnterpriseSection,
+                ),
                 const SizedBox(height: 16),
                 _recruitingTools(),
                 const SizedBox(height: 28),
@@ -235,6 +285,7 @@ class AccountPageState extends State<AccountPage> {
     } finally {
       if (mounted) setState(() => _actionOpen = false);
     }
+    _loadReschedulePending();
   }
 
   Widget _recruitingTools() => Container(
@@ -256,73 +307,95 @@ class AccountPageState extends State<AccountPage> {
           ),
         ),
         const SizedBox(height: 16),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        GridView.count(
+          crossAxisCount: 4,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 4,
+          crossAxisSpacing: 4,
+          childAspectRatio: .75,
           children: [
             for (final (label, icon, page, demo)
                 in const <(String, IconData, Widget, bool)>[
-                  (
-                    '人才库',
-                    Icons.people_outline,
-                    TalentPage(discovery: true),
-                    false,
-                  ),
-                  ('录播', Icons.video_library_outlined, RecordingPage(), true),
-                  (
-                    '改期审批',
-                    Icons.edit_calendar_outlined,
-                    RescheduleReviewPage(),
-                    false,
-                  ),
+                  ('人才库', Icons.people_outline, TalentPage(discovery: true), false),
+                  ('录播', Icons.video_library_outlined, RecordingPage(), false),
+                  ('改期审批', Icons.edit_calendar_outlined, RescheduleReviewPage(), false),
+                  ('笔试管理', Icons.assignment_outlined, ExamManagementPage(), false),
+                  ('监控监考', Icons.shield_outlined, ExamProctorPage(), false),
                 ])
-              Expanded(
-                child: InkWell(
+              InkWell(
                   key: ValueKey('profile-tool-$label'),
                   borderRadius: BorderRadius.circular(8),
                   onTap: _actionOpen ? null : () => _openTool(page),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      vertical: 10,
+                      vertical: 8,
                       horizontal: 4,
                     ),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.primarySoft,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            icon,
-                            color: AppColors.interactive,
-                            size: 26,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.body,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        if (demo)
-                          const Text(
-                            '演示数据',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: AppColors.orange,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topCenter,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.primarySoft,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Icon(icon, color: AppColors.interactive, size: 26),
+                                if (page is RescheduleReviewPage && _reschedulePending > 0)
+                                  Positioned(
+                                    right: -16,
+                                    top: -16,
+                                    child: Container(
+                                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      alignment: Alignment.center,
+                                      decoration: const BoxDecoration(color: AppColors.red, shape: BoxShape.circle),
+                                      child: Text(
+                                        _reschedulePending > 99 ? '99+' : '$_reschedulePending',
+                                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                      ],
+                          const SizedBox(height: 10),
+                          Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.body,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          // 固定高度占位：有无「演示数据」标签都保留同等空间，
+                          // 避免个别格子内容超出 GridView 单元格高度导致 BOTTOM OVERFLOWED。
+                          SizedBox(
+                            height: 14,
+                            child: demo
+                                ? const Text(
+                                    '演示数据',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.orange,
+                                    ),
+                                  )
+                                : null,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
           ],
         ),
       ],

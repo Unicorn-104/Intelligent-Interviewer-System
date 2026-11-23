@@ -22,7 +22,9 @@ class EnterpriseSettingsPage extends StatelessWidget {
 
 /// 只读复用既有企业设置接口，详细管理能力仍在 Web 端。
 class EnterpriseManagementPanel extends StatefulWidget {
-  const EnterpriseManagementPanel({super.key});
+  const EnterpriseManagementPanel({super.key, this.onOpenSection});
+
+  final ValueChanged<String>? onOpenSection;
 
   @override
   State<EnterpriseManagementPanel> createState() =>
@@ -128,28 +130,6 @@ class _EnterpriseManagementPanelState extends State<EnterpriseManagementPanel> {
                 Expanded(child: _managementEntry(name)),
             ],
           ),
-          if (_error != null ||
-              _counts!.values.any((count) => count == null)) ...[
-            const SizedBox(height: 12),
-            Text(
-              _error ?? '部分管理数据暂不可用，请稍后重试或在 Web 端查看',
-              style: const TextStyle(color: AppColors.muted, fontSize: 11),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                key: const Key('profile-management-retry'),
-                onPressed: _load,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('重新加载'),
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          const Text(
-            'App 内详细管理功能开发中，请在 Web 端操作',
-            style: TextStyle(color: AppColors.muted, fontSize: 11),
-          ),
         ],
       ],
     ),
@@ -214,9 +194,14 @@ class _EnterpriseManagementPanelState extends State<EnterpriseManagementPanel> {
   Widget _managementEntry(String name) => InkWell(
     key: ValueKey('profile-management-$name'),
     borderRadius: BorderRadius.circular(8),
-    onTap: () =>
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$name功能开发中，请在 Web 端操作'))),
+    onTap: widget.onOpenSection == null
+        ? () => ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              duration: const Duration(milliseconds: 1500),
+              content: Text('$name功能开发中，请在 Web 端操作'),
+            ),
+          )
+        : () => widget.onOpenSection!(name),
     child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 2),
       child: Column(

@@ -11,6 +11,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                pos_status as status, date_format(pos_created_at, '%m-%d') as date,
                pos_jd_json as jdJson,
                (select count(*) from t_process_instance pi where pi.pin_position_id = p.pos_id) as applicantCount,
+               (select count(*) from t_usr_interest i
+                where i.int_target_type = 1 and i.int_target_id = p.pos_id and i.int_status = 1) as interestCount,
                date_format(p.pos_created_at, '%Y-%m-%d %H:%i') as publishTime,
                date_format((select max(a.apt_created_at) from t_sch_appointment a
                             where a.apt_position_id = p.pos_id), '%Y-%m-%d %H:%i') as latestApplyTime
@@ -82,6 +84,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                pos_job_type as jobType, pos_status as status,
                date_format(pos_created_at, '%Y-%m-%d') as date,
                pos_jd_json as jdJson, pos_process_template_id as templateId,
+               (select count(*) from t_usr_interest i
+                where i.int_target_type = 1 and i.int_target_id = p.pos_id and i.int_status = 1) as interestCount,
                (select ptl_name from t_process_template where ptl_id = p.pos_process_template_id) as templateName,
                (select ptl_version from t_process_template where ptl_id = p.pos_process_template_id) as templateVersion
         from t_pos p

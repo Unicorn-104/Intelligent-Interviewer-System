@@ -42,6 +42,7 @@ dependencies:
   # 原始简历 PDF 预览（与 C-App 一致的渲染能力）
   pdfx: ^2.11.0
   livekit_client: ^2.13.2
+  video_player: ^2.14.1
 
 dev_dependencies:
   integration_test:
@@ -67,7 +68,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/certificates/baota_root.pem
+    - assets/certificates/p14_root.pem
 
   # To add assets to your application, add an assets section, like this:
   # assets:

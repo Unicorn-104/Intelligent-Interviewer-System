@@ -37,6 +37,7 @@ class ProfileAvatarView extends StatelessWidget {
               : Image.network(
                   '$url${url!.contains('?') ? '&' : '?'}v=$revision',
                   fit: BoxFit.cover,
+                  headers: const {'Referer': 'http://localhost/'},
                   errorBuilder: (_, _, _) => fallback,
                 ),
         ),

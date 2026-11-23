@@ -59,6 +59,12 @@
         where r.rbs_id = #{resumeId} and r.rbs_status = 1
     </select>
 
+    <!-- 企业端核对源简历文件：不限制 rbs_status，软删简历仍可识别其历史文件 -->
+    <select id="selectResumeFileById" resultMap="ResumeResult">
+        <include refid="resumeColumns" />
+        where r.rbs_id = #{resumeId}
+    </select>
+
     <select id="selectEducations" resultType="com.ruoyi.system.domain.app.AppResume$Education">
         select edu_id as educationId, edu_school as school, edu_major as major, edu_degree as degree,
                edu_start_date as startDate, edu_end_date as endDate, edu_gpa as gpa,

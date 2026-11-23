@@ -9,6 +9,7 @@ import 'data/job_detail_data_source.dart';
 import 'job_interviews_page.dart';
 import 'job_preview_page.dart';
 import 'job_publish_page.dart';
+import 'interested_talent_page.dart';
 import 'models/job_detail_view_data.dart';
 import 'widgets/job_basic_info_tab.dart';
 import 'widgets/job_candidates_tab.dart';
@@ -17,6 +18,59 @@ import 'widgets/job_workflow_timeline.dart';
 
 /// 岗位详情页浅灰蓝背景，参考 BOSS 直聘风格。
 const jobDetailBackground = Color(0xFFF3F7FA);
+
+enum _JobDetailAction { interviews, preview, delete, interested }
+
+/// 岗位操作菜单的白色气泡形状：顶部右侧的小三角指向 AppBar 加号。
+class _JobActionMenuShape extends ShapeBorder {
+  const _JobActionMenuShape({
+    this.radius = 16,
+    this.arrowWidth = 18,
+    this.arrowHeight = 8,
+    this.arrowRight = 26,
+  });
+
+  final double radius;
+  final double arrowWidth;
+  final double arrowHeight;
+  final double arrowRight;
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.only(top: arrowHeight);
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+    final body = Rect.fromLTRB(
+      rect.left,
+      rect.top + arrowHeight,
+      rect.right,
+      rect.bottom,
+    );
+    final arrowCenter = rect.right - arrowRight;
+    final path = Path()
+      ..addRRect(RRect.fromRectAndRadius(body, Radius.circular(radius)))
+      ..moveTo(arrowCenter - arrowWidth / 2, body.top)
+      ..lineTo(arrowCenter, rect.top)
+      ..lineTo(arrowCenter + arrowWidth / 2, body.top)
+      ..close();
+    return path;
+  }
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      getOuterPath(rect, textDirection: textDirection);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {}
+
+  @override
+  ShapeBorder scale(double t) => _JobActionMenuShape(
+    radius: radius * t,
+    arrowWidth: arrowWidth * t,
+    arrowHeight: arrowHeight * t,
+    arrowRight: arrowRight * t,
+  );
+}
 
 class JobDetailPage extends StatefulWidget {
   const JobDetailPage({
@@ -279,9 +333,12 @@ class _JobDetailPageState extends State<JobDetailPage>
           return id == null || !analyzedIds.contains(id);
         });
         if (!hasUnanalyzedCandidate) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('已读取已有分析结果，没有待补充的求职者')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              duration: const Duration(milliseconds: 1500),
+              content: Text('已读取已有分析结果，没有待补充的求职者'),
+            ),
+          );
           return;
         }
       }
@@ -316,9 +373,12 @@ class _JobDetailPageState extends State<JobDetailPage>
       }
       await Future.wait([_loadDetail(), _loadScores()]);
       if (mounted && summary['message'] is String) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(summary['message'] as String)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(milliseconds: 1500),
+            content: Text(summary['message'] as String),
+          ),
+        );
       }
     } catch (error) {
       if (mounted) {
@@ -348,8 +408,12 @@ class _JobDetailPageState extends State<JobDetailPage>
       if (!mounted || saved != id) return;
       await Future.wait([_loadDetail(), _loadProfile()]);
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('岗位信息已更新')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: const Duration(milliseconds: 1500),
+            content: Text('岗位信息已更新'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _editingJob = false);
@@ -432,13 +496,21 @@ class _JobDetailPageState extends State<JobDetailPage>
     try {
       await widget.source.deleteJob(_positionId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('岗位已删除')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: const Duration(milliseconds: 1500),
+          content: Text('岗位已删除'),
+        ),
+      );
       Navigator.of(context).pop(true);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(jobDetailError(error))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(milliseconds: 1500),
+            content: Text(jobDetailError(error)),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _deletingJob = false);
@@ -469,6 +541,72 @@ class _JobDetailPageState extends State<JobDetailPage>
     );
   }
 
+  Future<void> _openInterestedTalents() async {
+    final data = _detail.data;
+    final id = jobPositiveId(data?.job['posId'] ?? widget.job['posId']);
+    if (id == null || !mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => InterestedTalentPage(
+          positionId: id,
+          positionTitle: jobValue(
+            data?.job['title'] ?? widget.job['title'],
+            fallback: '岗位',
+          ),
+          initialCount: int.tryParse('${data?.job['interestCount']}'),
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<_JobDetailAction> _actionMenuItem({
+    required Key key,
+    required _JobDetailAction value,
+    required IconData icon,
+    required String label,
+    Color color = AppColors.interactive,
+  }) => PopupMenuItem<_JobDetailAction>(
+    key: key,
+    value: value,
+    height: 52,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    child: Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 18, color: color),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: TextStyle(
+            color: color == AppColors.error ? AppColors.error : AppColors.brand,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  void _handleAction(_JobDetailAction action) {
+    switch (action) {
+      case _JobDetailAction.interviews:
+        _openInterviews();
+      case _JobDetailAction.preview:
+        _preview();
+      case _JobDetailAction.delete:
+        _deleteJob();
+      case _JobDetailAction.interested:
+        _openInterestedTalents();
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: jobDetailBackground,
@@ -480,16 +618,61 @@ class _JobDetailPageState extends State<JobDetailPage>
           fallback: '岗位详情',
         ),
       ),
+      actions: [
+        PopupMenuButton<_JobDetailAction>(
+          key: const Key('job-action-menu'),
+          icon: const Icon(Icons.add_circle_outline, size: 30),
+          color: AppColors.canvas,
+          elevation: 10,
+          shadowColor: AppColors.brand.withValues(alpha: .18),
+          position: PopupMenuPosition.under,
+          shape: const _JobActionMenuShape(),
+          padding: EdgeInsets.zero,
+          menuPadding: const EdgeInsets.only(top: 8, bottom: 8),
+          offset: const Offset(0, 8),
+          constraints: const BoxConstraints(minWidth: 204),
+          splashRadius: 24,
+          enableFeedback: true,
+          tooltip: '岗位操作',
+          onSelected: _handleAction,
+          itemBuilder: (context) => [
+            _actionMenuItem(
+              key: const Key('job-interviews-entry'),
+              value: _JobDetailAction.interviews,
+              icon: Icons.event_outlined,
+              label: '面试安排',
+            ),
+            _actionMenuItem(
+              key: const Key('job-preview-entry'),
+              value: _JobDetailAction.preview,
+              icon: Icons.visibility_outlined,
+              label: '预览',
+            ),
+            _actionMenuItem(
+              key: const Key('job-interested-entry'),
+              value: _JobDetailAction.interested,
+              icon: Icons.bookmark_border,
+              label: '感兴趣',
+            ),
+            if (!_deletingJob)
+              _actionMenuItem(
+                key: const Key('job-delete-entry'),
+                value: _JobDetailAction.delete,
+                icon: Icons.delete_outline,
+                label: '删除岗位',
+                color: AppColors.error,
+              ),
+          ],
+        ),
+        const SizedBox(width: 6),
+      ],
       bottom: TabBar(
         controller: _tabs,
-        labelColor: AppColors.teal,
+        labelColor: AppColors.interactive,
         unselectedLabelColor: AppColors.textMuted,
-        indicatorColor: AppColors.teal,
+        indicatorColor: AppColors.interactive,
         indicatorWeight: 3,
-        labelStyle: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-        ),
+        labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         unselectedLabelStyle: const TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w500,
@@ -509,11 +692,7 @@ class _JobDetailPageState extends State<JobDetailPage>
             profile: _profile,
             onReload: _loadDetail,
             onReloadProfile: _loadProfile,
-            onInterviews: _openInterviews,
-            onPreview: _preview,
-            onDelete: _deletingJob ? null : _deleteJob,
-            onEdit:
-                _editingJob || _savingWorkflow || _editingWorkflow
+            onEdit: _editingJob || _savingWorkflow || _editingWorkflow
                 ? null
                 : _editJob,
             workflowTimeline: JobWorkflowTimeline(

@@ -2,6 +2,7 @@ import { createWebHistory, createRouter } from 'vue-router'
 /* Layout */
 import Layout from '@/layout'
 import EnterpriseLayout from '@/views/enterprise/EnterpriseLayout.vue'
+import { getToken } from '@/utils/auth'
 
 /**
  * Note: 路由配置项
@@ -52,6 +53,44 @@ export const constantRoutes = [
     hidden: true
   },
   {
+    // 企业招聘门户：游客可直接浏览，不挂载企业后台布局
+    path: '/enterprise/portal',
+    component: () => import('@/views/enterprise/portal/PortalLayout.vue'),
+    hidden: true,
+    children: [
+      {
+        path: '',
+        component: () => import('@/views/enterprise/portal/home.vue'),
+        name: 'EnterprisePortalHome',
+        meta: { title: '企业招聘门户' }
+      },
+      {
+        path: 'features',
+        component: () => import('@/views/enterprise/portal/features.vue'),
+        name: 'EnterprisePortalFeatures',
+        meta: { title: '平台能力' }
+      },
+      {
+        path: 'onboarding',
+        component: () => import('@/views/enterprise/portal/onboarding.vue'),
+        name: 'EnterprisePortalOnboarding',
+        meta: { title: '企业入驻流程' }
+      }
+    ]
+  },
+  {
+    path: '/enterprise/register',
+    component: () => import('@/views/enterprise/register/index.vue'),
+    hidden: true,
+    meta: { title: '企业入驻注册' }
+  },
+  {
+    path: '/enterprise/pending',
+    component: () => import('@/views/enterprise/pending/index.vue'),
+    hidden: true,
+    meta: { title: '入驻审核' }
+  },
+  {
     path: '/401',
     component: () => import('@/views/error/401'),
     hidden: true
@@ -87,7 +126,8 @@ export const constantRoutes = [
     path: '/enterprise',
     component: EnterpriseLayout,
     hidden: true,
-    redirect: '/enterprise/dashboard',
+    // 打开站点入口时：未登录先进企业门户首页，已登录直接进招聘总览
+    redirect: () => (getToken() ? '/enterprise/dashboard' : '/enterprise/portal'),
     children: [
       {
         path: 'dashboard',

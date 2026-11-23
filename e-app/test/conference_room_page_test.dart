@@ -125,6 +125,7 @@ class RoomHarness {
   final List<FakeConferenceEngine> engines;
   int tokenCalls = 0;
   int joinCalls = 0;
+  int startCalls = 0;
   int heartbeatCalls = 0;
   final List<(int, Map<String, Object?>?)> finishCalls = [];
   Object? tokenError;
@@ -184,6 +185,9 @@ Future<RoomHarness> mountRoom(
                     harness.joinCalls++;
                     return {'sessionId': sessionId};
                   },
+                  startSession: (sessionId) async {
+                    harness.startCalls++;
+                  },
                   heartbeat: (sessionId) async {
                     harness.heartbeatCalls++;
                   },
@@ -206,6 +210,7 @@ void main() {
   testWidgets('HR 入会：登记面试官、换取令牌并连接 LiveKit 展示候场界面', (tester) async {
     final harness = await mountRoom(tester);
     expect(harness.joinCalls, 1);
+    expect(harness.startCalls, 1);
     expect(harness.tokenCalls, 1);
     expect(harness.engine.connects, 1);
     expect(harness.engine.connectUrl, 'ws://livekit.test');

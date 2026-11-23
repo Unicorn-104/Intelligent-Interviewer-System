@@ -37,6 +37,13 @@ public class TalentDiscoveryService
         if (row == null) throw new ServiceException("该人才不存在或当前不可访问");
         return row;
     }
+    public List<Map<String,Object>> interested(Long viewerId, Long positionId)
+    {
+        Long companyId = requireEnterprise(viewerId);
+        if (positionId == null || positionId <= 0)
+            throw new ServiceException("岗位编号无效");
+        return discoveryMapper.selectInterestedUsers(companyId, positionId);
+    }
     public Map<String,Object> options(Long viewerId)
     {
         requireEnterprise(viewerId);
@@ -44,10 +51,11 @@ public class TalentDiscoveryService
             "currentCities", discoveryMapper.selectCities("current"),
             "targetCities", discoveryMapper.selectCities("target"), "searchFilterVersion", 2, "directoryVersion", 1);
     }
-    private void requireEnterprise(Long viewerId)
+    private Long requireEnterprise(Long viewerId)
     {
         Long company = viewerId == null || viewerId <= 0 ? null : dashboardMapper.selectCompanyIdByUser(viewerId);
         if (company == null || company <= 0) throw new ServiceException("请先完成企业绑定");
+        return company;
     }
     private String text(String raw, int max)
     {

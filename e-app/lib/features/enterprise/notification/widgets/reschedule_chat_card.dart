@@ -142,7 +142,7 @@ class _RescheduleChatCardState extends State<RescheduleChatCard> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(
+          SnackBar(duration: const Duration(milliseconds: 1500),
             content: Text(decision == 'approved' ? '已同意改期申请' : '已拒绝改期申请'),
           ),
         );
@@ -155,7 +155,7 @@ class _RescheduleChatCardState extends State<RescheduleChatCard> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(
+          SnackBar(duration: const Duration(milliseconds: 1500),
             content: Text(
               uncertain
                   ? '审批结果待核对，请刷新卡片确认，不会自动重复提交'
@@ -204,7 +204,7 @@ class _RescheduleChatCardState extends State<RescheduleChatCard> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('暂时无法核对，请稍后刷新')));
+            .showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('暂时无法核对，请稍后刷新')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -224,8 +224,14 @@ class _RescheduleChatCardState extends State<RescheduleChatCard> {
       'rejected' => '改期申请已拒绝',
       _ => '求职者申请改期',
     };
-    return SizedBox(
+    return Container(
       width: 268,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.hairline),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

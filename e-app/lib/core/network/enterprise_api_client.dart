@@ -57,7 +57,8 @@ class EnterpriseApiClient {
   Future<Map<String, dynamic>> get(
     String path, {
     Map<String, Object?>? query,
-  }) => _request('GET', path, query: query);
+    Duration? timeout,
+  }) => _request('GET', path, query: query, timeout: timeout);
 
   Future<Map<String, dynamic>> post(
     String path, {
@@ -316,6 +317,7 @@ class EnterpriseApiClient {
     String path, {
     Map<String, Object?>? query,
     Map<String, Object?>? body,
+    Duration? timeout,
   }) async {
     final token = await _readToken();
     try {
@@ -325,6 +327,9 @@ class EnterpriseApiClient {
         queryParameters: query,
         options: Options(
           method: method,
+          connectTimeout: timeout,
+          sendTimeout: timeout,
+          receiveTimeout: timeout,
           headers: (token == null || token.isEmpty)
               ? null
               : {HttpHeaders.authorizationHeader: 'Bearer $token'},

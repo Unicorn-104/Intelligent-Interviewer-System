@@ -15,6 +15,8 @@ class RescheduleRequest {
     required this.reason,
     required this.requestedAt,
     required this.interviewerName,
+    required this.source,
+    this.requesterName,
     this.reviewNote,
     this.reviewerName,
     this.reviewedAt,
@@ -45,10 +47,12 @@ class RescheduleRequest {
       return value.substring(0, 16);
     }
 
-    final status = requiredText('status');
-    if (!['pending', 'approved', 'rejected'].contains(status)) {
-      throw const FormatException('改期审批状态不正确');
-    }
+    final status = switch ('${row['status']}'.toLowerCase()) {
+      '0' || 'pending' => 'pending',
+      '1' || 'approved' => 'approved',
+      '2' || 'rejected' => 'rejected',
+      _ => throw const FormatException('改期审批状态不正确'),
+    };
     return RescheduleRequest(
       id: id('requestId'),
       appointmentId: id('appointmentId'),
@@ -64,6 +68,10 @@ class RescheduleRequest {
       reason: requiredText('reason'),
       requestedAt: time('requestedAt'),
       interviewerName: row['interviewerName']?.toString() ?? '未填写姓名',
+      source: row['source']?.toString() == 'enterprise'
+          ? 'enterprise'
+          : 'candidate',
+      requesterName: row['requesterName']?.toString(),
       reviewNote: row['reviewNote']?.toString(),
       reviewerName: row['reviewerName']?.toString(),
       reviewedAt: row['reviewedAt'] == null ? null : time('reviewedAt'),
@@ -81,6 +89,8 @@ class RescheduleRequest {
       reason,
       requestedAt,
       interviewerName;
+  final String source;
+  final String? requesterName;
   final String? reviewNote, reviewerName, reviewedAt;
 }
 
@@ -101,9 +111,11 @@ class RescheduleReviewDataSource {
             !['pending', 'approved', 'rejected'].contains(status))) {
       throw const FormatException('审批筛选参数不正确');
     }
+    final query = <String, Object?>{'pageNum': page, 'pageSize': 20};
+    if (status != null) query['status'] = status;
     final response = await _client.get(
       '/enterprise/interview/reschedule-requests',
-      query: {'status': status, 'pageNum': page, 'pageSize': 20},
+      query: query,
     );
     final rows = response['rows'];
     final total = int.tryParse('${response['total']}');
@@ -118,6 +130,11 @@ class RescheduleReviewDataSource {
       throw const FormatException('服务器未应用审批筛选条件');
     }
     return RescheduleReviewResult(rows: parsed, total: total);
+  }
+
+  Future<int> pendingCount() async {
+    final result = await load(status: 'pending', page: 1);
+    return result.total;
   }
 
   Future<Map<String, dynamic>> detail(int id, {int? candidateUserId}) async {

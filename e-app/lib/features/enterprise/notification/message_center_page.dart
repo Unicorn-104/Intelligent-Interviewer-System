@@ -126,7 +126,7 @@ class MessageCenterPageState extends State<MessageCenterPage>
     await _load();
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(failure ?? '消息已全部标为已读')));
+          .showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text(failure ?? '消息已全部标为已读')));
     }
   }
 

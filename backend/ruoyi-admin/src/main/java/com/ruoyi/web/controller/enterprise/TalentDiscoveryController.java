@@ -2,6 +2,8 @@ package com.ruoyi.web.controller.enterprise;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import java.util.List;
+import java.util.Map;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
@@ -24,6 +26,12 @@ public class TalentDiscoveryController extends BaseController
     }
     @GetMapping("/options")
     public AjaxResult options() { return success(discoveryService.options(getUserId())); }
+    @GetMapping("/interested")
+    public TableDataInfo interested(@RequestParam Long positionId)
+    {
+        List<Map<String,Object>> rows = discoveryService.interested(getUserId(), positionId);
+        return getDataTable(rows);
+    }
     @GetMapping("/{userId}")
     public AjaxResult detail(@PathVariable Long userId) { return success(discoveryService.detail(getUserId(), userId)); }
 }

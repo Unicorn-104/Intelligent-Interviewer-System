@@ -66,14 +66,19 @@ class ScreeningMapperDatabaseTest
                 assertEquals(0, mapper.claimTask(company, position, UUID.randomUUID().toString(), candidates.size()));
                 assertEquals(run, mapper.selectTaskStatus(company, position).get("runId"));
                 assertEquals(run, mapper.lockTask(company, position).get("runId"));
+                // 测试专用 app_id/snapshot_id（负数、无外键、随事务回滚），用于验证按投递精确查询
+                long smokeAppId = -999999L, smokeSnapshotId = -888888L;
                 Map<String, Object> report = new LinkedHashMap<>();
                 report.put("companyId", company); report.put("positionId", position); report.put("resultId", talent);
-                report.put("resumeId", resume); report.put("report", "{\"source\":\"llm\",\"recommendation\":\"演示数据：事务回滚验证\"}");
+                report.put("resumeId", resume); report.put("applicationId", smokeAppId);
+                report.put("snapshotId", smokeSnapshotId); report.put("contentHash", "smoke-hash");
+                report.put("report", "{\"source\":\"llm\",\"recommendation\":\"演示数据：事务回滚验证\"}");
                 assertTrue(mapper.saveAnalysis(report) > 0);
-                assertTrue(mapper.selectAnalysis(company, position, talent).get("report").toString().contains("llm"));
+                assertTrue(mapper.selectAnalysis(company, position, smokeAppId, talent).get("report").toString().contains("llm"));
                 assertTrue(mapper.selectAnalyzedCandidates(company, position).stream().anyMatch(row -> ((Number) row.get("candidateId")).longValue() == talent));
                 assertNotNull(mapper.selectLatestAnalysis(company, talent));
-                assertNull(mapper.selectAnalysis(Long.MAX_VALUE, position, talent));
+                // 企业不匹配（且按投递精确）时返回 null
+                assertNull(mapper.selectAnalysis(Long.MAX_VALUE, position, smokeAppId, talent));
                 assertEquals(1, mapper.updateTask(company, position, run, "completed", candidates.size(), 1, null));
                 assertEquals(0, mapper.updateTask(company, position, "stale-run", "failed", 0, 0, "stale"));
             }

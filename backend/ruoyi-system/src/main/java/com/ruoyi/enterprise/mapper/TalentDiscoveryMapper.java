@@ -12,6 +12,8 @@ public interface TalentDiscoveryMapper
         @Param("direction") String direction, @Param("currentStatus") Integer currentStatus,
         @Param("criteria") TalentSearchCriteria criteria);
     Map<String,Object> selectUser(@Param("userId") Long userId);
+    List<Map<String,Object>> selectInterestedUsers(@Param("companyId") Long companyId,
+        @Param("positionId") Long positionId);
     List<String> selectDirections();
     List<String> selectCities(@Param("cityType") String cityType);
 }

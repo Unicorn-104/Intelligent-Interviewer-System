@@ -1,5 +1,7 @@
 package com.ruoyi.web.controller.common;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -15,6 +17,8 @@ import com.ruoyi.system.service.storage.AvatarStorage;
 @RestController
 public class StoredAvatarController
 {
+    // 临时诊断日志：确认头像请求是否到达控制器（诊断后可移除）
+    private static final Logger diagLog = LoggerFactory.getLogger("S3_DIAG");
     private final AvatarStorage avatars;
 
     public StoredAvatarController(AvatarStorage avatars) { this.avatars = avatars; }
@@ -25,6 +29,7 @@ public class StoredAvatarController
             @PathVariable String fileName)
     {
         String key = "avatars/" + userId + "/" + year + "/" + month + "/" + day + "/" + fileName;
+        diagLog.info("controller hit userId={}, key={}", userId, key);
         try
         {
             Resource resource = avatars.read(key);
@@ -34,6 +39,10 @@ public class StoredAvatarController
                     .header("X-Content-Type-Options", "nosniff")
                     .body(resource);
         }
-        catch (ServiceException error) { throw new ResponseStatusException(HttpStatus.NOT_FOUND); }
+        catch (ServiceException error)
+        {
+            diagLog.warn("controller service error: {}", error.getMessage());
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
     }
 }

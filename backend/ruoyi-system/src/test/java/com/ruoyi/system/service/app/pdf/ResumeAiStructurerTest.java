@@ -269,7 +269,7 @@ class ResumeAiStructurerTest
         ReflectionTestUtils.setField(ai, "modelProviderService", modelProviderService);
         assertTrue(ai.isConfigured());
         ai.structure(SYNTHETIC_TEXT);
-        assertEquals("database-api-credential", auth.get());
+        assertEquals("Bearer database-api-credential", auth.get());
         assertEquals("synthetic-model", captured.get().path("model").asText());
     }
 

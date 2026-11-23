@@ -52,7 +52,7 @@ class _ShortlistReviewPageState extends State<ShortlistReviewPage> {
     setState(() => candidate['reviewStatus'] = 'confirmed');
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已确认「${candidate['name']}」通过初筛（模拟），将流入面试邀约')),
+      SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已确认「${candidate['name']}」通过初筛（模拟），将流入面试邀约')),
     );
   }
 

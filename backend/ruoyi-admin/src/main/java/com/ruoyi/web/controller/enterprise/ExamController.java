@@ -15,10 +15,11 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
-import com.ruoyi.enterprise.service.IExamAiService;
+import com.ruoyi.enterprise.ai.agent.exam.IExamAiService;
 import com.ruoyi.enterprise.service.IExamGradeService;
 import com.ruoyi.enterprise.service.IExamMonitorService;
 import com.ruoyi.enterprise.service.IExamService;
+import com.ruoyi.system.service.IEnterpriseSettingsService;
 
 /**
  * 企业端 - 在线笔试配置（题库 CRUD、组卷、随机抽题规则、考试时长/次数、开考/截止时间、交卷规则）
@@ -43,6 +44,9 @@ public class ExamController extends BaseController
 
     @Autowired
     private IExamAiService examAiService;
+
+    @Autowired
+    private IEnterpriseSettingsService settingsService;
 
     // ==================== 题库 ====================
 
@@ -105,7 +109,28 @@ public class ExamController extends BaseController
     @PostMapping("/questions/ai-analysis")
     public AjaxResult aiAnalysis(@RequestBody Map<String, Object> body)
     {
+        Long questionId = asLong(body == null ? null : body.get("questionId"));
+        boolean force = Boolean.TRUE.equals(settingsService
+                .examAnalysisSettings(settingsService.resolveCompanyId(getUserId()))
+                .get("forceRegenerate"));
+        if (!force && questionId != null)
+        {
+            Map<String, Object> question = examService.getQuestion(questionId);
+            String analysis = question.get("analysis") == null ? "" : String.valueOf(question.get("analysis")).trim();
+            if (!analysis.isEmpty())
+            {
+                return success(Map.of("analysis", analysis, "valid", true,
+                        "issues", List.of(), "reused", true));
+            }
+        }
         return success(examAiService.analyzeQuestion(body));
+    }
+
+    private Long asLong(Object value)
+    {
+        if (value == null) return null;
+        try { return Long.valueOf(String.valueOf(value)); }
+        catch (RuntimeException ignored) { return null; }
     }
 
     // ==================== 试卷 ====================
@@ -139,6 +164,17 @@ public class ExamController extends BaseController
         return success("保存成功");
     }
 
+    /** 启用/禁用试卷（body {status}：1 启用，0 禁用） */
+    @PutMapping("/papers/{paperId}/status")
+    public AjaxResult updatePaperStatus(@PathVariable("paperId") Long paperId,
+            @RequestBody Map<String, Object> body)
+    {
+        Object raw = body == null ? null : body.get("status");
+        examService.updatePaperStatus(getUserId(), paperId,
+                raw == null ? null : Integer.valueOf(String.valueOf(raw)));
+        return success("状态已更新");
+    }
+
     /** 删除试卷 */
     @DeleteMapping("/papers/{paperId}")
     public AjaxResult deletePaper(@PathVariable("paperId") Long paperId)
@@ -152,6 +188,27 @@ public class ExamController extends BaseController
     public AjaxResult drawPreview(@RequestBody Map<String, Object> rule)
     {
         return success(examService.previewDraw(rule, getUserId()));
+    }
+
+    /** Agent 命题规划：生成知识点覆盖计划，前端可编辑后再提交预览 */
+    @PostMapping("/papers/ai-plan")
+    public AjaxResult aiPlanPaper(@RequestBody Map<String, Object> body)
+    {
+        return success(examService.previewPlan(getUserId(), body));
+    }
+
+    /** Agent 组卷预览：AI 生成题目或从现有题库抽题（不落库） */
+    @PostMapping("/papers/ai-preview")
+    public AjaxResult aiPreviewPaper(@RequestBody Map<String, Object> body)
+    {
+        return success(examService.previewGeneratedPaper(getUserId(), body));
+    }
+
+    /** 保存 Agent 组卷结果（支持编辑后的题目；saveToBank=true 时题目写入企业题库） */
+    @PostMapping("/papers/ai-save")
+    public AjaxResult aiSavePaper(@RequestBody Map<String, Object> body)
+    {
+        return success(examService.saveGeneratedPaper(getUserId(), body));
     }
 
     // ==================== 考试安排 ====================

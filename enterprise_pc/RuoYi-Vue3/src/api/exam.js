@@ -59,6 +59,18 @@ export function aiExamAnalysis(data) {
   })
 }
 
+export function getExamAnalysisSettings() {
+  return request({ url: '/system/enterprise/settings/integrations', method: 'get' })
+}
+
+export function updateExamAnalysisSettings(forceRegenerate) {
+  return request({
+    url: '/system/enterprise/settings/integrations',
+    method: 'put',
+    data: { forceRegenerate }
+  })
+}
+
 // ==================== 试卷 ====================
 
 export function listPapers(positionId) {
@@ -92,6 +104,15 @@ export function updatePaper(paperId, data) {
   })
 }
 
+/** 启用/禁用试卷（status：1 启用，0 禁用） */
+export function updatePaperStatus(paperId, status) {
+  return request({
+    url: `/enterprise/exam/papers/${paperId}/status`,
+    method: 'put',
+    data: { status }
+  })
+}
+
 export function deletePaper(paperId) {
   return request({
     url: `/enterprise/exam/papers/${paperId}`,
@@ -104,6 +125,36 @@ export function drawPreview(rule) {
     url: '/enterprise/exam/papers/draw-preview',
     method: 'post',
     data: rule
+  })
+}
+
+/** Agent 命题规划：生成知识点覆盖计划（可在前端编辑） */
+export function aiPlanPaper(data) {
+  return request({
+    url: '/enterprise/exam/papers/ai-plan',
+    method: 'post',
+    data,
+    timeout: 120000
+  })
+}
+
+/** Agent 组卷预览：AI 生成题目或从现有题库抽题（不落库） */
+export function aiPreviewPaper(data) {
+  return request({
+    url: '/enterprise/exam/papers/ai-preview',
+    method: 'post',
+    data,
+    timeout: 600000
+  })
+}
+
+/** 保存 Agent 组卷结果（题目可编辑；saveToBank=true 时写入企业题库） */
+export function aiSavePaper(data) {
+  return request({
+    url: '/enterprise/exam/papers/ai-save',
+    method: 'post',
+    data,
+    timeout: 60000
   })
 }
 

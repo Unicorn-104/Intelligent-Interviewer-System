@@ -189,7 +189,7 @@ class _InterviewWorkbenchPageState extends State<InterviewWorkbenchPage> {
           _timer?.cancel();
       }
     });
-    messenger.showSnackBar(SnackBar(content: Text('已$title（模拟）')));
+    messenger.showSnackBar(SnackBar(duration: const Duration(milliseconds: 1500), content: Text('已$title（模拟）')));
   }
 
   @override

@@ -59,6 +59,33 @@ Future<int> getImUnreadCount() async {
       0;
 }
 
+/// 消息中心「系统消息」未读数。
+/// 已对接：GET /system/im/notifications?limit=1
+Future<int> getSystemMessageUnreadCount() async {
+  final response = await EnterpriseApiClient().get(
+    '/system/im/notifications',
+    query: {'limit': 1},
+  );
+  return int.tryParse('${response['unreadCount']}') ?? 0;
+}
+
+/// 消息 Tab 总未读数：聊天会话 + 消息中心系统消息。
+Future<int> getMessageCenterUnreadCount() async {
+  Future<int> safe(Future<int> Function() loader) async {
+    try {
+      return await loader();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  final counts = await Future.wait([
+    safe(getImUnreadCount),
+    safe(getSystemMessageUnreadCount),
+  ]);
+  return counts.fold<int>(0, (sum, value) => sum + value);
+}
+
 /// IM：快捷回复列表。
 /// 已对接：GET /system/im/quick-replies
 Future<List<Map<String, dynamic>>> listQuickReplies() async {

@@ -134,7 +134,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('当前没有待开始或进行中的面试时提示去面试安排查看', (tester) async {
+  testWidgets('面试已结束时提示本场面试已结束', (tester) async {
     final source = InviteChatSource()..currentSession = {};
     source.messages = [
       ConversationMessage.fromJson({
@@ -149,7 +149,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('chat-enter-interview-1')));
     await tester.pumpAndSettle();
     expect(source.sessionCalls, 1);
-    expect(find.text('当前没有待开始或进行中的面试，可在面试安排中查看'), findsOneWidget);
+    expect(find.text('本场面试已结束'), findsOneWidget);
     expect(find.byType(FakeConferenceRoom), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });

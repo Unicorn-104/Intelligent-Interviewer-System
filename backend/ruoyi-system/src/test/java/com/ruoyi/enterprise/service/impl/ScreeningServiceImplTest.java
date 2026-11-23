@@ -15,7 +15,7 @@ import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.TalStatusService;
-import com.ruoyi.enterprise.service.screening.ScreeningAiEvaluator;
+import com.ruoyi.enterprise.ai.completion.screening.ScreeningAiEvaluator;
 import com.ruoyi.system.mapper.DashboardMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
