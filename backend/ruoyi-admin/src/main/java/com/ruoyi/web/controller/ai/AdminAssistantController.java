@@ -157,7 +157,8 @@ public class AdminAssistantController extends BaseController {
             3. 中文简洁分点回答；
             4. 题库口径：分类 1-5；题型 1 单选、2 多选、3 判断、4 简答、5 编程；
             5. 用户问某题的答案、解析、选项或分值时，直接调用 get_question_detail（只读），
-               不得凭 search_questions 的题干摘要猜测答案；
+               不得凭 search_questions 的题干摘要猜测答案；问是否有重复题时调用 check_duplicate_questions，
+               结果只是相似度预检，不得据此断言两题完全相同；
             6. 用户明确给出题号并要求调整分类或题型时，直接调用 classify_questions，工具会自行核验；
                search_questions 只返回有限筛选结果，不得据此判断未列出的题号不存在；
             7. 用户明确给出题号并要求修改题干、答案、解析、难度或分值时，直接调用 update_questions；

@@ -21,6 +21,7 @@ public class AdminToolPackage implements AgentToolPackage
             GetRecentLoginAlertsTool loginAlerts,
             SearchQuestionsTool searchQuestions,
             GetQuestionDetailTool questionDetail,
+            CheckDuplicateQuestionsTool checkDuplicates,
             GetQuestionStatsTool questionStats,
             ListImportBatchesTool listBatches,
             CreateQuestionsTool createQuestions,
@@ -29,9 +30,9 @@ public class AdminToolPackage implements AgentToolPackage
             DeleteQuestionsTool deleteQuestions,
             UndoImportBatchTool undoImportBatch)
     {
-        this.tools = List.of(dashboardStats, loginAlerts, searchQuestions, questionDetail, questionStats,
-                listBatches, createQuestions, classifyQuestions, updateQuestions, deleteQuestions,
-                undoImportBatch);
+        this.tools = List.of(dashboardStats, loginAlerts, searchQuestions, questionDetail, checkDuplicates,
+                questionStats, listBatches, createQuestions, classifyQuestions, updateQuestions,
+                deleteQuestions, undoImportBatch);
     }
 
     @Override
