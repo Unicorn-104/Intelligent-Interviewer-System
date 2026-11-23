@@ -36,19 +36,9 @@
             <el-tooltip content="导出对话" placement="bottom">
               <el-icon @click="exportMd" :size="16"><Download /></el-icon>
             </el-tooltip>
-            <el-upload
-              :show-file-list="false"
-              :before-upload="beforeUpload"
-              :action="BASE_API + '/ai/kb/upload'"
-              :headers="{ Authorization: 'Bearer ' + getToken() }"
-              name="file"
-              :data="{ category: '操作手册' }"
-              accept=".txt,.md"
-            >
-              <el-tooltip content="上传知识库文档" placement="bottom">
-                <el-icon :size="16"><UploadFilled /></el-icon>
-              </el-tooltip>
-            </el-upload>
+            <el-tooltip content="导入知识库文档或文件夹" placement="bottom">
+              <el-icon @click="kbDialogVisible = true" :size="16"><UploadFilled /></el-icon>
+            </el-tooltip>
             <el-tooltip content="清空对话" placement="bottom">
               <el-icon @click="clearAll" :size="16"><Delete /></el-icon>
             </el-tooltip>
@@ -144,6 +134,36 @@
         </div>
       </div>
     </el-drawer>
+
+    <el-dialog v-model="kbDialogVisible" title="导入知识库" width="440px" append-to-body :close-on-click-modal="false">
+      <div class="kb-actions">
+        <el-button size="small" @click="pickKbFiles">选择文件</el-button>
+        <el-button size="small" @click="pickKbFolder">选择文件夹</el-button>
+        <el-button size="small" text :disabled="!kbFiles.length" @click="clearKbFiles">清空</el-button>
+      </div>
+      <div class="kb-tip">支持 txt / md / csv / json / pdf / docx / xlsx 等，单文件不超过 10MB</div>
+      <div v-if="kbFiles.length" class="kb-list">
+        <div v-for="(f, i) in kbFiles" :key="f.name + '_' + f.size" class="kb-item">
+          <span class="kb-name">{{ f.name }}</span>
+          <span class="kb-size">{{ fmtSize(f.size) }}</span>
+          <el-icon class="kb-del" @click="removeKbFile(i)"><Close /></el-icon>
+        </div>
+      </div>
+      <div v-else class="kb-empty">尚未选择文件</div>
+      <div class="kb-cat">
+        <span>分类</span>
+        <el-input v-model="kbCategory" size="small" placeholder="操作手册" style="width: 200px" />
+      </div>
+      <template #footer>
+        <el-button size="small" @click="kbDialogVisible = false">取消</el-button>
+        <el-button size="small" type="primary" :loading="kbUploading" @click="submitKb">开始导入</el-button>
+      </template>
+    </el-dialog>
+
+    <input ref="kbFileInput" type="file" multiple hidden
+      accept=".txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.sql,.log,.java,.py,.js,.ts,.html,.css,.pdf,.docx,.xlsx"
+      @change="onKbPick" />
+    <input ref="kbDirInput" type="file" webkitdirectory multiple hidden @change="onKbPick" />
   </div>
 </template>
 
@@ -182,6 +202,14 @@ const toolTip = ref('')
 const sessions = ref([])
 const currentId = ref(null)
 const listRef = ref(null)
+const kbDialogVisible = ref(false)
+const kbFiles = ref([])
+const kbCategory = ref('操作手册')
+const kbUploading = ref(false)
+const kbFileInput = ref(null)
+const kbDirInput = ref(null)
+const KB_EXT = ['txt', 'md', 'markdown', 'csv', 'json', 'xml', 'yml', 'yaml', 'sql', 'log',
+  'java', 'py', 'js', 'ts', 'html', 'css', 'pdf', 'docx', 'xlsx']
 let abortCtrl = null
 
 const messages = computed(() => {
@@ -282,10 +310,71 @@ function clearAll() {
   persistHistory()
 }
 
-function beforeUpload(file) {
-  const ok = file.name.endsWith('.txt') || file.name.endsWith('.md')
-  if (!ok) ElMessage.warning('只支持 .txt / .md 文件')
-  return ok
+function pickKbFiles() {
+  if (kbFileInput.value) kbFileInput.value.click()
+}
+
+function pickKbFolder() {
+  if (kbDirInput.value) kbDirInput.value.click()
+}
+
+function clearKbFiles() {
+  kbFiles.value = []
+}
+
+function removeKbFile(i) {
+  kbFiles.value.splice(i, 1)
+}
+
+/** 多选文件或整个文件夹：过滤格式与大小，按 name+size 去重 */
+function onKbPick(e) {
+  const picked = Array.from(e.target.files || [])
+  let rejected = 0
+  picked.forEach((f) => {
+    const ext = (f.name.split('.').pop() || '').toLowerCase()
+    if (!KB_EXT.includes(ext) || f.size > 10 * 1024 * 1024) {
+      rejected++
+      return
+    }
+    if (kbFiles.value.some((x) => x.name === f.name && x.size === f.size)) return
+    kbFiles.value.push(f)
+  })
+  if (rejected) ElMessage.warning(`已过滤 ${rejected} 个不支持或超过 10MB 的文件`)
+  e.target.value = ''
+}
+
+function fmtSize(n) {
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'
+}
+
+async function submitKb() {
+  if (!kbFiles.value.length) {
+    ElMessage.warning('请先选择文件或文件夹')
+    return
+  }
+  kbUploading.value = true
+  try {
+    const fd = new FormData()
+    kbFiles.value.forEach((f) => fd.append('files', f, f.webkitRelativePath || f.name))
+    const resp = await fetch(`${BASE_API}/ai/kb/upload-batch?category=${encodeURIComponent(kbCategory.value || '未分类')}`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + getToken() },
+      body: fd
+    })
+    const j = await resp.json()
+    if (j.code !== 200) throw new Error(j.msg || '导入失败')
+    const d = j.data || {}
+    const failedTip = d.failed ? `，失败 ${d.failed} 个` : ''
+    ElMessage.success(`导入完成：${d.success || 0} 个文件、${d.chunks || 0} 段${failedTip}`)
+    const firstError = (d.files || []).find((x) => x.error)
+    if (firstError) ElMessage.warning(`${firstError.name}：${firstError.error}`)
+    kbFiles.value = []
+    kbDialogVisible.value = false
+  } catch (err) {
+    ElMessage.error('导入失败：' + (err.message || '网络异常'))
+  } finally {
+    kbUploading.value = false
+  }
 }
 
 function stop() {
@@ -835,6 +924,65 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 
+.kb-actions {
+  display: flex;
+  gap: 8px;
+}
+.kb-tip {
+  margin: 8px 0 6px;
+  font-size: 12px;
+  color: #8a8f99;
+}
+.kb-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #eef0f5;
+  border-radius: 8px;
+}
+.kb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  border-bottom: 1px solid #f4f5f7;
+}
+.kb-item:last-child {
+  border-bottom: none;
+}
+.kb-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-size {
+  font-size: 12px;
+  color: #8a8f99;
+}
+.kb-del {
+  color: #c0c4cc;
+  cursor: pointer;
+}
+.kb-del:hover {
+  color: #f56c6c;
+}
+.kb-empty {
+  padding: 20px;
+  text-align: center;
+  font-size: 12.5px;
+  color: #a8adb8;
+  border: 1px dashed #e5e7eb;
+  border-radius: 8px;
+}
+.kb-cat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: #4b5563;
+}
 .ai-bubble {
   padding: 9px 13px;
   border-radius: 12px;
