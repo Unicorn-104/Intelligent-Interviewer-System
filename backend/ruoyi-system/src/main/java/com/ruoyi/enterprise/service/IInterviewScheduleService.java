@@ -36,9 +36,16 @@ public interface IInterviewScheduleService
     public Map<String, Object> reschedule(Long userId, Long appointmentId, String newStartTime,
             Integer durationMin, Long interviewerId);
 
+    /** 改期时同步调整全部面试官；首位为主面试官。 */
+    public Map<String, Object> reschedule(Long userId, Long appointmentId, String newStartTime,
+            Integer durationMin, Long interviewerId, List<Long> interviewerIds);
+
     /** 由改期审批服务在同一事务统一发送审批结果，避免重复通知。 */
     Map<String, Object> rescheduleSilently(Long userId, Long appointmentId, String newStartTime,
             Integer durationMin, Long interviewerId);
+
+    Map<String, Object> rescheduleSilently(Long userId, Long appointmentId, String newStartTime,
+            Integer durationMin, Long interviewerId, List<Long> interviewerIds);
 
     public List<Map<String, Object>> inviteStages(Long userId, Long candidateId, Long positionId,
             List<Map<String, Object>> stages);

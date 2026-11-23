@@ -57,7 +57,19 @@ class _StageDraft {
   final bool skip;
   final int duration;
   final bool durationConfigured;
-  int? interviewerId;
+  List<int> interviewerIds = [];
+  int? get interviewerId =>
+      interviewerIds.isEmpty ? null : interviewerIds.first;
+  set interviewerId(int? value) {
+    if (value == null) {
+      interviewerIds = [];
+    } else if (interviewerIds.isEmpty) {
+      interviewerIds = [value];
+    } else {
+      interviewerIds = [value, ...interviewerIds.skip(1)];
+    }
+  }
+
   DateTime? date;
   TimeOfDay? time;
   Map<String, dynamic>? appointment;
@@ -66,22 +78,26 @@ class _StageDraft {
       ? null
       : TalentUtc8.fromSelection(date!, time!.hour, time!.minute);
   DateTime? get end => start?.add(Duration(minutes: duration));
-  bool get ready => interviewerId != null && start != null && durationConfigured;
+  bool get ready =>
+      interviewerIds.isNotEmpty && start != null && durationConfigured;
 
   /// 结束时间超出开始日期当天 24:00 视为跨天面试。
   bool get crossDay {
     final start = this.start;
     final end = this.end;
     if (start == null || end == null || !durationConfigured) return false;
-    final dayEnd = TalentUtc8.fromSelection(date!, 0, 0).add(
-      const Duration(days: 1),
-    );
+    final dayEnd = TalentUtc8.fromSelection(
+      date!,
+      0,
+      0,
+    ).add(const Duration(days: 1));
     return end.isAfter(dayEnd);
   }
 
   Map<String, Object?> get payload => {
     'stageId': stageId,
     'interviewerId': interviewerId,
+    'interviewerIds': interviewerIds,
     'startTime': TalentUtc8.serverTime(start!),
     'durationMin': duration,
   };
@@ -238,8 +254,7 @@ class _TalentInterviewInviteSheetState
         final parsed = config is Map
             ? int.tryParse('${config['duration']}')
             : null;
-        final configured =
-            parsed != null && parsed >= 1 && parsed <= 1440;
+        final configured = parsed != null && parsed >= 1 && parsed <= 1440;
         stages.add(
           _StageDraft(
             stageId: id,
@@ -271,7 +286,7 @@ class _TalentInterviewInviteSheetState
           stage.date = DateTime(wall.year, wall.month, wall.day);
           stage.time = TimeOfDay(hour: wall.hour, minute: wall.minute);
         }
-        stage.interviewerId = talentId(row['interviewerId']);
+        stage.interviewerIds = _appointmentInterviewerIds(row);
       }
       if (!mounted || request != _workflowRequest) return;
       setState(() {
@@ -465,7 +480,8 @@ class _TalentInterviewInviteSheetState
     final wall = TalentUtc8.wallTime(_now().add(const Duration(hours: 1)));
     final value = await showTimePicker(
       context: context,
-      initialTime: stage.time ?? TimeOfDay(hour: wall.hour, minute: wall.minute),
+      initialTime:
+          stage.time ?? TimeOfDay(hour: wall.hour, minute: wall.minute),
     );
     if (!mounted || value == null) return;
     setState(() {
@@ -485,9 +501,7 @@ class _TalentInterviewInviteSheetState
       if (int.tryParse('${row['status']}') == 2) continue;
       final busyStart = TalentUtc8.parseServer(row['startTime']);
       final busyEnd = TalentUtc8.parseServer(row['endTime']);
-      if (busyStart == null ||
-          busyEnd == null ||
-          !busyEnd.isAfter(busyStart)) {
+      if (busyStart == null || busyEnd == null || !busyEnd.isAfter(busyStart)) {
         continue;
       }
       if (TalentUtc8.overlaps(start, end, busyStart, busyEnd)) {
@@ -510,7 +524,7 @@ class _TalentInterviewInviteSheetState
     final stage = _current;
     if (_locked || _loadingPeople || _people.isEmpty || stage == null) return;
     if (stage.appointment != null && !_editable(stage.appointment!)) return;
-    final selected = await showModalBottomSheet<int>(
+    final selected = await showModalBottomSheet<List<int>>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -518,14 +532,12 @@ class _TalentInterviewInviteSheetState
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _InterviewerSheet(
-        people: _people,
-        current: stage.interviewerId,
-      ),
+      builder: (_) =>
+          _InterviewerSheet(people: _people, current: stage.interviewerIds),
     );
     if (!mounted || selected == null) return;
     setState(() {
-      stage.interviewerId = selected;
+      stage.interviewerIds = selected;
       _availability = [];
       _busy = null;
       _submitError = null;
@@ -565,6 +577,7 @@ class _TalentInterviewInviteSheetState
         id,
         newStartTime: TalentUtc8.serverTime(start),
         interviewerId: stage.interviewerId,
+        interviewerIds: stage.interviewerIds,
       );
       if (!mounted) return;
       if (talentId(result['appointmentId']) != id) {
@@ -579,9 +592,12 @@ class _TalentInterviewInviteSheetState
       setState(() => _busy = null);
       await _loadCalendar();
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(duration: const Duration(milliseconds: 1500), content: Text('面试安排已更新')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(milliseconds: 1500),
+            content: Text('面试安排已更新'),
+          ),
+        );
       }
     } catch (error) {
       if (!mounted) return;
@@ -596,10 +612,13 @@ class _TalentInterviewInviteSheetState
     final row = stage.appointment;
     if (row == null || !_editable(row)) return false;
     final start = TalentUtc8.parseServer(row['startTime']);
-    final changedTime = stage.start != null &&
+    final changedTime =
+        stage.start != null &&
         (start == null || !stage.start!.isAtSameMomentAs(start));
-    final changedInterviewer =
-        stage.interviewerId != talentId(row['interviewerId']);
+    final changedInterviewer = !_sameInterviewers(
+      stage.interviewerIds,
+      _appointmentInterviewerIds(row),
+    );
     return changedTime || changedInterviewer;
   }
 
@@ -650,15 +669,18 @@ class _TalentInterviewInviteSheetState
       if (conflict == null) {
         for (final item in pending) {
           final end = item.end!;
-          final rows = await widget.source.loadAvailability(
-            item.interviewerId!,
-            to: TalentUtc8.serverTime(end),
-          );
-          if (!mounted) return;
-          if (TalentUtc8.isBusy(rows, item.start!, end)) {
-            conflict = '「${item.name}」所选时段面试官已被占用，请返回修改';
-            break;
+          for (final interviewerId in item.interviewerIds) {
+            final rows = await widget.source.loadAvailability(
+              interviewerId,
+              to: TalentUtc8.serverTime(end),
+            );
+            if (!mounted) return;
+            if (TalentUtc8.isBusy(rows, item.start!, end)) {
+              conflict = '「${item.name}」所选时段有面试官已被占用，请返回修改';
+              break;
+            }
           }
+          if (conflict != null) break;
         }
       }
       if (!mounted) return;
@@ -695,20 +717,25 @@ class _TalentInterviewInviteSheetState
       // 最终提交前再次复核面试官忙闲，防止多人同时预约造成冲突。
       for (final item in pending) {
         final end = item.end!;
-        final rows = await widget.source.loadAvailability(
-          item.interviewerId!,
-          to: TalentUtc8.serverTime(end),
-        );
-        if (!mounted) return;
-        if (TalentUtc8.isBusy(rows, item.start!, end)) {
-          setState(() {
-            _busy = true;
-            _submitError = '所选时段面试官已被占用，请调整时间';
-          });
-          return;
+        for (final interviewerId in item.interviewerIds) {
+          final rows = await widget.source.loadAvailability(
+            interviewerId,
+            to: TalentUtc8.serverTime(end),
+          );
+          if (!mounted) return;
+          if (TalentUtc8.isBusy(rows, item.start!, end)) {
+            setState(() {
+              _busy = true;
+              _submitError = '所选时段面试官已被占用，请调整时间';
+            });
+            return;
+          }
         }
       }
-      final single = pending.length == 1 && pending.first.stageId == null;
+      final single =
+          pending.length == 1 &&
+          pending.first.stageId == null &&
+          pending.first.interviewerIds.length == 1;
       final stage = pending.first;
       final List<Map<String, dynamic>> results;
       try {
@@ -815,30 +842,26 @@ class _TalentInterviewInviteSheetState
       final time = start.isEmpty
           ? '已安排'
           : '${start.substring(0, 16)} — ${end.length >= 16 ? end.substring(0, 16) : ''}';
-      return '$time\n${talentText(row['interviewerName'], '面试官待定')}';
+      return '$time\n${_interviewerSummary(_appointmentInterviewerIds(row))}';
     }
     if (!stage.ready) return '待安排面试时间';
-    final people = _people.where(
-      (row) => talentId(row['userId']) == stage.interviewerId,
-    );
-    final person = people.isEmpty
-        ? '面试官未填写'
-        : talentText(people.first['userName']);
+    final person = _interviewerSummary(stage.interviewerIds);
     final end = TalentUtc8.serverTime(stage.end!);
     return '${TalentUtc8.serverTime(stage.start!).substring(0, 16)} — ${end.substring(0, 16)}\n$person · ${stage.duration}分钟';
   }
 
-  String get _positionTitle => widget.job?.title ??
+  String get _positionTitle =>
+      widget.job?.title ??
       talentText(
-        _jobs
-            .firstWhere(
-              (row) => talentId(row['posId']) == _positionId,
-              orElse: () => const {'title': '未选择岗位'},
-            )['title'],
+        _jobs.firstWhere(
+          (row) => talentId(row['posId']) == _positionId,
+          orElse: () => const {'title': '未选择岗位'},
+        )['title'],
       );
 
-  String? get _currentConflict =>
-      _current == null ? null : _slotConflict(_current!.start, _current!.duration);
+  String? get _currentConflict => _current == null
+      ? null
+      : _slotConflict(_current!.start, _current!.duration);
 
   /// 任一待安排阶段存在冲突时禁止进入确认页。
   bool get _hasPendingConflict {
@@ -1027,10 +1050,7 @@ class _TalentInterviewInviteSheetState
           child: LinearProgressIndicator(),
         ),
       if (_workflowError != null) ...[
-        Text(
-          _workflowError!,
-          style: const TextStyle(color: AppColors.error),
-        ),
+        Text(_workflowError!, style: const TextStyle(color: AppColors.error)),
         TextButton(
           onPressed: _locked ? null : () => _loadWorkflow(_positionId!),
           child: const Text('重新加载招聘流程'),
@@ -1449,17 +1469,19 @@ class _TalentInterviewInviteSheetState
   List<Map<String, dynamic>> _rowsOnDay(DateTime day) {
     final start = TalentUtc8.fromSelection(day, 0, 0);
     final end = start.add(const Duration(days: 1));
-    final rows = _calendar.where((row) {
-      if (int.tryParse('${row['status']}') == 2) return false;
-      final a = TalentUtc8.parseServer(row['startTime']);
-      final b = TalentUtc8.parseServer(row['endTime']);
-      return a != null && b != null && TalentUtc8.overlaps(start, end, a, b);
-    }).toList()
-      ..sort(
-        (a, b) => TalentUtc8.parseServer(
-          a['startTime'],
-        )!.compareTo(TalentUtc8.parseServer(b['startTime'])!),
-      );
+    final rows =
+        _calendar.where((row) {
+          if (int.tryParse('${row['status']}') == 2) return false;
+          final a = TalentUtc8.parseServer(row['startTime']);
+          final b = TalentUtc8.parseServer(row['endTime']);
+          return a != null &&
+              b != null &&
+              TalentUtc8.overlaps(start, end, a, b);
+        }).toList()..sort(
+          (a, b) =>
+              TalentUtc8.parseServer(a['startTime'])!
+                  .compareTo(TalentUtc8.parseServer(b['startTime'])!),
+        );
     return rows;
   }
 
@@ -1544,7 +1566,8 @@ class _TalentInterviewInviteSheetState
     final draftEnd = stage?.appointment == null ? stage?.end : null;
     final dayStart = TalentUtc8.fromSelection(_day, 0, 0);
     final dayEnd = dayStart.add(const Duration(days: 1));
-    final draftOnDay = draftStart != null &&
+    final draftOnDay =
+        draftStart != null &&
         draftEnd != null &&
         TalentUtc8.overlaps(dayStart, dayEnd, draftStart, draftEnd);
     final total = rows.length + (draftOnDay ? 1 : 0);
@@ -1782,7 +1805,9 @@ class _TalentInterviewInviteSheetState
   /// 与下方「面试时间设置」卡片共用同一份开始时间状态。
   Widget _timeline() {
     final stage = _current;
-    final rows = stage == null ? const <Map<String, dynamic>>[] : _rowsOnDay(_day);
+    final rows = stage == null
+        ? const <Map<String, dynamic>>[]
+        : _rowsOnDay(_day);
     final lanes = <int, int>{};
     final laneEnds = <DateTime>[];
     for (final row in rows) {
@@ -1827,7 +1852,8 @@ class _TalentInterviewInviteSheetState
         : slotEnd.isAfter(dayEnd)
         ? dayEnd
         : slotEnd;
-    final selectionVisible = visibleStart != null &&
+    final selectionVisible =
+        visibleStart != null &&
         visibleEnd != null &&
         visibleStart.isBefore(visibleEnd);
     final slotTop = !selectionVisible
@@ -1878,18 +1904,14 @@ class _TalentInterviewInviteSheetState
                               onTapUp: (details) {
                                 final minutes =
                                     ((details.localPosition.dy /
-                                                    _pxPerHour *
-                                                    60) /
-                                                15)
-                                            .floor() *
-                                        15;
+                                                _pxPerHour *
+                                                60) /
+                                            15)
+                                        .floor() *
+                                    15;
                                 if (minutes < 0) return;
                                 final clamped = math.min(minutes, 24 * 60 - 15);
-                                _selectSlot(
-                                  _day,
-                                  clamped ~/ 60,
-                                  clamped % 60,
-                                );
+                                _selectSlot(_day, clamped ~/ 60, clamped % 60);
                               },
                               child: const ColoredBox(
                                 color: Colors.transparent,
@@ -1920,12 +1942,7 @@ class _TalentInterviewInviteSheetState
                           ),
                         ],
                         for (final slot in busySlots)
-                          _busyBlock(
-                            slot,
-                            dayStart,
-                            dayEnd,
-                            columnWidth,
-                          ),
+                          _busyBlock(slot, dayStart, dayEnd, columnWidth),
                         for (final row in rows)
                           _eventBlock(
                             row,
@@ -1958,8 +1975,8 @@ class _TalentInterviewInviteSheetState
   }
 
   late final ScrollController _timelineScroll = ScrollController(
-    initialScrollOffset: (_wallNow().hour * 60 + _wallNow().minute - 60)
-        .clamp(0, 20 * 60) *
+    initialScrollOffset:
+        (_wallNow().hour * 60 + _wallNow().minute - 60).clamp(0, 20 * 60) *
         _pxPerHour /
         60,
   );
@@ -2037,7 +2054,9 @@ class _TalentInterviewInviteSheetState
         decoration: BoxDecoration(
           color: AppColors.primarySoft,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: AppColors.interactive.withValues(alpha: .5)),
+          border: Border.all(
+            color: AppColors.interactive.withValues(alpha: .5),
+          ),
         ),
         child: height >= 40
             ? Column(
@@ -2112,8 +2131,8 @@ class _TalentInterviewInviteSheetState
             child: Text(
               height >= 24
                   ? continuesFromYesterday
-                      ? '跨日延续（已选 $startLabel 开始）'
-                      : '已选 $startLabel 开始${continuesToTomorrow ? ' · 延续至次日' : ''}'
+                        ? '跨日延续（已选 $startLabel 开始）'
+                        : '已选 $startLabel 开始${continuesToTomorrow ? ' · 延续至次日' : ''}'
                   : '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -2134,7 +2153,8 @@ class _TalentInterviewInviteSheetState
   Widget _timeEditorCard() {
     final stage = _current;
     if (stage == null) return const SizedBox.shrink();
-    final readOnly = stage.appointment != null && !_editable(stage.appointment!);
+    final readOnly =
+        stage.appointment != null && !_editable(stage.appointment!);
     final start = stage.start;
     final end = stage.end;
     final conflict = _currentConflict;
@@ -2276,10 +2296,7 @@ class _TalentInterviewInviteSheetState
             width: 84,
             child: Text(
               label,
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 13,
-              ),
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
             ),
           ),
           Expanded(
@@ -2306,16 +2323,11 @@ class _TalentInterviewInviteSheetState
   Widget _interviewerRow() {
     final stage = _current;
     if (stage == null) return const SizedBox.shrink();
-    final readOnly = stage.appointment != null && !_editable(stage.appointment!);
-    final name = stage.interviewerId == null
+    final readOnly =
+        stage.appointment != null && !_editable(stage.appointment!);
+    final name = stage.interviewerIds.isEmpty
         ? null
-        : talentText(
-            _people
-                .firstWhere(
-                  (row) => talentId(row['userId']) == stage.interviewerId,
-                  orElse: () => const {'userName': '未填写'},
-                )['userName'],
-          );
+        : _interviewerSummary(stage.interviewerIds);
     return Material(
       color: AppColors.canvas,
       shape: RoundedRectangleBorder(
@@ -2330,11 +2342,7 @@ class _TalentInterviewInviteSheetState
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
           child: Row(
             children: [
-              const Icon(
-                Icons.person_outline,
-                size: 20,
-                color: AppColors.teal,
-              ),
+              const Icon(Icons.person_outline, size: 20, color: AppColors.teal),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -2344,7 +2352,9 @@ class _TalentInterviewInviteSheetState
                         ? AppColors.textMuted
                         : AppColors.textPrimary,
                     fontSize: 14,
-                    fontWeight: name == null ? FontWeight.w400 : FontWeight.w600,
+                    fontWeight: name == null
+                        ? FontWeight.w400
+                        : FontWeight.w600,
                   ),
                 ),
               ),
@@ -2438,16 +2448,18 @@ class _TalentInterviewInviteSheetState
     final end = row == null
         ? stage.end
         : TalentUtc8.parseServer(row['endTime']);
-    final crossDay = row == null ? stage.crossDay : (() {
-      if (start == null || end == null) return false;
-      final wallStart = TalentUtc8.wallTime(start);
-      final dayEnd = TalentUtc8.fromSelection(
-        DateTime(wallStart.year, wallStart.month, wallStart.day),
-        0,
-        0,
-      ).add(const Duration(days: 1));
-      return end.isAfter(dayEnd);
-    })();
+    final crossDay = row == null
+        ? stage.crossDay
+        : (() {
+            if (start == null || end == null) return false;
+            final wallStart = TalentUtc8.wallTime(start);
+            final dayEnd = TalentUtc8.fromSelection(
+              DateTime(wallStart.year, wallStart.month, wallStart.day),
+              0,
+              0,
+            ).add(const Duration(days: 1));
+            return end.isAfter(dayEnd);
+          })();
     return Container(
       key: ValueKey('invite-confirm-stage-$index'),
       margin: const EdgeInsets.only(bottom: 8),
@@ -2537,25 +2549,64 @@ class _TalentInterviewInviteSheetState
             ),
           const SizedBox(height: 4),
           Text(
-            '面试官：${row == null ? _interviewerName(stage.interviewerId) : talentText(row['interviewerName'], '面试官待定')} · 时长 ${row == null ? stage.duration : (start != null && end != null ? end.difference(start).inMinutes : '—')} 分钟${crossDay ? ' · 跨天面试' : ''}',
-            style: const TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 12,
-            ),
+            '面试官：${_interviewerSummary(row == null ? stage.interviewerIds : _appointmentInterviewerIds(row))} · 时长 ${row == null ? stage.duration : (start != null && end != null ? end.difference(start).inMinutes : '—')} 分钟${crossDay ? ' · 跨天面试' : ''}',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
           ),
         ],
       ),
     );
   }
 
-  String _interviewerName(int? id) {
-    if (id == null) return '未选择';
-    for (final row in _people) {
-      if (talentId(row['userId']) == id) {
-        return talentText(row['userName']);
+  List<int> _appointmentInterviewerIds(Map<String, dynamic>? row) {
+    if (row == null) return const [];
+    final direct = _idList(row['interviewerIds']);
+    if (direct.isNotEmpty) return direct;
+    final nested = row['interviewers'];
+    if (nested is List) {
+      final ids = <int>[];
+      for (final item in nested) {
+        if (item is Map) {
+          final id = talentId(item['userId']);
+          if (id != null) ids.add(id);
+        }
       }
+      if (ids.isNotEmpty) return ids;
     }
-    return '未填写';
+    final primary = talentId(row['interviewerId']);
+    return primary == null ? const [] : [primary];
+  }
+
+  List<int> _idList(Object? value) {
+    if (value is! List) return const [];
+    final ids = <int>[];
+    for (final item in value) {
+      final id = talentId(item);
+      if (id != null && !ids.contains(id)) ids.add(id);
+    }
+    return ids;
+  }
+
+  bool _sameInterviewers(List<int> left, List<int> right) {
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      if (left[i] != right[i]) return false;
+    }
+    return true;
+  }
+
+  String _interviewerSummary(List<int> ids) {
+    if (ids.isEmpty) return '未选择';
+    final names = ids
+        .map(
+          (id) => _people.firstWhere(
+            (row) => talentId(row['userId']) == id,
+            orElse: () => const {'userName': '未填写'},
+          )['userName'],
+        )
+        .map((name) => talentText(name, '未填写'))
+        .toList();
+    final shown = names.take(2).join('、');
+    return names.length <= 2 ? shown : '$shown 等${names.length}人';
   }
 
   // ---------------- 底部操作区 ----------------
@@ -2588,10 +2639,7 @@ class _TalentInterviewInviteSheetState
                     ),
                     onPressed: _saving
                         ? null
-                        : () => Navigator.pop(
-                            context,
-                            _changed || _uncertain,
-                          ),
+                        : () => Navigator.pop(context, _changed || _uncertain),
                     child: Text(_uncertain ? '关闭并查看面试安排' : '取消'),
                   ),
                 ),
@@ -2709,18 +2757,18 @@ class _StatusTag extends StatelessWidget {
   );
 }
 
-/// 面试官选择弹层：搜索 + 列表 + 确认。
+/// 面试官选择弹层：搜索 + 多选 + 确认。
 class _InterviewerSheet extends StatefulWidget {
-  const _InterviewerSheet({required this.people, this.current});
+  const _InterviewerSheet({required this.people, this.current = const []});
   final List<Map<String, dynamic>> people;
-  final int? current;
+  final List<int> current;
   @override
   State<_InterviewerSheet> createState() => _InterviewerSheetState();
 }
 
 class _InterviewerSheetState extends State<_InterviewerSheet> {
   late final TextEditingController _search = TextEditingController();
-  late int? _selected = widget.current;
+  late final Set<int> _selected = {...widget.current};
 
   @override
   void dispose() {
@@ -2761,23 +2809,33 @@ class _InterviewerSheetState extends State<_InterviewerSheet> {
               padding: const EdgeInsets.fromLTRB(20, 14, 8, 4),
               child: Row(
                 children: [
-                  const Expanded(
-                    child: Text(
-                      '选择面试官',
-                      style: TextStyle(
-                        color: AppColors.brand,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '选择面试官',
+                          style: TextStyle(
+                            color: AppColors.brand,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '可多选 · 已选 ${_selected.length} 人',
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   IconButton(
                     tooltip: '关闭',
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(
-                      Icons.close,
-                      color: AppColors.textMuted,
-                    ),
+                    icon: const Icon(Icons.close, color: AppColors.textMuted),
                   ),
                 ],
               ),
@@ -2815,10 +2873,7 @@ class _InterviewerSheetState extends State<_InterviewerSheet> {
                     )
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                      children: [
-                        for (final row in rows)
-                          _interviewerRow(row),
-                      ],
+                      children: [for (final row in rows) _interviewerRow(row)],
                     ),
             ),
             Container(
@@ -2856,8 +2911,17 @@ class _InterviewerSheetState extends State<_InterviewerSheet> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        onPressed: () => Navigator.pop(context, _selected),
-                        child: const Text('确定'),
+                        onPressed: _selected.isEmpty
+                            ? null
+                            : () => Navigator.pop(
+                                context,
+                                _selected.toList(growable: false),
+                              ),
+                        child: Text(
+                          _selected.isEmpty
+                              ? '请选择面试官'
+                              : '确定（${_selected.length}）',
+                        ),
                       ),
                     ),
                   ],
@@ -2872,7 +2936,7 @@ class _InterviewerSheetState extends State<_InterviewerSheet> {
 
   Widget _interviewerRow(Map<String, dynamic> row) {
     final id = talentId(row['userId'])!;
-    final selected = _selected == id;
+    final selected = _selected.contains(id);
     final parts = [
       talentText(row['userName']),
       talentText(row['department'], ''),
@@ -2880,7 +2944,13 @@ class _InterviewerSheetState extends State<_InterviewerSheet> {
     ].where((part) => part.isNotEmpty).join(' · ');
     return InkWell(
       key: ValueKey('interviewer-option-$id'),
-      onTap: () => setState(() => _selected = id),
+      onTap: () => setState(() {
+        if (selected) {
+          _selected.remove(id);
+        } else {
+          _selected.add(id);
+        }
+      }),
       borderRadius: BorderRadius.circular(10),
       child: Container(
         margin: const EdgeInsets.only(bottom: 4),
@@ -2931,7 +3001,10 @@ class _DashedRectPainter extends CustomPainter {
     var distance = 0.0;
     while (distance < metrics.length) {
       canvas.drawPath(
-        metrics.extractPath(distance, math.min(distance + dash, metrics.length)),
+        metrics.extractPath(
+          distance,
+          math.min(distance + dash, metrics.length),
+        ),
         paint,
       );
       distance += dash + gap;

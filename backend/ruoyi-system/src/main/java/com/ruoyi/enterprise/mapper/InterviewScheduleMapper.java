@@ -11,6 +11,7 @@ public interface InterviewScheduleMapper
             @Param("status") Integer status, @Param("from") String from, @Param("to") String to,
             @Param("candidateId") Long candidateId);
     List<Map<String, Object>> selectInterviewersBySessionIds(@Param("sessionIds") List<Long> sessionIds);
+    List<Map<String, Object>> selectAppointmentInterviewers(@Param("appointmentIds") List<Long> appointmentIds);
     Map<String, Object> selectStageByIdForPosition(@Param("stageId") Long stageId,
             @Param("positionId") Long positionId);
     Map<String, Object> selectAppointmentById(@Param("appointmentId") Long appointmentId);
@@ -32,6 +33,10 @@ public interface InterviewScheduleMapper
     int updateSlotStatus(@Param("slotId") Long slotId, @Param("status") Integer status);
     int insertSlot(Map<String, Object> values);
     int insertAppointment(Map<String, Object> values);
+    int insertAppointmentInterviewer(@Param("appointmentId") Long appointmentId,
+            @Param("interviewerId") Long interviewerId, @Param("isPrimary") Integer isPrimary);
+    /** 改期/换人时整体替换预约面试官，保持首位为主面试官。 */
+    int deleteAppointmentInterviewers(@Param("appointmentId") Long appointmentId);
     int updateAppointmentTime(Map<String, Object> values);
     int updateAppointmentStatus(@Param("appointmentId") Long appointmentId, @Param("status") Integer status);
     /** 显式重置提醒状态：只重置已处理(1)的标记，不影响发送中(2)的认领 */

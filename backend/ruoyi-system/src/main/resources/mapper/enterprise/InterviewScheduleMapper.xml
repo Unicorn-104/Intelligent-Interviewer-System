@@ -64,6 +64,16 @@
         <foreach collection="sessionIds" item="id" open="(" separator="," close=")">#{id}</foreach>
         order by si.isi_is_primary desc, si.isi_id asc
     </select>
+    <select id="selectAppointmentInterviewers" resultType="java.util.LinkedHashMap">
+        select ai.asi_appointment_id as appointmentId, ai.asi_user_id as userId,
+               ai.asi_is_primary as isPrimary, ai.asi_accept_status as acceptStatus,
+               ifnull(u.nick_name, u.user_name) as userName, u.email as email
+        from t_sch_appointment_interviewer ai
+        left join sys_user u on u.user_id = ai.asi_user_id
+        where ai.asi_appointment_id in
+        <foreach collection="appointmentIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        order by ai.asi_is_primary desc, ai.asi_id asc
+    </select>
     <select id="selectAppointmentById" resultType="java.util.LinkedHashMap">
         select <include refid="appointmentColumns"/> <include refid="appointmentJoins"/>
         where a.apt_id = #{appointmentId}
@@ -90,7 +100,19 @@
         from t_sch_slot where slt_interviewer_id = #{interviewerId}
         <if test="from != null and from != ''">and slt_end_time &gt; #{from}</if>
         <if test="to != null and to != ''">and slt_start_time &lt; #{to}</if>
-        order by slt_start_time
+        union all
+        <!-- 非主面试官不单独占 t_sch_slot，日历直接复用预约时间，改期后自动跟随。 -->
+        select a.apt_id as slotId, ai.asi_user_id as interviewerId,
+               date_format(a.apt_start_time, '%Y-%m-%d %H:%i') as startTime,
+               date_format(a.apt_end_time, '%Y-%m-%d %H:%i') as endTime,
+               0 as status, '已占用' as statusLabel
+        from t_sch_appointment_interviewer ai
+        join t_sch_appointment a on a.apt_id = ai.asi_appointment_id
+        where ai.asi_user_id = #{interviewerId} and ai.asi_is_primary = 0
+          and a.apt_status in (0, 1)
+        <if test="from != null and from != ''">and a.apt_end_time &gt; #{from}</if>
+        <if test="to != null and to != ''">and a.apt_start_time &lt; #{to}</if>
+        order by startTime
     </select>
     <!-- 所有创建/改期事务按候选人、升序面试官加锁，避免检查后并发占用。 -->
     <select id="lockCandidate" resultType="long">
@@ -128,7 +150,10 @@
         union all
         select apt_id as conflictId from t_sch_appointment
         where apt_status in (0, 1)
-          and (apt_candidate_id = #{candidateId} or apt_interviewer_id = #{interviewerId})
+          and (apt_candidate_id = #{candidateId} or apt_interviewer_id = #{interviewerId}
+               or exists (select 1 from t_sch_appointment_interviewer ai
+                          where ai.asi_appointment_id = t_sch_appointment.apt_id
+                            and ai.asi_user_id = #{interviewerId}))
           and apt_start_time &lt; #{endTime} and apt_end_time &gt; #{startTime}
         <if test="excludeAppointmentId != null">and apt_id != #{excludeAppointmentId}</if>
     </select>
@@ -147,6 +172,14 @@
         values (#{candidateId}, #{positionId}, #{stageId}, #{stageName}, #{stageType},
                 #{stageOrder}, #{interviewerId}, #{slotId}, #{startTime}, #{endTime}, #{meetingUrl}, 0)
     </insert>
+    <insert id="insertAppointmentInterviewer">
+        insert into t_sch_appointment_interviewer
+            (asi_appointment_id, asi_user_id, asi_is_primary, asi_accept_status)
+        values (#{appointmentId}, #{interviewerId}, #{isPrimary}, 0)
+    </insert>
+    <delete id="deleteAppointmentInterviewers">
+        delete from t_sch_appointment_interviewer where asi_appointment_id = #{appointmentId}
+    </delete>
     <update id="updateAppointmentTime">
         update t_sch_appointment
         set apt_interviewer_id = #{interviewerId}, apt_slot_id = #{slotId},

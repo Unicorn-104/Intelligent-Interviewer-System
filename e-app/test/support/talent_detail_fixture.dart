@@ -101,7 +101,8 @@ class TalentFakeSource extends TalentDetailDataSource {
   List<List<Map<String, dynamic>>> interviewPages = [[]];
   Map<String, dynamic> inviteResult = {'appointmentId': 101};
   Completer<Map<String, dynamic>>? resumePending, invitePending;
-  Completer<List<Map<String, dynamic>>>? availabilityPending, stageInvitePending;
+  Completer<List<Map<String, dynamic>>>? availabilityPending,
+      stageInvitePending;
   int detailCalls = 0,
       resumeCalls = 0,
       matchCalls = 0,
@@ -263,6 +264,7 @@ class TalentFakeSource extends TalentDetailDataSource {
     required String newStartTime,
     int? durationMin,
     int? interviewerId,
+    List<int>? interviewerIds,
   }) async {
     if (rescheduleFails) throw const ApiException('时间冲突');
     reschedules.add({
@@ -270,6 +272,7 @@ class TalentFakeSource extends TalentDetailDataSource {
       'newStartTime': newStartTime,
       'durationMin': durationMin,
       'interviewerId': interviewerId,
+      'interviewerIds': interviewerIds,
     });
     final old = plan.where((row) => row['appointmentId'] == appointmentId);
     return {
@@ -316,7 +319,8 @@ Future<void> pumpTalentWidget(
       theme: AppTheme.light,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
-          alwaysUse24HourFormat: use24HourFormat || MediaQuery.of(context).alwaysUse24HourFormat,
+          alwaysUse24HourFormat:
+              use24HourFormat || MediaQuery.of(context).alwaysUse24HourFormat,
         ),
         child: child!,
       ),
@@ -358,8 +362,14 @@ Future<void> fillTalentInvite(
       await tester.tap(interviewerRow);
       await tester.pumpAndSettle();
     }
-    await tester.tap(find.byKey(const ValueKey('interviewer-option-19')));
-    await tester.pumpAndSettle();
+    final option = find.byKey(const ValueKey('interviewer-option-19'));
+    if (find
+        .descendant(of: option, matching: find.byIcon(Icons.check_circle))
+        .evaluate()
+        .isEmpty) {
+      await tester.tap(option);
+      await tester.pumpAndSettle();
+    }
     await tester.tap(find.byKey(const Key('interviewer-confirm')));
     await tester.pumpAndSettle();
   }
