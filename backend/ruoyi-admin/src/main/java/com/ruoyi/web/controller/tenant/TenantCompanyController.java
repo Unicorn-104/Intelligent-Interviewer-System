@@ -55,6 +55,7 @@ public class TenantCompanyController extends BaseController {
             item.put("contactName", c.getContactName());
             item.put("contactPhone", c.getContactPhone());
             item.put("verifyStatus", c.getCmpVerifyStatus() != null ? c.getCmpVerifyStatus() : 0);
+            item.put("status", c.getCmpStatus() != null ? c.getCmpStatus() : 1);
             item.put("verifyAt", c.getCmpVerifyAt());
             item.put("verifyRemark", c.getVerifyRemark());
             item.put("verifyByName", resolveUserName(c.getCmpVerifyBy()));

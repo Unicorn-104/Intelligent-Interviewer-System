@@ -54,7 +54,7 @@
         </el-select>
       </el-form-item>
       <el-form-item v-if="bankType === 'enterprise'" label="企业" prop="companyId">
-        <el-select v-model="queryParams.companyId" placeholder="全部企业" clearable filterable style="width: 200px">
+        <el-select v-model="queryParams.companyId" placeholder="全部正常企业" clearable filterable style="width: 200px">
           <el-option v-for="item in companyOptions" :key="item.id" :label="item.name" :value="item.id" />
         </el-select>
       </el-form-item>
