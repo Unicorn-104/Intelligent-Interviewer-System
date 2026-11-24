@@ -190,6 +190,9 @@ public class AdminAssistantController extends BaseController {
                 - 其他要求：基于附件内容回答；附件里没有的信息一律留空，不得猜测。
             12. 修改类请求先定位对象再改：题目先用 search_questions 确认 questionId 再调用 update_questions；
                 命中多条时先列候选让用户选择，不得批量修改不明确的记录。
+            13. 名字以 mcp_ 开头的是外部 MCP 工具（由配置决定是否启用）：用户明确要求使用外部工具
+                （点名 mcp_ 工具，或要求"用 echo 工具""调用外部工具"）时必须真的发起工具调用，
+                不得用文字模拟调用结果；工具不存在或不可用时直接说明"当前没有该外部工具"。
             """;
 
     @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
@@ -440,7 +443,7 @@ public class AdminAssistantController extends BaseController {
                 "修改题", "改题", "答案", "解析", "难度", "分值", "选项",
                 "删除题", "删题", "移除题", "清除题", "删除", "删掉", "移除", "清除",
                 "附件", "这个文件", "这份文档", "提取题", "整理题", "录入", "新增企业", "企业信息", "公司信息", "导入企业",
-                "岗位", "候选人", "人才库", "消息模板", "模板"};
+                "岗位", "候选人", "人才库", "消息模板", "模板", "mcp", "MCP", "外部工具"};
         for (String kw : keywords) {
             if (q.contains(kw)) return true;
         }
