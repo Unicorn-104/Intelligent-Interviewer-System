@@ -20,14 +20,20 @@ public class AdminToolPackage implements AgentToolPackage
     public AdminToolPackage(GetDashboardStatsTool dashboardStats,
             GetRecentLoginAlertsTool loginAlerts,
             SearchQuestionsTool searchQuestions,
+            GetQuestionDetailTool questionDetail,
+            CheckDuplicateQuestionsTool checkDuplicates,
             GetQuestionStatsTool questionStats,
             ListImportBatchesTool listBatches,
             CreateQuestionsTool createQuestions,
             ClassifyQuestionsTool classifyQuestions,
-            UndoImportBatchTool undoImportBatch)
+            UpdateQuestionsTool updateQuestions,
+            DeleteQuestionsTool deleteQuestions,
+            UndoImportBatchTool undoImportBatch,
+            CreateCompaniesTool createCompanies)
     {
-        this.tools = List.of(dashboardStats, loginAlerts, searchQuestions, questionStats,
-                listBatches, createQuestions, classifyQuestions, undoImportBatch);
+        this.tools = List.of(dashboardStats, loginAlerts, searchQuestions, questionDetail, checkDuplicates,
+                questionStats, listBatches, createQuestions, classifyQuestions, updateQuestions,
+                deleteQuestions, undoImportBatch, createCompanies);
     }
 
     @Override

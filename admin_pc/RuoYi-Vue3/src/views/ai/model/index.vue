@@ -6,11 +6,11 @@
         <div class="stat-num">{{ stats.total }}</div>
         <div class="stat-label">全部模型</div>
       </div>
-      <div class="stat-card stat-on" @click="quickFilter('0')">
+      <div class="stat-card stat-on" @click="quickFilter('1')">
         <div class="stat-num">{{ stats.enabled }}</div>
         <div class="stat-label">启用</div>
       </div>
-      <div class="stat-card stat-off" @click="quickFilter('1')">
+      <div class="stat-card stat-off" @click="quickFilter('0')">
         <div class="stat-num">{{ stats.disabled }}</div>
         <div class="stat-label">停用</div>
       </div>
@@ -555,6 +555,8 @@ function handleStatusChange(row) {
     })
     .then(() => {
       proxy.$modal.msgSuccess(text + '\u6210\u529f')
+      getStats()
+      getList()
     })
     .catch(() => {
       row.status = nextStatus === 1 ? 0 : 1
