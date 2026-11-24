@@ -254,6 +254,9 @@ class ConferenceController extends ChangeNotifier {
       notice = null;
       await _syncAsr();
     } catch (exception) {
+      if (kDebugMode) {
+        debugPrint('Conference reconnect failed: ${exception.runtimeType}');
+      }
       notice =
           media.error ??
           (exception is ApiException && exception.code == 401

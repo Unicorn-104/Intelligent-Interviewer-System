@@ -64,20 +64,19 @@ class ConferenceMedia extends ChangeNotifier {
 
   Future<void> connect(Map<String, dynamic> credentials) async {
     error = null;
-    await disconnectRoom();
-    final url = Uri.tryParse('${credentials['url']}');
-    if (url == null ||
-        url.scheme != 'wss' ||
-        url.host.isEmpty ||
+    // Release the preparation preview as well as a previous room. Preparation
+    // tracks exist even when room is null; PC starts fresh capture after join.
+    await release();
+    final parsedUrl = Uri.tryParse('${credentials['url']}');
+    if (parsedUrl == null ||
+        parsedUrl.scheme != 'wss' ||
+        parsedUrl.host.isEmpty ||
         credentials['token'] is! String) {
       error = '会议服务地址配置无效，请联系 HR 确认会议入口';
       throw StateError('Secure video connection unavailable');
     }
-    if (!cameraOn || !microphoneOn) await checkDevices();
-    if (_closed || !cameraOn || !microphoneOn) {
-      throw StateError('Media unavailable');
-    }
-    // checkDevices can increment the generation; capture it after preparation.
+    final url = conferenceSignalingUri(parsedUrl);
+    if (_closed) return;
     final connectGeneration = _generation;
     lk.NetworkOptions network = const lk.NetworkOptions();
     final backend = Uri.parse(AppConfig.apiBaseUrl);
@@ -93,7 +92,7 @@ class ConferenceMedia extends ChangeNotifier {
               hosts: [backend.host],
               trustedCertificates: [
                 await lk.CertificateBytes.fromAsset(
-                  'assets/certificates/baota_root.pem',
+                  AppConfig.privateCertificateAsset,
                 ),
               ],
             ),
@@ -112,18 +111,42 @@ class ConferenceMedia extends ChangeNotifier {
     room = next;
     next.addListener(changed);
     try {
-      await next.connect(url.toString(), credentials['token'] as String);
+      await next.connect(
+        url.toString(),
+        credentials['token'] as String,
+        connectOptions: conferenceConnectOptions,
+      );
       if (_closed || connectGeneration != _generation || room != next) {
         await next.dispose();
         return;
+      }
+      // Match the working PC client: join the room first, then open and publish
+      // local devices. This avoids making ICE/DTLS negotiation depend on a
+      // pre-created camera track on mobile.
+      if (!cameraOn || !microphoneOn) await checkDevices();
+      if (_closed || !cameraOn || !microphoneOn || room != next) {
+        error ??= '请允许摄像头和麦克风权限，然后重新检测';
+        throw StateError('Media unavailable');
       }
       await next.localParticipant!.publishVideoTrack(camera!);
       await next.localParticipant!.publishAudioTrack(microphone!);
       error = null;
       changed();
     } catch (exception) {
-      error = conferenceConnectionMessage(exception);
-      if (room == next) await disconnectRoom();
+      if (kDebugMode) {
+        // 仅记录异常类型，不记录可能携带入场凭证的异常原文。
+        debugPrint(
+          'Conference media connection failed: ${exception.runtimeType}',
+        );
+      }
+      error ??= conferenceConnectionMessage(exception);
+      if (room == next) {
+        try {
+          await disconnectRoom();
+        } catch (_) {
+          // Cleanup failure must not hide the actual connection failure.
+        }
+      }
       rethrow;
     }
   }
@@ -173,12 +196,15 @@ class ConferenceMedia extends ChangeNotifier {
       camera = null;
       microphone = null;
       previous.removeListener(changed);
-      await previous.disconnect();
-      await previous.dispose();
-      // Precreated tracks may not have been published if connection failed.
-      // Dispose them explicitly too; the SDK's dispose is idempotent.
-      await video?.dispose();
-      await audio?.dispose();
+      try {
+        // Room.dispose also disconnects. Calling both can delay retrying a
+        // failed peer connection.
+        await previous.dispose();
+      } finally {
+        // Tracks may not have been published if permission/publishing failed.
+        await video?.dispose();
+        await audio?.dispose();
+      }
     }
     changed();
   }

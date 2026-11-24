@@ -3,7 +3,26 @@ import 'dart:io';
 
 import 'package:livekit_client/livekit_client.dart' as lk;
 
-/// The deployed conference gateway uses the API host at 8444/livekit.
+/// Allow ICE and DTLS to finish on mobile networks before disposing the room.
+/// Keep SDK defaults for debounce and track subscription.
+const conferenceConnectOptions = lk.ConnectOptions(
+  timeouts: lk.Timeouts(
+    connection: Duration(seconds: 30),
+    debounce: Duration(milliseconds: 20),
+    publish: Duration(seconds: 15),
+    subscribe: Duration(seconds: 10),
+    peerConnection: Duration(seconds: 30),
+    iceRestart: Duration(seconds: 30),
+  ),
+);
+
+/// dart:io converts WSS into HTTPS while preserving Uri.port. Dart Uri has
+/// no default port for WSS, so make 443 explicit before handing it to the SDK.
+Uri conferenceSignalingUri(Uri signaling) =>
+    signaling.scheme == 'wss' && !signaling.hasPort
+    ? signaling.replace(port: 443)
+    : signaling;
+
 /// Only this SDK connection gets the extra CA; API HTTP trust stays unchanged.
 bool usesConferencePrivateCa({
   required bool enabled,
