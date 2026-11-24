@@ -1,160 +1,220 @@
 import 'package:flutter/material.dart';
 
-import '../features/messages/domain/app_message.dart';
+import '../core/network/api_client.dart';
+import '../core/network/api_exception.dart';
 import '../features/auth/domain/auth_session.dart';
 import '../features/companies/presentation/company_screen.dart';
+import '../features/interviews/presentation/interview_screen.dart';
+import '../features/messages/data/message_api.dart';
+import '../features/messages/domain/app_message.dart';
+import '../features/messages/presentation/shared_job_detail_screen.dart';
 import '../theme/app_theme.dart';
 
-class MessageDetailScreen extends StatelessWidget {
+class MessageDetailScreen extends StatefulWidget {
   const MessageDetailScreen({
     super.key,
     required this.message,
     required this.session,
+    this.messageApi,
   });
-
   final AppMessage message;
   final AuthSession session;
+  final MessageApi? messageApi;
+  @override
+  State<MessageDetailScreen> createState() => _MessageDetailScreenState();
+}
+
+class _MessageDetailScreenState extends State<MessageDetailScreen> {
+  ApiClient? _client;
+  late final MessageApi _api;
+  List<AppMessage> _items = [];
+  bool _loading = false, _hasMore = false;
+  String? _error;
+  final Set<int> _pendingReads = {};
+  bool get _company => widget.message.category == AppMessageCategory.company;
 
   @override
-  Widget build(BuildContext context) {
-    final company = message.category == AppMessageCategory.company;
-    final accent = company ? AppColors.green : AppColors.purple;
-    final icon = company ? Icons.business_outlined : Icons.notifications_none;
+  void initState() {
+    super.initState();
+    _api = widget.messageApi ?? MessageApi(_client = ApiClient());
+    _load();
+  }
 
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              message.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-            ),
-            Text(
-              company ? '企业动态' : '系统通知',
-              style: const TextStyle(
-                color: AppColors.muted,
-                fontSize: 11,
-                fontWeight: FontWeight.w400,
+  @override
+  void dispose() {
+    _client?.close();
+    super.dispose();
+  }
+
+  Future<void> _load({bool more = false}) async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final page = await _api.fetchEvents(
+        widget.session.token,
+        widget.message,
+        beforeId: more && _items.isNotEmpty ? _items.last.sourceId : null,
+      );
+      if (!mounted) return;
+      final known = more
+          ? _items.map((item) => item.sourceId).toSet()
+          : <int>{};
+      setState(() {
+        _items = [
+          if (more) ..._items,
+          ...page.items.where((item) => known.add(item.sourceId)),
+        ];
+        _hasMore = page.hasMore;
+      });
+      // 完整加载后才确认已读，失败时保留记录并允许重试。
+      _pendingReads.addAll(
+        page.items
+            .where((item) => item.unreadCount > 0)
+            .map((item) => item.sourceId),
+      );
+      while (_pendingReads.isNotEmpty && mounted) {
+        final ids = _pendingReads.take(100).toList();
+        await _api.markEventsRead(widget.session.token, widget.message, ids);
+        _pendingReads.removeAll(ids);
+      }
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: Text(
+        widget.message.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      actions: [
+        if (_company && widget.message.threadId != null)
+          IconButton(
+            tooltip: '企业主页',
+            icon: const Icon(Icons.business_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => CompanyScreen(
+                  session: widget.session,
+                  companyId: widget.message.threadId!,
+                ),
               ),
             ),
-          ],
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          ),
+      ],
+    ),
+    body: Column(
+      children: [
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    InkWell(
-                      onTap: message.companyId == null
-                          ? null
-                          : () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => CompanyScreen(
-                                  session: session,
-                                  companyId: message.companyId!,
-                                ),
-                              ),
-                            ),
-                      customBorder: const CircleBorder(),
-                      child: Tooltip(
-                        message: company ? '查看企业主页' : '系统通知',
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.xs),
-                          child: CircleAvatar(
-                            radius: 18,
-                            backgroundColor: accent.withValues(alpha: 0.12),
-                            child: Icon(icon, color: accent, size: 20),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 9),
-                    Flexible(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            constraints: const BoxConstraints(maxWidth: 300),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.canvas,
-                              borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(12),
-                                topRight: Radius.circular(12),
-                                bottomLeft: Radius.circular(3),
-                                bottomRight: Radius.circular(12),
-                              ),
-                              border: Border.all(color: AppColors.hairline),
-                            ),
-                            child: Text(
-                              message.content,
-                              style: const TextStyle(
-                                color: AppColors.body,
-                                fontSize: 14,
-                                height: 1.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _formatTime(message.occurredAt),
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(fontSize: 10),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                Text(_error!, style: Theme.of(context).textTheme.bodySmall),
+                TextButton(
+                  onPressed: _loading ? null : () => _load(),
+                  child: const Text('重新加载'),
                 ),
               ],
             ),
           ),
-          SafeArea(
-            top: false,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
-              decoration: const BoxDecoration(
-                color: AppColors.canvas,
-                border: Border(top: BorderSide(color: AppColors.hairline)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: accent, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    company ? '企业动态暂不支持回复' : '系统通知无需回复',
-                    style: Theme.of(context).textTheme.bodySmall,
+        Expanded(
+          child: _loading && _items.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : _items.isEmpty
+              ? Center(child: Text(_company ? '暂无企业动态，发布新岗位后会显示在这里' : '暂无通知记录'))
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                    itemCount: _items.length + (_hasMore ? 1 : 0),
+                    itemBuilder: (context, index) => _hasMore && index == 0
+                        ? TextButton(
+                            onPressed: _loading
+                                ? null
+                                : () => _load(more: true),
+                            child: Text(_loading ? '正在加载…' : '加载更早记录'),
+                          )
+                        : _eventCard(
+                            _items[_items.length -
+                                1 -
+                                index +
+                                (_hasMore ? 1 : 0)],
+                          ),
                   ),
-                ],
-              ),
-            ),
+                ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _eventCard(AppMessage item) {
+    final uri = Uri.tryParse(item.targetUrl ?? '');
+    final positionId =
+        uri != null &&
+            !uri.hasScheme &&
+            !uri.hasAuthority &&
+            uri.path == '/companies/${widget.message.threadId}'
+        ? int.tryParse(uri.queryParameters['positionId'] ?? '')
+        : null;
+    return Container(
+      key: ValueKey('event-${item.sourceId}'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.canvas,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _formatTime(item.occurredAt),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
+          const SizedBox(height: 8),
+          Text(item.title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Text(item.content, style: Theme.of(context).textTheme.bodyMedium),
+          if (_company && positionId != null && positionId > 0)
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SharedJobDetailScreen(
+                    session: widget.session,
+                    positionId: positionId,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.arrow_forward, size: 17),
+              label: const Text('查看岗位'),
+            ),
+          if (widget.message.threadType == 'INTERVIEW')
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => InterviewScreen(session: widget.session),
+                ),
+              ),
+              icon: const Icon(Icons.calendar_month_outlined, size: 17),
+              label: const Text('查看面试日程'),
+            ),
         ],
       ),
     );
   }
 }
 
-String _formatTime(DateTime date) {
-  if (date.millisecondsSinceEpoch == 0) return '';
-  final now = DateTime.now();
-  final sameDay =
-      now.year == date.year && now.month == date.month && now.day == date.day;
-  final time =
-      '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-  return sameDay ? time : '${date.month}月${date.day}日 $time';
-}
+String _formatTime(DateTime date) =>
+    '${date.year}年${date.month}月${date.day}日 '
+    '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';

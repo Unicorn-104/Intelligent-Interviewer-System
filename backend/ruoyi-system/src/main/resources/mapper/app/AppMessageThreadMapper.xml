@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.app.AppMessageThreadMapper">
+    <select id="hasRescheduleTable" resultType="boolean">
+        select count(*) > 0 from information_schema.tables
+        where lower(table_name) = 't_sch_reschedule_request' and lower(table_schema) = lower(schema())
+    </select>
+    <select id="hasInterestTable" resultType="boolean">
+        select count(*) > 0 from information_schema.tables
+        where lower(table_name) = 't_usr_interest' and lower(table_schema) = lower(schema())
+    </select>
+    <resultMap id="Thread" type="com.ruoyi.system.domain.app.AppMessageThread">
+        <id property="sourceId" column="source_id"/>
+        <result property="category" column="category"/>
+        <result property="threadType" column="thread_type"/>
+        <result property="threadId" column="thread_id"/>
+        <result property="title" column="title"/>
+        <result property="content" column="content"/>
+        <result property="occurredAt" column="occurred_at"/>
+        <result property="unreadCount" column="unread_count"/>
+        <result property="messageCount" column="message_count"/>
+        <result property="avatarUrl" column="avatar_url"/>
+        <result property="targetUrl" column="target_url"/>
+        <result property="badge" column="badge"/>
+    </resultMap>
+
+    <!-- 只通过确切业务链接及当前用户归属关联，不从通知正文猜测场次。 -->
+    <sql id="notificationEvents">
+        select m.msg_id as source_id,
+            case when c.cmp_id is not null then 'COMPANY' else 'SYSTEM' end as category,
+            case when c.cmp_id is not null then 'COMPANY'
+                 when a.apt_id is not null then 'INTERVIEW' else 'SYSTEM' end as thread_type,
+            coalesce(c.cmp_id, a.apt_id, 0) as thread_id,
+            case when c.cmp_id is not null then concat(c.cmp_name, ' · 企业动态')
+                 when a.apt_id is not null then concat(coalesce(ac.cmp_name, '企业'), ' · ',
+                     coalesce(p.pos_title, '面试'), ' · 面试通知')
+                 else '其他通知' end as thread_title,
+            m.msg_title as title, m.msg_content as content, m.msg_created_at as occurred_at,
+            case when m.msg_is_read = 0 then 1 else 0 end as unread_count, 1 as event_count,
+            c.cmp_logo_url as avatar_url, m.msg_target_url as target_url,
+            case when a.apt_id is not null then '面试' else null end as badge
+        from t_msg m
+        left join t_cmp c on m.msg_type = 4
+            and m.msg_target_url like concat('/companies/', c.cmp_id, '?positionId=%')
+        <if test="hasReschedule">
+          left join t_sch_reschedule_request r on r.rsr_requester_id = #{userId}
+            and m.msg_target_url = concat('/candidate/interview/reschedule-requests/', r.rsr_id)
+        </if>
+        left join t_sch_appointment a on
+            (m.msg_target_url = concat('/candidate/interview/appointments/', a.apt_id)
+                <if test="hasReschedule">or a.apt_id = r.rsr_appointment_id</if>)
+            and exists (select 1 from t_tal t where t.tal_id = a.apt_candidate_id and t.tal_user_id = #{userId})
+        left join t_pos p on p.pos_id = a.apt_position_id
+        left join t_cmp ac on ac.cmp_id = p.pos_company_id
+        where m.msg_receiver_id = #{userId}
+    </sql>
+
+    <sql id="allEvents">
+        <include refid="notificationEvents"/>
+        union all
+        select s.ims_id as source_id, 'HR' as category, 'HR' as thread_type, s.ims_id as thread_id,
+            concat(coalesce(c.cmp_name, '企业'), ' HR · ', coalesce(nullif(hr.nick_name, ''), hr.user_name)) as thread_title,
+            '' as title, coalesce(nullif(s.ims_last_message, ''), '暂无消息内容') as content,
+            coalesce(s.ims_last_message_at, s.ims_updated_at, s.ims_created_at) as occurred_at,
+            coalesce(s.ims_unread_b, 0) as unread_count, 1 as event_count, hr.avatar as avatar_url,
+            null as target_url, null as badge
+        from t_im_session s
+        join sys_user hr on hr.user_id = s.ims_user_a_id and hr.del_flag = '0'
+        left join t_cmp c on c.cmp_id = (select min(b.bnd_company_id) from t_cmp_binding b
+            where b.bnd_user_id = hr.user_id and b.bnd_status = 1)
+        where s.ims_user_b_id = #{userId}
+        <if test="hasInterest">
+        union all
+        select i.int_id as source_id, 'COMPANY' as category, 'COMPANY' as thread_type,
+            c.cmp_id as thread_id, concat(c.cmp_name, ' · 企业动态') as thread_title,
+            '' as title, '已关注，暂无新动态' as content,
+            coalesce(i.int_updated_at, i.int_created_at) as occurred_at,
+            0 as unread_count, 0 as event_count, c.cmp_logo_url as avatar_url,
+            concat('/companies/', c.cmp_id) as target_url, '关注' as badge
+        from t_usr_interest i
+        join t_cmp c on c.cmp_id = i.int_target_id and c.cmp_status = 1
+        where i.int_user_id = #{userId} and i.int_target_type = 2 and i.int_status = 1
+            and not exists (select 1 from t_msg cm where cm.msg_receiver_id = #{userId}
+                and cm.msg_type = 4 and cm.msg_target_url like concat('/companies/', c.cmp_id, '?positionId=%'))
+        </if>
+    </sql>
+
+    <select id="selectThreads" resultMap="Thread">
+        select source_id, category, thread_type, thread_id, thread_title as title,
+            case when thread_type in ('INTERVIEW', 'SYSTEM') then concat(ranked.title, '：', content) else content end as content,
+            occurred_at, total_unread as unread_count, message_count, avatar_url, target_url, badge
+        from (
+            select e.*,
+                row_number() over (partition by thread_type, thread_id order by occurred_at desc, source_id desc) as row_num,
+                sum(unread_count) over (partition by thread_type, thread_id) as total_unread,
+                sum(event_count) over (partition by thread_type, thread_id) as message_count
+            from (<include refid="allEvents"/>) e
+            <if test="category != 'ALL'">where category = #{category}</if>
+        ) ranked
+        where row_num = 1
+        <if test="beforeTime != null">
+            and (occurred_at &lt; #{beforeTime}
+                or (occurred_at = #{beforeTime} and source_id &lt; #{beforeId})
+                <if test="beforeType != null">
+                    or (occurred_at = #{beforeTime} and source_id = #{beforeId} and thread_type &lt; #{beforeType})
+                </if>)
+        </if>
+        order by occurred_at desc, source_id desc, thread_type desc
+        limit #{limit}
+    </select>
+
+    <select id="selectUnreadCounts" resultMap="Thread">
+        select category, sum(unread_count) as unread_count
+        from (<include refid="allEvents"/>) e group by category
+    </select>
+
+    <select id="selectEvents" resultMap="Thread">
+        select e.* from (<include refid="notificationEvents"/>) e
+        where thread_type = #{threadType} and thread_id = #{threadId}
+        <if test="beforeId != null">and source_id &lt; #{beforeId}</if>
+        order by source_id desc limit #{limit}
+    </select>
+
+    <select id="selectReadableIds" resultType="long">
+        select source_id from (<include refid="notificationEvents"/>) e
+        where thread_type = #{threadType} and thread_id = #{threadId} and source_id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <update id="markEventsRead">
+        update t_msg set msg_is_read = 1, msg_read_at = coalesce(msg_read_at, now())
+        where msg_receiver_id = #{userId} and msg_is_read = 0 and msg_id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </update>
+</mapper>

@@ -8,6 +8,7 @@ import '../../resume/data/resume_api.dart';
 import '../../resume/domain/app_resume.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/job_card.dart';
+import '../../../widgets/chat_composer.dart';
 import '../data/ai_api.dart';
 import '../data/ai_conversation_store.dart';
 import '../domain/ai_models.dart';
@@ -685,56 +686,39 @@ class _AiChatScreenState extends State<AiChatScreen> {
               ),
               Container(
                 color: AppColors.canvas,
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.sm,
-                  AppSpacing.md,
-                  AppSpacing.xs,
-                ),
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                 child: Column(
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _input,
-                            minLines: 1,
-                            maxLines: 4,
-                            maxLength: 4000,
-                            enabled:
-                                !_chat.busy &&
-                                !_chat.loading &&
-                                !_chat.awaitingConversation &&
-                                !_choosingResume &&
-                                !_choosingApplication,
-                            decoration: const InputDecoration(
-                              hintText: '想聊什么，直接输入…',
-                              counterText: '',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
+                    ChatComposer(
+                      controller: _input,
+                      maxLength: 4000,
+                      safeArea: false,
+                      enabled:
+                          !_chat.busy &&
+                          !_chat.loading &&
+                          !_chat.awaitingConversation &&
+                          !_choosingResume &&
+                          !_choosingApplication,
+                      onSend: _send,
+                      onStop: _chat.runId != null ? _chat.stop : null,
+                      stopping: _chat.stopping,
+                      cameraTooltip: 'AI暂不支持图片输入',
+                      actions: [
+                        ChatComposerAction(
+                          '选择简历',
+                          Icons.description_outlined,
+                          _chooseResume,
                         ),
-                        const SizedBox(width: AppSpacing.sm),
-                        if (_chat.runId != null)
-                          IconButton(
-                            tooltip: '停止生成',
-                            onPressed: _chat.stopping ? null : _chat.stop,
-                            icon: const Icon(Icons.stop_circle_outlined),
-                          )
-                        else
-                          IconButton.filled(
-                            tooltip: '发送',
-                            onPressed:
-                                _chat.busy ||
-                                    _chat.loading ||
-                                    _chat.awaitingConversation ||
-                                    _choosingResume ||
-                                    _choosingApplication
-                                ? null
-                                : _send,
-                            icon: const Icon(Icons.arrow_upward),
-                          ),
+                        ChatComposerAction(
+                          '选择岗位',
+                          Icons.work_outline,
+                          _chooseApplication,
+                        ),
+                        ChatComposerAction(
+                          '个人知识库',
+                          Icons.menu_book_outlined,
+                          _openKnowledge,
+                        ),
                       ],
                     ),
                     const Padding(

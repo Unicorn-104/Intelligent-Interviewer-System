@@ -111,7 +111,8 @@ void main() {
       });
       await tester.pumpAndSettle();
       expect(_selectable('技能优势'), findsOneWidget);
-      expect(find.byTooltip('发送'), findsOneWidget);
+      expect(find.byTooltip('切换语音输入'), findsOneWidget);
+      expect(find.byTooltip('发送'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
