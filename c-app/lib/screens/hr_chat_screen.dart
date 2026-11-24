@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
+import '../features/messages/data/chat_attachment_picker.dart';
+import '../features/messages/presentation/chat_attachment_view.dart';
+import '../features/profile/data/profile_api.dart';
+import '../features/profile/presentation/profile_avatar.dart';
 import '../features/auth/domain/auth_session.dart';
 import '../features/messages/data/message_api.dart';
 import '../features/messages/domain/app_message.dart';
@@ -14,6 +18,7 @@ import '../features/messages/presentation/shared_job_card_view.dart';
 import '../features/messages/presentation/shared_job_detail_screen.dart';
 import '../features/jobs/data/job_api.dart';
 import '../theme/app_theme.dart';
+import '../widgets/chat_composer.dart';
 
 class HrChatScreen extends StatefulWidget {
   const HrChatScreen({
@@ -22,6 +27,7 @@ class HrChatScreen extends StatefulWidget {
     required this.conversation,
     this.messageApi,
     this.sharedJobApi,
+    this.profileApi,
     this.pollInterval = const Duration(seconds: 8),
   });
 
@@ -29,6 +35,7 @@ class HrChatScreen extends StatefulWidget {
   final AppMessage conversation;
   final MessageApi? messageApi;
   final JobApi? sharedJobApi;
+  final ProfileApi? profileApi;
   final Duration pollInterval;
 
   @override
@@ -47,12 +54,18 @@ class _HrChatScreenState extends State<HrChatScreen>
   Timer? _timer;
   bool _acknowledging = false;
   int _lastAcknowledged = 0;
+  String? _avatar, _attachmentError, _attachmentPhase;
+  ChatPickedAttachment? _pendingAttachment;
+  ChatUploadedAttachment? _uploadedAttachment;
+  bool _attachmentUncertain = false, _attachmentSent = false;
 
   @override
   void initState() {
     super.initState();
     _client = ApiClient();
     _api = widget.messageApi ?? MessageApi(_client);
+    _avatar = widget.session.avatar;
+    _loadProfile();
     _scrollController.addListener(_acknowledgeVisible);
     WidgetsBinding.instance.addObserver(this);
     _load();
@@ -63,6 +76,141 @@ class _HrChatScreenState extends State<HrChatScreen>
         }
       });
     }
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final profile = await (widget.profileApi ?? ProfileApi(_client))
+          .fetchProfile(widget.session.token);
+      if (mounted) setState(() => _avatar = profile.avatar);
+    } catch (_) {
+      // 资料暂时不可用时沿用登录态头像，聊天仍可使用。
+    }
+  }
+
+  Future<void> _chooseAttachment(bool image, {bool camera = false}) async {
+    if (_sending || _pendingAttachment != null) return;
+    setState(() => _sending = true);
+    try {
+      final picked = camera
+          ? await _api.pickCameraAttachment()
+          : await _api.pickAttachment(image: image);
+      if (!mounted || picked == null) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          scrollable: true,
+          title: Text(image ? '发送图片' : '发送文件'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (image)
+                Image.memory(
+                  picked.bytes,
+                  height: 150,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const Text('图片预览不可用'),
+                ),
+              Text(picked.name),
+              Text('${(picked.bytes.length / 1024).toStringAsFixed(1)} KB'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('确认发送'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+      setState(() {
+        _pendingAttachment = picked;
+        _uploadedAttachment = null;
+        _attachmentSent = false;
+        _attachmentUncertain = false;
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is FormatException ? error.message : '附件选择失败，请重新选择',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+    if (mounted && _pendingAttachment != null) await _sendAttachment();
+  }
+
+  Future<void> _sendAttachment() async {
+    final picked = _pendingAttachment;
+    if (picked == null || _sending || _attachmentUncertain || _attachmentSent) {
+      return;
+    }
+    var attempted = false;
+    setState(() {
+      _sending = true;
+      _attachmentError = null;
+      _attachmentPhase = '正在上传附件…';
+    });
+    try {
+      final uploaded =
+          _uploadedAttachment ??
+          await _api.uploadAttachment(widget.session.token, picked);
+      if (!mounted) return;
+      _uploadedAttachment = uploaded;
+      setState(() => _attachmentPhase = '正在发送附件…');
+      attempted = true;
+      await _api.sendAttachment(
+        widget.session.token,
+        widget.conversation.sourceId,
+        uploaded,
+      );
+      if (!mounted) return;
+      _attachmentSent = true;
+      await _load(scrollToEnd: true);
+      if (!mounted) return;
+      if (_error == null) {
+        setState(_clearAttachment);
+      } else {
+        setState(() => _attachmentError = '附件已发送，聊天记录暂未刷新，请刷新查看');
+      }
+    } catch (error) {
+      if (!mounted) return;
+      final known = error is ApiException && error.code != null;
+      setState(() {
+        _attachmentUncertain = attempted && !known;
+        _attachmentError = _attachmentUncertain
+            ? '发送结果待确认，请刷新聊天记录核对，避免重复发送'
+            : error is ApiException
+            ? error.message
+            : '附件上传失败，请重试';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _attachmentPhase = null;
+        });
+      }
+    }
+  }
+
+  void _clearAttachment() {
+    _pendingAttachment = null;
+    _uploadedAttachment = null;
+    _attachmentError = null;
+    _attachmentUncertain = false;
+    _attachmentSent = false;
   }
 
   @override
@@ -215,10 +363,75 @@ class _HrChatScreenState extends State<HrChatScreen>
       body: Column(
         children: [
           Expanded(child: _buildBody()),
-          _ChatComposer(
+          if (_pendingAttachment != null)
+            Material(
+              color: AppColors.primarySoft,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _pendingAttachment!.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (_sending) ...[
+                      Text(_attachmentPhase ?? '正在处理附件…'),
+                      const LinearProgressIndicator(),
+                    ] else ...[
+                      Text(_attachmentError ?? ''),
+                      Wrap(
+                        children: [
+                          if (!_attachmentUncertain && !_attachmentSent)
+                            TextButton(
+                              onPressed: _sendAttachment,
+                              child: const Text('重试发送'),
+                            ),
+                          TextButton(
+                            onPressed: () => _load(scrollToEnd: true),
+                            child: const Text('刷新记录'),
+                          ),
+                          TextButton(
+                            onPressed: () => setState(_clearAttachment),
+                            child: Text(
+                              _attachmentUncertain || _attachmentSent
+                                  ? '关闭提示'
+                                  : '取消附件',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ChatComposer(
             controller: _textController,
-            sending: _sending,
+            busy: _sending,
             onSend: _send,
+            onCamera: _pendingAttachment == null
+                ? () => _chooseAttachment(true, camera: true)
+                : null,
+            moreTooltip: '发送图片或文件',
+            actions: _pendingAttachment != null
+                ? []
+                : [
+                    ChatComposerAction(
+                      '发送图片',
+                      Icons.image_outlined,
+                      () => _chooseAttachment(true),
+                    ),
+                    ChatComposerAction(
+                      '发送文件',
+                      Icons.attach_file,
+                      () => _chooseAttachment(false),
+                    ),
+                  ],
           ),
         ],
       ),
@@ -263,6 +476,10 @@ class _HrChatScreenState extends State<HrChatScreen>
           message: messages[index],
           session: widget.session,
           sharedJobApi: widget.sharedJobApi,
+          api: _api,
+          ownAvatar: _avatar,
+          peerAvatar: widget.conversation.avatarUrl,
+          peerName: widget.conversation.title,
         ),
       ),
     );
@@ -274,8 +491,15 @@ class _ChatBubble extends StatelessWidget {
     required this.message,
     required this.session,
     this.sharedJobApi,
+    required this.api,
+    required this.ownAvatar,
+    required this.peerAvatar,
+    required this.peerName,
   });
   final JobApi? sharedJobApi;
+  final MessageApi api;
+  final String? ownAvatar, peerAvatar;
+  final String peerName;
 
   final AuthSession session;
 
@@ -290,14 +514,11 @@ class _ChatBubble extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (!message.mine) ...[
-          const CircleAvatar(
+          ProfileAvatar(
+            avatar: peerAvatar,
+            name: peerName,
             radius: 18,
             backgroundColor: AppColors.primarySoft,
-            child: Icon(
-              Icons.person_outline,
-              color: AppColors.interactive,
-              size: 20,
-            ),
           ),
           const SizedBox(width: 9),
         ],
@@ -309,25 +530,34 @@ class _ChatBubble extends StatelessWidget {
             children: [
               Container(
                 constraints: const BoxConstraints(maxWidth: 280),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: message.mine
-                      ? const Color(0xFF95EC69)
-                      : AppColors.canvas,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(12),
-                    topRight: const Radius.circular(12),
-                    bottomLeft: Radius.circular(message.mine ? 12 : 3),
-                    bottomRight: Radius.circular(message.mine ? 3 : 12),
-                  ),
-                  border: message.mine
-                      ? null
-                      : Border.all(color: AppColors.hairline),
-                ),
-                child: message.interviewInvitation != null
+                padding: message.type == 2
+                    ? EdgeInsets.zero
+                    : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: message.type == 2
+                    ? null
+                    : BoxDecoration(
+                        color: message.mine
+                            ? const Color(0xFF95EC69)
+                            : AppColors.canvas,
+                        borderRadius: message.type == 2
+                            ? BorderRadius.circular(12)
+                            : BorderRadius.only(
+                                topLeft: const Radius.circular(12),
+                                topRight: const Radius.circular(12),
+                                bottomLeft: Radius.circular(
+                                  message.mine ? 12 : 3,
+                                ),
+                                bottomRight: Radius.circular(
+                                  message.mine ? 3 : 12,
+                                ),
+                              ),
+                        border: message.mine || message.type == 2
+                            ? null
+                            : Border.all(color: AppColors.hairline),
+                      ),
+                child: message.type == 2 || message.type == 3
+                    ? ChatAttachmentView(message: message, api: api)
+                    : message.interviewInvitation != null
                     ? InterviewInvitationCard(
                         invitation: message.interviewInvitation!,
                         onTap: () => Navigator.of(context).push<void>(
@@ -369,92 +599,29 @@ class _ChatBubble extends StatelessWidget {
                         mine: false,
                       ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                '${_formatChatTime(message.createdAt)}${message.mine && ['read', 'delivered'].contains(message.deliveryStatus) ? (message.deliveryStatus == 'read' ? ' · 已读' : ' · 送达') : ''}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontSize: 10),
-              ),
+              if (message.type != 2) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${_formatChatTime(message.createdAt)}${message.mine && ['read', 'delivered'].contains(message.deliveryStatus) ? (message.deliveryStatus == 'read' ? ' · 已读' : ' · 送达') : ''}',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontSize: 10),
+                ),
+              ],
             ],
           ),
         ),
         if (message.mine) ...[
           const SizedBox(width: 9),
-          const CircleAvatar(
+          ProfileAvatar(
+            avatar: ownAvatar,
+            name: session.nickName,
             radius: 18,
             backgroundColor: AppColors.brand,
-            child: Icon(Icons.person, color: Colors.white, size: 19),
+            foregroundColor: Colors.white,
           ),
         ],
       ],
-    );
-  }
-}
-
-class _ChatComposer extends StatelessWidget {
-  const _ChatComposer({
-    required this.controller,
-    required this.sending,
-    required this.onSend,
-  });
-
-  final TextEditingController controller;
-  final bool sending;
-  final VoidCallback onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        decoration: const BoxDecoration(
-          color: AppColors.canvas,
-          border: Border(top: BorderSide(color: AppColors.hairline)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: controller,
-                minLines: 1,
-                maxLines: 4,
-                maxLength: 1000,
-                textInputAction: TextInputAction.newline,
-                decoration: const InputDecoration(
-                  hintText: '输入消息…',
-                  counterText: '',
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 46,
-              height: 46,
-              child: FilledButton(
-                onPressed: sending ? null : onSend,
-                style: FilledButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  shape: const CircleBorder(),
-                ),
-                child: sending
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.arrow_upward_rounded),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

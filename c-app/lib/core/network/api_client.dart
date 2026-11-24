@@ -16,6 +16,100 @@ class ApiClient {
   final HttpClient _httpClient;
   final String baseUrl;
 
+  Future<Map<String, dynamic>> uploadBytes(
+    String path, {
+    required String token,
+    required String filename,
+    required Uint8List bytes,
+    required String mimeType,
+  }) async {
+    HttpClientRequest? request;
+    try {
+      return await (() async {
+        request = await _httpClient.postUrl(Uri.parse('$baseUrl$path'));
+        request!.followRedirects = false;
+        final boundary = '----capp-${DateTime.now().microsecondsSinceEpoch}';
+        final name = filename.replaceAll(RegExp(r'[\r\n"\\]'), '_');
+        final header = utf8.encode(
+          '--$boundary\r\n'
+          'Content-Disposition: form-data; name="file"; filename="$name"\r\n'
+          'Content-Type: $mimeType\r\n\r\n',
+        );
+        final footer = utf8.encode('\r\n--$boundary--\r\n');
+        request!.headers.set(
+          HttpHeaders.contentTypeHeader,
+          'multipart/form-data; boundary=$boundary',
+        );
+        request!.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+        request!.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        request!.contentLength = header.length + bytes.length + footer.length;
+        request!.add(header);
+        request!.add(bytes);
+        request!.add(footer);
+        return _readResponse(await request!.close(), token: token);
+      })().timeout(AppConfig.fileUploadTimeout);
+    } on ApiException {
+      rethrow;
+    } on TimeoutException {
+      throw const ApiException('附件上传超时，请重试');
+    } catch (_) {
+      throw const ApiException('附件上传失败，请检查网络后重试');
+    } finally {
+      request?.abort();
+    }
+  }
+
+  /// 只下载当前网关公开资源，不携带登录凭据，也不跟随重定向。
+  Future<Uint8List> downloadPublicAttachment(String url) async {
+    final uri = Uri.parse(url), base = Uri.parse(baseUrl);
+    final prefix = '${base.path.replaceAll(RegExp(r'/+$'), '')}/profile/';
+    if (uri.origin != base.origin ||
+        !uri.path.startsWith(prefix) ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      throw const ApiException('附件地址无效');
+    }
+    HttpClientRequest? request;
+    try {
+      return await (() async {
+        request = await _httpClient.getUrl(uri);
+        request!.followRedirects = false;
+        final response = await request!.close();
+        if (response.statusCode != 200 ||
+            response.headers.contentType?.mimeType == 'application/json' ||
+            response.headers.contentType?.mimeType == 'text/html') {
+          throw const ApiException('附件暂时无法下载，请稍后重试');
+        }
+        const max = 10 * 1024 * 1024;
+        if (response.contentLength > max) {
+          throw const ApiException('附件不能超过10MB');
+        }
+        final buffer = BytesBuilder(copy: false);
+        await for (final chunk in response) {
+          if (buffer.length + chunk.length > max) {
+            throw const ApiException('附件不能超过10MB');
+          }
+          buffer.add(chunk);
+        }
+        if (buffer.isEmpty ||
+            (response.contentLength >= 0 &&
+                buffer.length != response.contentLength)) {
+          throw const ApiException('附件读取不完整，请重试');
+        }
+        return buffer.takeBytes();
+      })().timeout(AppConfig.fileUploadTimeout);
+    } on ApiException {
+      rethrow;
+    } on TimeoutException {
+      throw const ApiException('附件下载超时，请重试');
+    } catch (_) {
+      throw const ApiException('附件下载失败，请检查网络后重试');
+    } finally {
+      request?.abort();
+    }
+  }
+
   Future<Uint8List> getPdf(String path, {required String token}) async {
     HttpClientRequest? request;
     try {
