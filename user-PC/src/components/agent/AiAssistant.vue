@@ -132,8 +132,8 @@ async function openPanel(requestedAction) {
     if (target && !disposed) router.push(target)
     return
   }
+  cancelPicker()
   open.value = true
-  view.value = 'chat'
   followLatest.value = true
   await initialize()
   if (disposed) return
@@ -180,7 +180,7 @@ watch(() => `${messages.value.at(-1)?.content || ''}-${messages.value.at(-1)?.ca
 })
 
 function backToChat() {
-  view.value = 'chat'
+  cancelPicker()
   scrollLatest()
 }
 
@@ -222,6 +222,7 @@ async function removeSession(id) {
 
 async function openPicker(kind, nextAction = null) {
   if (locked.value) return
+  cancelPicker()
   pendingAction = nextAction
   view.value = kind
   pickerQuery.value = ''
@@ -247,7 +248,7 @@ async function loadPicker(older = false) {
   const page = older ? pickerPage + 1 : 1
   try {
     const [response, resumesResponse] = kind === 'resumes' ? [await getResumes(), null] : await Promise.all([listApplications({ page, size: 20 }), getResumes()])
-    if (disposed || epoch !== pickerEpoch) return
+    if (disposed || epoch !== pickerEpoch || view.value !== kind) return
     const items = kind === 'resumes' ? response.data : response.data?.items
     if (!Array.isArray(items)) throw new Error('选择列表响应格式不正确')
     if (kind === 'applications' && !Array.isArray(resumesResponse?.data)) throw new Error('简历列表读取失败，请重试')
@@ -257,9 +258,9 @@ async function loadPicker(older = false) {
     pickerPage = page
     pickerHasMore.value = kind === 'applications' && Boolean(response.data.hasNext)
   } catch (failure) {
-    if (!disposed && epoch === pickerEpoch) pickerError.value = failure.message || '读取失败，请稍后重试'
+    if (!disposed && epoch === pickerEpoch && view.value === kind) pickerError.value = failure.message || '读取失败，请稍后重试'
   } finally {
-    if (!disposed && epoch === pickerEpoch) pickerLoading.value = false
+    if (!disposed && epoch === pickerEpoch && view.value === kind) pickerLoading.value = false
   }
 }
 
