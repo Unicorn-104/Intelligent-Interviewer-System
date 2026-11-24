@@ -1,5 +1,12 @@
+import 'dart:collection';
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:intelligent_interviewer/features/interviews/presentation/conference_controller.dart';
 import 'package:intelligent_interviewer/features/interviews/presentation/conference_room_view.dart';
 import 'package:intelligent_interviewer/features/interviews/presentation/conference_screen.dart';
@@ -32,6 +39,46 @@ class _Media extends FakeMedia {
   }
 }
 
+class _RosterParticipant implements lk.RemoteParticipant {
+  _RosterParticipant(this.identity, this.name);
+  @override
+  final String identity, name;
+  @override
+  bool get isSpeaking => identity == 'u20';
+  @override
+  List<lk.RemoteTrackPublication<lk.RemoteVideoTrack>>
+  get videoTrackPublications => [];
+  @override
+  bool isMicrophoneEnabled() => identity != 'u21';
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RosterRoom implements lk.Room {
+  final people = <String, lk.RemoteParticipant>{};
+  @override
+  lk.LocalParticipant? get localParticipant => null;
+  @override
+  UnmodifiableMapView<String, lk.RemoteParticipant> get remoteParticipants =>
+      UnmodifiableMapView(people);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RosterMedia extends _Media {
+  final roster = _RosterRoom();
+  @override
+  lk.Room get room => roster;
+  void setCount(int count) {
+    roster.people.clear();
+    for (var i = 0; i < count - 1; i++) {
+      final person = _RosterParticipant('u${20 + i}', '面试官${i + 1}');
+      roster.people[person.identity] = person;
+    }
+    changed();
+  }
+}
+
 void main() {
   Future<ConferenceController> mount(
     WidgetTester tester, {
@@ -39,6 +86,7 @@ void main() {
     int mode = 2,
     _Media? media,
     double scale = 1,
+    Key? captureKey,
   }) async {
     final api = FakeApi()..mode = mode;
     final c = controller(api, media ?? (_Media()..online = true));
@@ -58,14 +106,23 @@ void main() {
     });
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.light,
+        theme: captureKey == null
+            ? AppTheme.light
+            : AppTheme.light.copyWith(
+                textTheme: AppTheme.light.textTheme.apply(
+                  fontFamily: 'ReviewChinese',
+                ),
+              ),
         home: MediaQuery(
           data: MediaQueryData(textScaler: TextScaler.linear(scale)),
-          child: ConferenceRoomView(
-            controller: c,
-            session: session,
-            onLeave: () {},
-            onFinish: () {},
+          child: RepaintBoundary(
+            key: captureKey,
+            child: ConferenceRoomView(
+              controller: c,
+              session: session,
+              onLeave: () {},
+              onFinish: () {},
+            ),
           ),
         ),
       ),
@@ -73,6 +130,82 @@ void main() {
     await tester.pumpAndSettle();
     return c;
   }
+
+  testWidgets('真实会议视图接入成员和本人，2/3/4人布局与截图检查', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fontPath = File('C:/Windows/Fonts/msyh.ttc');
+    if (fontPath.existsSync()) {
+      final loader = FontLoader('ReviewChinese');
+      loader.addFont(
+        Future.value(ByteData.sublistView(fontPath.readAsBytesSync())),
+      );
+      await loader.load();
+    }
+    final icons = File(
+      'E:/Env/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+    );
+    if (icons.existsSync()) {
+      final loader = FontLoader('MaterialIcons');
+      loader.addFont(
+        Future.value(ByteData.sublistView(icons.readAsBytesSync())),
+      );
+      await loader.load();
+    }
+    final media = _RosterMedia()..online = true;
+    media.setCount(4);
+    final captureKey = GlobalKey();
+    await mount(tester, media: media, mode: 4, captureKey: captureKey);
+    Future<void> capture(String name) async {
+      final boundary =
+          captureKey.currentContext!.findRenderObject()!
+              as RenderRepaintBoundary;
+      await tester.runAsync(() async {
+        final picture = await boundary.toImage(pixelRatio: 2);
+        final png = await picture.toByteData(format: ui.ImageByteFormat.png);
+        final file = File('build/conference-layout-review/$name.png');
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(png!.buffer.asUint8List());
+        picture.dispose();
+      });
+    }
+
+    expect(
+      find.byKey(const ValueKey('conference-thumbnail-self')),
+      findsOneWidget,
+    );
+    await capture('focus-four-synthetic');
+    await tester.tap(find.byKey(const ValueKey('conference-thumbnail-self')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('conference-featured-self')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('宫格视图 1'));
+    await tester.pumpAndSettle();
+    await capture('grid-four-synthetic');
+    for (final count in [3, 2]) {
+      media.setCount(count);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('conference-grid-self')).hitTestable(),
+        findsOneWidget,
+      );
+      await capture('grid-$count-synthetic');
+    }
+    tester.view.physicalSize = const Size(320, 640);
+    media.setCount(4);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await capture('grid-four-small-synthetic');
+    tester.view.physicalSize = const Size(740, 340);
+    media.setCount(2);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets(
     'waiting preserves server readiness and disables media, no host controls',
