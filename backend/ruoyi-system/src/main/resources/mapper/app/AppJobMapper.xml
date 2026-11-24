@@ -154,6 +154,16 @@
         where app_candidate_id = #{candidateId} and app_position_id = #{positionId}
     </select>
 
+    <update id="updateCandidateResume">
+        update t_tal
+        set tal_resume_id = #{resumeId}, tal_updated_at = now()
+        where tal_id = #{candidateId}
+          and tal_user_id = #{userId}
+          and tal_company_id = #{companyId}
+          and exists (select 1 from t_res_base r
+                      where r.rbs_id = #{resumeId} and r.rbs_user_id = #{userId} and r.rbs_status = 1)
+    </update>
+
     <insert id="insertApplication">
         insert into t_app_record
             (app_candidate_id, app_position_id, app_resume_id, app_matched_score,

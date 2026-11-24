@@ -19,11 +19,14 @@ class AppJobApplyProcessTest
 {
     @Mock private AppJobMapper jobMapper;
     @Mock private IEnterpriseJobService enterpriseJobService;
+    @Mock private com.ruoyi.enterprise.service.EntResumeSnapshotService snapshots;
     @InjectMocks private AppJobServiceImpl service;
 
     @BeforeEach
     void applyBasics()
     {
+        lenient().when(jobMapper.selectAppId(5L, 39L)).thenReturn(101L);
+        lenient().when(jobMapper.updateCandidateResume(5L, 104L, 2L, 7L)).thenReturn(1);
         lenient().when(jobMapper.selectDefaultResumeId(104L)).thenReturn(7L);
         lenient().when(jobMapper.selectCompanyIdByPositionId(39L)).thenReturn(2L);
         lenient().when(jobMapper.selectCandidateId(104L, 2L)).thenReturn(null, 5L);
