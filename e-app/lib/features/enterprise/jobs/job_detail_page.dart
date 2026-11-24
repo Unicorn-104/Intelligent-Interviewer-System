@@ -14,9 +14,9 @@ import 'interested_talent_page.dart';
 import 'models/job_detail_view_data.dart';
 import 'widgets/job_basic_info_tab.dart';
 import 'widgets/job_candidates_tab.dart';
+import 'widgets/job_exam_invite_page.dart';
 import 'widgets/job_workflow_section.dart';
 import 'widgets/job_workflow_timeline.dart';
-import 'widgets/job_exam_invite_sheet.dart';
 
 /// 岗位详情页浅灰蓝背景，参考 BOSS 直聘风格。
 const jobDetailBackground = Color(0xFFF3F7FA);
@@ -453,19 +453,72 @@ class _JobDetailPageState extends State<JobDetailPage>
     });
   }
 
+  Set<String> get _examStageNames {
+    final names = <String>{};
+    void collect(Object? raw) {
+      if (raw is! List) return;
+      for (final stage in raw) {
+        if (stage is! Map) continue;
+        if (int.tryParse('${stage['type']}') != 1) continue;
+        final name = '${stage['name'] ?? ''}'.trim();
+        if (name.isNotEmpty) names.add(name);
+      }
+    }
+
+    collect(_detail.data?.stages);
+    collect(_workflow.data?['stages']);
+    return names;
+  }
+
+  int? get _examStageId {
+    final data = _workflow.data;
+    if (data == null) return null;
+    final stages = jobWorkflowSaveBody(data)['stages'];
+    if (stages is! List) return null;
+    for (final stage in stages) {
+      if (stage is! Map || int.tryParse('${stage['type']}') != 1) continue;
+      final id = int.tryParse('${stage['stageId'] ?? stage['id']}');
+      if (id != null) return id;
+    }
+    return null;
+  }
+
+  /// 在线笔试阶段配置的通过阈值百分比；旧流程未配置时按 70% 兼容。
+  int? get _examPassPercent {
+    final data = _workflow.data;
+    if (data == null) return null;
+    final stages = jobWorkflowSaveBody(data)['stages'];
+    if (stages is! List) return null;
+    for (final stage in stages) {
+      if (stage is! Map || int.tryParse('${stage['type']}') != 1) continue;
+      final percent = int.tryParse('${stage['threshold']}');
+      if (percent != null && percent >= 1 && percent <= 100) return percent;
+    }
+    return null;
+  }
+
   Future<void> _openExamInvite() async {
     final candidates =
         _detail.data?.candidates ?? const <Map<String, dynamic>>[];
     if (!_hasExamStage || candidates.isEmpty) return;
-    final sent = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => FractionallySizedBox(
-        heightFactor: .88,
-        child: JobExamInviteSheet(
+    final examStageNames = _examStageNames;
+    final examStageId = _examStageId;
+    if (examStageNames.isEmpty || examStageId == null) {
+      showCompactError(context, '未找到笔试阶段配置，请刷新岗位后重试');
+      return;
+    }
+    final sent = await Navigator.of(context, rootNavigator: true).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => JobExamInvitePage(
           positionId: _positionId,
+          jobTitle: jobValue(
+            _detail.data?.job['title'] ?? widget.job['title'],
+            fallback: '当前岗位',
+          ),
           candidates: candidates,
+          examStageNames: examStageNames,
+          examStageId: examStageId,
+          examPassPercent: _examPassPercent ?? 70,
         ),
       ),
     );

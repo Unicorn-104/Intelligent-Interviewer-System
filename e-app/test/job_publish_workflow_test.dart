@@ -147,6 +147,41 @@ void main() {
     await tapKey(tester, 'job-publish-stage-cancel');
   });
 
+  testWidgets('在线笔试不编排时长，通过阈值按百分比填写', (tester) async {
+    await mountWorkflow(tester);
+    await tapKey(tester, 'job-publish-add-stage');
+    await chooseType(tester, 0, '在线笔试');
+
+    expect(find.byKey(const Key('job-publish-stage-duration-0')), findsNothing);
+    expect(
+      find.byKey(const Key('job-publish-stage-exam-threshold-note-0')),
+      findsOneWidget,
+    );
+    expect(find.text('通过阈值（%）'), findsOneWidget);
+
+    await enter(tester, 'job-publish-stage-threshold-0', '101');
+    await saveStage(tester);
+    expect(find.text('请输入1至100的百分比'), findsOneWidget);
+
+    await enter(tester, 'job-publish-stage-threshold-0', '80');
+    await saveStage(tester);
+    expect(find.text('通过阈值 80%'), findsOneWidget);
+
+    await tapKey(tester, 'job-publish-stage-edit-0');
+    expect(find.byKey(const Key('job-publish-stage-duration-0')), findsNothing);
+    expect(
+      tester
+          .widget<TextFormField>(
+            find.byKey(const Key('job-publish-stage-threshold-0')),
+          )
+          .controller!
+          .text,
+      '80',
+    );
+    await tapKey(tester, 'job-publish-stage-cancel');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('关闭按钮、系统返回和点击遮罩均取消编辑', (tester) async {
     await mountWorkflow(tester);
     await tapKey(tester, 'job-publish-add-stage');
@@ -312,7 +347,7 @@ void main() {
     );
     await tapKey(tester, 'job-publish-add-stage');
     await chooseType(tester, 0, '在线笔试');
-    await enter(tester, 'job-publish-stage-duration-0', '60');
+    await enter(tester, 'job-publish-stage-threshold-0', '90');
     await enter(tester, 'job-publish-stage-target-0', '算法与基础知识');
     await saveStage(tester);
     await tapKey(tester, 'job-publish-add-stage');
@@ -330,7 +365,8 @@ void main() {
     final stages = sentWorkflow!['stages'] as List;
     expect(stages.map((stage) => stage['name']), ['在线笔试', 'AI 技术面试']);
     expect(stages.map((stage) => stage['type']), [1, 2]);
-    expect(stages[0]['duration'], 60);
+    expect((stages[0] as Map).containsKey('duration'), isFalse);
+    expect(stages[0]['threshold'], 90);
     expect(stages[0]['target'], '算法与基础知识');
     final action = tester.widget<FilledButton>(
       find.byKey(const Key('job-publish-action')),

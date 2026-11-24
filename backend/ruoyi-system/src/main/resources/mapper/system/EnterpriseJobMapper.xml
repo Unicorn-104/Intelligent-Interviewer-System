@@ -128,7 +128,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                    when 5 then '未录用'
                    else '处理中' end as statusLabel,
                a.app_status as statusCode,
-               (select psg.psg_name from t_process_stage psg where psg.psg_id = pi.pin_current_stage_id) as currentStage
+               pi.pin_current_stage_id as currentStageId,
+               (select psg.psg_type from t_process_stage psg
+                where psg.psg_id = pi.pin_current_stage_id and psg.psg_template_id = pi.pin_template_id) as currentStageType,
+               (select psg.psg_name from t_process_stage psg
+                where psg.psg_id = pi.pin_current_stage_id and psg.psg_template_id = pi.pin_template_id) as currentStage
         from t_app_record a
         left join t_process_instance pi
                on pi.pin_candidate_id = a.app_candidate_id and pi.pin_position_id = a.app_position_id
@@ -168,6 +172,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         values (#{companyId}, #{name}, #{posId}, 'v1.0', 1)
     </insert>
 
+    <insert id="insertTemplateVersion">
+        insert into t_process_template (ptl_company_id, ptl_name, ptl_position_id, ptl_version, ptl_status)
+        values (#{companyId}, #{name}, #{posId}, #{version}, 1)
+    </insert>
+
     <select id="selectLatestTemplateIdByPos" resultType="java.lang.Long">
         select max(ptl_id) from t_process_template where ptl_position_id = #{posId}
     </select>
@@ -199,7 +208,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <!-- ============ 投递流程实例（候选人投递后企业端可见性） ============ -->
 
     <select id="selectProcessInstance" resultType="java.util.LinkedHashMap">
-        select pin_id as "pinId", pin_template_id as "templateId", pin_current_stage_id as "stageId"
+        select pin_id as "pinId", pin_template_id as "templateId",
+               pin_template_version as "templateVersion", pin_current_stage_id as "stageId"
         from t_process_instance
         where pin_candidate_id = #{candidateId} and pin_position_id = #{positionId}
         limit 1
@@ -215,8 +225,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <insert id="insertProcessInstance" parameterType="map" useGeneratedKeys="true" keyProperty="pinId" keyColumn="pin_id">
-        insert into t_process_instance (pin_candidate_id, pin_position_id, pin_template_id, pin_current_stage_id, pin_status, pin_start_at)
-        values (#{candidateId}, #{positionId}, #{templateId}, #{stageId}, 0, now())
+        insert into t_process_instance (pin_candidate_id, pin_position_id, pin_template_id,
+            pin_template_version, pin_current_stage_id, pin_status, pin_start_at)
+        values (#{candidateId}, #{positionId}, #{templateId}, #{templateVersion}, #{stageId}, 0, now())
     </insert>
 
     <update id="updateApplicationInstance">

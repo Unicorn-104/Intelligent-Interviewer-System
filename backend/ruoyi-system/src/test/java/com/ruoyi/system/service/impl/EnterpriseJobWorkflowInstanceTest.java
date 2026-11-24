@@ -60,6 +60,7 @@ public class EnterpriseJobWorkflowInstanceTest
         jdbc = new JdbcTemplate(source);
         jdbc.execute("create table t_cmp (cmp_id bigint primary key, cmp_name varchar(100), cmp_city varchar(50), cmp_status int)");
         jdbc.execute("create table t_cmp_binding (bnd_user_id bigint, bnd_company_id bigint, bnd_status int)");
+        jdbc.execute("create table t_usr_interest (int_target_type int, int_target_id bigint, int_status int)");
         jdbc.execute("""
             create table t_pos (pos_id bigint auto_increment primary key, pos_company_id bigint,
                 pos_publisher_id bigint, pos_title varchar(100), pos_department varchar(50),
@@ -81,6 +82,7 @@ public class EnterpriseJobWorkflowInstanceTest
         jdbc.execute("""
             create table t_process_instance (pin_id bigint auto_increment primary key,
                 pin_candidate_id bigint, pin_position_id bigint, pin_template_id bigint,
+                pin_template_version varchar(20),
                 pin_current_stage_id bigint, pin_status int, pin_start_at timestamp)
             """);
         jdbc.execute("""
@@ -169,18 +171,21 @@ public class EnterpriseJobWorkflowInstanceTest
     }
 
     @Test
-    void saveWorkflowWithExistingTemplateBumpsVersionAndRebuildsStages()
+    void saveWorkflowWithExistingTemplateCreatesImmutableVersion()
     {
         company(2);
         long positionId = position(2);
         service.saveWorkflow(100L, positionId, "岗位招聘流程", stages());
         Map<String, Object> result = service.saveWorkflow(100L, positionId, "岗位招聘流程", stages().subList(0, 1));
-        assertEquals(1, jdbc.queryForObject(
+        assertEquals(2, jdbc.queryForObject(
+                "select count(*) from t_process_template where ptl_position_id = ?", Integer.class, positionId));
+        assertEquals(3, jdbc.queryForObject(
                 "select count(*) from t_process_stage s join t_process_template t on t.ptl_id = s.psg_template_id " +
                 "where t.ptl_position_id = ?", Integer.class, positionId));
         // H2 对 decimal->char 的格式化与 MySQL 不同，仅断言版本已递增
         String version = jdbc.queryForObject(
-                "select t.ptl_version from t_process_template t where t.ptl_position_id = ?", String.class, positionId);
+                "select t.ptl_version from t_process_template t where t.ptl_id = " +
+                        "(select pos_process_template_id from t_pos where pos_id = ?)", String.class, positionId);
         assertNotEquals("v1.0", version);
         assertEquals(result.get("templateId"), jdbc.queryForObject(
                 "select pos_process_template_id from t_pos where pos_id = ?", Long.class, positionId));

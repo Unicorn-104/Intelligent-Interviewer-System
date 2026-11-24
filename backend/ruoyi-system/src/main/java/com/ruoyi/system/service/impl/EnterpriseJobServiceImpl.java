@@ -539,13 +539,13 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         }
         else
         {
-            templateId = ((Number) template.get("templateId")).longValue();
-            jobMapper.bumpTemplateVersion(templateId);
-            if (StringUtils.isNotEmpty(templateName))
-            {
-                jobMapper.renameTemplate(templateId, templateName);
-            }
-            jobMapper.deleteStagesByTemplate(templateId);
+            String previousVersion = String.valueOf(template.getOrDefault("version", "v1.0"));
+            String nextVersion = nextTemplateVersion(previousVersion);
+            String name = StringUtils.isEmpty(templateName)
+                    ? String.valueOf(template.getOrDefault("name", "岗位招聘流程")) : templateName;
+            jobMapper.insertTemplateVersion(companyId, posId, name, nextVersion);
+            templateId = jobMapper.selectLatestTemplateIdByPos(posId);
+            jobMapper.bindPosTemplate(posId, companyId, templateId);
         }
         int order = 1;
         for (Map<String, Object> s : stages)
@@ -565,6 +565,20 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         result.put("templateId", templateId);
         result.put("version", fresh == null ? null : fresh.get("version"));
         return result;
+    }
+
+    private String nextTemplateVersion(String raw)
+    {
+        try
+        {
+            String text = raw == null ? "v1.0" : raw.trim().replaceFirst("^[vV]", "");
+            java.math.BigDecimal value = new java.math.BigDecimal(text).add(new java.math.BigDecimal("0.1"));
+            return "v" + value.setScale(1, java.math.RoundingMode.HALF_UP).toPlainString();
+        }
+        catch (RuntimeException ignored)
+        {
+            return "v2.0";
+        }
     }
 
     @Override
@@ -599,6 +613,8 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         instance.put("candidateId", candidateId);
         instance.put("positionId", positionId);
         instance.put("templateId", templateId);
+        Map<String, Object> currentTemplate = jobMapper.selectTemplateByPos(positionId, companyId);
+        instance.put("templateVersion", currentTemplate == null ? null : currentTemplate.get("version"));
         instance.put("stageId", jobMapper.selectFirstStageIdByPosition(positionId));
         if (jobMapper.insertProcessInstance(instance) != 1 || instance.get("pinId") == null)
         {
@@ -613,8 +629,12 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
     private String buildStageConfig(Map<String, Object> s)
     {
         StringBuilder sb = new StringBuilder("{");
-        sb.append("\"duration\":").append(number(s.get("duration"), 45));
-        sb.append(",\"interviewer\":").append(jsonStr(str(s.get("interviewer"))));
+        // 在线笔试时长来自试卷，流程阶段不再保存 duration。
+        if (!"1".equals(number(s.get("type"), 3)))
+        {
+            sb.append("\"duration\":").append(number(s.get("duration"), 45)).append(",");
+        }
+        sb.append("\"interviewer\":").append(jsonStr(str(s.get("interviewer"))));
         sb.append(",\"target\":").append(jsonStr(str(s.get("target"))));
         sb.append(",\"mode\":").append(jsonStr(str(s.get("mode"))));
         sb.append(",\"skip\":").append(bool(s.get("skip")));

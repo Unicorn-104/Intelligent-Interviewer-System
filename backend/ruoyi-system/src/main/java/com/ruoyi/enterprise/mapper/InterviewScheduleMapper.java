@@ -14,6 +14,8 @@ public interface InterviewScheduleMapper
     List<Map<String, Object>> selectAppointmentInterviewers(@Param("appointmentIds") List<Long> appointmentIds);
     Map<String, Object> selectStageByIdForPosition(@Param("stageId") Long stageId,
             @Param("positionId") Long positionId);
+    Map<String, Object> selectStageByIdForCandidate(@Param("stageId") Long stageId,
+            @Param("candidateId") Long candidateId, @Param("positionId") Long positionId);
     Map<String, Object> selectAppointmentById(@Param("appointmentId") Long appointmentId);
     List<Map<String, Object>> selectCandidateAppointments(@Param("candidateId") Long candidateId,
             @Param("positionId") Long positionId);
@@ -26,6 +28,12 @@ public interface InterviewScheduleMapper
     int countSchedulableApplication(@Param("candidateId") Long candidateId, @Param("positionId") Long positionId);
     /** 岗位流程中排在目标阶段之前、类型为笔试(1) 的阶段数量 */
     int countRequiredExamStagesBefore(@Param("positionId") Long positionId, @Param("stageOrder") Integer stageOrder);
+    int countRequiredExamStagesBeforeCandidate(@Param("candidateId") Long candidateId,
+            @Param("positionId") Long positionId, @Param("stageOrder") Integer stageOrder);
+    List<Long> selectRequiredExamStageIdsBefore(@Param("positionId") Long positionId,
+            @Param("stageOrder") Integer stageOrder);
+    List<Long> selectRequiredExamStageIdsBeforeCandidate(@Param("candidateId") Long candidateId,
+            @Param("positionId") Long positionId, @Param("stageOrder") Integer stageOrder);
     List<Map<String, Object>> selectConflicts(@Param("candidateId") Long candidateId,
             @Param("interviewerId") Long interviewerId, @Param("startTime") String startTime,
             @Param("endTime") String endTime, @Param("excludeAppointmentId") Long excludeAppointmentId,

@@ -210,6 +210,7 @@ Map<String, Object?> jobWorkflowSaveBody(Map<String, dynamic> data) {
           : jobObject(raw is String ? jsonDecode(raw) : raw, '阶段配置');
       return <String, Object?>{
         ...config,
+        'stageId': stage['stageId'] ?? stage['id'],
         'name': stage['name']?.toString() ?? '',
         'type': int.tryParse('${stage['type']}') ?? 3,
         'required':

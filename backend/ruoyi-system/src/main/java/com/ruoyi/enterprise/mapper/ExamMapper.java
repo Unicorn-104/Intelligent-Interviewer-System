@@ -110,6 +110,22 @@ public interface ExamMapper
 
     /** 该试卷是否存在进行中的安排（删除试卷前校验） */
     public int countActiveSchedulesByPaper(@Param("paperId") Long paperId);
+    public int countStartedRecords(@Param("scheduleId") Long scheduleId);
+
+    /** 岗位流程中的笔试阶段（按阶段ID校验企业与类型）。 */
+    public Map<String, Object> selectExamStage(@Param("companyId") Long companyId,
+            @Param("positionId") Long positionId, @Param("stageId") Long stageId);
+
+    /** 幂等加入考试场次；已撤销分配会复用原行并递增修订号。 */
+    public int upsertScheduleCandidate(Map<String, Object> params);
+
+    public int countActiveScheduleCandidate(@Param("scheduleId") Long scheduleId,
+            @Param("candidateId") Long candidateId);
+
+    public int revokeScheduleCandidate(@Param("scheduleId") Long scheduleId,
+            @Param("candidateId") Long candidateId);
+
+    public int markScheduleCandidateNotify(Map<String, Object> params);
 
     // ==================== 笔试通知 ====================
 
@@ -117,7 +133,7 @@ public interface ExamMapper
     public int updateScheduleNotifyConfig(@Param("scheduleId") Long scheduleId,
             @Param("configJson") String configJson);
 
-    /** 通知对象：该安排岗位的全部投递候选人（含 sys_user 联系方式） */
+    /** 通知对象：该安排已分配且未撤销的候选人（含 sys_user 联系方式） */
     public List<Map<String, Object>> selectNotifyTargets(@Param("companyId") Long companyId,
             @Param("scheduleId") Long scheduleId);
 

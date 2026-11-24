@@ -36,8 +36,9 @@ class JobPublishStageDraft {
   Map<String, Object?> toJson() => {
     'name': name.text.trim(),
     'type': type,
-    'duration': int.parse(duration.text),
-    'threshold': int.parse(threshold.text),
+    // 在线笔试时长由试卷决定，不再随招聘流程编排。
+    if (type != 1) 'duration': int.tryParse(duration.text) ?? 45,
+    'threshold': int.tryParse(threshold.text) ?? 70,
     'target': target.text.trim(),
     'interviewer': '待指定',
     'required': required,
@@ -65,10 +66,10 @@ class JobPublishStageEditor extends StatelessWidget {
   final VoidCallback onChanged;
   final bool enabled;
 
-  String? _integer(String? value, int min, int max) {
+  String? _integer(String? value, int min, int max, {String? message}) {
     final integer = int.tryParse(value?.trim() ?? '');
     return integer == null || integer < min || integer > max
-        ? '请输入$min至$max的整数'
+        ? message ?? '请输入$min至$max的整数'
         : null;
   }
 
@@ -148,7 +149,10 @@ class JobPublishStageEditor extends StatelessWidget {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: AppColors.interactive, width: 1.5),
+            borderSide: const BorderSide(
+              color: AppColors.interactive,
+              width: 1.5,
+            ),
           ),
         ),
         items: [
@@ -184,6 +188,38 @@ class JobPublishStageEditor extends StatelessWidget {
             : null,
       ),
       const SizedBox(height: 12),
+      if (stage.type == 1) ...[
+        Container(
+          key: ValueKey('job-publish-stage-exam-threshold-note-${stage.id}'),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.interactiveSoft,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: AppColors.interactive,
+                size: 18,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '笔试时长由所选试卷决定，无需在此设置；通过阈值按试卷总分百分比计算。',
+                  style: TextStyle(
+                    color: AppColors.bodySoft,
+                    fontSize: 12,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
       LayoutBuilder(
         builder: (context, constraints) {
           final duration = TextFormField(
@@ -227,11 +263,15 @@ class JobPublishStageEditor extends StatelessWidget {
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: InputDecoration(
-              labelText: '通过阈值（0–100）',
+              labelText: stage.type == 1 ? '通过阈值（%）' : '通过阈值（0–100）',
+              helperText: stage.type == 1
+                  ? '按试卷总分折算，如满分 100 时 70% 即 70 分'
+                  : null,
+              helperMaxLines: 2,
               suffixIcon: _stepper(
                 field: 'threshold',
                 controller: stage.threshold,
-                min: 0,
+                min: stage.type == 1 ? 1 : 0,
                 max: 100,
               ),
               filled: true,
@@ -252,8 +292,13 @@ class JobPublishStageEditor extends StatelessWidget {
                 ),
               ),
             ),
-            validator: (value) => _integer(value, 0, 100),
+            validator: (value) => stage.type == 1
+                ? _integer(value, 1, 100, message: '请输入1至100的百分比')
+                : _integer(value, 0, 100),
           );
+          if (stage.type == 1) {
+            return threshold;
+          }
           if (constraints.maxWidth < 360 ||
               MediaQuery.textScalerOf(context).scale(1) > 1.3) {
             return Column(
@@ -292,7 +337,10 @@ class JobPublishStageEditor extends StatelessWidget {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: AppColors.interactive, width: 1.5),
+            borderSide: const BorderSide(
+              color: AppColors.interactive,
+              width: 1.5,
+            ),
           ),
         ),
       ),
@@ -628,15 +676,16 @@ class JobPublishStageCard extends StatelessWidget {
                     fontSize: 13,
                   ),
                 ),
-                Text(
-                  '${stage.duration.text.trim()}分钟',
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 13,
+                if (stage.type != 1)
+                  Text(
+                    '${stage.duration.text.trim()}分钟',
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                    ),
                   ),
-                ),
                 Text(
-                  '通过阈值 ${stage.threshold.text.trim()}',
+                  '通过阈值 ${stage.threshold.text.trim()}${stage.type == 1 ? '%' : ''}',
                   style: const TextStyle(
                     color: AppColors.textMuted,
                     fontSize: 13,
@@ -715,7 +764,11 @@ class JobPublishWorkflowPreview extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              '${jobPublishStageTypes[stage.type]} · ${stage.duration.text.trim()}分钟 · 通过阈值 ${stage.threshold.text.trim()}',
+              [
+                jobPublishStageTypes[stage.type],
+                if (stage.type != 1) '${stage.duration.text.trim()}分钟',
+                '通过阈值 ${stage.threshold.text.trim()}${stage.type == 1 ? '%' : ''}',
+              ].join(' · '),
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,

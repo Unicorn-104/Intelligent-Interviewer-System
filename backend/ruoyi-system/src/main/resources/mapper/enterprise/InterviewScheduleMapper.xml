@@ -91,6 +91,17 @@
         from t_process_stage s join t_pos p on p.pos_process_template_id = s.psg_template_id
         where s.psg_id = #{stageId} and p.pos_id = #{positionId}
     </select>
+    <select id="selectStageByIdForCandidate" resultType="java.util.LinkedHashMap">
+        select s.psg_id as stageId, s.psg_name as stageName,
+               s.psg_type as stageType, s.psg_sort_order as stageOrder,
+               s.psg_interviewer_config_json as configJson
+        from t_process_stage s
+        join t_app_record ar on ar.app_candidate_id = #{candidateId}
+            and ar.app_position_id = #{positionId}
+        join t_process_instance pi on pi.pin_id = ar.app_process_instance_id
+            and pi.pin_template_id = s.psg_template_id
+        where s.psg_id = #{stageId}
+    </select>
     <select id="selectSlots" resultType="java.util.LinkedHashMap">
         select slt_id as slotId, slt_interviewer_id as interviewerId,
                date_format(slt_start_time, '%Y-%m-%d %H:%i') as startTime,
@@ -142,6 +153,35 @@
         where p.pos_id = #{positionId} and s.psg_type = 1
           and s.psg_is_required = 1
           and s.psg_sort_order &lt; #{stageOrder}
+    </select>
+    <select id="countRequiredExamStagesBeforeCandidate" resultType="int">
+        select count(*) from t_process_stage s
+        join t_app_record ar on ar.app_candidate_id = #{candidateId}
+            and ar.app_position_id = #{positionId}
+        join t_process_instance pi on pi.pin_id = ar.app_process_instance_id
+            and pi.pin_template_id = s.psg_template_id
+        where s.psg_type = 1 and s.psg_is_required = 1
+          and s.psg_sort_order &lt; #{stageOrder}
+    </select>
+    <select id="selectRequiredExamStageIdsBefore" resultType="long">
+        select s.psg_id
+        from t_process_stage s
+        join t_pos p on p.pos_process_template_id = s.psg_template_id
+        where p.pos_id = #{positionId} and s.psg_type = 1
+          and s.psg_is_required = 1
+          and s.psg_sort_order &lt; #{stageOrder}
+        order by s.psg_sort_order
+    </select>
+    <select id="selectRequiredExamStageIdsBeforeCandidate" resultType="long">
+        select s.psg_id
+        from t_process_stage s
+        join t_app_record ar on ar.app_candidate_id = #{candidateId}
+            and ar.app_position_id = #{positionId}
+        join t_process_instance pi on pi.pin_id = ar.app_process_instance_id
+            and pi.pin_template_id = s.psg_template_id
+        where s.psg_type = 1 and s.psg_is_required = 1
+          and s.psg_sort_order &lt; #{stageOrder}
+        order by s.psg_sort_order
     </select>
     <select id="selectConflicts" resultType="java.util.LinkedHashMap">
         select slt_id as conflictId from t_sch_slot
