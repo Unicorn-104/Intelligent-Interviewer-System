@@ -760,9 +760,15 @@ async function applyPending(msg, card) {
     } else if (d.kind === 'update') {
       card.result = `已修改 ${d.updated} 题${d.skipped ? '，跳过 ' + d.skipped + ' 题' : ''}`
     } else if (d.kind === 'delete') {
-      card.result = `已删除 ${d.deleted} 题${d.referenced ? '，被引用保留 ' + d.referenced + ' 题' : ''}${d.missing ? '，已不存在 ' + d.missing + ' 题' : ''}`
+      card.result = `已删除 ${d.deleted || 0} 题${d.referenced ? '，被引用保留 ' + d.referenced + ' 题' : ''}${d.missing ? '，已不存在 ' + d.missing + ' 题' : ''}`
+    } else if (d.kind === 'create_companies') {
+      const skipped = Array.isArray(d.skipped) ? d.skipped.length : 0
+      const errors = Array.isArray(d.errors) ? d.errors.length : 0
+      card.result = `已录入 ${d.inserted || 0} 家企业${skipped ? '，跳过同名 ' + skipped + ' 家' : ''}${errors ? '，失败 ' + errors + ' 家' : ''}`
+    } else if (d.kind === 'undo') {
+      card.result = `已撤销：删除 ${d.deleted || 0} 题${d.skipped ? '，保留 ' + d.skipped + ' 题' : ''}`
     } else {
-      card.result = `已撤销：删除 ${d.deleted} 题${d.skipped ? '，保留 ' + d.skipped + ' 题' : ''}`
+      card.result = '已提交'
     }
   } catch (e) {
     card.result = '请求失败：' + (e.message || '网络错误')

@@ -146,8 +146,11 @@ public class UpdateQuestionsTool extends AbstractAgentTool implements PendingAct
         {
             text.append("- #").append(item.get("id")).append("：").append(changeLabels(item)).append('\n');
         }
-        text.append("不存在的题号 ").append(missing).append(" 个将被跳过。pendingId=")
-                .append(action.id).append("；请让用户点击卡片确认。");
+        if (missing > 0)
+        {
+            text.append("不存在的题号 ").append(missing).append(" 个将被跳过。");
+        }
+        text.append("pendingId=").append(action.id).append("；请让用户点击卡片确认。");
         action.summary = QuestionBankSupport.summarize(text.toString());
         return ToolResult.propose(text.toString(), action);
     }
