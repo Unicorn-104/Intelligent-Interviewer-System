@@ -1,24 +1,77 @@
 <template>
-<!-- 企业主页保持求职者工作台的全局导航与信息密度 -->
-  <AgentTopbar active="messages" />
-  <main class="page"><a class="back" id="backLink" :href="appHref('/messages')">← 返回消息中心</a><section class="company-hero"><div class="company-logo" id="logo">Z</div><div class="company-info"><h1 id="companyName"></h1><div class="company-meta" id="companyMeta"></div><div class="chips"><span class="chip verified">企业资质已认证</span><span class="chip" id="stage"></span><span class="chip" id="industry"></span></div></div><button class="follow" id="followButton" type="button">＋ 关注企业</button></section><div class="layout"><div><section class="section"><h2>公司介绍</h2><p id="description"></p><div class="facts"><div class="fact"><strong id="employeeCount"></strong><span>员工规模</span></div><div class="fact"><strong id="jobCount"></strong><span>在招岗位</span></div><div class="fact"><strong>98%</strong><span>简历处理率</span></div><div class="fact"><strong>2 小时</strong><span>平均反馈</span></div></div></section><section class="section"><h2>热招岗位</h2><div class="jobs" id="jobs"></div></section></div><aside><section class="side"><h2>企业信息</h2><div class="info-row"><b>办公地址</b><span id="address"></span></div><div class="info-row"><b>成立时间</b><span id="founded"></span></div><div class="info-row"><b>企业官网</b><span id="website"></span></div></section><section class="side"><h2>招聘联系人</h2><div class="contact"><div class="contact-avatar" id="contactAvatar"></div><div><strong id="contactName"></strong><span id="contactRole"></span></div></div><a class="contact-link" id="contactLink" href="#">查看个人主页</a></section></aside></div></main><div class="toast" id="toast" role="status"></div>
+  <div class="company-profile-page">
+    <AgentTopbar active="jobs" />
+    <main class="company-profile-main">
+      <a :href="appHref('/jobs')">← 返回岗位浏览</a>
+      <p v-if="loading" role="status">正在读取企业资料…</p>
+      <section v-else-if="error" class="company-profile-panel" role="alert">{{ error }} <button type="button" @click="load">重新加载</button></section>
+      <template v-else-if="company">
+        <section class="company-profile-panel company-profile-hero">
+          <div><p class="company-profile-eyebrow">企业主页 <span v-if="company.verified">· 已认证</span></p><h1>{{ company.name }}</h1><p>{{ [company.industry, company.city, company.size].filter(Boolean).join(' · ') || '企业暂未完善基本信息' }}</p></div>
+          <button type="button" :disabled="following" @click="toggleFollow">{{ following ? '正在更新…' : company.followed ? '已关注 · 取消关注' : '关注企业' }}</button>
+        </section>
+        <section class="company-profile-panel"><h2>企业介绍</h2><p class="company-profile-intro">{{ company.intro || '企业暂未填写介绍' }}</p><dl><div><dt>办公地址</dt><dd>{{ company.address || '暂未提供' }}</dd></div><div><dt>企业网站</dt><dd><a v-if="website" :href="website" target="_blank" rel="noopener noreferrer">{{ company.website }}</a><span v-else>{{ company.website || '暂未提供' }}</span></dd></div></dl></section>
+        <CompanyJobs :company-id="company.id" />
+      </template>
+      <p v-if="feedback" role="status">{{ feedback }}</p>
+    </main>
+  </div>
 </template>
 
 <script setup>
-import { appHref } from '@/utils/agentNavigation'
-import { onMounted } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
+import CompanyJobs from '@/components/agent/CompanyJobs.vue'
+import { appHref } from '@/utils/agentNavigation'
+import { getCompany, setCompanyFollowed } from '@/api/agent/company'
 
-onMounted(() => {
-  // 企业资料和对应联系人使用同一组查询参数映射。
-      const companies={zkr:{name:'极氪智能科技有限公司',short:'Z',meta:'智能汽车 · 杭州 · 2000 人以上',stage:'已上市',industry:'智能出行',employees:'2000+',jobsCount:'12',address:'杭州市滨江区物联网街 451 号',founded:'2021 年',website:'zeekrgroup.com',personId:'wang-yuqing',conversation:'hr',person:'王雨晴',role:'资深招聘经理',description:'极氪是一家以用户共创为核心的智能出行科技公司，聚焦高端智能电动汽车及相关生态服务。团队持续投入智能座舱、智能驾驶、数字化产品与全球用户运营，为年轻人才提供跨领域协作和快速成长的业务环境。',jobs:[['AI 产品经理（校招）','杭州 · 本科 · 经验不限','18-28K · 15薪','ai-product'],['智能座舱产品经理','上海 · 本科 · 3-5年','25-40K · 15薪','smart-cockpit'],['前端开发工程师','杭州 · 本科 · 3-5年','22-35K · 15薪','frontend']]},zhipu:{name:'北京智谱未来科技有限公司',short:'智',meta:'人工智能 · 北京 · 500-999 人',stage:'C+ 轮',industry:'大模型',employees:'800+',jobsCount:'18',address:'北京市海淀区中关村东路 1 号院',founded:'2019 年',website:'zhipuai.cn',personId:'chen-chen',conversation:'chen',person:'陈晨',role:'算法招聘负责人',description:'智谱未来专注于通用大模型与人工智能基础设施研发，围绕模型、平台和行业解决方案构建完整技术体系。公司重视科研与工程协同，面向金融、制造、教育等场景推进大模型规模化应用。',jobs:[['NLP 算法工程师','北京 · 硕士 · 1-3年','28-45K · 14薪','nlp-algorithm'],['大模型评测工程师','北京 · 本科 · 3-5年','30-50K · 14薪','llm-evaluation'],['AI Infra 工程师','北京 · 本科 · 3-5年','32-50K · 14薪','ai-infra']]},lanhu:{name:'蓝湖创新科技有限公司',short:'蓝',meta:'企业服务 · 深圳 · 500-999 人',stage:'D 轮',industry:'协作软件',employees:'600+',jobsCount:'10',address:'深圳市南山区科技南十二路 28 号',founded:'2017 年',website:'lanhuapp.com',personId:'li-jing',conversation:'li',person:'李静',role:'设计招聘顾问',description:'蓝湖创新科技致力于为数字产品团队提供设计协作和研发协同工具，帮助设计师、产品经理与工程团队提升交付效率。公司坚持产品驱动，关注复杂企业服务体验和设计系统的长期建设。',jobs:[['UI/UX 设计师','深圳 · 本科 · 3-5年','20-32K · 13薪','saas-ux'],['资深产品设计师','深圳 · 本科 · 5-10年','30-45K · 13薪','senior-designer'],['用户研究员','深圳 · 本科 · 3-5年','18-28K · 13薪','ux-research']]}};
-      const params=new URLSearchParams(location.search),id=params.get('id')||'zkr',data=companies[id]||companies.zkr,from=params.get('from')||data.conversation,followKey='zhipin-ai-followed-companies';let followed=[];try{followed=JSON.parse(localStorage.getItem(followKey)||'[]')}catch(error){followed=[]}
-      const byId=id=>document.getElementById(id);function renderFollow(){const active=followed.includes(data.name);byId('followButton').classList.toggle('followed',active);byId('followButton').textContent=active?'✓ 已关注':'＋ 关注企业'}function toast(text){byId('toast').textContent=text;byId('toast').classList.add('show');setTimeout(()=>byId('toast').classList.remove('show'),1800)}
-      document.title=data.name+' · 企业主页';byId('backLink').href=appHref(`/messages?conversation=${encodeURIComponent(from)}`);byId('logo').textContent=data.short;byId('companyName').textContent=data.name;byId('companyMeta').textContent=data.meta;byId('stage').textContent=data.stage;byId('industry').textContent=data.industry;byId('description').textContent=data.description;byId('employeeCount').textContent=data.employees;byId('jobCount').textContent=data.jobsCount;byId('address').textContent=data.address;byId('founded').textContent=data.founded;byId('website').textContent=data.website;byId('contactAvatar').textContent=data.person[0];byId('contactName').textContent=data.person;byId('contactRole').textContent=data.role;byId('contactLink').href=appHref(`/contact-profile?id=${encodeURIComponent(data.personId)}&from=${encodeURIComponent(data.conversation)}`);byId('jobs').innerHTML=data.jobs.map(([name,meta,salary,jobId],index)=>`<a class="job" href="${appHref(`/job-detail?id=${encodeURIComponent(jobId)}`)}"><div><div class="job-name">${name}</div><div class="job-meta">${meta}</div></div><span class="salary">${salary}</span><span class="badge">${index===0?'急招':'近期发布'}</span></a>`).join('');renderFollow();
-      byId('followButton').addEventListener('click',()=>{followed=followed.includes(data.name)?followed.filter(name=>name!==data.name):[...followed,data.name];try{localStorage.setItem(followKey,JSON.stringify(followed))}catch(error){}renderFollow();toast(followed.includes(data.name)?'已关注该企业':'已取消关注')});
+const route = useRoute()
+const company = ref(null)
+const loading = ref(false)
+const error = ref('')
+const feedback = ref('')
+const following = ref(false)
+let revision = 0
+const website = computed(() => {
+  const text = String(company.value?.website || '').trim()
+  if (!text) return ''
+  try {
+    if (/^[a-z][a-z\d+.-]*:/i.test(text) && !/^https?:\/\//i.test(text)) return ''
+    const url = new URL(/^https?:\/\//i.test(text) ? text : 'https://' + text)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : ''
+  } catch { return '' }
 })
+async function load() {
+  const current = ++revision
+  company.value = null
+  error.value = ''
+  feedback.value = ''
+  const id = String(route.query.id || '')
+  if (!/^[1-9]\d*$/.test(id)) { loading.value = false; error.value = '企业编号无效，请从真实岗位或联系人进入'; return }
+  loading.value = true
+  try {
+    const response = await getCompany(id)
+    if (current === revision) company.value = response.data
+  } catch (failure) {
+    if (current === revision) error.value = failure?.message || '企业资料读取失败'
+  } finally { if (current === revision) loading.value = false }
+}
+async function toggleFollow() {
+  if (following.value || !company.value) return
+  following.value = true
+  const current = revision
+  try {
+    const response = await setCompanyFollowed(company.value.id, !company.value.followed)
+    if (current !== revision) return
+    company.value.followed = response.data.followed === true
+    feedback.value = company.value.followed ? '已关注该企业' : '已取消关注'
+  } catch (failure) { if (current === revision) feedback.value = failure?.message || '关注操作失败' }
+  finally { following.value = false }
+}
+watch(() => route.query.id, load, { immediate: true })
 </script>
 
-<style>
-:root{--primary:#1A3C6E;--blue:#2B7FFF;--blue-soft:#EAF2FF;--bg:#F5F7FA;--text:#172B4D;--muted:#6B7A90;--line:#E3E9F1;--green:#20A36F;--orange:#E56B3D;--shadow:0 8px 28px rgba(25,60,110,.07)}*{box-sizing:border-box}body{margin:0;color:var(--text);background:var(--bg);font-family:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.6}a,button{font:inherit}.topbar{height:72px;border-bottom:1px solid var(--line);background:#fff}.topbar-inner{width:min(1280px,calc(100% - 48px));height:100%;display:flex;align-items:center;gap:32px;margin:auto}.brand{display:flex;align-items:center;gap:10px;color:var(--primary);text-decoration:none}.brand-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:8px;color:#fff;background:linear-gradient(145deg,#2B7FFF,#1A3C6E);font-size:17px;font-weight:800}.brand-name{font-size:18px;font-weight:800}.brand-tag{color:var(--muted);font-size:11px}.main-nav{display:flex;height:72px}.nav-link{height:72px;display:flex;align-items:center;padding:0 15px;color:var(--muted);text-decoration:none}.nav-link:hover{color:var(--primary)}.profile{margin-left:auto;display:flex;align-items:center;gap:9px}.avatar{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#7894BE;font-weight:700}.page{width:min(1120px,calc(100% - 48px));margin:28px auto 60px}.back{display:inline-flex;margin-bottom:16px;color:var(--muted);text-decoration:none}.back:hover{color:var(--blue)}.company-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:22px;padding:31px 34px;border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:var(--shadow)}.company-hero::before{content:"";position:absolute;inset:0 0 auto;height:4px;background:linear-gradient(90deg,var(--primary),var(--blue),#24A17A)}.company-logo{width:84px;height:84px;display:grid;place-items:center;border-radius:10px;color:#fff;background:var(--primary);font-size:26px;font-weight:800}.company-info h1{margin:0;color:var(--primary);font-size:25px}.company-meta{margin-top:6px;color:var(--muted)}.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.chip{padding:3px 8px;border-radius:4px;color:#4E6280;background:#F0F3F8;font-size:11px}.verified{color:var(--green);background:#EAF8F3}.follow{height:42px;padding:0 20px;border:1px solid var(--blue);border-radius:7px;color:#fff;background:var(--blue);font-weight:700;cursor:pointer}.follow.followed{color:var(--blue);background:#fff}.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:18px;margin-top:18px}.section{padding:24px;border:1px solid var(--line);border-radius:8px;background:#fff}.section+.section{margin-top:18px}.section h2{margin:0 0 17px;color:var(--primary);font-size:17px}.section p{margin:0;color:#50647F;line-height:1.9}.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:20px;padding-top:19px;border-top:1px solid var(--line)}.fact{text-align:center}.fact strong{display:block;color:var(--primary);font-size:18px}.fact span{color:var(--muted);font-size:10px}.jobs{display:grid;gap:10px}.job{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:16px;padding:15px;border:1px solid var(--line);border-radius:7px;text-decoration:none}.job:hover{border-color:#BAD4F7;background:#FAFCFF}.job-name{color:var(--primary);font-weight:800}.job-meta{margin-top:3px;color:var(--muted);font-size:11px}.salary{color:var(--orange);font-weight:800}.badge{padding:3px 7px;border-radius:4px;color:var(--blue);background:var(--blue-soft);font-size:10px}.side{padding:22px;border:1px solid var(--line);border-radius:8px;background:#fff}.side+.side{margin-top:18px}.side h2{margin:0 0 15px;color:var(--primary);font-size:16px}.info-row{display:flex;gap:10px;margin:12px 0;color:#5C708B;font-size:12px}.info-row b{min-width:58px;color:var(--muted);font-weight:500}.contact{display:flex;align-items:center;gap:12px;padding:12px;border-radius:7px;background:#F6F8FB}.contact-avatar{width:42px;height:42px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-weight:800}.contact strong{display:block;color:var(--primary)}.contact span{color:var(--muted);font-size:10px}.contact-link{display:block;height:38px;margin-top:12px;border:1px solid #C8D7EA;border-radius:7px;color:var(--primary);text-align:center;text-decoration:none;line-height:36px;font-weight:700}.toast{position:fixed;right:24px;bottom:24px;padding:10px 15px;border:1px solid #CBE6DA;border-radius:7px;color:#176B50;background:#F1FAF6;opacity:0;transform:translateY(8px);transition:.18s}.toast.show{opacity:1;transform:none}@media(max-width:850px){.main-nav{display:none}.layout{grid-template-columns:1fr}.company-hero{grid-template-columns:auto 1fr}.follow{grid-column:2}.facts{grid-template-columns:repeat(2,1fr)}.brand-tag,.profile span:last-child{display:none}}@media(max-width:560px){.topbar-inner,.page{width:calc(100% - 28px)}.company-hero{padding:25px 20px}.company-logo{width:62px;height:62px}.company-info h1{font-size:20px}.job{grid-template-columns:1fr}.follow{grid-column:1/3}}
+<style scoped>
+.company-profile-page{min-height:100vh;background:#f5f7fa;color:#263e5b;font-family:"Microsoft YaHei",sans-serif}.company-profile-main{width:min(1040px,calc(100% - 32px));margin:28px auto 50px}.company-profile-main>a{color:#657b96;text-decoration:none;font-size:13px}.company-profile-panel{margin-top:20px;padding:28px;border:1px solid #e3eaf3;border-radius:12px;background:#fff}.company-profile-hero{display:flex;align-items:center;justify-content:space-between;gap:24px}.company-profile-eyebrow{color:#3777ce;font-size:12px}.company-profile-panel h1{margin:8px 0;font-size:26px}.company-profile-panel h2{font-size:18px}.company-profile-panel p{color:#687e97;line-height:1.9}.company-profile-intro{white-space:pre-wrap;overflow-wrap:anywhere}.company-profile-panel button{flex-shrink:0;padding:11px 18px;border:1px solid #bfd4f0;border-radius:8px;background:#edf5ff;color:#2466bc;cursor:pointer}.company-profile-panel dl{display:grid;gap:16px;margin-top:24px}.company-profile-panel dt{color:#8595a8;font-size:12px}.company-profile-panel dd{margin:5px 0 0;overflow-wrap:anywhere}.company-profile-panel a{color:#2466bc}@media(max-width:600px){.company-profile-panel{padding:18px}.company-profile-hero{align-items:flex-start;flex-direction:column}.company-profile-panel h1{font-size:22px}}
 </style>

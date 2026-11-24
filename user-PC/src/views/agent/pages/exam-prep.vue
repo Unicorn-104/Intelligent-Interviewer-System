@@ -1,4 +1,5 @@
 <template>
+  <div class="candidate-page--exam-prep">
   <div class="prep">
     <header class="prep-head">
       <div>
@@ -61,6 +62,7 @@
         <p class="prep-note">点击“开始作答”后才开始计时，此处调整设备不会占用答题时间。</p>
       </template>
     </main>
+  </div>
   </div>
 </template>
 
@@ -219,7 +221,7 @@ onBeforeUnmount(teardown)
 </script>
 
 <style scoped>
-:global(body){margin:0;background:#F5F7FB;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+:where(.candidate-page--exam-prep){margin:0;background:#F5F7FB;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
 .prep{min-height:100vh;display:flex;flex-direction:column;color:#1F2A37}
 .prep-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:22px 28px;background:#fff;border-bottom:1px solid #E6EBF2}
 .prep-head h1{margin:0;font-size:20px}

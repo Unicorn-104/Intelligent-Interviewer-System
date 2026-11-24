@@ -21,7 +21,7 @@ function homePage(overrides = {}) {
     computed, ref, onMounted() {}, onUnmounted: callback => unmounted.push(callback),
     useUserStore: () => ({ nickName: '测试用户' }),
     localStorage: { getItem: () => null },
-    window: { __agentNavigate: path => navigations.push(path), clearInterval() {} },
+    window: { __agentNavigate: path => navigations.push(path), clearInterval() {}, removeEventListener() {} },
     getResumes: async () => ({ data: [{ id: 1, name: '前端简历' }, { id: 2, name: '后端简历', isDefault: true }] }),
     listJobs: async params => { requests.push(params); return { data: { items: [{ id: params.resumeId, matchScore: 80 }] } } },
     ...overrides

@@ -12,6 +12,7 @@ import com.ruoyi.system.domain.ImSession;
  */
 public interface IImService
 {
+    Map<String, Object> selectMessagePage(Long sessionId, Long userId, Long beforeId, Long afterId, int size);
     /**
      * 查询指定用户的会话列表
      */
