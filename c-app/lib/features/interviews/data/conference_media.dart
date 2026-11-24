@@ -101,13 +101,7 @@ class ConferenceMedia extends ChangeNotifier {
       );
     }
     if (_closed || connectGeneration != _generation) return;
-    final next = lk.Room(
-      roomOptions: lk.RoomOptions(
-        adaptiveStream: true,
-        dynacast: true,
-        networkOptions: network,
-      ),
-    );
+    final next = lk.Room(roomOptions: lk.RoomOptions(networkOptions: network));
     room = next;
     next.addListener(changed);
     try {
