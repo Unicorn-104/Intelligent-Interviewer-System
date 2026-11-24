@@ -265,7 +265,15 @@ public class AdminAssistantController extends BaseController {
         response.setHeader("Cache-Control", "no-cache");
         response.setHeader("X-Accel-Buffering", "no");
         java.io.PrintWriter out = response.getWriter();
-        if (message.isEmpty() || provider == null) {
+        if (message.isEmpty()) {
+            out.write("data: [DONE]\n\n");
+            out.flush();
+            return;
+        }
+        if (provider == null) {
+            Map<String, Object> tip = new java.util.LinkedHashMap<>();
+            tip.put("text", "AI 模型未启用：请到「系统管理 → 模型配置」启用一个模型后再试。");
+            out.write("event: answer\ndata: " + json.writeValueAsString(tip) + "\n\n");
             out.write("data: [DONE]\n\n");
             out.flush();
             return;

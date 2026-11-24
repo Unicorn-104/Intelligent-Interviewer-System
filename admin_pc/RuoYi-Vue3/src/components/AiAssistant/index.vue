@@ -25,17 +25,28 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item v-for="s in sessions" :key="s.id" :command="s.id">
-                    <div class="session-item">
-                      <span>{{ s.title }}</span>
+                    <div class="session-item" :class="{ 'session-active': s.id === currentId }">
+                      <div class="session-main">
+                        <span class="session-title">{{ s.title || '新对话' }}</span>
+                        <span class="session-meta">{{ formatTime(s.updatedAt || s.id) }} · {{ (s.msgs || []).length }} 条</span>
+                      </div>
                       <el-icon class="session-del" @click.stop="deleteSession(s.id)"><Close /></el-icon>
                     </div>
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-tooltip content="导出对话" placement="bottom">
-              <el-icon @click="exportMd" :size="16"><Download /></el-icon>
-            </el-tooltip>
+            <el-dropdown trigger="click" @command="onExport">
+              <el-tooltip content="导出对话" placement="bottom">
+                <el-icon :size="16"><Download /></el-icon>
+              </el-tooltip>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="current">导出当前对话</el-dropdown-item>
+                  <el-dropdown-item command="all">导出全部历史</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-tooltip content="导入知识库文档或文件夹" placement="bottom">
               <el-icon @click="kbDialogVisible = true" :size="16"><UploadFilled /></el-icon>
             </el-tooltip>
@@ -68,7 +79,8 @@
                   <el-icon :size="12"><Loading /></el-icon>
                   <span>{{ m.tool }}</span>
                 </div>
-                <div v-if="!m.content && m.role==='assistant'" class="ai-typing-dots"><span></span><span></span><span></span></div>
+                <div v-if="!m.content && m.role === 'assistant' && loading && i === messages.length - 1" class="ai-typing-dots"><span></span><span></span><span></span></div>
+                <div v-else-if="!m.content && m.role === 'assistant'" class="ai-bubble ai-bubble-empty">（这条回复没有内容）</div>
                 <div v-else class="ai-bubble" v-html="renderMd(m.content)"></div>
                 <div v-if="m.pending && m.pending.length" class="ai-pending">
                   <div v-for="c in m.pending" :key="c.id" class="ai-pending-card">
@@ -302,9 +314,34 @@ function hasToken() {
   return !!getToken()
 }
 
+function formatTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const now = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  if (d.toDateString() === now.toDateString()) return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 function persistHistory() {
   try {
-    const trimmed = sessions.value.slice(-10)
+    // 最新会话在数组头部，保留最近 20 个非空会话；只存必要字段，降低配额压力
+    const trimmed = sessions.value
+      .filter((s) => (s.msgs || []).length)
+      .slice(0, 20)
+      .map((s) => ({
+      id: s.id,
+      title: s.title || '新对话',
+      updatedAt: s.updatedAt || s.id,
+      msgs: (s.msgs || []).map((m) => ({
+        role: m.role,
+        content: m.content || '',
+        tool: m.tool || '',
+        route: m.route || '',
+        pending: m.pending || []
+      }))
+    }))
     localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed))
   } catch {
     /* ignore */
@@ -312,7 +349,14 @@ function persistHistory() {
 }
 
 function newSession() {
-  const s = { id: Date.now(), title: '新对话', msgs: [] }
+  const cur = sessions.value.find((x) => x.id === currentId.value)
+  if (cur && (!cur.msgs || cur.msgs.length === 0)) {
+    cur.updatedAt = Date.now()
+    currentId.value = cur.id
+    persistHistory()
+    return
+  }
+  const s = { id: Date.now(), title: '新对话', updatedAt: Date.now(), msgs: [] }
   sessions.value.unshift(s)
   currentId.value = s.id
   persistHistory()
@@ -327,7 +371,7 @@ function deleteSession(id) {
   if (currentId.value === id) {
     if (sessions.value.length) currentId.value = sessions.value[0].id
     else {
-      const s = { id: Date.now(), title: '新对话', msgs: [] }
+      const s = { id: Date.now(), title: '新对话', updatedAt: Date.now(), msgs: [] }
       sessions.value.push(s)
       currentId.value = s.id
     }
@@ -337,7 +381,10 @@ function deleteSession(id) {
 
 function clearAll() {
   const s = sessions.value.find((x) => x.id === currentId.value)
-  if (s) s.msgs = []
+  if (s) {
+    s.msgs = []
+    s.updatedAt = Date.now()
+  }
   persistHistory()
 }
 
@@ -532,17 +579,64 @@ function retry(i) {
   send(q)
 }
 
-function exportMd() {
-  let md = '# AI 助手对话\n\n'
-  messages.value.forEach((m) => {
-    md += `## ${m.role === 'user' ? '我' : '助手'}\n\n${m.content}\n\n`
+function buildSessionMd(s, roleLevel = '##') {
+  let md = `# ${s.title || 'AI 助手对话'}\n\n> 会话时间：${new Date(s.updatedAt || s.id).toLocaleString()} · 导出时间：${new Date().toLocaleString()}\n\n`
+  ;(s.msgs || []).forEach((m) => {
+    md += `${roleLevel} ${m.role === 'user' ? '我' : '助手'}\n\n${m.content || '（无文本）'}\n\n`
+    ;(m.pending || []).forEach((c) => {
+      md += `- 待确认「${c.title || ''}」：${c.summary || ''}${c.result ? '｜结果：' + c.result : ''}\n`
+    })
+    if (m.pending && m.pending.length) md += '\n'
   })
-  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  return md
+}
+
+function downloadMd(name, content) {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = 'ai-chat.md'
+  a.download = name
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(a.href)
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
+function timeStamp() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
+}
+
+function safeName(title) {
+  return (title || '未命名').replace(/[\\/:*?"<>|]/g, '_').slice(0, 30)
+}
+
+function exportCurrent() {
+  const s = sessions.value.find((x) => x.id === currentId.value)
+  if (!s || !(s.msgs || []).length) {
+    ElMessage.warning('当前会话没有可导出的内容')
+    return
+  }
+  downloadMd(`AI助手对话-${safeName(s.title)}-${timeStamp()}.md`, buildSessionMd(s))
+}
+
+function exportAll() {
+  const valid = sessions.value.filter((s) => (s.msgs || []).length)
+  if (!valid.length) {
+    ElMessage.warning('还没有可导出的历史会话')
+    return
+  }
+  let md = `# 后台助手会话导出\n\n> 共 ${valid.length} 个会话 · 导出时间：${new Date().toLocaleString()}\n\n`
+  valid.forEach((s, i) => {
+    md += `---\n\n## ${i + 1}. ${s.title || '会话'}\n\n` + buildSessionMd(s, '###').replace(/^# .+\n\n/, '')
+  })
+  downloadMd(`AI助手会话导出-${timeStamp()}.md`, md)
+}
+
+function onExport(cmd) {
+  if (cmd === 'all') exportAll()
+  else exportCurrent()
 }
 
 // Markdown 渲染（表格/标题/加粗/行内code/代码块/有序无序列表/链接）
@@ -621,8 +715,10 @@ async function send(preset) {
     newSession()
   }
   const s = sessions.value.find((x) => x.id === currentId.value)
-  if (s.msgs.length === 0) s.title = text.slice(0, 12)
+  if (s.msgs.length === 0) s.title = text.length > 18 ? text.slice(0, 18) + '…' : text
+  s.updatedAt = Date.now()
   s.msgs.push({ role: 'user', content: text })
+  persistHistory()
   const aiMsg = { role: 'assistant', content: '', route: null, tool: '', pending: [] }
   s.msgs.push(aiMsg)
   loading.value = true
@@ -711,6 +807,9 @@ async function send(preset) {
     if (m) {
       aiMsg.route = m[1].trim()
       aiMsg.content = aiMsg.content.replace(/\[\[route:[^\]]+\]\]/, '').trim()
+    }
+    if (!aiMsg.content && !(aiMsg.pending || []).length) {
+      aiMsg.content = '（未收到模型回复：请检查「模型配置」中是否已启用模型，或稍后重试。）'
     }
     persistHistory()
   } catch (e) {
@@ -830,9 +929,21 @@ onMounted(() => {
       applyPos()
     }
     const savedSessions = JSON.parse(localStorage.getItem(HISTORY_KEY))
-    if (Array.isArray(savedSessions) && savedSessions.length) {
-      sessions.value = savedSessions
-      currentId.value = savedSessions[0].id
+    const valid = Array.isArray(savedSessions)
+      ? savedSessions
+          .filter((s) => s && s.id && Array.isArray(s.msgs) && s.msgs.length > 0)
+          .map((s) => ({
+            id: s.id,
+            title: s.title || '新对话',
+            updatedAt: s.updatedAt || s.id,
+            msgs: (Array.isArray(s.msgs) ? s.msgs : []).filter(
+              (m) => m && (m.role === 'user' || m.content || (m.pending && m.pending.length))
+            )
+          }))
+      : []
+    if (valid.length) {
+      sessions.value = valid.slice(0, 20)
+      currentId.value = valid[0].id
     } else {
       newSession()
     }
@@ -1519,5 +1630,194 @@ onBeforeUnmount(() => {
 .ai-pending-done {
   font-size: 12px;
   color: #9ca3af;
+}
+
+/* ---- 简约主题覆盖：小字号、去渐变、紧凑留白 ---- */
+.ai-panel {
+  background: #fff;
+}
+.ai-header {
+  padding: 9px 14px;
+  border-bottom: 1px solid #f0f1f3;
+}
+.ai-header-left {
+  gap: 8px;
+}
+.ai-avatar-bot {
+  background: #f1f2f4;
+  color: #374151;
+  font-size: 11px;
+}
+.ai-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.ai-sub {
+  font-size: 10.5px;
+  color: #9aa1ac;
+}
+.ai-sub .dot {
+  width: 5px;
+  height: 5px;
+  background: #16a34a;
+}
+.ai-header-actions {
+  gap: 10px;
+  align-items: center;
+  color: #8a919c;
+}
+.ai-header-actions .el-icon:hover {
+  color: #2563eb;
+}
+.session-item {
+  width: 200px;
+  gap: 8px;
+  padding: 2px 0;
+}
+.session-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.session-title {
+  font-size: 12.5px;
+  color: #1f2329;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-meta {
+  margin-top: 1px;
+  font-size: 10.5px;
+  color: #a0a6b0;
+}
+.session-item.session-active .session-title {
+  color: #2563eb;
+  font-weight: 600;
+}
+.ai-msg-list {
+  padding: 12px 14px 6px;
+}
+.ai-row {
+  margin-bottom: 13px;
+  gap: 7px;
+}
+.ai-avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+.ai-avatar-user {
+  background: #eef2f7;
+  color: #4b5563;
+}
+.ai-col {
+  max-width: 82%;
+}
+.ai-bubble {
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.ai-row.assistant .ai-bubble {
+  background: #f6f7f9;
+  border: none;
+  color: #1f2329;
+}
+.ai-row.user .ai-bubble {
+  background: #e8f0fe;
+  color: #1e3a8a;
+}
+.ai-bubble :deep(code) {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+}
+.ai-bubble :deep(a) {
+  color: #2563eb;
+}
+.ai-tool-card {
+  background: #f1f3f5;
+  color: #4b5563;
+  font-size: 11.5px;
+}
+.ai-actions span:hover {
+  color: #2563eb;
+}
+.ai-go {
+  color: #2563eb;
+  font-size: 12px;
+}
+.ai-empty-avatar {
+  width: 40px;
+  height: 40px;
+  background: #f1f2f4;
+  color: #374151;
+  font-size: 12px;
+}
+.ai-empty h3 {
+  font-size: 14.5px;
+}
+.ai-empty p {
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.ai-chip {
+  font-size: 11.5px;
+  padding: 5px 10px;
+  border-radius: 13px;
+  color: #475467;
+  border-color: #e8eaee;
+  background: #fafbfc;
+}
+.ai-chip:hover {
+  border-color: #2563eb;
+  background: #f3f7ff;
+  color: #2563eb;
+}
+.ai-fab {
+  background: #1f2937;
+  box-shadow: 0 5px 16px rgba(17, 24, 39, 0.22);
+}
+.ai-row.assistant .ai-bubble.ai-bubble-empty {
+  color: #9aa1ac;
+  font-size: 12px;
+}
+.ai-typing-dots {
+  background: #f6f7f9;
+  border: none;
+  padding: 9px 12px;
+}
+.ai-cursor {
+  background: #2563eb;
+}
+.ai-composer {
+  margin: 0 12px;
+  padding: 7px 9px 7px 11px;
+  border-color: #e5e7eb;
+  border-radius: 12px;
+}
+.ai-composer:focus-within {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.08);
+}
+.ai-composer-text .el-textarea__inner {
+  font-size: 13px;
+}
+.ai-foot {
+  font-size: 10px;
+  color: #b4bac4;
+  padding: 5px;
+}
+.ai-pending {
+  max-width: 100%;
+}
+.ai-pending-tag {
+  font-size: 10px;
+}
+.ai-pending-title {
+  font-size: 12.5px;
 }
 </style>
