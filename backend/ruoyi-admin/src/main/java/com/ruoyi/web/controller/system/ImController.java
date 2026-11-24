@@ -78,6 +78,12 @@ public class ImController extends BaseController
         return success(list);
     }
 
+    @GetMapping("/sessions/{sessionId}/messages/snapshot")
+    public AjaxResult messageSnapshot(@PathVariable Long sessionId, @RequestParam List<Long> messageIds)
+    {
+        return success(imService.selectMessageSnapshot(sessionId, getUserId(), messageIds));
+    }
+
     @GetMapping("/sessions/{sessionId}/messages/page")
     public AjaxResult messagePage(@PathVariable Long sessionId,
             @RequestParam(required = false) Long beforeId, @RequestParam(required = false) Long afterId,

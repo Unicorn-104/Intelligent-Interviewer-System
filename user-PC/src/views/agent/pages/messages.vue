@@ -254,11 +254,11 @@
 
 <script setup>
 import { appHref } from '@/utils/agentNavigation'
-import { mergeMessagePages, messagePageData } from '@/utils/agentMessagePage'
+import { mergeMessagePages, mergeMessageSnapshot, messagePageData } from '@/utils/agentMessagePage'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
-import { listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
+import { getImMessageSnapshot, listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
 import MessageContentCard from '@/components/agent/MessageContentCard.vue'
 import { getToken } from '@/utils/auth'
 import { unreadBadge, unreadCount } from '@/utils/agentUnread'
@@ -281,6 +281,7 @@ const hasPendingMessages = ref(false)
 const messageSyncError = ref('')
 let messageRevision = 0
 let messageFetch = null
+let cardRefreshAfterId = null
 const newConversation = ref(null)
 const draftMessage = ref('')
 const sending = ref(false)
@@ -412,6 +413,7 @@ function normalizeMessages(items) {
 function resetMessagePage() {
   messageRevision++
   messageFetch = null
+  cardRefreshAfterId = null
   messages.value = []
   messagesLoading.value = false
   hasOlderMessages.value = false
@@ -419,6 +421,26 @@ function resetMessagePage() {
   olderLoading.value = false
   olderError.value = ''
   messageSyncError.value = ''
+}
+
+async function refreshMutableMessages(sessionId, revision) {
+  const cards = messages.value.filter(message => Number(message.type) === 5)
+  const following = cardRefreshAfterId == null ? cards : cards.filter(message => BigInt(message.messageId) > BigInt(cardRefreshAfterId))
+  const batch = (following.length ? following : cards).slice(0, 100)
+  if (!batch.length) return
+  const ids = batch.map(message => message.messageId)
+  const response = await getImMessageSnapshot(sessionId, ids)
+  if (revision !== messageRevision || selectedSessionId.value !== sessionId) return
+  if (!Array.isArray(response.data)) throw new Error('消息状态接口不可用，请同步更新后端后重试')
+  const container = messagesContainer.value
+  const top = container?.scrollTop || 0
+  const updated = mergeMessageSnapshot(messages.value, ids, normalizeMessages(response.data))
+  if (updated !== messages.value) {
+    messages.value = updated
+    await nextTick()
+    if (revision === messageRevision && selectedSessionId.value === sessionId && !followLatestMessages.value && container) container.scrollTop = top
+  }
+  if (revision === messageRevision && selectedSessionId.value === sessionId) cardRefreshAfterId = ids.at(-1)
 }
 
 async function loadMessages(sessionId, { silent = false } = {}) {
@@ -443,8 +465,12 @@ async function loadMessages(sessionId, { silent = false } = {}) {
         } else {
           hasPendingMessages.value = data.hasMore
         }
-        messageSyncError.value = ''
-        if (!hasPendingMessages.value) return true
+        if (!hasPendingMessages.value) {
+          if (afterId) await refreshMutableMessages(sessionId, revision)
+          if (revision !== messageRevision || selectedSessionId.value !== sessionId) return false
+          messageSyncError.value = ''
+          return true
+        }
       }
       return false
     } catch (error) {

@@ -24,6 +24,14 @@ export function sendImMessage(data) {
   })
 }
 
+export function getImMessageSnapshot(sessionId, messageIds) {
+  return request({
+    url: `/system/im/sessions/${sessionId}/messages/snapshot`,
+    method: 'get',
+    params: { messageIds: messageIds.join(',') }
+  })
+}
+
 export function uploadImAttachment(file) {
   const formData = new FormData()
   formData.append('file', file, messageAttachmentUploadName(file.name))

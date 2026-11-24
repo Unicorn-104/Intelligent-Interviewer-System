@@ -12,6 +12,8 @@ import com.ruoyi.system.domain.ImMessage;
  */
 public interface ImMessageMapper
 {
+    List<ImMessage> selectMessageSnapshot(@Param("sessionId") Long sessionId, @Param("messageIds") List<Long> messageIds);
+
     List<ImMessage> selectMessagePage(@Param("sessionId") Long sessionId, @Param("beforeId") Long beforeId,
             @Param("afterId") Long afterId, @Param("limit") int limit);
     /**
