@@ -2,7 +2,6 @@ package com.ruoyi.system.service.app;
 
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.mapper.app.AppJobMapper;
-import com.ruoyi.system.service.IEnterpriseJobService;
 import com.ruoyi.system.service.app.impl.AppJobServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,17 +12,21 @@ import static org.mockito.Mockito.*;
 class AppJobApplyServiceTest
 {
     private final AppJobMapper mapper = mock(AppJobMapper.class);
-    private final IEnterpriseJobService enterpriseJobService = mock(IEnterpriseJobService.class);
     private final AppJobServiceImpl service = new AppJobServiceImpl();
 
     @BeforeEach
     void setup()
     {
         ReflectionTestUtils.setField(service, "jobMapper", mapper);
-        ReflectionTestUtils.setField(service, "enterpriseJobService", enterpriseJobService);
+        ReflectionTestUtils.setField(service, "enterpriseJobService",
+                mock(com.ruoyi.system.service.IEnterpriseJobService.class));
+        ReflectionTestUtils.setField(service, "entResumeSnapshotService",
+                mock(com.ruoyi.enterprise.service.EntResumeSnapshotService.class));
+        when(mapper.selectAppId(eq(31L), eq(91L))).thenReturn(101L);
         when(mapper.selectCompanyIdByPositionId(91L)).thenReturn(71L);
         when(mapper.selectCandidateId(17L, 71L)).thenReturn(31L);
         when(mapper.insertApplication(eq(31L), eq(91L), anyLong())).thenReturn(1);
+        when(mapper.updateCandidateResume(eq(31L), eq(17L), eq(71L), anyLong())).thenReturn(1);
     }
 
     @Test
@@ -32,6 +35,7 @@ class AppJobApplyServiceTest
         when(mapper.selectOwnedResumeId(17L, 52L)).thenReturn(52L);
         service.apply(17L, 91L, 52L);
         verify(mapper).insertApplication(31L, 91L, 52L);
+        verify(mapper).updateCandidateResume(31L, 17L, 71L, 52L);
         verify(mapper, never()).selectDefaultResumeId(anyLong());
     }
 
@@ -51,6 +55,7 @@ class AppJobApplyServiceTest
         when(mapper.selectDefaultResumeId(17L)).thenReturn(51L);
         service.apply(17L, 91L);
         verify(mapper).insertApplication(31L, 91L, 51L);
+        verify(mapper).updateCandidateResume(31L, 17L, 71L, 51L);
     }
 
     @Test
@@ -85,5 +90,6 @@ class AppJobApplyServiceTest
         when(mapper.countApplication(31L, 91L)).thenReturn(1);
         assertThrows(ServiceException.class, () -> service.apply(17L, 91L, 52L));
         verify(mapper, never()).insertApplication(anyLong(), anyLong(), anyLong());
+        verify(mapper, never()).updateCandidateResume(anyLong(), anyLong(), anyLong(), anyLong());
     }
 }
