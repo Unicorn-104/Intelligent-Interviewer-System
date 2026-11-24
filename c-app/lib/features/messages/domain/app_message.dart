@@ -73,6 +73,9 @@ class AppMessage {
     this.avatarUrl,
     this.targetUrl,
     this.badge,
+    this.threadType,
+    this.threadId,
+    this.messageCount = 1,
   });
 
   final int sourceId;
@@ -84,6 +87,9 @@ class AppMessage {
   final String? avatarUrl;
   final String? targetUrl;
   final String? badge;
+  final String? threadType;
+  final int? threadId;
+  final int messageCount;
 
   int? get companyId {
     if (category != AppMessageCategory.company || targetUrl == null) {
@@ -120,6 +126,9 @@ class AppMessage {
       avatarUrl: _asNullableString(json['avatarUrl']),
       targetUrl: _asNullableString(json['targetUrl']),
       badge: _asNullableString(json['badge']),
+      threadType: _asNullableString(json['threadType']),
+      threadId: int.tryParse('${json['threadId']}'),
+      messageCount: int.tryParse('${json['messageCount']}') ?? 1,
     );
   }
 
@@ -134,6 +143,9 @@ class AppMessage {
       avatarUrl: avatarUrl,
       targetUrl: targetUrl,
       badge: badge,
+      threadType: threadType,
+      threadId: threadId,
+      messageCount: messageCount,
     );
   }
 
