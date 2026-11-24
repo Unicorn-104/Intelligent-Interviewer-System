@@ -210,7 +210,8 @@ public class CandidateExamServiceImpl implements ICandidateExamService
                 }
                 Long talId = asLong(requireTalent(userId).get("talId"));
                 // 本轮笔试节点：开考 start（按 refId=recordId 幂等）；app_status 已由 HR 发通知时切到招聘中，这里不动
-                openExamNode(recordId, talId, asLong(schedule.get("positionId")), userId);
+                openExamNode(recordId, talId, asLong(schedule.get("positionId")),
+                        asLong(schedule.get("stageId")), userId);
                 talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
                         List.of(0, 1, 2, 5, 6, 7, 8, 9), asLong(schedule.get("positionId")), null, "开始笔试", userId);
                 record = candidateExamMapper.selectRecordForCandidate(userId, recordId);
@@ -244,7 +245,8 @@ public class CandidateExamServiceImpl implements ICandidateExamService
         recordId = (long) candidateExamMapper.selectLastRecordId();
         snapshotQuestions(asLong(schedule.get("paperId")), parseJson(schedule.get("ruleJson")), recordId);
         // 本轮笔试节点：开考 start；app_status 不动（HR 发通知时已切到招聘中）
-        openExamNode(recordId, talId, asLong(schedule.get("positionId")), userId);
+        openExamNode(recordId, talId, asLong(schedule.get("positionId")),
+                asLong(schedule.get("stageId")), userId);
         talStatusService.change(talId, TalStatusService.TAL_EXAM_TAKING,
                 List.of(0, 1, 2, 5, 6, 7, 8, 9), asLong(schedule.get("positionId")), null, "开始笔试", userId);
 
@@ -530,25 +532,23 @@ public class CandidateExamServiceImpl implements ICandidateExamService
     }
 
     /** 开考：按 refId=recordId 幂等建立本轮笔试节点并 start；无流程实例则跳过（不阻断考试） */
-    private void openExamNode(Long recordId, Long talId, Long positionId, Long operatorId)
+    private void openExamNode(Long recordId, Long talId, Long positionId, Long stageId, Long operatorId)
     {
         Long instanceId = resolveInstanceId(talId, positionId);
-        if (instanceId == null || recordId == null)
+        if (instanceId == null || recordId == null || stageId == null)
         {
-            return;
+            throw new ServiceException("投递流程或笔试阶段缺失，无法开始考试");
         }
-        try
+        ProcessStageInstance node = processStageInstanceService.getOrCreateExamStageNode(
+                instanceId, stageId, "在线笔试", recordId, operatorId);
+        if (node != null && node.getResult() != null
+                && node.getResult() == ProcessStageInstance.RESULT_PASS)
         {
-            ProcessStageInstance node = processStageInstanceService.getOrCreate(instanceId, null,
-                    ProcessStageInstance.TYPE_EXAM, "在线笔试", recordId, operatorId);
-            if (node != null && node.getId() != null)
-            {
-                processStageInstanceService.start(node.getId(), operatorId);
-            }
+            throw new ServiceException("该笔试阶段已经通过，不能重复开考");
         }
-        catch (Exception ignore)
+        if (node != null && node.getId() != null && node.getStatus() != ProcessStageInstance.STATUS_RUNNING)
         {
-            // 节点写入失败不阻断考试主流程
+            processStageInstanceService.start(node.getId(), operatorId);
         }
     }
 

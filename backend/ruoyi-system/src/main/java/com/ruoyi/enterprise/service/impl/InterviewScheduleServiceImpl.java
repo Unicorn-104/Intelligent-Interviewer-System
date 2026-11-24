@@ -258,12 +258,17 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             if (stageId != null)
             {
                 if (!seen.add(stageId)) throw new ServiceException("招聘阶段不能重复");
-                Map<String, Object> stage = scheduleMapper.selectStageByIdForPosition(stageId, positionId);
+                Map<String, Object> stage = scheduleMapper.selectStageByIdForCandidate(
+                        stageId, candidateId, positionId);
                 if (stage == null) throw new ServiceException("招聘阶段已变更，请刷新后重新排期");
+                if (integer(stage.get("stageType"), 0) == ProcessStageInstance.TYPE_EXAM)
+                    throw new ServiceException("在线笔试由笔试安排统一管理，不能创建面试预约");
                 values.putAll(stage);
                 // 岗位流程中先有笔试阶段时，必须笔试节点通过才能安排后续面试（当前环节由真实节点计算）
-                if (scheduleMapper.countRequiredExamStagesBefore(positionId, integer(stage.get("stageOrder"), 0)) > 0
-                        && !hasPassedExamNode(candidateId, positionId))
+                if (scheduleMapper.countRequiredExamStagesBeforeCandidate(candidateId, positionId,
+                        integer(stage.get("stageOrder"), 0)) > 0
+                        && !hasPassedRequiredExamNodes(candidateId, positionId,
+                                integer(stage.get("stageOrder"), 0)))
                 {
                     throw new ServiceException("该岗位流程中笔试阶段尚未通过，暂不能安排后续面试");
                 }
@@ -789,18 +794,23 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         stageInstanceService.cancel(node.getId(), "面试安排取消");
     }
 
-    /** 该流程实例是否已有「通过」的笔试节点（排期前置闸门，当前环节由真实节点计算）。 */
-    private boolean hasPassedExamNode(Long candidateId, Long positionId)
+    /** 目标面试之前的所有必选笔试阶段均已通过，不能用任意笔试节点顶替。 */
+    private boolean hasPassedRequiredExamNodes(Long candidateId, Long positionId, int stageOrder)
     {
         Long instanceId = instanceIdOf(applicationStatusMapper.selectAppId(candidateId, positionId));
         if (instanceId == null) return false;
+        List<Long> required = new ArrayList<>(scheduleMapper.selectRequiredExamStageIdsBeforeCandidate(
+                candidateId, positionId, stageOrder));
+        if (required.isEmpty()) return true;
         for (ProcessStageInstance n : stageInstanceService.listNodes(instanceId))
         {
-            if (n.getNodeType() != null && n.getNodeType() == ProcessStageInstance.TYPE_EXAM
-                    && n.getResult() != null && n.getResult() == ProcessStageInstance.RESULT_PASS)
-                return true;
+            if (n.getNodeType() == null || n.getNodeType() != ProcessStageInstance.TYPE_EXAM
+                    || n.getResult() == null || n.getResult() != ProcessStageInstance.RESULT_PASS)
+                continue;
+            required.remove(n.getStageId());
+            if (required.isEmpty()) return true;
         }
-        return false;
+        return required.isEmpty();
     }
 
     /** 从阶段配置 JSON（psg_interviewer_config_json）读取面试时长，缺失或越界时拒绝排期。 */

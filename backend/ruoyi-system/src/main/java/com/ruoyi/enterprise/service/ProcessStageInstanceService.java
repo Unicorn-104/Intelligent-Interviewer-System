@@ -47,6 +47,33 @@ public class ProcessStageInstanceService
         return createNode(instanceId, stageId, nodeType, nodeName, refId, operatorId);
     }
 
+    /**
+     * 笔试专用节点：节点代表流程阶段，考试记录仅代表该阶段的一次尝试。
+     * 面试仍使用 getOrCreate(refId) 按预约单独建节点。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ProcessStageInstance getOrCreateExamStageNode(Long instanceId, Long stageId,
+            String nodeName, Long recordId, Long operatorId)
+    {
+        if (instanceId == null || stageId == null)
+        {
+            throw new ServiceException("流程实例和笔试阶段不能为空，无法创建笔试节点");
+        }
+        mapper.lockProcessInstance(instanceId);
+        ProcessStageInstance node = mapper.selectExamNodeByStage(instanceId, stageId);
+        if (node == null)
+        {
+            node = createNode(instanceId, stageId, ProcessStageInstance.TYPE_EXAM,
+                    nodeName, recordId, operatorId);
+        }
+        else if (node.getResult() == null || node.getResult() != ProcessStageInstance.RESULT_PASS)
+        {
+            mapper.reopenExamNode(node.getId());
+            node = mapper.selectNodeById(node.getId());
+        }
+        return node;
+    }
+
     /** 新建节点，轮次按同类型分组内最大值 +1 */
     @Transactional(rollbackFor = Exception.class)
     public ProcessStageInstance createNode(Long instanceId, Long stageId, int nodeType, String nodeName,

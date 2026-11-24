@@ -239,13 +239,13 @@ public class ExamGradeServiceImpl implements IExamGradeService
         gradeMapper.updateRecordScored(recordId, total, passStatus, recordStatus);
         // 笔试终判：只写本轮节点结果（通过/未通过），不再推进 t_app_record.app_status；
         // 未通过/缺考不自动淘汰投递，HR 可继续安排补考/新一轮或主动终止。
-        if (passStatus != 2 && firstFinalize && ctx.get("positionId") != null)
+        if (passStatus != 2 && ctx.get("positionId") != null)
         {
             int nodeResult = passStatus == 1 ? ProcessStageInstance.RESULT_PASS : ProcessStageInstance.RESULT_FAIL;
             String note = "笔试终判：总分 " + total.stripTrailingZeros().toPlainString()
                     + " / 阈值 " + (threshold == null ? "-" : threshold.stripTrailingZeros().toPlainString());
             completeExamNode(recordId, asLong(ctx.get("talId")), asLong(ctx.get("positionId")),
-                    nodeResult, note, operatorUserId);
+                    asLong(ctx.get("stageId")), nodeResult, note, operatorUserId);
         }
 
         String comment = buildComment(ctx, commentOverride, objective, subjective,
@@ -350,36 +350,34 @@ public class ExamGradeServiceImpl implements IExamGradeService
     // ==================== 节点收口 ====================
 
     /** 终判收口本轮笔试节点：按 refId=recordId 幂等 complete；无流程实例则跳过 */
-    private void completeExamNode(Long recordId, Long talId, Long positionId, int result,
+    private void completeExamNode(Long recordId, Long talId, Long positionId, Long stageId, int result,
             String note, Long operatorId)
     {
-        if (recordId == null || talId == null || positionId == null)
+        if (recordId == null || talId == null || positionId == null || stageId == null)
+        {
+            throw new ServiceException("笔试阶段信息缺失，无法更新流程节点");
+        }
+        Long appId = applicationStatusMapper.selectAppId(talId, positionId);
+        if (appId == null)
+        {
+            throw new ServiceException("投递记录不存在，无法更新笔试流程节点");
+        }
+        Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+        Long instanceId = app == null ? null : asLong(app.get("instanceId"));
+        if (instanceId == null)
+        {
+            throw new ServiceException("投递流程实例缺失，无法更新笔试流程节点");
+        }
+        ProcessStageInstance node = processStageInstanceService.getOrCreateExamStageNode(
+                instanceId, stageId, "在线笔试", recordId, operatorId);
+        if (node != null && node.getResult() != null
+                && node.getResult() == ProcessStageInstance.RESULT_PASS)
         {
             return;
         }
-        try
+        if (node != null && node.getId() != null)
         {
-            Long appId = applicationStatusMapper.selectAppId(talId, positionId);
-            if (appId == null)
-            {
-                return;
-            }
-            Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
-            Long instanceId = app == null ? null : asLong(app.get("instanceId"));
-            if (instanceId == null)
-            {
-                return;
-            }
-            ProcessStageInstance node = processStageInstanceService.getOrCreate(instanceId, null,
-                    ProcessStageInstance.TYPE_EXAM, "在线笔试", recordId, operatorId);
-            if (node != null && node.getId() != null)
-            {
-                processStageInstanceService.complete(node.getId(), result, note);
-            }
-        }
-        catch (Exception ignore)
-        {
-            // 节点收口失败不影响笔试成绩落库
+            processStageInstanceService.complete(node.getId(), result, note);
         }
     }
 

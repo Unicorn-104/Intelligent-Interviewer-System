@@ -32,6 +32,13 @@ public interface ProcessStageInstanceMapper
     /** 按业务单据（笔试记录/面试预约）查询节点，幂等防重复创建 */
     ProcessStageInstance selectNodeByRef(@Param("refId") Long refId);
 
+    /** 笔试阶段节点：同一流程实例+阶段只允许一个逻辑节点。 */
+    ProcessStageInstance selectExamNodeByStage(@Param("instanceId") Long instanceId,
+            @Param("stageId") Long stageId);
+
+    /** 笔试阶段重新开始：仅允许未通过节点重新进入进行中。 */
+    int reopenExamNode(@Param("id") Long id);
+
     /** 某流程实例下全部节点，按创建顺序排列 */
     List<ProcessStageInstance> listNodesByInstance(@Param("instanceId") Long instanceId);
 

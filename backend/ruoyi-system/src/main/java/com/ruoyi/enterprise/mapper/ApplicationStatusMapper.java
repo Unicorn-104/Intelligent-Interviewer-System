@@ -23,6 +23,9 @@ public interface ApplicationStatusMapper
     /** 读取投递基础信息（存在性/归属校验） */
     Map<String, Object> selectApplicationById(@Param("appId") Long appId);
 
+    /** 投递当前流程阶段ID。 */
+    Long selectCurrentStageId(@Param("appId") Long appId);
+
     /** 守卫更新：仅当当前状态=fromStatus 时才改 app_status，返回影响行数 */
     int updateAppStatus(@Param("appId") Long appId, @Param("fromStatus") int fromStatus,
             @Param("toStatus") int toStatus);

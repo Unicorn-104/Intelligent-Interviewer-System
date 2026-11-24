@@ -77,6 +77,10 @@ public interface EnterpriseJobMapper
      */
     public int insertTemplate(@Param("companyId") Long companyId, @Param("posId") Long posId, @Param("name") String name);
 
+    /** 新建不可变流程版本。 */
+    public int insertTemplateVersion(@Param("companyId") Long companyId, @Param("posId") Long posId,
+            @Param("name") String name, @Param("version") String version);
+
     /**
      * 岗位最新流程模板 id（新建后回查）
      */
