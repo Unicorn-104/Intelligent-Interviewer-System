@@ -733,6 +733,7 @@ function kindLabel(kind) {
   if (kind === 'delete') return '删除题目'
   if (kind === 'undo') return '撤销批次'
   if (kind === 'create_companies') return '录入企业'
+  if (kind === 'create_positions') return '录入岗位'
   return '待确认'
 }
 
@@ -765,6 +766,10 @@ async function applyPending(msg, card) {
       const skipped = Array.isArray(d.skipped) ? d.skipped.length : 0
       const errors = Array.isArray(d.errors) ? d.errors.length : 0
       card.result = `已录入 ${d.inserted || 0} 家企业${skipped ? '，跳过同名 ' + skipped + ' 家' : ''}${errors ? '，失败 ' + errors + ' 家' : ''}`
+    } else if (d.kind === 'create_positions') {
+      const skipped = Array.isArray(d.skipped) ? d.skipped.length : 0
+      const errors = Array.isArray(d.errors) ? d.errors.length : 0
+      card.result = `已创建 ${d.inserted || 0} 个岗位（未上架）${skipped ? '，跳过已存在 ' + skipped + ' 个' : ''}${errors ? '，失败 ' + errors + ' 个：' + (d.errors[0] || '') : ''}`
     } else if (d.kind === 'undo') {
       card.result = `已撤销：删除 ${d.deleted || 0} 题${d.skipped ? '，保留 ' + d.skipped + ' 题' : ''}`
     } else {

@@ -155,12 +155,13 @@ public class AdminAssistantController extends BaseController {
             你是招聘管理系统后台AI助手。既能查业务数据，也能代用户起草题目、修改题目与调整分类。
             严格要求：
             0. 调用工具必须使用工具调用接口（tool_calls），禁止把调用写成任何文本标记或伪标签；
-            1. 任何写操作都必须先调用 create_questions / update_questions / classify_questions / delete_questions / undo_import_batch / create_companies
+            1. 任何写操作都必须先调用 create_questions / update_questions / classify_questions / delete_questions / undo_import_batch / create_companies / create_positions
                生成待确认草稿，然后告诉用户"请点击下方卡片确认"，绝不能声称已经写入、修改或已经撤销；
             2. 业务数字优先用工具查真实数据，不编造；
                岗位查询用 search_jobs（可按岗位名、企业、城市、状态筛选）；
                候选人/人才库用 search_talent（可按企业、状态、归档来源筛选，不返回联系方式）；
                消息模板用 list_message_templates（可按标题或编码、渠道、状态、企业筛选）；
+               岗位录入用 create_positions（需岗位名与有效企业ID，入库后默认未上架，需在岗位管理页上架）；
             3. 中文简洁分点回答；
             4. 题库口径：分类 1-5；题型 1 单选、2 多选、3 判断、4 简答、5 编程；
             5. 用户问某题的答案、解析、选项或分值时，直接调用 get_question_detail（只读），
@@ -280,7 +281,7 @@ public class AdminAssistantController extends BaseController {
             ArrayNode messages = buildMessages(message, shortHistory, body.get("attachments"));
 
             // 题库类问题走工具路径：可查库、可生成待确认草稿；普通问答仍走流式
-            if (needsQuestionTools(message)) {
+            if (needsQuestionTools(message) || mentionsKnownTool(message)) {
                 PENDING_CARDS.remove();
                 ArrayNode tools = buildTools();
                 String answer = callModel(model, url, apiKey, messages, tools);
@@ -446,6 +447,24 @@ public class AdminAssistantController extends BaseController {
                 "岗位", "候选人", "人才库", "消息模板", "模板", "mcp", "MCP", "外部工具"};
         for (String kw : keywords) {
             if (q.contains(kw)) return true;
+        }
+        return false;
+    }
+
+    /** 用户点名了已注册工具（含 MCP 工具的短名）时必须走工具路径，否则模型看不到工具只能用文本模拟。 */
+    private boolean mentionsKnownTool(String q) {
+        if (q == null || q.isBlank()) return false;
+        for (AgentToolPackage pkg : toolPackages) {
+            if (!SCOPE.equals(pkg.scope())) continue;
+            for (AgentTool tool : pkg.tools()) {
+                String name = tool.name();
+                if (name == null || name.length() < 3) continue;
+                if (q.contains(name)) return true;
+                if (name.startsWith("mcp_")) {
+                    String shortName = name.substring(name.lastIndexOf('_') + 1);
+                    if (shortName.length() >= 3 && q.contains(shortName) && q.contains("工具")) return true;
+                }
+            }
         }
         return false;
     }

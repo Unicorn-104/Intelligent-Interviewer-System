@@ -34,6 +34,7 @@ public class AdminToolPackage implements AgentToolPackage
             DeleteQuestionsTool deleteQuestions,
             UndoImportBatchTool undoImportBatch,
             CreateCompaniesTool createCompanies,
+            CreatePositionsTool createPositions,
             SearchJobsTool searchJobs,
             SearchTalentTool searchTalent,
             ListMessageTemplatesTool listMessageTemplates,
@@ -41,7 +42,8 @@ public class AdminToolPackage implements AgentToolPackage
     {
         this.baseTools = List.of(dashboardStats, loginAlerts, searchQuestions, questionDetail, checkDuplicates,
                 questionStats, listBatches, createQuestions, classifyQuestions, updateQuestions,
-                deleteQuestions, undoImportBatch, createCompanies, searchJobs, searchTalent, listMessageTemplates);
+                deleteQuestions, undoImportBatch, createCompanies, createPositions, searchJobs, searchTalent,
+                listMessageTemplates);
         this.mcpRegistry = mcpRegistry;
     }
 
