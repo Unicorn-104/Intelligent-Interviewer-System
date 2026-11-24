@@ -152,6 +152,12 @@ public class ExamServiceImpl implements IExamService
     @Override
     public void fillQuestionAnalysis(Long questionId, String analysis, Long userId)
     {
+        fillQuestionAnalysis(questionId, analysis, userId, false);
+    }
+
+    @Override
+    public void fillQuestionAnalysis(Long questionId, String analysis, Long userId, boolean forceRegenerate)
+    {
         if (StringUtils.isEmpty(analysis))
         {
             throw new ServiceException("解析内容不能为空");
@@ -170,9 +176,9 @@ public class ExamServiceImpl implements IExamService
                 throw new ServiceException("无权操作其他企业的题目");
             }
         }
-        if (examMapper.updateQuestionAnalysis(questionId, analysis) == 0)
+        if (examMapper.updateQuestionAnalysis(questionId, analysis, forceRegenerate) == 0)
         {
-            throw new ServiceException("该题目已有解析，无需重复补全");
+            throw new ServiceException(forceRegenerate ? "解析保存失败，请重试" : "该题目已有解析，无需重复补全");
         }
     }
 

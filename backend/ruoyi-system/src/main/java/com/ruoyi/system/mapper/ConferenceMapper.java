@@ -333,6 +333,11 @@ public interface ConferenceMapper
     public List<Map<String, Object>> selectSessionInterviewers(@Param("sessionId") Long sessionId);
 
     /**
+     * 查询预约阶段已指派面试官（场次创建前用于带入多人名单）
+     */
+    public List<Long> selectAppointmentInterviewerIds(@Param("appointmentId") Long appointmentId);
+
+    /**
      * 查询某用户收到的面试邀约通知（消息中心「面试预约通知」系统会话）
      */
     public List<Map<String, Object>> selectInterviewerNotices(@Param("userId") Long userId);

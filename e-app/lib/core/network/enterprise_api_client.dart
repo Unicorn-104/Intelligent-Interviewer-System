@@ -63,7 +63,8 @@ class EnterpriseApiClient {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, Object?>? body,
-  }) => _request('POST', path, body: body);
+    Duration? timeout,
+  }) => _request('POST', path, body: body, timeout: timeout);
 
   Future<Map<String, dynamic>> put(String path, {Map<String, Object?>? body}) =>
       _request('PUT', path, body: body);

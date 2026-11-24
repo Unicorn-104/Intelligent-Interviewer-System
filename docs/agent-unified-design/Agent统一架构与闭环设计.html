@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 统一架构与业务闭环设计 · 智能招聘面试系统</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%231F4E79'/%3E%3Cpath d='M8 22 L16 8 L24 22' stroke='%23fff' stroke-width='2.4' fill='none'/%3E%3Cline x1='11' y1='19' x2='21' y2='19' stroke='%23fff' stroke-width='2.4'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#F4F6F8;
+  --paper:#FFFFFF;
+  --ink:#171A1F;
+  --muted:#5B6675;
+  --line:#D5DBE3;
+  --blue:#1F4E79;
+  --green:#2F7A6B;
+  --amber:#A65D08;
+  --red:#A33A2C;
+  --serif:"Songti SC","SimSun","Source Han Serif SC",serif;
+  --sans:"Microsoft YaHei","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --mono:"Cascadia Mono","Consolas","SF Mono",monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.78;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:900px;margin:0 auto;padding:0 20px 96px}
+
+/* ---------- 文档头 ---------- */
+.masthead{
+  border-bottom:2px solid var(--ink);
+  padding:44px 0 18px;margin-bottom:8px;
+}
+.kicker{
+  font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+  color:var(--muted);text-transform:none;margin-bottom:14px;
+}
+h1{
+  font-family:var(--serif);font-weight:600;font-size:38px;line-height:1.24;
+  margin:0 0 10px;letter-spacing:-.01em;
+}
+.sub{
+  font-size:15.5px;color:var(--muted);max-width:640px;margin:0 0 22px;
+}
+.meta{
+  display:flex;flex-wrap:wrap;gap:0 28px;
+  font-family:var(--mono);font-size:12.5px;color:var(--muted);
+  border-top:1px solid var(--line);padding-top:14px;
+}
+.meta b{color:var(--ink);font-weight:600}
+
+/* ---------- 目录 ---------- */
+.toc{
+  margin:26px 0 40px;padding:18px 20px;
+  border-left:3px solid var(--blue);background:var(--paper);
+}
+.toc h2{font-size:13px;font-family:var(--mono);letter-spacing:.1em;color:var(--blue);margin:0 0 12px;font-weight:600}
+.toc ol{margin:0;padding-left:0;list-style:none;counter-reset:t}
+.toc li{counter-increment:t;margin:0 0 5px;font-size:13.5px}
+.toc li a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent}
+.toc li a:hover,.toc li a:focus{border-bottom-color:var(--blue);color:var(--blue)}
+.toc li::before{content:counter(t) ". ";font-family:var(--mono);color:var(--muted);margin-right:6px}
+
+/* ---------- 章节 ---------- */
+section{margin:0 0 54px}
+h2.sec{
+  font-family:var(--serif);font-size:25px;font-weight:600;line-height:1.3;
+  margin:0 0 6px;padding-top:16px;border-top:1px solid var(--line);
+}
+.secno{
+  display:block;font-family:var(--mono);font-size:12px;letter-spacing:.16em;
+  color:var(--blue);margin-bottom:6px;
+}
+h3{font-size:16.5px;font-weight:600;margin:30px 0 8px;color:var(--ink)}
+h3::before{content:"";display:inline-block;width:7px;height:7px;background:var(--blue);margin-right:9px;vertical-align:2px}
+h4{font-size:14.5px;font-weight:600;margin:20px 0 6px;color:var(--muted)}
+p{margin:0 0 12px}
+.lead{font-size:16px;line-height:1.8}
+
+/* ---------- 结论条 ---------- */
+.finding{
+  border-left:3px solid var(--green);background:#F2F7F5;
+  padding:14px 18px;margin:18px 0 6px;
+}
+.finding strong{color:var(--green)}
+.warn{border-left-color:var(--amber);background:#FCF6EC}
+.warn strong{color:var(--amber)}
+
+/* ---------- 表格 ---------- */
+.tbl{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:13.5px;table-layout:fixed;background:var(--paper)}
+.tbl th{
+  text-align:left;font-weight:600;font-size:12.5px;color:var(--muted);
+  border-bottom:1.5px solid var(--ink);padding:8px 10px;
+  font-family:var(--mono);letter-spacing:.04em;
+}
+.tbl td{border-bottom:1px solid var(--line);padding:9px 10px;vertical-align:top;word-break:break-word}
+.tbl tr:last-child td{border-bottom:1.5px solid var(--ink)}
+.tbl code{font-family:var(--mono);font-size:12.2px;color:var(--blue)}
+.tag{display:inline-block;font-family:var(--mono);font-size:11.5px;padding:1px 7px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.tag.g{border-color:#9FC4BA;color:var(--green);background:#F3F8F6}
+.tag.a{border-color:#D9BB8B;color:var(--amber);background:#FCF7EE}
+.tag.r{border-color:#C9A6A0;color:var(--red);background:#FAF2F0}
+
+/* ---------- 代码 ---------- */
+pre{
+  background:#1A2027;color:#DDE3EA;padding:16px 18px;overflow-x:auto;
+  font-family:var(--mono);font-size:12.5px;line-height:1.68;
+  margin:14px 0 18px;border-radius:2px;
+}
+pre .c{color:#7E8B99}
+pre .k{color:#8FB8D8}
+.codecap{font-family:var(--mono);font-size:12px;color:var(--muted);margin:-10px 0 18px}
+
+/* ---------- 图 ---------- */
+.fig{margin:20px 0 22px;background:var(--paper);border:1px solid var(--line);padding:14px 12px;overflow-x:auto}
+.fig svg{width:100%;height:auto;min-width:620px;display:block}
+.figcap{font-size:12.5px;color:var(--muted);margin-top:10px;padding-left:2px}
+.figcap b{color:var(--ink);font-weight:600}
+
+/* ---------- 清单 ---------- */
+ul.check{margin:10px 0 16px;padding-left:0;list-style:none}
+ul.check li{margin:0 0 7px;padding-left:26px;position:relative;font-size:13.8px}
+ul.check li::before{content:"";position:absolute;left:2px;top:6px;width:11px;height:11px;border:1.5px solid var(--line)}
+ul.dot{margin:10px 0 16px;padding-left:18px}
+ul.dot li{margin:0 0 7px}
+
+/* ---------- 页脚 ---------- */
+.foot{border-top:1px solid var(--line);margin-top:60px;padding-top:16px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+/* ---------- 窄屏 ---------- */
+@media (max-width:640px){
+  .wrap{padding:0 16px 72px}
+  h1{font-size:26px}
+  .sub{font-size:14px}
+  .meta{gap:0 16px;font-size:11.5px}
+  h2.sec{font-size:20px}
+  .tbl{font-size:11.8px;table-layout:auto}
+  .tbl th,.tbl td{padding:6px 5px}
+  .tbl td{word-break:break-all}
+  .tbl code{font-size:11px}
+  pre{font-size:11.5px;padding:12px}
+  .toc li{font-size:13px}
+}
+@media print{
+  body{background:#fff}
+  .toc{break-after:page}
+  section{break-inside:auto}
+  pre{background:#F6F7F9;color:#171A1F}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <div class="kicker">DESIGN &amp; TECHNICAL SPEC — INTERNAL</div>
+  <h1>Agent 统一架构与业务闭环设计</h1>
+  <p class="sub">把管理端、企业端、求职者端三套各自为战的 AI 能力，收拢为「一个内核 + 按端工具包 + 统一审批」；同时明确企业注册与个人注册的边界。</p>
+  <div class="meta">
+    <span>版本 <b>v1.0</b></span>
+    <span>日期 <b>2026-11-23</b></span>
+    <span>分支 <b>feature/admin-console-iter-TQY</b></span>
+    <span>基线 <b>origin/dev</b></span>
+    <span>开发者 <b>TQY</b></span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="目录">
+  <h2>CONTENTS</h2>
+  <ol>
+    <li><a href="#s1">结论摘要</a></li>
+    <li><a href="#s2">现状盘点：三套 Agent 各自为战</a></li>
+    <li><a href="#s3">缺口清单与影响</a></li>
+    <li><a href="#s4">目标架构：一内核 + 按端工具包</a></li>
+    <li><a href="#s5">接口契约</a></li>
+    <li><a href="#s6">数据模型与状态机</a></li>
+    <li><a href="#s7">关键流程：出题与撤销</a></li>
+    <li><a href="#s8">注册功能改造</a></li>
+    <li><a href="#s9">实施计划、验证与回滚</a></li>
+    <li><a href="#s10">验收清单</a></li>
+    <li><a href="#s11">参考与索引</a></li>
+  </ol>
+</nav>
+
+<!-- ================= 1 ================= -->
+<section id="s1">
+  <span class="secno">SECTION 01</span>
+  <h2 class="sec">结论摘要</h2>
+  <p class="lead">三条结论，按优先级排列。</p>
+
+  <div class="finding">
+    <strong>一、注册功能不重写，只做入口分流。</strong>
+    <code>origin/dev</code> 已有完整的企业自助注册（<code>POST /register/enterprise</code>），建企业、建账号、绑企业 ID、授 <code>biz_1</code>、置双待审，一步不缺。现有 <code>/register</code> 是若依原生个人注册，保留但其定位必须收窄，否则企业用户走错门会得到「无企业绑定」的空账号。
+  </div>
+
+  <div class="finding">
+    <strong>二、Agent 不完整的根因不是功能少，是结构分裂。</strong>
+    三端各有一套模型调用与工具实现：求职者端有记忆与续传、企业端有工具接口抽象但只有两个只读工具、管理端有完整写闭环却把逻辑写在控制器里。再加一套就等于第四份技术债。
+  </div>
+
+  <div class="finding warn">
+    <strong>三、先收拢结构，再补功能。</strong>
+    抽出 <code>AgentTool</code> 接口与按端注册的工具包，把写操作统一走「草稿—确认—落库—撤销」，并补一条工具调用审计。结构到位后，企业端与求职者端补写能力只需注册工具，不再重写编排。
+  </div>
+
+  <h3>范围边界</h3>
+  <table class="tbl">
+    <colgroup><col style="width:16%"><col style="width:42%"><col style="width:42%"></colgroup>
+    <tr><th>对象</th><th>本期纳入</th><th>本期不纳入</th></tr>
+    <tr><td>后端</td><td><code>AgentTool</code> 抽象、管理端工具下沉、<code>AgentActionStore</code> 泛化、审计表</td><td>推翻现有企业端 / 求职者端编排实现</td></tr>
+    <tr><td>管理端前端</td><td>确认卡片、注册入口分流</td><td>助手面板整体改版</td></tr>
+    <tr><td>企业端 / 求职者端</td><td>预留工具包注册位；组卷与题库合并方案</td><td>本期接写操作</td></tr>
+    <tr><td>数据库</td><td>新增 1 张审计表（需授权后执行）</td><td>修改现有题库表结构</td></tr>
+  </table>
+</section>
+
+<!-- ================= 2 ================= -->
+<section id="s2">
+  <span class="secno">SECTION 02</span>
+  <h2 class="sec">现状盘点：三套 Agent 各自为战</h2>
+  <p>下表全部经代码核对（<code>origin/dev</code> 与当前分支），不含推测。</p>
+
+  <table class="tbl">
+    <colgroup><col style="width:13%"><col style="width:27%"><col style="width:20%"><col style="width:18%"><col style="width:22%"></colgroup>
+    <tr><th>端</th><th>实现位置</th><th>工具体系</th><th>能力</th><th>缺口</th></tr>
+    <tr>
+      <td>求职者端</td>
+      <td><code>ruoyi-system / service/app/ai/AppAiService</code></td>
+      <td>手写 JSON Schema + switch，白名单 5 个只读工具</td>
+      <td>简历、岗位、投递查询；SSE 游标续传；短期 + 长期记忆</td>
+      <td><span class="tag r">无写操作</span> 工具无法跨端复用</td>
+    </tr>
+    <tr>
+      <td>企业端</td>
+      <td><code>ruoyi-system / enterprise/ai/agent/*</code></td>
+      <td><code>EnterpriseAssistantTool</code> 接口 + <code>ToolPackage</code> 注册</td>
+      <td>岗位列表、岗位详情；另有组卷 Agent（<code>ExamAiServiceImpl</code>）</td>
+      <td><span class="tag r">仅 2 工具</span> 无写、无记忆、无审批</td>
+    </tr>
+    <tr>
+      <td>管理端</td>
+      <td><code>ruoyi-admin / controller/ai/AdminAssistantController</code></td>
+      <td><code>AdminQuestionTools</code>，schema 由控制器拼装</td>
+      <td>题库 6 工具：3 只读 + 3 写提案；<code>PendingActionStore</code> 审批；SSE 事件分流</td>
+      <td><span class="tag a">无接口抽象</span> 编排逻辑在控制器，不可单测</td>
+    </tr>
+  </table>
+
+  <figure class="fig">
+    <svg viewBox="0 0 980 300" role="img" aria-label="三端 Agent 与各自工具层的现状结构">
+      <text x="0" y="16" font-size="13" font-weight="600" fill="#1F4E79">现状结构</text>
+      <rect x="0" y="34" width="300" height="74" fill="#fff" stroke="#1F4E79"/>
+      <text x="14" y="56" font-size="12.5" fill="#171A1F">AppAiService（求职者端）</text>
+      <text x="14" y="76" font-size="11.5" fill="#5B6675">AgentTools · 5 只读 · 记忆 · 续传</text>
+      <text x="14" y="94" font-size="11.5" fill="#2F7A6B">能力最完整</text>
+
+      <rect x="340" y="34" width="300" height="74" fill="#fff" stroke="#1F4E79"/>
+      <text x="354" y="56" font-size="12.5" fill="#171A1F">EnterpriseAssistantService</text>
+      <text x="354" y="76" font-size="11.5" fill="#5B6675">Tool 接口 + ToolPackage 注册</text>
+      <text x="354" y="94" font-size="11.5" fill="#A65D08">结构最规范，工具最少</text>
+
+      <rect x="680" y="34" width="300" height="74" fill="#fff" stroke="#1F4E79"/>
+      <text x="694" y="56" font-size="12.5" fill="#171A1F">AdminAssistantController</text>
+      <text x="694" y="76" font-size="11.5" fill="#5B6675">AdminQuestionTools · 6 工具</text>
+      <text x="694" y="94" font-size="11.5" fill="#A65D08">闭环最完整，结构最随意</text>
+
+      <line x1="150" y1="108" x2="150" y2="132" stroke="#8A9099" stroke-width="1.3"/>
+      <line x1="490" y1="108" x2="490" y2="132" stroke="#8A9099" stroke-width="1.3"/>
+      <line x1="830" y1="108" x2="830" y2="132" stroke="#8A9099" stroke-width="1.3"/>
+      <line x1="150" y1="132" x2="830" y2="132" stroke="#8A9099" stroke-width="1.3"/>
+
+      <rect x="0" y="150" width="980" height="60" fill="#FCF7EE" stroke="#D9BB8B"/>
+      <text x="14" y="172" font-size="12.5" fill="#8A4B06">同一份模型调用、SSE 推送、工具循环、审批语义被各自实现一遍；新增一个工具要在三处写三遍，写操作只在管理端存在。</text>
+      <text x="14" y="194" font-size="12.5" fill="#8A4B06">组卷 Agent（企业端）与管理端题库 Agent 职责重叠，尚未合并。</text>
+
+      <rect x="0" y="228" width="980" height="52" fill="#F3F8F6" stroke="#9FC4BA"/>
+      <text x="14" y="250" font-size="12.5" fill="#1F5A4E">已可复用的公共件：AgentModelClient.resolve() 统一取模型（mpp_status=0 且密钥非空）、Redis 存登录态、t_ai_chat_session/message 会话表。</text>
+      <text x="14" y="270" font-size="12.5" fill="#1F5A4E">这意味着收拢不需要从零搭基建，只需要把接口层补齐。</text>
+    </svg>
+    <div class="figcap"><b>图 1</b>　三端各自实现编排与工具，公共件（模型解析、会话表、Redis）已经具备。</div>
+  </figure>
+
+  <h3>已跑通的闭环（管理端题库，新库实测）</h3>
+  <p>这不是方案设想，是 2026-11-23 在 <code>192.168.100.3:1260</code> 上跑过的真实结果：</p>
+  <table class="tbl">
+    <colgroup><col style="width:26%"><col style="width:30%"><col style="width:44%"></colgroup>
+    <tr><th>动作</th><th>返回</th><th>库内结果</th></tr>
+    <tr><td>只读「题库多少题」</td><td>模型调 <code>get_question_stats</code></td><td>30 题，系统 30 / 企业 0，题型 9·6·4·8·3</td></tr>
+    <tr><td>出 2 道 Java 集合题</td><td><code>pendingId=0a3106ec…</code></td><td>题库仍 30 条，未落库</td></tr>
+    <tr><td>点确认落库</td><td><code>inserted=2, batchId=1, ids=[39,40]</code></td><td>30 → 32，批次表新增 1 行</td></tr>
+    <tr><td>撤销批次 #1</td><td><code>deleted=2, status=1</code></td><td>32 → 30，批次置已撤销</td></tr>
+    <tr><td>同一 pendingId 二次提交</td><td>「草稿已过期或已提交」</td><td>无重复写入</td></tr>
+  </table>
+</section>
+
+<!-- ================= 3 ================= -->
+<section id="s3">
+  <span class="secno">SECTION 03</span>
+  <h2 class="sec">缺口清单与影响</h2>
+  <table class="tbl">
+    <colgroup><col style="width:6%"><col style="width:30%"><col style="width:32%"><col style="width:32%"></colgroup>
+    <tr><th>#</th><th>缺口</th><th>当前后果</th><th>补齐后收益</th></tr>
+    <tr><td>G1</td><td>工具没有统一接口</td><td>同一能力在三个类里各写一遍，字段与校验口径漂移</td><td>新工具只写一次，按端组装</td></tr>
+    <tr><td>G2</td><td>编排逻辑在控制器</td><td>600+ 行 controller，无法单测，改动靠手测</td><td>编排下沉 service，工具与编排可分别测</td></tr>
+    <tr><td>G3</td><td>审批只覆盖管理端</td><td>企业端、求职者端将来接写操作时要么重写，要么裸奔</td><td>三端共用同一套草稿与确认</td></tr>
+    <tr><td>G4</td><td>工具调用无审计</td><td>出问题只能翻应用日志，无法回答「谁让模型改了什么」</td><td>一条记录即可追责与复盘</td></tr>
+    <tr><td>G5</td><td>会话与记忆不共享</td><td>三端各自维护上下文，同一用户换端对话从零开始</td><td>复用现有会话表，减少重复开发</td></tr>
+    <tr><td>G6</td><td>组卷与题库 Agents 重叠</td><td>企业端组卷能力进不了管理端，管理端题库工具进不了企业端</td><td>合并为一个 exam 工具包，两入口共享</td></tr>
+  </table>
+  <div class="finding warn">
+    <strong>G1–G3 是结构问题，必须先做。</strong>G4–G6 属于增强，可以在结构稳定后按端补，不影响现网功能。
+  </div>
+</section>
+
+<!-- ================= 4 ================= -->
+<section id="s4">
+  <span class="secno">SECTION 04</span>
+  <h2 class="sec">目标架构：一内核 + 按端工具包</h2>
+  <p class="lead">四层职责清晰：编排只管流程，工具只管能力，审批只管写，存储只管数据。</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 980 470" role="img" aria-label="统一 Agent 内核的分层架构">
+      <text x="0" y="16" font-size="13" font-weight="600" fill="#1F4E79">目标分层</text>
+      <rect x="0" y="30" width="980" height="64" fill="#fff" stroke="#1F4E79"/>
+      <text x="14" y="52" font-size="12.5" font-weight="600" fill="#1F4E79">① 接入层：三端入口</text>
+      <text x="14" y="74" font-size="11.5" fill="#5B6675">管理端 /ai/assistant · 企业端 /enterprise/ai/assistant · 求职者端 /app/ai</text>
+      <text x="14" y="90" font-size="11.5" fill="#5B6675">统一鉴权、统一 SSE 事件名，前端只认事件不认实现</text>
+
+      <rect x="0" y="108" width="980" height="86" fill="#F7FBF9" stroke="#2F7A6B"/>
+      <text x="14" y="130" font-size="12.5" font-weight="600" fill="#2F7A6B">② 编排层：AgentOrchestrator（ruoyi-system）</text>
+      <text x="14" y="152" font-size="11.5" fill="#374151">决定是否调工具、循环几轮、何时输出 → 只依赖接口，不依赖具体业务</text>
+      <text x="14" y="170" font-size="11.5" fill="#374151">文本工具调用兜底解析 · 最大轮次保护 · 超时与降级</text>
+      <text x="14" y="186" font-size="11.5" fill="#5B6675">同层：AgentModelClient（取模型、计费、超时）</text>
+
+      <rect x="0" y="208" width="600" height="86" fill="#fff" stroke="#1F4E79"/>
+      <text x="14" y="230" font-size="12.5" font-weight="600" fill="#1F4E79">③ 工具层：AgentTool + AgentToolPackage</text>
+      <text x="14" y="252" font-size="11.5" fill="#374151">interface AgentTool { name(); definition(); execute(ctx, args); }</text>
+      <text x="14" y="270" font-size="11.5" fill="#374151">按端注册：admin 包 / enterprise 包 / seeker 包 / exam 包</text>
+      <text x="14" y="286" font-size="11.5" fill="#5B6675">工具只做能力，不做流程</text>
+
+      <rect x="620" y="208" width="360" height="86" fill="#FCF7EE" stroke="#A65D08"/>
+      <text x="634" y="230" font-size="12.5" font-weight="600" fill="#A65D08">④ 审批层：AgentActionStore</text>
+      <text x="634" y="252" font-size="11.5" fill="#374151">save → pendingId；take → 一次性消费</text>
+      <text x="634" y="270" font-size="11.5" fill="#374151">TTL · 上限 · 操作人绑定</text>
+      <text x="634" y="286" font-size="11.5" fill="#5B6675">apply 单独鉴权，模型无权调用</text>
+
+      <rect x="0" y="312" width="980" height="64" fill="#fff" stroke="#1F4E79"/>
+      <text x="14" y="334" font-size="12.5" font-weight="600" fill="#1F4E79">⑤ 数据层</text>
+      <text x="14" y="356" font-size="11.5" fill="#5B6675">业务表（t_exam_question 等）· 批次表 t_exam_question_import_batch · 会话表 t_ai_chat_session/message · 审计表 t_ai_agent_step（新增）</text>
+
+      <rect x="0" y="392" width="980" height="66" fill="#F3F8F6" stroke="#9FC4BA"/>
+      <text x="14" y="414" font-size="12.5" font-weight="600" fill="#1F5A4E">不变式（任何一期都不得破坏）</text>
+      <text x="14" y="434" font-size="11.5" fill="#1F5A4E">I1 模型永远不能直接写业务表 · I2 每次写必须有一个可追溯的 pendingId · I3 生效前必须有人点击 · I4 工具不得自行扩大权限</text>
+      <text x="14" y="452" font-size="11.5" fill="#1F5A4E">I5 一次 pendingId 只能消费一次 · I6 审计先行于落库</text>
+    </svg>
+    <div class="figcap"><b>图 2</b>　分层与不变式。工具层可水平扩展，审批层与数据层保持单一路径。</div>
+  </figure>
+
+  <h3>核心抽象</h3>
+<pre><span class="c">// 1) 工具接口：只描述能力，不知道端</span>
+public interface AgentTool {
+    String name();
+    ObjectNode definition(ObjectMapper json);            <span class="c">// JSON Schema</span>
+    ToolResult execute(ToolContext ctx, JsonNode args);   <span class="c">// ctx 携带端、用户、companyId</span>
+}
+
+<span class="c">// 2) 工具包：按端组装，构造时注册</span>
+public interface AgentToolPackage {
+    String scope();                       <span class="c">// admin | enterprise | seeker | exam</span>
+    ArrayNode definitions(ObjectMapper json);
+    AgentTool find(String name);
+}
+
+<span class="c">// 3) 审批：写工具只产草稿</span>
+public interface AgentActionStore {
+    String save(PendingAction action);    <span class="c">// 返回 pendingId</span>
+    PendingAction take(String id);        <span class="c">// 一次性消费，过期返回 null</span>
+    void discard(String id);
+}</pre>
+  <div class="codecap">抽象层不复用企业端现成类名，是为了避免「企业端 = 全局」的语义误导；实现上可直接复用其接口形态。</div>
+
+  <h3>目标目录结构</h3>
+<pre>backend/ruoyi-system/src/main/java/com/ruoyi/ai/
+├── core/
+│   ├── AgentTool.java
+│   ├── AgentToolPackage.java
+│   ├── AgentOrchestrator.java          <span class="c">// 工具循环、轮次上限、文本兜底解析</span>
+│   ├── AgentModelClient.java           <span class="c">// 复用现有 resolve() 收口</span>
+│   └── AgentActionStore.java
+├── audit/
+│   └── AgentStepRecorder.java          <span class="c">// 落 t_ai_agent_step</span>
+└── tools/
+    ├── admin/      <span class="c">// 题库 6 工具（自 AdminQuestionTools 拆分）</span>
+    ├── enterprise/ <span class="c">// 现有 ListCompanyJobs / GetCompanyJob 迁入</span>
+    ├── seeker/     <span class="c">// 现有 5 个只读工具迁入</span>
+    └── exam/       <span class="c">// 组卷 + 题库合并后的统一包</span></pre>
+
+  <h3>迁移映射</h3>
+  <table class="tbl">
+    <colgroup><col style="width:38%"><col style="width:34%"><col style="width:28%"></colgroup>
+    <tr><th>现状</th><th>迁往</th><th>迁移方式</th></tr>
+    <tr><td><code>AdminQuestionTools</code>（6 工具）</td><td><code>tools/admin/*</code></td><td>拆成 6 个类 + 1 个包；逻辑不变，仅接口化</td></tr>
+    <tr><td><code>PendingActionStore</code></td><td><code>core/AgentActionStore</code></td><td>改名为通用实现，字段加 <code>scope</code></td></tr>
+    <tr><td><code>AdminAssistantController</code> 编排段</td><td><code>core/AgentOrchestrator</code></td><td>控制器只保留鉴权、SSE 写出、参数校验</td></tr>
+    <tr><td><code>EnterpriseAssistantToolPackage</code></td><td><code>tools/enterprise/*</code></td><td>保留原类，改为实现新接口</td></tr>
+    <tr><td><code>AppAiService</code> 工具段</td><td><code>tools/seeker/*</code></td><td>最后迁；记忆与续传留在原服务</td></tr>
+  </table>
+</section>
+
+<!-- ================= 5 ================= -->
+<section id="s5">
+  <span class="secno">SECTION 05</span>
+  <h2 class="sec">接口契约</h2>
+
+  <h3>对话接口</h3>
+  <table class="tbl">
+    <colgroup><col style="width:12%"><col style="width:31%"><col style="width:30%"><col style="width:27%"></colgroup>
+    <tr><th>方法</th><th>路径</th><th>权限</th><th>说明</th></tr>
+    <tr><td>POST</td><td><code>/ai/assistant/chat</code></td><td><code>system:ai:assistant</code></td><td>同步返回 <code>{answer, pendings[]}</code></td></tr>
+    <tr><td>POST</td><td><code>/ai/assistant/chat/stream</code></td><td>同上</td><td>SSE，事件见下表</td></tr>
+    <tr><td>POST</td><td><code>/ai/assistant/pending/apply</code></td><td><code>content:question:add</code></td><td>body <code>{"id":"…"}</code>；一次性</td></tr>
+    <tr><td>POST</td><td><code>/ai/assistant/pending/discard</code></td><td><code>system:ai:assistant</code></td><td>body <code>{"id":"…"}</code>；作废不落库</td></tr>
+  </table>
+  <p><b>注意</b>：apply 的 body 字段名是 <code>id</code>，不是 <code>pendingId</code>。前端已按此实现，联调时按错参数会返回「缺少待确认编号」。</p>
+
+  <h3>SSE 事件协议</h3>
+  <table class="tbl">
+    <colgroup><col style="width:18%"><col style="width:40%"><col style="width:42%"></colgroup>
+    <tr><th>event</th><th>data</th><th>前端处理</th></tr>
+    <tr><td><code>tool</code></td><td>纯文本进度，如「正在查询业务数据…」</td><td>追加到气泡尾部状态</td></tr>
+    <tr><td><code>answer</code></td><td><code>{"text":"…"}</code></td><td>渲染正文，触发打字机或直接替换</td></tr>
+    <tr><td><code>pending</code></td><td>卡片数组：<code>id / kind / title / summary</code></td><td>渲染确认卡片，绑定 apply / discard</td></tr>
+    <tr><td><code>[DONE]</code></td><td><code>data: [DONE]</code></td><td>关闭连接、复位 loading</td></tr>
+  </table>
+  <p>普通问答仍走原生流式（仅 <code>data:</code> 行），只有命中题库意图时才切换到带事件的非流式分支。这是为了在有工具的场景下保证事件顺序可控。</p>
+
+  <h3>工具定义约定</h3>
+<pre>{
+  "type": "function",
+  "function": {
+    "name": "create_questions",
+    "description": "生成待确认的题目草稿（不直接入库，需用户点卡片确认）",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "bankType": { "type": "string", "enum": ["platform", "enterprise"] },
+        "items": {
+          "type": "array", "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "content":   { "type": "string" },
+              "type":      { "type": "integer", "minimum": 1, "maximum": 5 },
+              "options":   { "type": "array" },
+              "answer":    { "type": "string" },
+              "analysis":  { "type": "string" },
+              "score":     { "type": "number" },
+              "difficulty":{ "type": "integer", "minimum": 1, "maximum": 5 },
+              "category":  { "type": "integer", "minimum": 1, "maximum": 5 }
+            },
+            "required": ["content"]
+          }
+        }
+      },
+      "required": ["bankType", "items"]
+    }
+  }
+}</pre>
+  <div class="codecap">工具名使用 snake_case 动宾短语；description 必须写清「是否落库」，这是模型不乱承诺的关键。</div>
+
+  <h3>模型输出兼容</h3>
+  <p>实测中遇到两类模型侧异常，均需在编排层兜底，不应指望模型守规矩：</p>
+  <ul class="dot">
+    <li><b>文本化工具调用</b>：模型把调用写成 <code>invoke name="x"</code> 标记而非标准 <code>tool_calls</code>。处理：正则提取工具名与参数，执行后把结果以 user 消息回灌。</li>
+    <li><b>参数形态漂移</b>：<code>items</code> 缺失、被序列化成字符串、或单题字段平铺在顶层。处理：三种形态都归一成数组再校验。</li>
+  </ul>
+  <p>禁止的做法：为文本化调用伪造 <code>role:"tool"</code> 消息。缺少对应 <code>tool_call_id</code> 时服务端会直接返回 HTTP 400。</p>
+</section>
+
+<!-- ================= 6 ================= -->
+<section id="s6">
+  <span class="secno">SECTION 06</span>
+  <h2 class="sec">数据模型与状态机</h2>
+
+  <h3>已有表（复用，不改结构）</h3>
+  <table class="tbl">
+    <colgroup><col style="width:30%"><col style="width:42%"><col style="width:28%"></colgroup>
+    <tr><th>表</th><th>关键字段</th><th>用途</th></tr>
+    <tr><td><code>t_exam_question</code></td><td>eqs_id、eqs_type、eqs_type_name、eqs_content、eqs_options_json、eqs_answer、eqs_analysis、eqs_score、eqs_difficulty、eqs_company_id、eqs_category</td><td>题库；<code>eqs_company_id IS NULL</code> 即系统题库</td></tr>
+    <tr><td><code>t_exam_question_import_batch</code></td><td>eqb_id、eqb_type、eqb_file_name、eqb_company_id、eqb_total、eqb_inserted、eqb_failed、eqb_question_ids、eqb_status、eqb_operator</td><td>批次台账；<code>eqb_status=1</code> 已撤销</td></tr>
+    <tr><td><code>t_model_provider</code></td><td>mpp_api_url、mpp_api_key、mpp_model_name、mpp_status</td><td>模型配置；<b>mpp_status=0 为启用</b></td></tr>
+  </table>
+
+  <h3>新增表：工具调用审计</h3>
+<pre><span class="c">-- 状态：待授权执行（按项目规范 DDL 不自动执行）</span>
+CREATE TABLE IF NOT EXISTS t_ai_agent_step (
+  step_id        BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键',
+  step_scope     VARCHAR(16) NOT NULL COMMENT 'admin/enterprise/seeker/exam',
+  step_user_id   BIGINT      NULL     COMMENT '操作人用户ID',
+  step_user_name VARCHAR(64) NULL     COMMENT '操作人账号',
+  step_tool      VARCHAR(64) NOT NULL COMMENT '工具名',
+  step_args      TEXT        NULL     COMMENT '参数摘要，敏感字段脱敏后截断',
+  step_result    TEXT        NULL     COMMENT '结果摘要，截断 500 字',
+  step_status    TINYINT     NOT NULL DEFAULT 0 COMMENT '0成功 1失败 2待确认',
+  step_cost_ms   INT         NULL     COMMENT '耗时毫秒',
+  step_pending_id VARCHAR(32) NULL    COMMENT '关联的待确认编号',
+  step_at        DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (step_id),
+  KEY idx_step_at (step_at),
+  KEY idx_step_pending (step_pending_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent 工具调用审计';
+
+<span class="c">-- 回滚：DROP TABLE IF EXISTS t_ai_agent_step;</span></pre>
+
+  <h3>动作状态机</h3>
+  <figure class="fig">
+    <svg viewBox="0 0 960 220" role="img" aria-label="待确认动作的状态流转">
+      <text x="0" y="16" font-size="13" font-weight="600" fill="#1F4E79">PendingAction 生命周期</text>
+      <rect x="60" y="46" width="150" height="46" fill="#FFF" stroke="#1F4E79"/>
+      <text x="90" y="74" font-size="12.5" fill="#171A1F">draft 已生成</text>
+      <text x="34" y="112" font-size="11" fill="#5B6675">工具执行后写入内存</text>
+
+      <rect x="300" y="46" width="150" height="46" fill="#FFF" stroke="#2F7A6B"/>
+      <text x="330" y="74" font-size="12.5" fill="#1F5A4E">confirmed</text>
+      <text x="286" y="112" font-size="11" fill="#5B6675">用户点确认，take 消费</text>
+
+      <rect x="540" y="46" width="150" height="46" fill="#FFF" stroke="#2F7A6B"/>
+      <text x="570" y="74" font-size="12.5" fill="#1F5A4E">written</text>
+      <text x="562" y="112" font-size="11" fill="#5B6675">业务表落库 + 批次记录</text>
+
+      <rect x="780" y="46" width="150" height="46" fill="#FFF" stroke="#A33A2C"/>
+      <text x="806" y="74" font-size="12.5" fill="#A33A2C">expired / discard</text>
+      <text x="800" y="112" font-size="11" fill="#5B6675">10 分钟 / 主动取消</text>
+
+      <line x1="210" y1="69" x2="300" y2="69" stroke="#2F7A6B" stroke-width="1.5"/>
+      <line x1="450" y1="69" x2="540" y2="69" stroke="#2F7A6B" stroke-width="1.5"/>
+      <line x1="135" y1="92" x2="855" y2="92" stroke="#A33A2C" stroke-width="1" stroke-dasharray="5 4"/>
+
+      <rect x="0" y="140" width="960" height="66" fill="#FCF7EE" stroke="#D9BB8B"/>
+      <text x="14" y="162" font-size="12" fill="#8A4B06">约束：take() 后对象即消失，重复提交返回「已过期或已提交」；written 之后不可再撤销草稿，只能对批次做撤销。</text>
+      <text x="14" y="182" font-size="12" fill="#8A4B06">语义澄清：撤销批次不等于撤销动作 —— 前者删题并置 eqb_status=1，后者只是作废草稿。</text>
+    </svg>
+    <div class="figcap"><b>图 3</b>　四种终态互斥，只有 <code>written</code> 才会产生业务数据。</div>
+  </figure>
+</section>
+
+<!-- ================= 7 ================= -->
+<section id="s7">
+  <span class="secno">SECTION 07</span>
+  <h2 class="sec">关键流程：出题与撤销</h2>
+
+  <h3>出题闭环（五步）</h3>
+  <figure class="fig">
+    <svg viewBox="0 0 980 176" role="img" aria-label="出题闭环的五个步骤">
+      <rect x="0" y="26" width="168" height="76" fill="#fff" stroke="#1F4E79"/>
+      <text x="12" y="48" font-size="12" font-weight="600" fill="#1F4E79">1 提需求</text>
+      <text x="12" y="68" font-size="11" fill="#5B6675">用户描述题型/难度</text>
+      <text x="12" y="86" font-size="11" fill="#5B6675">/chat 带 tools</text>
+
+      <rect x="203" y="26" width="168" height="76" fill="#fff" stroke="#1F4E79"/>
+      <text x="215" y="48" font-size="12" font-weight="600" fill="#1F4E79">2 模型出题</text>
+      <text x="215" y="68" font-size="11" fill="#5B6675">返回 tool_calls</text>
+      <text x="215" y="86" font-size="11" fill="#5B6675">create_questions</text>
+
+      <rect x="406" y="26" width="168" height="76" fill="#FCF7EE" stroke="#A65D08"/>
+      <text x="418" y="48" font-size="12" font-weight="600" fill="#A65D08">3 只存草稿</text>
+      <text x="418" y="68" font-size="11" fill="#5B6675">校验 + 归一 items</text>
+      <text x="418" y="86" font-size="11" fill="#5B6675">返回 pendingId</text>
+
+      <rect x="609" y="26" width="168" height="76" fill="#F7FBF9" stroke="#2F7A6B"/>
+      <text x="621" y="48" font-size="12" font-weight="600" fill="#2F7A6B">4 人确认</text>
+      <text x="621" y="68" font-size="11" fill="#5B6675">前端卡片 → apply</text>
+      <text x="621" y="86" font-size="11" fill="#5B6675">鉴权 content:question:add</text>
+
+      <rect x="812" y="26" width="168" height="76" fill="#F7FBF9" stroke="#2F7A6B"/>
+      <text x="826" y="48" font-size="12" font-weight="600" fill="#2F7A6B">5 落库 + 记批次</text>
+      <text x="826" y="68" font-size="11" fill="#5B6675">batchInsert</text>
+      <text x="826" y="86" font-size="11" fill="#5B6675">record(1, 操作人)</text>
+
+      <line x1="168" y1="64" x2="203" y2="64" stroke="#8A9099" stroke-width="1.4"/>
+      <line x1="371" y1="64" x2="406" y2="64" stroke="#8A9099" stroke-width="1.4"/>
+      <line x1="574" y1="64" x2="609" y2="64" stroke="#8A9099" stroke-width="1.4"/>
+      <line x1="777" y1="64" x2="812" y2="64" stroke="#8A9099" stroke-width="1.4"/>
+
+      <text x="0" y="128" font-size="11.5" fill="#5B6675">第 2 步的失败模式（实测遇到）：模型把工具调用写成文本标记、items 为空或写成字符串。编排层必须兜底，否则第 3 步直接跳过。</text>
+      <text x="0" y="150" font-size="11.5" fill="#5B6675">第 5 步失败的代价最高：题目已入库但批次记录失败时，用户无法撤销。因此批次记录必须与插入同事务，或插入后立即落批次并校验。</text>
+    </svg>
+    <div class="figcap"><b>图 4</b>　草稿态是唯一的分界点：第 3 步之前无副作用，第 5 步之后必须有台账。</div>
+  </figure>
+
+  <h3>撤销算法</h3>
+  <p>撤销不是「删掉这一批」，而是「删掉这一批里还没被业务引用的」。判定集合定义如下：</p>
+<pre><span class="c">-- alive：本批写入且仍存在的题</span>
+SELECT eqs_id FROM t_exam_question
+WHERE eqs_id IN (批次 eqb_question_ids);
+
+<span class="c">-- locked：已被考卷 / 答题引用的题</span>
+SELECT DISTINCT epq_question_id FROM t_exam_paper_question WHERE epq_question_id IN (...);
+SELECT DISTINCT ean_question_id FROM t_exam_answer        WHERE ean_question_id IN (...);
+
+<span class="c">-- 实际删除：alive − locked</span>
+DELETE FROM t_exam_question WHERE eqs_id IN (alive - locked);
+UPDATE t_exam_question_import_batch SET eqb_status = 1 WHERE eqb_id = ?;</pre>
+  <p>返回四个数：<code>deleted</code>、<code>skipped</code>、<code>referenced</code>、<code>status</code>。其中 <code>skipped</code> 说明题已不存在（可能被人工删过），<code>referenced</code> 说明被考卷占用而保留。两者都不应被视为失败。</p>
+
+  <h3>失败与幂等</h3>
+  <table class="tbl">
+    <colgroup><col style="width:24%"><col style="width:36%"><col style="width:40%"></colgroup>
+    <tr><th>场景</th><th>系统行为</th><th>用户可见</th></tr>
+    <tr><td>重复 apply 同一 id</td><td>take() 已消费，返回 500</td><td>「草稿已过期或已提交，请让助手重新生成」</td></tr>
+    <tr><td>超过 10 分钟未确认</td><td>TTL 到期，取不到</td><td>同上</td></tr>
+    <tr><td>重复撤销同一批次</td><td><code>eqb_status=1</code> 校验拦截</td><td>「批次 #N 已撤销过，不能重复操作」</td></tr>
+    <tr><td>题目被考卷引用</td><td>删除跳过，计入 referenced</td><td>结果里明确给出保留数量</td></tr>
+    <tr><td>模型未配置 / 密钥无效</td><td><code>AgentModelClient.resolve()</code> 抛 503</td><td>「AI 模型未配置，请先在 AI 配置中启用模型」</td></tr>
+  </table>
+
+  <h3>已知结构性风险</h3>
+  <ul class="dot">
+    <li><b>内存态不可持久</b>：草稿存在 <code>ConcurrentHashMap</code>，进程重启即失效。单实例可接受；一旦多实例部署，必须换成 Redis 或库表，否则 apply 会落到没有该草稿的节点。</li>
+    <li><b>模型缓存不失效</b>：<code>activeProvider()</code> 成功即缓存，改库中的 <code>mpp_status</code> 后必须重启后端才生效。</li>
+    <li><b>JdbcTemplate 不分页</b>：题库列表走原生 SQL，<code>PageHelper</code> 不介入，全量渲染。数据量上去后需要补分页。</li>
+  </ul>
+</section>
+
+<!-- ================= 8 ================= -->
+<section id="s8">
+  <span class="secno">SECTION 08</span>
+  <h2 class="sec">注册功能改造</h2>
+
+  <h3>两条注册路径对比</h3>
+  <table class="tbl">
+    <colgroup><col style="width:22%"><col style="width:26%"><col style="width:26%"><col style="width:26%"></colgroup>
+    <tr><th>维度</th><th><code>POST /register</code>（现有）</th><th><code>POST /register/enterprise</code>（dev 已有）</th><th>建议</th></tr>
+    <tr><td>定位</td><td>若依原生，个人账号</td><td>企业自助注册</td><td>保留两者，明确分工</td></tr>
+    <tr><td>建企业</td><td>不建</td><td>建 <code>t_cmp</code>，<code>cmp_verify_status=0</code></td><td>不动</td></tr>
+    <tr><td>账号身份</td><td>未设置 <code>user_identity_type</code></td><td>设为 2（企业）</td><td>不动</td></tr>
+    <tr><td>企业绑定</td><td>无</td><td>绑 <code>company_id</code> + 企业管理员角色 <code>biz_1</code></td><td>不动</td></tr>
+    <tr><td>审核态</td><td>直接可用</td><td>企业与账号双待审，不自动登录</td><td>不动</td></tr>
+    <tr><td>开关</td><td><code>sys.account.registerUser</code></td><td><code>selectCaptchaEnabled()</code></td><td>两开关对齐，避免一边能注册一边被拦</td></tr>
+  </table>
+
+  <div class="finding">
+    <strong>结论：不重写企业注册。</strong>
+    它是完整实现，重写只会引入第二套绑定规则。真正缺少的是「入口不混淆」——企业用户不该看到个人注册表单。
+  </div>
+
+  <h3>三处改动</h3>
+  <table class="tbl">
+    <colgroup><col style="width:8%"><col style="width:40%"><col style="width:52%"></colgroup>
+    <tr><th>#</th><th>改什么</th><th>怎么改</th></tr>
+    <tr>
+      <td>R1</td>
+      <td><code>admin_pc/src/views/register.vue</code></td>
+      <td>改为双入口：默认「企业注册」指向 <code>/register/enterprise</code> 表单，个人注册降为次级入口；文案去掉企业相关字段</td>
+    </tr>
+    <tr>
+      <td>R2</td>
+      <td>后端 <code>/register</code> 返回文案</td>
+      <td>成功后提示「个人账号注册成功」；避免与企业的「请等待平台审核」混淆</td>
+    </tr>
+    <tr>
+      <td>R3</td>
+      <td>前置校验</td>
+      <td>企业注册依赖角色 <code>biz_1</code> 存在，缺失时明确报「系统未配置企业管理员角色」，不要静默失败</td>
+    </tr>
+  </table>
+
+  <h3>不改的部分及理由</h3>
+  <ul class="dot">
+    <li><b>不改 <code>EnterpriseRegisterServiceImpl</code></b>：它已处理账号唯一、手机号唯一、企业名唯一、手机号正则、事务回滚，改动收益低于风险。</li>
+    <li><b>不合并两个接口</b>：一个建企业、一个不建企业，合并会让权限与审核逻辑纠缠。</li>
+    <li><b>不在本期做企业邀请码</b>：属于独立功能，与注册入口分流无依赖关系。</li>
+  </ul>
+</section>
+
+<!-- ================= 9 ================= -->
+<section id="s9">
+  <span class="secno">SECTION 09</span>
+  <h2 class="sec">实施计划、验证与回滚</h2>
+
+  <h3>分批实施</h3>
+  <table class="tbl">
+    <colgroup><col style="width:9%"><col style="width:30%"><col style="width:23%"><col style="width:15%"><col style="width:23%"></colgroup>
+    <tr><th>批次</th><th>范围</th><th>产出</th><th>工时</th><th>风险与回滚</th></tr>
+    <tr>
+      <td>P0</td>
+      <td>抽 <code>AgentTool</code> / <code>AgentToolPackage</code>；6 个题库工具下沉 <code>ruoyi-system</code>；控制器瘦身</td>
+      <td>接口层 + 迁移后的包 + 单测</td>
+      <td>1 天</td>
+      <td>中：需 <code>mvn -pl ruoyi-system -am install</code>，否则启动 <code>ClassNotFoundException</code>；回滚为还原 controller 与新增包</td>
+    </tr>
+    <tr>
+      <td>P1</td>
+      <td><code>PendingActionStore</code> 泛化为 <code>AgentActionStore</code>，加 <code>scope</code>；apply 路径统一</td>
+      <td>通用审批件 + 兼容旧路径</td>
+      <td>0.5 天</td>
+      <td>低：保留旧端点别名，前端无需同步上线</td>
+    </tr>
+    <tr>
+      <td>P2</td>
+      <td>审计表 + <code>AgentStepRecorder</code>；每次工具调用落一条</td>
+      <td>DDL（待授权）+ 记录器</td>
+      <td>0.5 天</td>
+      <td>中：写失败不得影响主流程，必须异步或吞异常</td>
+    </tr>
+    <tr>
+      <td>P3</td>
+      <td>组卷 Agent 与题库 Agent 合并为 <code>exam</code> 包；企业端接审批</td>
+      <td>合并后的工具包 + 企业端写能力</td>
+      <td>1–1.5 天</td>
+      <td>高：涉及企业端现网能力，需独立分支与灰度</td>
+    </tr>
+    <tr>
+      <td>R</td>
+      <td>注册入口分流（R1–R3）</td>
+      <td>前端改版 + 文案</td>
+      <td>0.5 天</td>
+      <td>低：纯前端与提示文案</td>
+    </tr>
+  </table>
+
+  <h3>验证要求</h3>
+  <ul class="check">
+    <li>后端：<code>mvn -pl ruoyi-admin -am compile -DskipTests</code> 通过；改 <code>ruoyi-system</code> 后必须 <code>-am install</code></li>
+    <li>前端：<code>flutter analyze</code>（若动 c-app）、Vue 侧执行构建或 SFC 编译校验</li>
+    <li>接口：每个工具至少一条真实调用，不得只跑编译就交付</li>
+    <li>闭环：出题 → 草稿 → 确认 → 落库 → 撤销，四步数据一致（条数、批次、状态）</li>
+    <li>幂等：同一 pendingId 二次 apply 必须被拒</li>
+    <li>权限：无 <code>content:question:add</code> 的账号调 apply 必须 403</li>
+  </ul>
+
+  <h3>分支与提交</h3>
+<pre><span class="c"># 从最新 dev 拉功能分支</span>
+git checkout dev &amp;&amp; git pull
+git checkout -b feature/agent-unify-MZR
+
+<span class="c"># 一个可独立验证的子功能一个提交</span>
+feat(ai): 抽取 AgentTool 接口并按端注册工具包
+refactor(ai): 管理端题库工具下沉至 ruoyi-system
+feat(ai): 新增 Agent 工具调用审计
+fix(auth): 注册入口区分个人与企业</pre>
+  <p>提交遵循 <code>Conventional Commits</code>，摘要用祈使句中中文、不加句号；<code>feature/* → dev</code> 一个 PR，未经人工 Review 不合并、不推 <code>main</code>。</p>
+
+  <h3>回滚策略</h3>
+  <table class="tbl">
+    <colgroup><col style="width:30%"><col style="width:70%"></colgroup>
+    <tr><th>层</th><th>回滚动作</th></tr>
+    <tr><td>代码</td><td>P0 保留旧 controller 分支开关；异常时删新增包、还原 controller</td></tr>
+    <tr><td>数据</td><td>审计表 <code>DROP TABLE IF EXISTS t_ai_agent_step</code>；批次表不动，撤销记录保留</td></tr>
+    <tr><td>配置</td><td>数据源切回旧实例只需改 host/port/password 三行并重启</td></tr>
+  </table>
+</section>
+
+<!-- ================= 10 ================= -->
+<section id="s10">
+  <span class="secno">SECTION 10</span>
+  <h2 class="sec">验收清单</h2>
+  <p>每条都要有可复现的输入与可核对的输出，不勾选「应该没问题」。</p>
+  <ul class="check">
+    <li><b>A1</b> 只读问「题库多少题」→ 数字与库内 <code>COUNT(*)</code> 一致，题型分项求和等于总数</li>
+    <li><b>A2</b> 出 3 题 → 返回 <code>pendingId</code>，题库条数不变</li>
+    <li><b>A3</b> 确认落库 → <code>inserted</code> 等于提交数，<code>ids</code> 均可查到，批次表新增一行且 <code>eqb_question_ids</code> 与之一致</li>
+    <li><b>A4</b> 撤销该批次 → <code>deleted</code> = 插入数，库回到原条数，<code>eqb_status=1</code></li>
+    <li><b>A5</b> 二次 apply 同一 id → 明确拒绝，库无变化</li>
+    <li><b>A6</b> 撤销被考卷引用的批次 → <code>referenced &gt; 0</code>，被引用题仍在</li>
+    <li><b>A7</b> 批量改分类 → 草稿阶段库内分类不变，确认后才变</li>
+    <li><b>A8</b> 模型返回文本化工具调用 → 仍能正确执行并给出干净答案，用户看不到标记文本</li>
+    <li><b>A9</b> 企业注册 → 建出 <code>t_cmp</code>（待审）+ 账号（<code>identity_type=2</code>）+ <code>biz_1</code> 授权，且不自动登录</li>
+    <li><b>A10</b> 个人注册入口 → 不建企业、不授企业角色，提示文案为个人账号</li>
+  </ul>
+</section>
+
+<!-- ================= 11 ================= -->
+<section id="s11">
+  <span class="secno">SECTION 11</span>
+  <h2 class="sec">参考与索引</h2>
+
+  <h3>开源参考（GitHub，已核实存在）</h3>
+  <table class="tbl">
+    <colgroup><col style="width:28%"><col style="width:9%"><col style="width:63%"></colgroup>
+    <tr><th>仓库</th><th>星</th><th>可借鉴的具体点</th></tr>
+    <tr><td><code>liyupi/yu-ai-agent</code></td><td>2786</td><td>Spring AI + Tool Calling + RAG + ReAct 的 Java 落地；工具定义与多轮循环写法</td></tr>
+    <tr><td><code>labsai/EDDI</code></td><td>393</td><td>企业级 Agent 治理：权限限制、人工审批、逐步审计，与本方案的 I1–I6 一致</td></tr>
+    <tr><td><code>baymaxsjj/exam</code></td><td>103</td><td>题库、试卷、自动组卷、批量导入的产品结构</td></tr>
+    <tr><td><code>ynwynw/exam-public</code></td><td>27</td><td>题库 CRUD + Excel 导入的最简形态，用于对照字段设计</td></tr>
+  </table>
+  <p>检索过程中 GitHub 返回过与任务无关的异常仓库，已剔除，未采用其任何内容。</p>
+
+  <h3>项目内索引</h3>
+  <table class="tbl">
+    <colgroup><col style="width:62%"><col style="width:38%"></colgroup>
+    <tr><th>文件</th><th>作用</th></tr>
+    <tr><td><code>backend/ruoyi-admin/.../ai/AdminAssistantController.java</code></td><td>管理端编排、工具 schema、SSE、apply/discard</td></tr>
+    <tr><td><code>backend/ruoyi-admin/.../ai/AdminQuestionTools.java</code></td><td>题库 6 工具与 apply 执行</td></tr>
+    <tr><td><code>backend/ruoyi-admin/.../ai/PendingActionStore.java</code></td><td>草稿内存态（TTL 10 分钟 / 上限 100 / take 一次性）</td></tr>
+    <tr><td><code>backend/ruoyi-system/.../service/exam/ExamQuestionBankServiceImpl.java</code></td><td>searchPublic / getAnswer / batchInsert</td></tr>
+    <tr><td><code>backend/ruoyi-system/.../service/exam/ExamImportLogServiceImpl.java</code></td><td>record / list / undo</td></tr>
+    <tr><td><code>backend/sql/2026-11-exam-ai/03_exam_question_import_batch.sql</code></td><td>批次表 DDL（旧库与新库均已执行）</td></tr>
+    <tr><td><code>admin_pc/RuoYi-Vue3/src/components/AiAssistant/index.vue</code></td><td>SSE 解析与确认卡片</td></tr>
+    <tr><td><code>backend/ruoyi-system/.../impl/EnterpriseRegisterServiceImpl.java</code></td><td>企业自助注册实现（dev）</td></tr>
+  </table>
+
+  <h3>术语</h3>
+  <table class="tbl">
+    <colgroup><col style="width:22%"><col style="width:78%"></colgroup>
+    <tr><th>术语</th><th>含义</th></tr>
+    <tr><td>pendingId</td><td>一次写操作的草稿编号，8–32 位十六进制，10 分钟有效，一次性消费</td></tr>
+    <tr><td>locked 集</td><td>已被考卷或答题引用的题目集合，撤销时跳过这些题</td></tr>
+    <tr><td>scope</td><td>工具包归属端：admin / enterprise / seeker / exam</td></tr>
+    <tr><td>DSML 文本调用</td><td>模型把工具调用写成标签文本而非标准 <code>tool_calls</code> 的异常形态</td></tr>
+  </table>
+</section>
+
+<footer class="foot">
+  文档 v1.0 · 2026-11-23 · 依据 origin/dev 与 feature/admin-console-iter-TQY 实码核对，实测数据来自 192.168.100.3:1260 新库
+</footer>
+
+</div>
+</body>
+</html>

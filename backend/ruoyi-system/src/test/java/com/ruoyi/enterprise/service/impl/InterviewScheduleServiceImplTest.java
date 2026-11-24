@@ -29,6 +29,7 @@ import com.ruoyi.enterprise.mapper.InterviewScheduleMapper;
 import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.service.ProcessStageInstanceService;
 import com.ruoyi.enterprise.service.TalStatusService;
+import com.ruoyi.system.service.EmailService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 
@@ -37,6 +38,7 @@ public class InterviewScheduleServiceImplTest
     private JdbcTemplate jdbc;
     private InterviewScheduleServiceImpl service;
     private InterviewScheduleMapper mapper;
+    private EmailService emailService;
     public static String dateFormat(Timestamp time, String pattern)
     {
         return time == null ? null : time.toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
@@ -49,12 +51,12 @@ public class InterviewScheduleServiceImplTest
         jdbc = new JdbcTemplate(ds);
         jdbc.execute("CREATE ALIAS date_format FOR 'com.ruoyi.enterprise.service.impl.InterviewScheduleServiceImplTest.dateFormat'");
         for (String sql : List.of(
-            "create table sys_user(user_id bigint primary key, status varchar(1), nick_name varchar(100))",
+            "create table sys_user(user_id bigint primary key, status varchar(1), user_name varchar(100), nick_name varchar(100), email varchar(200))",
             "create table t_tal(tal_id bigint primary key, tal_user_id bigint, tal_status int default 0, tal_updated_at timestamp)",
             "create table t_pos(pos_id bigint primary key, pos_company_id bigint, pos_title varchar(100), pos_process_template_id bigint)",
             "create table t_process_instance(pin_candidate_id bigint, pin_position_id bigint, pin_status int default 0)",
             "create table t_cmp_binding(bnd_company_id bigint, bnd_user_id bigint, bnd_status int)",
-            "create table t_process_stage(psg_id bigint primary key, psg_template_id bigint, psg_name varchar(100), psg_type int, psg_sort_order int, psg_interviewer_config_json varchar(2000))",
+            "create table t_process_stage(psg_id bigint primary key, psg_template_id bigint, psg_name varchar(100), psg_type int, psg_sort_order int, psg_is_required int default 1, psg_interviewer_config_json varchar(2000))",
             "create table t_int_session(ses_id bigint, ses_appointment_id bigint, ses_candidate_id bigint, ses_position_id bigint, ses_status int)",
             "create table t_int_evaluation(evl_session_id bigint, evl_hr_status int)",
             "create table t_tal_status_log(tsl_id bigint auto_increment primary key, tsl_candidate_id bigint, tsl_from_status int, tsl_to_status int, tsl_created_at timestamp)",
@@ -62,13 +64,15 @@ public class InterviewScheduleServiceImplTest
             "create table t_app_record(app_id bigint auto_increment primary key, app_candidate_id bigint, app_position_id bigint, app_status int, app_created_at timestamp default current_timestamp, app_updated_at timestamp)",
             "create table t_sch_slot(slt_id bigint auto_increment primary key, slt_interviewer_id bigint, slt_position_id bigint, slt_start_time timestamp, slt_end_time timestamp, slt_status int, slt_updated_at timestamp)",
             "create table t_sch_appointment(apt_id bigint auto_increment primary key, apt_candidate_id bigint, apt_position_id bigint, apt_stage_id bigint, apt_stage_name varchar(100), apt_stage_type int, apt_stage_order int, apt_interviewer_id bigint, apt_slot_id bigint, apt_start_time timestamp, apt_end_time timestamp, apt_status int, apt_notified int default 0, apt_meeting_url varchar(255), apt_room_id varchar(100), apt_updated_at timestamp)",
-            "insert into sys_user values(19,'0','面试官'),(20,'0','面试官二'),(11,'0','候选人'),(12,'0','候选人二')",
+            "create table t_sch_appointment_interviewer(asi_id bigint auto_increment primary key, asi_appointment_id bigint not null, asi_user_id bigint not null, asi_is_primary int not null default 0, asi_accept_status int not null default 0, unique(asi_appointment_id, asi_user_id))",
+            "create table t_msg(msg_receiver_id bigint, msg_sender_id bigint, msg_type int, msg_title varchar(200), msg_content varchar(2000), msg_is_read int default 0)",
+            "insert into sys_user(user_id,status,user_name,nick_name,email) values(19,'0','interviewer','面试官','i1@example.com'),(20,'0','interviewer2','面试官二','i2@example.com'),(11,'0','candidate','候选人',null),(12,'0','candidate2','候选人二',null)",
             "insert into t_tal(tal_id,tal_user_id) values(11,11),(12,12)",
             "insert into t_pos values(7,1,'合成岗位',1)",
             "insert into t_process_instance values(11,7,0),(12,7,0)",
             "insert into t_cmp_binding values(1,19,1),(1,20,1)",
             "insert into t_app_record(app_candidate_id,app_position_id,app_status) values(11,7,1),(12,7,1)",
-            "insert into t_process_stage values(31,1,'在线笔试',1,1,'{\"duration\":30}'),(32,1,'技术面试',2,2,'{\"duration\":60}')")) jdbc.execute(sql);
+            "insert into t_process_stage(psg_id,psg_template_id,psg_name,psg_type,psg_sort_order,psg_interviewer_config_json) values(31,1,'在线笔试',1,1,'{\"duration\":30}'),(32,1,'技术面试',2,2,'{\"duration\":60}')")) jdbc.execute(sql);
         var factory = new SqlSessionFactoryBean();
         factory.setDataSource(ds);
         factory.setMapperLocations(new ClassPathResource("mapper/enterprise/InterviewScheduleMapper.xml"));
@@ -105,6 +109,8 @@ public class InterviewScheduleServiceImplTest
                 .thenReturn(createdNode);
         when(stageInstances.listNodes(anyLong())).thenReturn(List.of(examPassed));
         ReflectionTestUtils.setField(target, "stageInstanceService", stageInstances);
+        emailService = mock(EmailService.class);
+        ReflectionTestUtils.setField(target, "emailService", emailService);
         var proxy = new ProxyFactory(target);
         proxy.setProxyTargetClass(true);
         proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(ds), new AnnotationTransactionAttributeSource()));
@@ -114,7 +120,26 @@ public class InterviewScheduleServiceImplTest
     {
         return Map.of("stageId",id,"interviewerId",interviewer,"startTime",time,"durationMin",duration);
     }
+    private Map<String,Object> multiStage(long id, List<Long> interviewers, String time, int duration)
+    {
+        return Map.of("stageId",id,"interviewerIds",interviewers,"startTime",time,"durationMin",duration);
+    }
     private int count(String table) { return jdbc.queryForObject("select count(*) from " + table,Integer.class); }
+    @Test
+    void multiInterviewerInvitePersistsRosterAndNotifiesOthers()
+    {
+        var results = service.inviteStages(1L,11L,7L,
+                List.of(multiStage(31,List.of(19L,20L),"2099-01-02 09:00",30)));
+        long appointmentId = ((Number)results.get(0).get("appointmentId")).longValue();
+        assertEquals(2,count("t_sch_appointment_interviewer"));
+        assertEquals(2,((List<?>)results.get(0).get("interviewerIds")).size());
+        assertEquals(1,jdbc.queryForObject(
+                "select count(*) from t_msg where msg_receiver_id=20 and msg_title like '%安排通知%'",Integer.class));
+        verify(emailService).sendSimpleMail(eq("i2@example.com"), contains("面试安排"), contains("候选人"));
+        var roster = mapper.selectAppointmentInterviewers(List.of(appointmentId));
+        assertEquals(2,roster.size());
+        assertEquals(1,((Number)roster.get(0).get("isPrimary")).intValue());
+    }
     @Test
     void batchPersistsIdsSnapshotsAndGeneratedKeys()
     {
@@ -182,7 +207,7 @@ public class InterviewScheduleServiceImplTest
         assertEquals("2099-01-04 00:10",mapper.selectAppointmentById(id).get("endTime"));
         assertEquals("2099-01-03 23:40",mapper.selectAppointmentById(id).get("startTime"));
         // 未配置时长的阶段拒绝排期，客户端时长不作为依据。
-        jdbc.update("insert into t_process_stage values(33,1,'未配置时长阶段',3,3,null)");
+        jdbc.update("insert into t_process_stage(psg_id,psg_template_id,psg_name,psg_type,psg_sort_order,psg_interviewer_config_json) values(33,1,'未配置时长阶段',3,3,null)");
         ServiceException error = assertThrows(ServiceException.class,
                 () -> service.invite(1L,12L,7L,33L,19L,"2099-01-04 09:00",45));
         assertTrue(error.getMessage().contains("未配置面试时长"));

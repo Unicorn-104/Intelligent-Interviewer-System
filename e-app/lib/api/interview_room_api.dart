@@ -18,6 +18,18 @@ Future<Map<String, dynamic>> getCurrentSession() async {
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
+/// 按面试邀请中的会议令牌进入指定场次。
+/// 同一个 token 只会解析到生成邀请时绑定的 sessionId，避免 HR 有多场面试时
+/// 被 `/session/current` 的“最早待开始场次”带到其他候选人的房间。
+Future<Map<String, dynamic>> joinRoomToken(String token) async {
+  final response = await _client.post(
+    '/system/conference/link/join',
+    body: {'token': token},
+    timeout: const Duration(seconds: 12),
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+}
+
 /// UC-10：面试会话上下文（岗位名称/面试官/时长/模式等元数据）。
 /// 已对接：GET /system/conference/session/{sessionId}
 Future<Map<String, dynamic>> getSessionContext(int sessionId) async {

@@ -45,12 +45,14 @@ class _Actions extends TalentFakeSource {
     required String newStartTime,
     int? durationMin,
     int? interviewerId,
+    List<int>? interviewerIds,
   }) async {
     reschedules.add({
       'appointmentId': id,
       'newStartTime': newStartTime,
       'durationMin': durationMin,
       'interviewerId': interviewerId,
+      'interviewerIds': interviewerIds,
     });
     final start = TalentUtc8.parseServer(newStartTime)!;
     final row = {

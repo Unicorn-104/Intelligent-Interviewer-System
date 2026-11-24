@@ -100,8 +100,11 @@ public class ExamController extends BaseController
     public AjaxResult fillAnalysis(@PathVariable("questionId") Long questionId,
             @RequestBody Map<String, Object> body)
     {
+        boolean force = Boolean.TRUE.equals(settingsService
+                .examAnalysisSettings(settingsService.resolveCompanyId(getUserId()))
+                .get("forceRegenerate"));
         examService.fillQuestionAnalysis(questionId,
-                body.get("analysis") == null ? null : String.valueOf(body.get("analysis")), getUserId());
+                body.get("analysis") == null ? null : String.valueOf(body.get("analysis")), getUserId(), force);
         return success("解析已补全");
     }
 

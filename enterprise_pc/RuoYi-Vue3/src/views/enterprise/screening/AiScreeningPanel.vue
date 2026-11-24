@@ -5,7 +5,8 @@ import { FileText, UserRoundCheck, ShieldCheck, AlertTriangle, Lightbulb, Send, 
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { listScreeningTasks, listScreeningResults, getScreeningReport, getScreeningGreeting, reviewScreeningResult } from '@/api/screening'
+import { listScreeningTasks, listScreeningResults, getScreeningReport, getScreeningGreeting, reviewScreeningResult, screenAllPending } from '@/api/screening'
+import { listUnscreenedPositions, listUnscreenedApplicants, screenUnscreenedApplicants } from '@/api/talent'
 import { APP_STATUS } from '@/views/enterprise/components/appStatus'
 import { talStatusInfo } from '@/views/enterprise/components/talStatus'
 
@@ -15,7 +16,14 @@ const tasks = ref([])
 const activeTaskId = ref(null)
 const results = ref([])
 const loadingResults = ref(false)
-const group = ref('scored') // scored=已评分 / pending=待人工评分
+const group = ref(route.query.group === 'unscored' ? 'unscored' : 'scored') // scored=已评分 / pending=待人工评分 / unscored=未AI评分
+const unscoredCount = ref(0)
+const unscoredRows = ref([])
+const unscoredTotal = ref(0)
+const unscoredLoading = ref(false)
+const unscoredSubmitting = ref(false)
+const unscoredPage = ref(1)
+const unscoredPageSize = 10
 const keyword = ref('')
 
 // 复核抽屉
@@ -75,6 +83,7 @@ async function loadTasks() {
 }
 
 async function selectTask(taskId) {
+  if (group.value === 'unscored') group.value = 'scored'
   activeTaskId.value = taskId
   loadingResults.value = true
   results.value = []
@@ -85,6 +94,77 @@ async function selectTask(taskId) {
     notify('筛选结果加载失败')
   } finally {
     loadingResults.value = false
+  }
+}
+
+async function loadUnscoredCount() {
+  try {
+    const res = await listUnscreenedPositions()
+    unscoredCount.value = Number(res.data?.candidateCount || 0)
+  } catch (e) {
+    unscoredCount.value = 0
+  }
+}
+
+async function loadUnscoredApplicants() {
+  unscoredLoading.value = true
+  try {
+    const res = await listUnscreenedApplicants({ pageNum: unscoredPage.value, pageSize: unscoredPageSize })
+    unscoredRows.value = res.rows || []
+    unscoredTotal.value = res.total || 0
+  } catch (e) {
+    unscoredRows.value = []
+    unscoredTotal.value = 0
+  } finally {
+    unscoredLoading.value = false
+  }
+}
+
+function selectGroup(g) {
+  group.value = g
+  if (g === 'unscored') {
+    unscoredPage.value = 1
+    loadUnscoredCount()
+    loadUnscoredApplicants()
+  }
+}
+
+function unscoredStep(delta) {
+  const next = unscoredPage.value + delta
+  if (next < 1 || (next - 1) * unscoredPageSize >= unscoredTotal.value) return
+  unscoredPage.value = next
+  loadUnscoredApplicants()
+}
+
+async function screenPosition(positionId) {
+  if (!positionId) return
+  unscoredSubmitting.value = true
+  try {
+    await screenUnscreenedApplicants({ positionId })
+    notify('已提交 AI 评分，正在后台分析')
+    await loadUnscoredCount()
+    await loadUnscoredApplicants()
+    loadTasks()
+  } catch (e) {
+    notify(e?.response?.data?.msg || e?.message || 'AI 评分提交失败，请稍后重试')
+  } finally {
+    unscoredSubmitting.value = false
+  }
+}
+
+async function screenAllUnscored() {
+  unscoredSubmitting.value = true
+  try {
+    const res = await screenAllPending()
+    notify(`已提交 ${res.data?.queuedPositions || 0} 个岗位的 AI 评分，正在后台分析`)
+    unscoredPage.value = 1
+    await loadUnscoredCount()
+    await loadUnscoredApplicants()
+    loadTasks()
+  } catch (e) {
+    notify(e?.response?.data?.msg || e?.message || 'AI 评分提交失败，请稍后重试')
+  } finally {
+    unscoredSubmitting.value = false
   }
 }
 
@@ -184,8 +264,13 @@ const gapPoints = computed(() => {
 })
 const greetingStatus = { 0: '草稿', 1: '已发送', 2: '已回复' }
 
-onMounted(loadTasks)
+onMounted(() => {
+  loadTasks()
+  loadUnscoredCount()
+  if (group.value === 'unscored') loadUnscoredApplicants()
+})
 watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
+watch(() => route.query.group, (v) => { if (v === 'unscored') selectGroup('unscored') })
 </script>
 
 <template>
@@ -199,7 +284,7 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
           <input v-model="keyword" type="text" placeholder="搜索岗位名称" />
           <button v-if="keyword" class="clear" title="清空" @click="keyword = ''"><X :size="11" /></button>
         </div>
-        <div v-if="!filteredTasks.length && !loadingResults" class="empty-tip">{{ keyword.trim() ? '没有匹配的岗位' : '暂无评分任务，请先到「投递详情」发起 AI 评分' }}</div>
+        <div v-if="!filteredTasks.length && !loadingResults" class="empty-tip">{{ keyword.trim() ? '没有匹配的岗位' : '暂无评分任务，请先到「未AI评分」发起 AI 评分' }}</div>
         <article v-for="t in filteredTasks" :key="t.taskId" class="task-item" :class="{ on: String(activeTaskId) === String(t.taskId) }" @click="selectTask(t.taskId)">
           <div class="task-top"><b>{{ t.positionName }}</b><ChevronRight :size="14" /></div>
           <div class="task-meta"><span><Users :size="12" />候选人 {{ t.candidateCount }}</span></div>
@@ -213,7 +298,7 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
         </div>
         <div class="rule-tip">
           <ShieldCheck :size="14" />
-          <span>AI 只依据简历证据给出参考评分，不会自动淘汰候选人，也不会自动推进投递状态。如需淘汰，请点「驳回」（本岗位投递终止为未录用）或到「投递详情」操作。</span>
+          <span>AI 只依据简历证据给出参考评分，不会自动淘汰候选人，也不会自动推进投递状态。如需淘汰，请点「驳回」（本岗位投递终止为未录用）。</span>
         </div>
         <div class="stat-row">
           <div class="stat"><label>候选人池</label><strong>{{ results.length }}</strong></div>
@@ -221,14 +306,46 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
           <div class="stat pending"><label>待人工评分</label><strong>{{ unanalyzedRows.length }}</strong></div>
         </div>
         <div class="view-tabs">
-          <button :class="{ active: group === 'scored' }" @click="group = 'scored'">已评分（{{ scoredRows.length }}）</button>
-          <button :class="{ active: group === 'pending' }" @click="group = 'pending'">待人工评分（{{ unanalyzedRows.length }}）</button>
+          <button :class="{ active: group === 'scored' }" @click="selectGroup('scored')">已评分（{{ scoredRows.length }}）</button>
+          <button :class="{ active: group === 'pending' }" @click="selectGroup('pending')">待人工评分（{{ unanalyzedRows.length }}）</button>
+          <button :class="{ active: group === 'unscored' }" @click="selectGroup('unscored')">未AI评分（{{ unscoredCount }}）</button>
         </div>
+        <template v-if="group === 'unscored'">
+          <div class="unscored-head">
+            <span>共 {{ unscoredTotal }} 条待 AI 评分投递</span>
+            <button class="mini-btn lg" :disabled="unscoredSubmitting || !unscoredTotal" @click="screenAllUnscored">
+              {{ unscoredSubmitting ? '提交中…' : '全部发起评分' }}
+            </button>
+          </div>
+          <div v-if="unscoredLoading" class="empty-tip big">加载中…</div>
+          <div v-else-if="!unscoredRows.length" class="empty-tip big">暂无未AI评分的候选人</div>
+          <template v-else>
+            <div class="table-scroll">
+              <div class="table-head unscored-cols"><span>候选人</span><span>投递岗位</span><span>联系方式</span><span>投递时间</span><span>操作</span></div>
+              <article v-for="row in unscoredRows" :key="row.applicationId" class="result-row unscored-cols">
+                <div class="person">
+                  <MiniAvatar :name="row.name || '候选人'" :size="32" color="#2563eb" />
+                  <div><b>{{ row.name || '未命名候选人' }}</b><small>{{ row.jobDirection || '方向未填' }}</small></div>
+                </div>
+                <span class="pos-cell" :title="row.positionName">{{ row.positionName || '—' }}</span>
+                <span>{{ row.phone || '—' }}</span>
+                <span class="time-cell">{{ row.appliedAt || '—' }}</span>
+                <div class="ops"><button class="mini-btn" :disabled="unscoredSubmitting" @click="screenPosition(row.positionId)">发起评分</button></div>
+              </article>
+            </div>
+            <div v-if="unscoredTotal > unscoredPageSize" class="list-pager">
+              <button :disabled="unscoredPage <= 1" @click="unscoredStep(-1)">上一页</button>
+              <span>{{ unscoredPage }} / {{ Math.ceil(unscoredTotal / unscoredPageSize) }} 页 · 共 {{ unscoredTotal }} 条</span>
+              <button :disabled="unscoredPage * unscoredPageSize >= unscoredTotal" @click="unscoredStep(1)">下一页</button>
+            </div>
+          </template>
+        </template>
+        <template v-else>
         <div v-if="!activeTask" class="empty-tip big">请选择左侧岗位任务查看评分结果</div>
         <template v-else>
           <div v-if="loadingResults" class="empty-tip big">评分结果加载中…</div>
           <div v-else-if="!displayList.length" class="empty-tip big">
-            {{ group === 'scored' ? '暂无已评分的候选人，可到「投递详情」发起 AI 评分' : '暂无待人工评分的候选人' }}
+            {{ group === 'scored' ? '暂无已评分的候选人，可到「未AI评分」发起 AI 评分' : '暂无待人工评分的候选人' }}
           </div>
           <template v-else>
             <div class="table-scroll">
@@ -251,6 +368,7 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
             </article>
             </div>
           </template>
+        </template>
         </template>
       </section>
     </div>
@@ -353,6 +471,16 @@ watch(() => route.query.taskId, (v) => { if (v) loadTasks() })
 .task-meta{display:flex;gap:12px;margin-top:7px;color:#64748b;font-size:10px}
 .task-meta span{display:flex;align-items:center;gap:4px}
 .result-card{padding:17px;min-height:calc(100vh - 250px);min-width:0}
+.unscored-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;color:#64748b;font-size:11px}
+.mini-btn{height:24px;padding:0 9px;border:0;border-radius:6px;background:#2563eb;color:#fff;font-size:10px;cursor:pointer;white-space:nowrap}
+.mini-btn:disabled{opacity:.6;cursor:not-allowed}
+.mini-btn.lg{height:30px;padding:0 13px;font-size:11px}
+.table-head.unscored-cols,.result-row.unscored-cols{grid-template-columns:minmax(170px,1.4fr) minmax(130px,1.2fr) 110px 120px 92px}
+.pos-cell{color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.time-cell{color:#8d9aae;font-size:10px}
+.list-pager{display:flex;align-items:center;justify-content:center;gap:12px;padding:12px 0;color:#718198;font-size:10px}
+.list-pager button{height:24px;padding:0 10px;border:1px solid #dbe3ee;border-radius:6px;background:#fff;color:#52657f;font-size:10px;cursor:pointer}
+.list-pager button:disabled{opacity:.5;cursor:not-allowed}
 .result-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .rule-tip{display:flex;gap:7px;align-items:flex-start;margin-top:11px;padding:9px 12px;border-radius:9px;background:#eef4ff;color:#3b5b8c;font-size:10px;line-height:1.7}
 .rule-tip svg{flex:none;margin-top:2px;color:#2563eb}

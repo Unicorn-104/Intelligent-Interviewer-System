@@ -318,7 +318,7 @@ void main() {
     expect(find.byType(JobCandidateCard), findsNWidgets(2));
   });
 
-  testWidgets('评分加载及失败不隐藏名单，单独重试成功后更新分数', (tester) async {
+  testWidgets('评分加载失败不隐藏名单，红色提示自动消失且无内联重试', (tester) async {
     final source = ScreeningSource()
       ..failure = true
       ..readGate = Completer<void>();
@@ -328,15 +328,14 @@ void main() {
     expect(find.text('72.0'), findsOneWidget);
     source.readGate!.complete();
     await tester.pumpAndSettle();
-    expect(find.text('合成评分网络失败'), findsOneWidget);
+    expect(find.text('评分加载失败，请稍后重试'), findsOneWidget);
     expect(find.byType(JobCandidateCard), findsNWidgets(2));
-    source.failure = false;
-    await tester.tap(find.byKey(const Key('job-scores-retry')));
-    await tester.pumpAndSettle();
-    expect(find.text('合成评分网络失败'), findsNothing);
-    expect(find.text('96.0'), findsOneWidget);
-    expect(source.reads, 2);
+    expect(find.byKey(const Key('job-scores-retry')), findsNothing);
+    expect(source.reads, 1);
     expect(source.starts, 0);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(find.text('评分加载失败，请稍后重试'), findsNothing);
   });
 
   testWidgets('旧版服务器响应明确提示部署新版，不声称AI分析成功', (tester) async {
@@ -379,7 +378,7 @@ void main() {
     expect(find.text('99.0'), findsOneWidget);
   });
 
-  testWidgets('刷新筛选失败保留名单，不自动重发并恢复按钮以供手动重试', (tester) async {
+  testWidgets('刷新筛选失败保留名单，红色提示自动消失且可再次手动重试', (tester) async {
     final source = ScreeningSource()..screenFailure = true;
     await mountCandidates(tester, source);
     final action = find.byKey(const Key('job-rescreen'));
@@ -387,9 +386,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('筛选刷新失败，请重试'), findsOneWidget);
     expect(find.byType(JobCandidateCard), findsNWidgets(2));
-    expect(find.text('增量分析'), findsOneWidget);
     expect(source.starts, 1);
     expect(find.byType(AlertDialog), findsNothing);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(find.text('筛选刷新失败，请重试'), findsNothing);
     source.screenFailure = false;
     await tester.tap(action);
     await tester.pumpAndSettle();

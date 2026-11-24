@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,6 +33,7 @@ import com.ruoyi.enterprise.service.RescheduleMessageService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
+import com.ruoyi.system.service.EmailService;
 
 /** 企业端阶段邀约与改期。所有写入在锁定候选人、面试官后进行，冲突时整笔回滚。 */
 @Service
@@ -47,6 +49,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     @Autowired private ApplicationStatusService applicationStatusService;
     @Autowired private ApplicationStatusMapper applicationStatusMapper;
     @Autowired private ProcessStageInstanceService stageInstanceService;
+    @Autowired(required = false) private EmailService emailService;
 
     private Long company(Long userId)
     {
@@ -75,28 +78,125 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         return rows;
     }
 
-    /** 批量补上本场次的面试官及确认状态（一次查询，避免逐条 N+1） */
+    /** 批量补上本场次的面试官及确认状态（一次查询，避免逐条 N+1）。 */
     private void attachInterviewers(List<Map<String, Object>> rows)
     {
         if (rows == null || rows.isEmpty()) return;
         List<Long> sessionIds = new ArrayList<>();
+        List<Long> appointmentIds = new ArrayList<>();
         for (Map<String, Object> row : rows)
         {
             Long sessionId = nullableId(row.get("sessionId"));
             if (sessionId != null && !sessionIds.contains(sessionId)) sessionIds.add(sessionId);
+            Long appointmentId = nullableId(row.get("appointmentId"));
+            if (appointmentId != null && !appointmentIds.contains(appointmentId)) appointmentIds.add(appointmentId);
         }
-        Map<Long, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
+        Map<Long, List<Map<String, Object>>> bySession = new LinkedHashMap<>();
+        Map<Long, List<Map<String, Object>>> byAppointment = new LinkedHashMap<>();
         if (!sessionIds.isEmpty())
         {
             for (Map<String, Object> item : scheduleMapper.selectInterviewersBySessionIds(sessionIds))
             {
-                grouped.computeIfAbsent(requiredId(item.get("sessionId")), k -> new ArrayList<>()).add(item);
+                bySession.computeIfAbsent(requiredId(item.get("sessionId")), k -> new ArrayList<>()).add(item);
+            }
+        }
+        if (!appointmentIds.isEmpty())
+        {
+            for (Map<String, Object> item : scheduleMapper.selectAppointmentInterviewers(appointmentIds))
+            {
+                byAppointment.computeIfAbsent(requiredId(item.get("appointmentId")), k -> new ArrayList<>()).add(item);
             }
         }
         for (Map<String, Object> row : rows)
         {
             Long sessionId = nullableId(row.get("sessionId"));
-            row.put("interviewers", sessionId == null ? new ArrayList<>() : grouped.getOrDefault(sessionId, new ArrayList<>()));
+            Long appointmentId = nullableId(row.get("appointmentId"));
+            List<Map<String, Object>> interviewers = sessionId == null
+                    ? byAppointment.getOrDefault(appointmentId, new ArrayList<>())
+                    : bySession.getOrDefault(sessionId, new ArrayList<>());
+            // 兼容迁移前创建的预约：无面试官关联表记录时回落到主面试官字段。
+            if (interviewers.isEmpty())
+            {
+                Long legacyId = nullableId(row.get("interviewerId"));
+                if (legacyId != null)
+                {
+                    Map<String, Object> legacy = new LinkedHashMap<>();
+                    legacy.put("userId", legacyId);
+                    legacy.put("userName", row.get("interviewerName"));
+                    legacy.put("isPrimary", 1);
+                    interviewers = new ArrayList<>(List.of(legacy));
+                }
+            }
+            row.put("interviewers", interviewers);
+            List<Long> ids = new ArrayList<>();
+            for (Map<String, Object> interviewer : interviewers)
+            {
+                Long id = nullableId(interviewer.get("userId"));
+                if (id != null) ids.add(id);
+            }
+            row.put("interviewerIds", ids);
+        }
+    }
+
+    /** 改期后通知全部被指派面试官（系统消息 + 邮件，尽力而为）。 */
+    private void notifyInterviewerReschedule(Map<String, Object> row, Long organizerId)
+    {
+        Long appointmentId = nullableId(row.get("appointmentId"));
+        if (appointmentId == null) return;
+        String stage = row.get("stageName") == null ? "面试" : String.valueOf(row.get("stageName"));
+        String content = "面试安排已调整：「" + stage + "」，候选人："
+                + row.get("candidateName") + "，新时间：" + row.get("startTime") + "。";
+        for (Map<String, Object> interviewer : scheduleMapper.selectAppointmentInterviewers(List.of(appointmentId)))
+        {
+            Long interviewerId = nullableId(interviewer.get("userId"));
+            if (interviewerId == null || interviewerId.equals(organizerId)) continue;
+            scheduleMapper.insertReminderMessage(interviewerId, stage + "改期通知", content);
+            String email = interviewer.get("email") == null ? "" : String.valueOf(interviewer.get("email")).trim();
+            if (email.isEmpty() || emailService == null) continue;
+            String name = interviewer.get("userName") == null ? "面试官" : String.valueOf(interviewer.get("userName"));
+            try
+            {
+                emailService.sendSimpleMail(email, "【面试改期】" + stage,
+                        "您好，" + name + "：\n\n" + content + "\n请按新时间参加。");
+            }
+            catch (Exception ignored)
+            {
+            }
+        }
+    }
+
+    /** 向非发起人的被指派面试官写入系统消息，并尽力发送安排邮件。 */
+    private void notifyInterviewerAssignment(Map<String, Object> row, String stage,
+            String content, Long organizerId)
+    {
+        Object raw = row.get("interviewers");
+        if (!(raw instanceof List)) return;
+        for (Object item : (List<?>) raw)
+        {
+            if (!(item instanceof Map)) continue;
+            Map<?, ?> interviewer = (Map<?, ?>) item;
+            Long interviewerId = nullableId(interviewer.get("userId"));
+            if (interviewerId == null || interviewerId.equals(organizerId)) continue;
+            scheduleMapper.insertReminderMessage(interviewerId, stage + "安排通知", content);
+            String email = interviewer.get("email") == null ? "" : String.valueOf(interviewer.get("email")).trim();
+            if (email.isEmpty() || emailService == null) continue;
+            String name = interviewer.get("userName") == null ? "面试官" : String.valueOf(interviewer.get("userName"));
+            String subject = "【面试安排】" + stage;
+            String mail = "您好，" + name + "：\n\n"
+                    + "您已被安排为「" + stage + "」面试官。\n"
+                    + "候选人：" + row.get("candidateName") + "\n"
+                    + "应聘岗位：" + row.get("positionTitle") + "\n"
+                    + "面试时间：" + row.get("startTime") + "\n\n"
+                    + "面试开始后，请在企业端消息中点击「进入面试」卡片进入会议。\n"
+                    + "请提前确认时间并准时参加。";
+            try
+            {
+                emailService.sendSimpleMail(email, subject, mail);
+            }
+            catch (Exception ignored)
+            {
+                // 邮件失败不影响邀约主流程，系统消息仍可触达。
+            }
         }
     }
 
@@ -104,7 +204,9 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     public List<Map<String, Object>> candidateAppointments(Long userId, Long candidateId, Long positionId)
     {
         requireJob(userId, positionId);
-        return scheduleMapper.selectCandidateAppointments(candidateId, positionId);
+        List<Map<String, Object>> rows = scheduleMapper.selectCandidateAppointments(candidateId, positionId);
+        attachInterviewers(rows);
+        return rows;
     }
 
     @Override
@@ -143,13 +245,15 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         if (scheduleMapper.countSchedulableApplication(candidateId, positionId) == 0)
             throw new ServiceException("该投递已进入终态（已录用或未录用），无法安排面试");
         Set<Long> interviewerIds = new TreeSet<>();
-        for (Map<String, Object> row : stages) interviewerIds.add(requiredId(row.get("interviewerId")));
+        for (Map<String, Object> row : stages)
+            for (Long id : stageInterviewers(row)) interviewerIds.add(id);
         for (Long id : interviewerIds) lockInterviewer(userId, companyId, id);
         List<Map<String, Object>> prepared = new ArrayList<>();
         Set<Long> seen = new HashSet<>();
         for (Map<String, Object> row : stages)
         {
             Long stageId = nullableId(row.get("stageId"));
+            List<Long> rowInterviewers = stageInterviewers(row);
             Map<String, Object> values = new LinkedHashMap<>();
             if (stageId != null)
             {
@@ -158,7 +262,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
                 if (stage == null) throw new ServiceException("招聘阶段已变更，请刷新后重新排期");
                 values.putAll(stage);
                 // 岗位流程中先有笔试阶段时，必须笔试节点通过才能安排后续面试（当前环节由真实节点计算）
-                if (scheduleMapper.countExamStagesBefore(positionId, integer(stage.get("stageOrder"), 0)) > 0
+                if (scheduleMapper.countRequiredExamStagesBefore(positionId, integer(stage.get("stageOrder"), 0)) > 0
                         && !hasPassedExamNode(candidateId, positionId))
                 {
                     throw new ServiceException("该岗位流程中笔试阶段尚未通过，暂不能安排后续面试");
@@ -180,7 +284,8 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             requireFuture(start);
             values.put("candidateId", candidateId);
             values.put("positionId", positionId);
-            values.put("interviewerId", requiredId(row.get("interviewerId")));
+            values.put("interviewerId", rowInterviewers.get(0));
+            values.put("interviewerIds", rowInterviewers);
             values.put("startTime", format(start));
             values.put("endTime", format(start.plusMinutes(duration)));
             prepared.add(values);
@@ -196,10 +301,32 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             row.put("meetingUrl", "https://meeting.example.com/" + UUID.randomUUID());
             scheduleMapper.insertSlot(row);
             scheduleMapper.insertAppointment(row);
+            Map<String, Object> detail = scheduleMapper.selectAppointmentById(requiredId(row.get("appointmentId")));
+            if (detail != null)
+            {
+                row.put("candidateName", detail.get("candidateName"));
+                row.put("positionTitle", detail.get("positionTitle"));
+            }
+            List<Long> rowInterviewers = castIds(row.get("interviewerIds"));
+            for (int index = 0; index < rowInterviewers.size(); index++)
+            {
+                scheduleMapper.insertAppointmentInterviewer(
+                        requiredId(row.get("appointmentId")), rowInterviewers.get(index),
+                        index == 0 ? 1 : 0);
+            }
             // 每轮面试建独立节点（按 apt_id 幂等），节点结果不等同投递结果
             createInterviewNode(candidateId, positionId, row, userId);
             row.put("status", 0);
             row.put("message", "邀约已创建，等待候选人确认");
+        }
+        attachInterviewers(prepared);
+        for (Map<String, Object> row : prepared)
+        {
+            String stage = row.get("stageName") == null ? "面试" : String.valueOf(row.get("stageName"));
+            String content = "您已被安排为「" + stage + "」面试官，候选人："
+                    + row.get("candidateName") + "，时间：" + row.get("startTime")
+                    + "。开始面试后可在消息中直接进入会议。";
+            notifyInterviewerAssignment(row, stage, content, userId);
         }
         // 发起面试后自动把候选人流程状态推进为「面试中」，已淘汰/已录用的终态不会回退（tal_status 独立维度）
         // 能否安排面试只看「所选岗位」的投递状态（上方 countSchedulableApplication），
@@ -224,6 +351,38 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
             throw new ServiceException("面试官不属于当前企业或已停用");
     }
 
+    /** 阶段面试官列表：优先 interviewerIds，兼容旧版单 interviewerId。 */
+    private List<Long> stageInterviewers(Map<String, Object> row)
+    {
+        List<Long> ids = castIds(row.get("interviewerIds"));
+        if (ids.isEmpty())
+        {
+            Long single = nullableId(row.get("interviewerId"));
+            if (single != null) ids.add(single);
+        }
+        if (ids.isEmpty()) throw new ServiceException("请选择至少一位面试官");
+        return ids;
+    }
+
+    private List<Long> castIds(Object raw)
+    {
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        if (raw instanceof Iterable<?> values)
+        {
+            for (Object value : values)
+            {
+                Long id = nullableId(value);
+                if (id != null) ids.add(id);
+            }
+        }
+        else
+        {
+            Long id = nullableId(raw);
+            if (id != null) ids.add(id);
+        }
+        return new ArrayList<>(ids);
+    }
+
     private void validateStageOrder(Map<String, Object> row, List<Map<String, Object>> others, Long excludeId)
     {
         int order = integer(row.get("stageOrder"), 0);
@@ -244,10 +403,13 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
 
     private void checkConflicts(Map<String, Object> row, Long excludeId, Long excludeSlot)
     {
-        if (!scheduleMapper.selectConflicts(requiredId(row.get("candidateId")),
-                requiredId(row.get("interviewerId")), row.get("startTime").toString(),
-                row.get("endTime").toString(), excludeId, excludeSlot).isEmpty())
-            throw new ServiceException("时间冲突：候选人或面试官在该时段已有安排");
+        for (Long interviewerId : stageInterviewers(row))
+        {
+            if (!scheduleMapper.selectConflicts(requiredId(row.get("candidateId")),
+                    interviewerId, row.get("startTime").toString(),
+                    row.get("endTime").toString(), excludeId, excludeSlot).isEmpty())
+                throw new ServiceException("时间冲突：候选人或面试官在该时段已有安排");
+        }
     }
 
     @Override
@@ -265,7 +427,16 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     public Map<String, Object> reschedule(Long userId, Long appointmentId, String newStartTime,
             Integer durationMin, Long interviewerId)
     {
-        Map<String, Object> result = moveAppointment(userId, appointmentId, newStartTime, durationMin, interviewerId);
+        return reschedule(userId, appointmentId, newStartTime, durationMin, interviewerId, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
+    public Map<String, Object> reschedule(Long userId, Long appointmentId, String newStartTime,
+            Integer durationMin, Long interviewerId, List<Long> interviewerIds)
+    {
+        Map<String, Object> result = moveAppointment(userId, appointmentId, newStartTime, durationMin,
+                interviewerId, interviewerIds);
         if (!parseTime(result.get("originalStartTime")).equals(parseTime(result.get("startTime")))
                 || !parseTime(result.get("originalEndTime")).equals(parseTime(result.get("endTime")))
                 || !java.util.Objects.equals(result.get("originalInterviewerId"), result.get("interviewerId")))
@@ -287,6 +458,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
                 rescheduleRequestMapper.insertEnterpriseRecord(history);
             }
             if (rescheduleMessages != null) rescheduleMessages.changed(userId, result);
+            notifyInterviewerReschedule(result, userId);
         }
         return result;
     }
@@ -296,11 +468,19 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
     public Map<String, Object> rescheduleSilently(Long userId, Long appointmentId, String newStartTime,
             Integer durationMin, Long interviewerId)
     {
-        return moveAppointment(userId, appointmentId, newStartTime, durationMin, interviewerId);
+        return rescheduleSilently(userId, appointmentId, newStartTime, durationMin, interviewerId, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
+    public Map<String, Object> rescheduleSilently(Long userId, Long appointmentId, String newStartTime,
+            Integer durationMin, Long interviewerId, List<Long> interviewerIds)
+    {
+        return moveAppointment(userId, appointmentId, newStartTime, durationMin, interviewerId, interviewerIds);
     }
 
     private Map<String, Object> moveAppointment(Long userId, Long appointmentId, String newStartTime,
-            Integer durationMin, Long interviewerId)
+            Integer durationMin, Long interviewerId, List<Long> interviewerIds)
     {
         Map<String, Object> row = scheduleMapper.selectAppointmentById(appointmentId);
         if (row == null) throw new ServiceException("预约记录不存在");
@@ -315,8 +495,24 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         if ((status != 0 && status != 1) || !oldStart.isAfter(LocalDateTime.now(ZoneOffset.ofHours(8))))
             throw new ServiceException("仅未开始且未取消的面试可以调整");
         Long oldInterviewer = requiredId(row.get("interviewerId"));
-        Long nextInterviewer = interviewerId == null ? oldInterviewer : interviewerId;
-        Set<Long> ids = new TreeSet<>(List.of(oldInterviewer, nextInterviewer));
+        List<Long> currentIds = new ArrayList<>();
+        for (Map<String, Object> item : scheduleMapper.selectAppointmentInterviewers(List.of(appointmentId)))
+        {
+            Long id = nullableId(item.get("userId"));
+            if (id != null) currentIds.add(id);
+        }
+        if (currentIds.isEmpty()) currentIds.add(oldInterviewer);
+        List<Long> nextIds = castIds(interviewerIds);
+        if (nextIds.isEmpty())
+        {
+            if (interviewerId != null && !currentIds.contains(interviewerId))
+                nextIds = new ArrayList<>(List.of(interviewerId));
+            else
+                nextIds = new ArrayList<>(currentIds);
+        }
+        Long nextInterviewer = nextIds.get(0);
+        Set<Long> ids = new TreeSet<>(currentIds);
+        ids.addAll(nextIds);
         for (Long id : ids) lockInterviewer(userId, companyId, id);
         Long oldSlot = nullableId(row.get("slotId"));
         long originalDuration = java.time.Duration.between(oldStart, parseTime(row.get("endTime"))).toMinutes();
@@ -324,6 +520,7 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         LocalDateTime start = parseTime(newStartTime);
         requireFuture(start);
         row.put("interviewerId", nextInterviewer);
+        row.put("interviewerIds", nextIds);
         row.put("startTime", format(start));
         row.put("endTime", format(start.plusMinutes(minutes)));
         validateStageOrder(row, scheduleMapper.selectCandidateAppointments(
@@ -332,6 +529,12 @@ public class InterviewScheduleServiceImpl implements IInterviewScheduleService
         scheduleMapper.insertSlot(row);
         scheduleMapper.updateAppointmentTime(row);
         if (oldSlot != null) scheduleMapper.updateSlotStatus(oldSlot, 1);
+        scheduleMapper.deleteAppointmentInterviewers(appointmentId);
+        for (int index = 0; index < nextIds.size(); index++)
+        {
+            scheduleMapper.insertAppointmentInterviewer(appointmentId, nextIds.get(index),
+                    index == 0 ? 1 : 0);
+        }
         row.put("status", 0);
         row.put("newStartTime", format(start));
         row.put("newSlotId", row.get("slotId"));

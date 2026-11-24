@@ -124,11 +124,13 @@ class TalentDetailDataSource {
     required String newStartTime,
     int? durationMin,
     int? interviewerId,
+    List<int>? interviewerIds,
   }) => schedule.rescheduleInterview(
     appointmentId,
     newStartTime: newStartTime,
     durationMin: durationMin,
     interviewerId: interviewerId,
+    interviewerIds: interviewerIds,
   );
   Future<List<Map<String, dynamic>>> loadCandidatePlan(
     int candidateId,
