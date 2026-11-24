@@ -71,6 +71,35 @@ class AiApi {
     );
   }
 
+  Future<List<Map<String, dynamic>>> longTermMemories(String token) async {
+    final data = _data(
+      await client.get('/app/ai/long-term-memories', token: token),
+    );
+    final items = data['items'];
+    if (items is! List) throw const ApiException('长期记忆响应格式不正确');
+    return items
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+  }
+
+  Future<void> updateLongTermMemory(
+    String token,
+    String id,
+    String content,
+    int revision,
+  ) async {
+    await client.put(
+      '/app/ai/long-term-memories/$id',
+      token: token,
+      body: {'content': content, 'revision': revision},
+    );
+  }
+
+  Future<void> deleteLongTermMemory(String token, String id) async {
+    await client.delete('/app/ai/long-term-memories/$id', token: token);
+  }
+
   Future<Map<String, dynamic>> messages(
     String token,
     String id, {
