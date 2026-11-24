@@ -1,7 +1,9 @@
 package com.ruoyi.ai.mcp;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
@@ -49,6 +51,12 @@ public class McpServerProperties
 
         private String workDir;
 
+        /** 是否继承后端 JVM 全部环境变量；默认 false，只保留基础系统变量。 */
+        private boolean inheritEnv = false;
+
+        /** 显式注入给子进程的环境变量，优先级高于系统变量。 */
+        private Map<String, String> env = new HashMap<>();
+
         private List<String> allowTools = new ArrayList<>();
 
         private int timeoutSeconds = 30;
@@ -91,6 +99,26 @@ public class McpServerProperties
         public void setWorkDir(String workDir)
         {
             this.workDir = workDir;
+        }
+
+        public boolean isInheritEnv()
+        {
+            return inheritEnv;
+        }
+
+        public void setInheritEnv(boolean inheritEnv)
+        {
+            this.inheritEnv = inheritEnv;
+        }
+
+        public Map<String, String> getEnv()
+        {
+            return env;
+        }
+
+        public void setEnv(Map<String, String> env)
+        {
+            this.env = env;
         }
 
         public List<String> getAllowTools()

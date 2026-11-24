@@ -56,7 +56,7 @@ public class McpToolRegistry
             try
             {
                 McpStdioClient client = new McpStdioClient(server.getCommand(), server.getArgs(), server.getWorkDir(),
-                        server.getTimeoutSeconds());
+                        server.isInheritEnv(), server.getEnv(), server.getTimeoutSeconds());
                 clients.add(client);
                 client.request("initialize", initializeParams());
                 client.notify("notifications/initialized", null);

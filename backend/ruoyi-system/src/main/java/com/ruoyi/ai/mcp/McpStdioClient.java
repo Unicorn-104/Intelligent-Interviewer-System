@@ -42,7 +42,8 @@ public class McpStdioClient implements AutoCloseable
 
     private final Thread reader;
 
-    public McpStdioClient(String command, List<String> args, String workDir, int timeoutSeconds) throws IOException
+    public McpStdioClient(String command, List<String> args, String workDir, boolean inheritEnv,
+            Map<String, String> env, int timeoutSeconds) throws IOException
     {
         this.timeoutSeconds = timeoutSeconds <= 0 ? 30 : timeoutSeconds;
         List<String> cmd = new ArrayList<>();
@@ -55,6 +56,26 @@ public class McpStdioClient implements AutoCloseable
         if (workDir != null && !workDir.isBlank())
         {
             builder.directory(new File(workDir));
+        }
+        Map<String, String> processEnv = builder.environment();
+        if (!inheritEnv)
+        {
+            processEnv.clear();
+            String[] keep = { "PATH", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE",
+                    "LANG", "LC_ALL" };
+            for (String key : keep)
+            {
+                String value = System.getenv(key);
+                if (value != null)
+                {
+                    processEnv.put(key, value);
+                }
+            }
+            processEnv.put("PYTHONUTF8", "1");
+        }
+        if (env != null && !env.isEmpty())
+        {
+            processEnv.putAll(env);
         }
         builder.redirectErrorStream(false);
         this.process = builder.start();
