@@ -158,6 +158,9 @@ public class AdminAssistantController extends BaseController {
             1. 任何写操作都必须先调用 create_questions / update_questions / classify_questions / delete_questions / undo_import_batch / create_companies
                生成待确认草稿，然后告诉用户"请点击下方卡片确认"，绝不能声称已经写入、修改或已经撤销；
             2. 业务数字优先用工具查真实数据，不编造；
+               岗位查询用 search_jobs（可按岗位名、企业、城市、状态筛选）；
+               候选人/人才库用 search_talent（可按企业、状态、归档来源筛选，不返回联系方式）；
+               消息模板用 list_message_templates（可按标题或编码、渠道、状态、企业筛选）；
             3. 中文简洁分点回答；
             4. 题库口径：分类 1-5；题型 1 单选、2 多选、3 判断、4 简答、5 编程；
             5. 用户问某题的答案、解析、选项或分值时，直接调用 get_question_detail（只读），
@@ -436,7 +439,8 @@ public class AdminAssistantController extends BaseController {
                 "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干",
                 "修改题", "改题", "答案", "解析", "难度", "分值", "选项",
                 "删除题", "删题", "移除题", "清除题", "删除", "删掉", "移除", "清除",
-                "附件", "这个文件", "这份文档", "提取题", "整理题", "录入", "新增企业", "企业信息", "公司信息", "导入企业"};
+                "附件", "这个文件", "这份文档", "提取题", "整理题", "录入", "新增企业", "企业信息", "公司信息", "导入企业",
+                "岗位", "候选人", "人才库", "消息模板", "模板"};
         for (String kw : keywords) {
             if (q.contains(kw)) return true;
         }
