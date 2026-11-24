@@ -240,7 +240,6 @@
     </div>
   </div>
 
-  <AiAssistant />
   <div class="toast" :class="{ show: toastVisible }" role="status" aria-live="polite">{{ toastText }}</div>
   <Teleport to="body">
     <div class="candidate-page--messages">
@@ -260,7 +259,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
 import { listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
-import AiAssistant from '@/components/agent/AiAssistant.vue'
 import MessageContentCard from '@/components/agent/MessageContentCard.vue'
 import { getToken } from '@/utils/auth'
 import { unreadBadge, unreadCount } from '@/utils/agentUnread'

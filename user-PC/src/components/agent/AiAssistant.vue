@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body" :disabled="standalone">
-    <section v-if="open" class="pc-ai-panel" :class="{ 'is-standalone': standalone }" aria-label="AI 智能助手" @keydown.esc.stop="closePanel">
-      <header class="pc-ai-header">
+    <section v-if="open" ref="panel" class="pc-ai-panel" :class="{ 'is-standalone': standalone, 'is-dragging': dragging }" :style="panelStyle" aria-label="AI 智能助手" @keydown.esc.stop="closePanel">
+      <header class="pc-ai-header" :class="{ 'is-draggable': !standalone }" :tabindex="standalone ? undefined : 0" :title="standalone ? undefined : '拖动标题栏移动窗口，也可使用方向键'" @pointerdown="startDrag($event, 'panel')" @pointermove="moveDrag" @pointerup="endDrag" @pointercancel="endDrag" @lostpointercapture="endDrag" @keydown="moveWithKeyboard($event, 'panel')">
         <span class="pc-ai-avatar" aria-hidden="true">AI</span>
         <div class="pc-ai-heading"><h2>AI 智能助手</h2><p>{{ busy ? (status || '正在处理，请稍候') : '你的专属求职伙伴' }}</p></div>
         <button type="button" class="pc-ai-icon" :disabled="locked" title="新建对话" aria-label="新建 AI 对话" @click="startNew">＋</button>
@@ -71,7 +71,7 @@
         </footer>
       </div>
     </section>
-    <button v-if="!standalone" ref="launcher" type="button" class="pc-ai-launcher" :aria-expanded="open" :aria-label="open ? '收起 AI 智能助手' : '打开 AI 智能助手'" @click="togglePanel"><span>AI</span><span class="pc-ai-launcher-label">求职助手</span><i v-if="busy" aria-label="回答进行中" /></button>
+    <button v-if="!standalone" ref="launcher" type="button" class="pc-ai-launcher" :class="{ 'is-dragging': dragging }" :style="launcherStyle" title="点击打开助手；拖动或使用方向键移动位置" :aria-expanded="open" :aria-label="open ? '收起 AI 智能助手' : '打开 AI 智能助手'" @pointerdown="startDrag($event, 'launcher')" @pointermove="moveDrag" @pointerup="endDrag" @pointercancel="endDrag" @lostpointercapture="endDrag" @keydown="moveWithKeyboard($event, 'launcher')" @click="togglePanel"><span>AI</span><span class="pc-ai-launcher-label">求职助手</span><i v-if="busy" aria-label="回答进行中" /></button>
   </Teleport>
 </template>
 
@@ -84,6 +84,10 @@ import { useAiAssistant } from '@/composables/useAiAssistant'
 import { aiActions, aiPlainText } from '@/utils/agentAi'
 import { appHref } from '@/utils/agentNavigation'
 import { formatMessageTime } from '@/utils/agentTime'
+import { useRoute, useRouter } from 'vue-router'
+import { requestCandidateLogin } from '@/utils/agentAccess'
+import { hasCandidateAccessToken } from '@/utils/agentSession'
+import { useFloatingAssistant } from '@/composables/useFloatingAssistant'
 
 const props = defineProps({ standalone: { type: Boolean, default: false }, initialAction: { type: String, default: 'chat' } })
 const emit = defineEmits(['close'])
@@ -92,6 +96,10 @@ const { sessions, sortedSessions, sessionId, current, messages, draft, action, r
 const open = ref(false)
 const view = ref('chat')
 const launcher = ref(null)
+const panel = ref(null)
+const route = useRoute()
+const router = useRouter()
+const { launcherStyle, panelStyle, dragging, startDrag, moveDrag, endDrag, acceptClick, moveWithKeyboard } = useFloatingAssistant(launcher, panel, () => !props.standalone)
 const input = ref(null)
 const messageList = ref(null)
 const followLatest = ref(true)
@@ -112,14 +120,38 @@ const filteredHistory = computed(() => sortedSessions.value.filter(item => Strin
 const filteredOptions = computed(() => pickerItems.value.filter(item => `${item.name || ''} ${item.jobDirection || ''} ${item.jobTitle || ''} ${item.companyName || ''}`.toLowerCase().includes(pickerQuery.value.trim().toLowerCase())))
 const isPinned = session => session.pinned === true || String(session.pinned) === '1'
 
-async function togglePanel() {
+async function togglePanel(event) {
+  if (!acceptClick(event)) return
   if (open.value) return closePanel()
+  await openPanel()
+}
+
+async function openPanel(requestedAction) {
+  if (!hasCandidateAccessToken()) {
+    const target = await requestCandidateLogin(route.fullPath)
+    if (target && !disposed) router.push(target)
+    return
+  }
   open.value = true
   view.value = 'chat'
   followLatest.value = true
   await initialize()
+  if (disposed) return
+  if (!locked.value && aiActions.some(item => item.value === requestedAction)) action.value = requestedAction
   scrollLatest()
 }
+
+function handleOpenRequest(event) {
+  openPanel(event.detail?.action)
+}
+
+function openForRoute() {
+  if (!hasCandidateAccessToken()) return
+  if (route.path === '/job-assistant') openPanel()
+  else if (route.path === '/mock-interview') openPanel('interview_preparation')
+}
+
+watch(() => route.path, openForRoute)
 
 function closePanel() {
   if (props.standalone) {
@@ -292,14 +324,17 @@ function salary(job) {
 }
 
 onBeforeUnmount(() => {
+  window.removeEventListener('candidate-ai-open', handleOpenRequest)
   disposed = true
   pickerEpoch++
   assistant.dispose()
 })
 
 onMounted(() => {
+  window.addEventListener('candidate-ai-open', handleOpenRequest)
   if (['chat', 'job_recommendation', 'resume_analysis', 'interview_preparation', 'writing_polish'].includes(props.initialAction)) action.value = props.initialAction
   if (props.standalone) togglePanel()
+  else openForRoute()
 })
 </script>
 
@@ -334,4 +369,8 @@ onMounted(() => {
 .pc-ai-launcher{position:fixed;z-index:1801;right:28px;bottom:24px;display:flex;align-items:center;justify-content:center;gap:8px;height:48px;padding:0 17px;border:1px solid #ffffff99;border-radius:24px;background:linear-gradient(125deg,#2b7fff,#535ce5);box-shadow:0 5px 20px #2b7fff33;color:#fff;cursor:pointer}.pc-ai-launcher>span:first-child{font-size:18px;font-weight:800}.pc-ai-launcher-label{font-size:12px}.pc-ai-launcher i{width:7px;height:7px;border:1px solid #fff;border-radius:50%;background:#91f1c6}
 @media(max-width:600px){.pc-ai-panel{right:10px;bottom:78px;width:calc(100vw - 20px);height:calc(100dvh - 94px);border-radius:16px;min-height:0}.pc-ai-header{gap:7px;padding:12px}.pc-ai-heading h2{font-size:16px}.pc-ai-icon{width:29px;height:29px}.pc-ai-messages{padding:8px 12px 14px}.pc-ai-footer{padding:10px 12px}.pc-ai-shortcuts{gap:6px}.pc-ai-shortcuts button{font-size:11px}.pc-ai-bubble{padding:11px 13px;font-size:13px;max-width:96%}.pc-ai-launcher{right:14px;bottom:18px;height:44px}.pc-ai-section-title{padding:15px 14px 12px}.pc-ai-search{margin-right:14px;margin-left:14px}.pc-ai-welcome{padding-top:12px}.pc-ai-welcome h3{font-size:16px}.pc-ai-welcome-icon{width:44px;height:44px;margin-bottom:12px}.pc-ai-capabilities{margin:16px auto}.pc-ai-disclaimer{font-size:9px}}
 @media(prefers-reduced-motion:reduce){.pc-ai-panel *{scroll-behavior:auto}}
+.pc-ai-launcher,.pc-ai-header.is-draggable{touch-action:none;user-select:none;cursor:grab}
+.pc-ai-launcher.is-dragging,.is-dragging .pc-ai-header.is-draggable{cursor:grabbing}
+.pc-ai-header.is-draggable:focus-visible{outline:3px solid #2b7fff66;outline-offset:-3px}
+.pc-ai-panel:not(.is-standalone){z-index:1802;max-height:calc(100dvh - 16px);min-height:0}
 </style>
