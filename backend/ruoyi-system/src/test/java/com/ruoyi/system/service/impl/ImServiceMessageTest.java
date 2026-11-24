@@ -238,4 +238,38 @@ public class ImServiceMessageTest
         assertThrows(ServiceException.class,()->service.selectMessagePage(8L,11L,null,null,0));
         assertThrows(ServiceException.class,()->service.selectMessagePage(8L,11L,null,null,101));
     }
+
+    @Test
+    void snapshotReadsUpdatedOldCardsWithoutRequiringNewMessagesAndExcludesForeignOrRecalledRows()
+    {
+        when(sessions.selectSessionByIdAndUser(8L,11L)).thenReturn(session());
+        jdbc.update("insert into t_im_message(imsg_id,imsg_session_id,imsg_sender_id,imsg_type,imsg_content) values(1,8,12,5,?)",
+                "{\"kind\":\"interview_reschedule\",\"version\":1,\"status\":\"pending\"}");
+        jdbc.execute("insert into t_im_message(imsg_id,imsg_session_id,imsg_sender_id,imsg_type,imsg_content,imsg_is_recalled) values(2,8,11,1,'我方消息',0),(3,9,12,5,'其他会话',0),(4,8,12,5,'已撤回',1)");
+        var before = service.selectMessageSnapshot(8L,11L,List.of(1L,2L,3L,4L,999L,1L));
+        assertEquals(List.of(1L,2L),before.stream().map(ImMessage::getMessageId).toList());
+        assertFalse(before.get(0).getIsMine());
+        assertTrue(before.get(1).getIsMine());
+        jdbc.update("update t_im_message set imsg_content=? where imsg_id=1",
+                "{\"kind\":\"interview_reschedule\",\"version\":1,\"status\":\"approved\",\"reviewNote\":\"已审核\"}");
+        var after = service.selectMessageSnapshot(8L,11L,List.of(1L));
+        assertTrue(after.get(0).getContent().contains("approved"));
+        assertTrue(after.get(0).getContent().contains("已审核"));
+        jdbc.update("update t_im_message set imsg_is_recalled=1 where imsg_id=1");
+        assertTrue(service.selectMessageSnapshot(8L,11L,List.of(1L)).isEmpty());
+    }
+
+    @Test
+    void snapshotRejectsForeignSessionsAndInvalidOrUnboundedIdLists()
+    {
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,99L,List.of(1L)));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(0L,11L,List.of(1L)));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,null));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,List.of()));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,List.of(-1L)));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,java.util.Arrays.asList(1L,null)));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,java.util.Collections.nCopies(101,1L)));
+        when(sessions.selectSessionByIdAndUser(8L,11L)).thenReturn(session());
+        assertTrue(service.selectMessageSnapshot(8L,11L,java.util.stream.LongStream.rangeClosed(1,100).boxed().toList()).isEmpty());
+    }
 }

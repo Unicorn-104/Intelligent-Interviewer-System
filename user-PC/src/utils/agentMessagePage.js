@@ -19,3 +19,27 @@ export function messagePageData(response) {
   if (data.hasMore && !data.items.length) throw new Error('消息分页返回异常，请重试')
   return data
 }
+
+export function mergeMessageSnapshot(current, requestedIds, incoming) {
+  const requested = new Set(requestedIds.map(String))
+  if (!Array.isArray(incoming) || incoming.some(item => !requested.has(String(item.messageId)))) {
+    throw new Error('消息状态响应异常，请重试')
+  }
+  const updated = new Map(incoming.map(item => [String(item.messageId), item]))
+  const fields = ['content', 'type', 'attachmentUrl', 'isMine', 'deliveryStatus', 'sendTime', 'isRecalled']
+  let changed = false
+  const rows = []
+  for (const message of current) {
+    const id = String(message.messageId)
+    if (!requested.has(id)) rows.push(message)
+    else {
+      const next = updated.get(id)
+      if (!next) changed = true
+      else if (fields.some(field => next[field] !== message[field])) {
+        changed = true
+        rows.push({ ...message, ...next })
+      } else rows.push(message)
+    }
+  }
+  return changed ? rows : current
+}

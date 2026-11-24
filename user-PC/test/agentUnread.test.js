@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import { computed, nextTick, reactive, ref } from 'vue'
 import { createUnreadCounter, unreadBadge, unreadCount } from '../src/utils/agentUnread.js'
 import { messageContentCard, messagePreview } from '../src/utils/agentMessage.js'
-import { mergeMessagePages, messagePageData } from '../src/utils/agentMessagePage.js'
+import { mergeMessagePages, mergeMessageSnapshot, messagePageData } from '../src/utils/agentMessagePage.js'
 
 function deferred() {
   let resolve
@@ -24,7 +24,7 @@ function messagePage(overrides = {}) {
   const events = []
   const document = { visibilityState: 'visible' }
   const page = componentScript('../src/views/agent/pages/messages.vue', {
-    mergeMessagePages, messagePageData,
+    mergeMessagePages, mergeMessageSnapshot, messagePageData,
     ref, computed, nextTick, unreadCount, unreadBadge, messageContentCard, messagePreview,
     onMounted() {}, onBeforeUnmount() {},
     document,
@@ -37,9 +37,10 @@ function messagePage(overrides = {}) {
     messageLinkParts: value => [{ text: value }],
     listImSessions: async () => ({ data: [{ sessionId: 1, peerId: 20, unread: 3 }] }),
     listImMessages: async () => ({ data: { items: [{ messageId: 2, content: '来自 HR 的新消息' }], hasMore: false } }),
+    getImMessageSnapshot: async () => ({ data: [] }),
     markImSessionRead: async () => {},
     ...overrides
-  }, ['loadSessions', 'selectSession', 'refreshMessages', 'sessions', 'messages', 'selectedSessionId', 'activeView', 'loadMessages', 'loadOlderMessages', 'hasOlderMessages', 'messagesContainer', 'hasPendingMessages', 'messageSyncError', 'selectSystem'])
+  }, ['loadSessions', 'selectSession', 'refreshMessages', 'sessions', 'messages', 'selectedSessionId', 'activeView', 'loadMessages', 'loadOlderMessages', 'hasOlderMessages', 'messagesContainer', 'hasPendingMessages', 'messageSyncError', 'selectSystem', 'followLatestMessages'])
   return { page, document, events }
 }
 
@@ -340,4 +341,123 @@ test('追赶多页增量，未追完不清角标，失败后保持现有消息�
   await page.refreshMessages()
   assert.equal(page.messages.value.at(-1).messageId, 15)
   assert.equal(page.sessions.value[0].unread, 0)
+})
+
+function rescheduleMessage(messageId, status = 'pending') {
+  return { messageId, type: 5, content: JSON.stringify({ kind: 'interview_reschedule', version: 1, status, positionName: '合成岗位', reviewNote: status === 'pending' ? '' : '已审核' }) }
+}
+
+test('无新增消息时也刷新旧改期卡片，批准和拒绝重新生成卡片，保留历史及阅读位置', async () => {
+  let status = 'pending'
+  const snapshots = []
+  const { page } = messagePage({
+    listImMessages: async (id, params) => ({ data: { items: params.afterId ? [] : [rescheduleMessage(1), { messageId: 60, type: 1, content: '最新消息' }], hasMore: false } }),
+    getImMessageSnapshot: async (sessionId, ids) => { snapshots.push({ sessionId, ids }); return { data: [rescheduleMessage(1, status)] } }
+  })
+  await page.loadSessions()
+  await page.selectSession(page.sessions.value[0], false)
+  page.messagesContainer.value = { scrollTop: 120, scrollHeight: 500, clientHeight: 100 }
+  page.followLatestMessages.value = false
+  const latest = page.messages.value[1]
+  status = 'approved'
+  await page.refreshMessages()
+  assert.equal(page.messages.value[0].card.status, '已同意')
+  assert.equal(page.messages.value[0].card.fields.find(field => field.label === '处理说明').value, '已审核')
+  assert.equal(page.messages.value[1], latest)
+  assert.equal(page.messagesContainer.value.scrollTop, 120)
+  const unchanged = page.messages.value
+  await page.refreshMessages()
+  assert.equal(page.messages.value, unchanged)
+  status = 'rejected'
+  await page.refreshMessages()
+  assert.equal(page.messages.value[0].card.status, '未通过')
+  assert.deepEqual(snapshots.map(item => item.ids), [[1], [1], [1]])
+})
+
+test('新增消息增量与旧卡片状态同步并存，快照缺失仅删除指定卡片，不清空其他历史', async () => {
+  let step = 0
+  const { page } = messagePage({
+    listImMessages: async (id, params) => ({ data: { items: params.afterId ? (++step === 1 ? [{ messageId: 61, type: 1, content: '新增消息' }] : []) : [rescheduleMessage(1), { messageId: 60, type: 1, content: '历史文本' }], hasMore: false } }),
+    getImMessageSnapshot: async () => ({ data: step === 1 ? [rescheduleMessage(1, 'approved')] : [] })
+  })
+  await page.loadSessions()
+  await page.selectSession(page.sessions.value[0], false)
+  await page.refreshMessages()
+  assert.deepEqual(page.messages.value.map(item => item.messageId), [1, 60, 61])
+  assert.equal(page.messages.value[0].card.status, '已同意')
+  await page.refreshMessages()
+  assert.deepEqual(page.messages.value.map(item => item.messageId), [60, 61])
+})
+
+test('历史页中的旧改期卡片也同步，超过100条时按批轮换而非重载全量历史', async () => {
+  const batches = []
+  const { page } = messagePage({
+    listImMessages: async (id, params) => ({ data: {
+      items: params.beforeId ? Array.from({ length: 104 }, (_, index) => rescheduleMessage(index + 1)) : params.afterId ? [] : [rescheduleMessage(105)],
+      hasMore: !params.beforeId && !params.afterId
+    } }),
+    getImMessageSnapshot: async (sessionId, ids) => { batches.push(ids); return { data: ids.map(id => rescheduleMessage(id, 'approved')) } }
+  })
+  await page.loadSessions()
+  await page.selectSession(page.sessions.value[0], false)
+  await page.loadOlderMessages()
+  await page.refreshMessages()
+  await page.refreshMessages()
+  assert.deepEqual(batches.map(ids => ids.length), [100, 5])
+  assert.equal(batches[0][0], 1)
+  assert.equal(batches[1].at(-1), 105)
+  assert.ok(page.messages.value.every(item => item.card.status === '已同意'))
+})
+
+test('快照失败保留旧卡片并可重试，切换会话丢弃迟到的状态响应', async () => {
+  let fail = true
+  const pending = deferred()
+  const { page } = messagePage({
+    listImMessages: async (id, params) => ({ data: { items: params.afterId ? [] : [rescheduleMessage(id === 1 ? 1 : 9)], hasMore: false } }),
+    getImMessageSnapshot: async () => { if (fail) throw new Error('状态同步中断'); return pending.promise }
+  })
+  await page.loadSessions()
+  await page.selectSession(page.sessions.value[0], false)
+  await page.refreshMessages()
+  assert.equal(page.messages.value[0].card.status, '等待处理')
+  assert.match(page.messageSyncError.value, /状态同步中断/)
+  fail = false
+  const refresh = page.refreshMessages()
+  await new Promise(resolve => setImmediate(resolve))
+  await page.selectSession({ sessionId: 2 }, false)
+  pending.resolve({ data: [rescheduleMessage(1, 'approved')] })
+  await refresh
+  assert.deepEqual(page.messages.value.map(item => item.messageId), [9])
+  assert.equal(page.messages.value[0].card.status, '等待处理')
+  assert.equal(page.messageSyncError.value, '')
+})
+
+test('快照合并拒绝未请求记录，不引入其他会话消息且保留未变化对象', () => {
+  const existing = [{ messageId: 1, content: '旧内容' }, { messageId: 2, content: '普通文本' }]
+  assert.equal(mergeMessageSnapshot(existing, [1], [{ ...existing[0] }]), existing)
+  assert.throws(() => mergeMessageSnapshot(existing, [1], [{ messageId: 9, content: '其他消息' }]), /状态响应异常/)
+  const updated = mergeMessageSnapshot(existing, [1], [{ messageId: 1, content: '已批准', card: { status: '已同意' } }])
+  assert.equal(updated[0].card.status, '已同意')
+  assert.equal(updated[1], existing[1])
+})
+
+test('卡片状态请求失败后下一轮重试同一批次，恢复后显示审批结果且不重复记录', async () => {
+  let attempts = 0
+  const { page } = messagePage({
+    listImMessages: async (id, params) => ({ data: { items: params.afterId ? [] : [rescheduleMessage(1)], hasMore: false } }),
+    getImMessageSnapshot: async (id, ids) => {
+      assert.deepEqual(ids, [1])
+      if (++attempts === 1) throw new Error('临时失败')
+      return { data: [rescheduleMessage(1, 'approved')] }
+    }
+  })
+  await page.loadSessions()
+  await page.selectSession(page.sessions.value[0], false)
+  await page.refreshMessages()
+  assert.match(page.messageSyncError.value, /临时失败/)
+  await page.refreshMessages()
+  assert.equal(attempts, 2)
+  assert.equal(page.messages.value.length, 1)
+  assert.equal(page.messages.value[0].card.status, '已同意')
+  assert.equal(page.messageSyncError.value, '')
 })

@@ -121,7 +121,7 @@ test('助手只在应用根节点挂载一次，独立页面共享入口，不�
   assert.match(component, /router.push\(target\)/)
 })
 
-function assistantPage(signedIn = true, loginTarget = null) {
+function assistantPage(signedIn = true, loginTarget = null, overrides = {}) {
   const scope = effectScope()
   const unmounted = []
   const navigations = []
@@ -139,9 +139,10 @@ function assistantPage(signedIn = true, loginTarget = null) {
     requestCandidateLogin: async () => { prompts++; return loginTarget },
     useFloatingAssistant: () => ({ acceptClick: () => true }),
     window: new EventTarget(), getResumes() {}, getApplication() {},
-    aiApi: { listAiSessions: async () => { requests++; return { data: { items: [], hasNext: false } } } }
+    aiApi: { listAiSessions: async () => { requests++; return { data: { items: [], hasNext: false } } } },
+    ...overrides
   }
-  const page = scope.run(() => new Function(...Object.keys(dependencies), source + ';return {openPanel,closePanel,openForRoute,open,draft,resume,action}')(...Object.values(dependencies)))
+  const page = scope.run(() => new Function(...Object.keys(dependencies), source + ';return {openPanel,closePanel,openForRoute,open,draft,resume,action,openPicker,loadPicker,cancelPicker,view,pickerItems,pickerLoading,pickerError,pickerHasMore}')(...Object.values(dependencies)))
   return { page, navigations, prompts: () => prompts, requests: () => requests, stop() { unmounted.forEach(callback => callback()); scope.stop() } }
 }
 
@@ -175,4 +176,67 @@ test('游客主动打开才提示登录，独立公开页也用路由跳转，�
   assert.deepEqual(closed.navigations, [])
   assert.equal(closed.requests(), 0)
   closed.stop()
+})
+
+function pendingRequest() {
+  let resolve
+  let reject
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
+}
+
+test('跨页重开后岗位选择立即发起新请求，迟到简历成功及 finally 不覆盖岗位列表或解除其加载态', async () => {
+  const oldResumes = pendingRequest()
+  const applications = pendingRequest()
+  let resumeCalls = 0
+  const fixture = assistantPage(true, null, {
+    getResumes: () => ++resumeCalls === 1 ? oldResumes.promise : Promise.resolve({ data: [{ id: 7, name: '投递简历' }] }),
+    listApplications: () => applications.promise
+  })
+  try {
+    await fixture.page.openPanel()
+    const old = fixture.page.openPicker('resumes', aiActions[1])
+    assert.equal(fixture.page.pickerLoading.value, true)
+    await fixture.page.openPanel()
+    const current = fixture.page.openPicker('applications', aiActions[2])
+    assert.equal(resumeCalls, 2)
+    oldResumes.resolve({ data: [{ id: 99, name: '过期简历' }] })
+    await old
+    assert.equal(fixture.page.view.value, 'applications')
+    assert.equal(fixture.page.pickerLoading.value, true)
+    assert.deepEqual(fixture.page.pickerItems.value, [])
+    applications.resolve({ data: { items: [{ id: 20, resumeId: 7, jobTitle: '岗位' }], hasNext: true } })
+    await current
+    assert.deepEqual(fixture.page.pickerItems.value.map(item => [item.id, item.resumeAvailable]), [[20, true]])
+    assert.equal(fixture.page.pickerHasMore.value, true)
+    assert.equal(fixture.page.pickerError.value, '')
+  } finally { fixture.stop() }
+})
+
+test('切换选择类型立即使旧请求失效，迟到错误不污染新列表；关闭后不回填', async () => {
+  const oldResumes = pendingRequest()
+  let calls = 0
+  const fixture = assistantPage(true, null, {
+    getResumes: () => ++calls === 1 ? oldResumes.promise : Promise.resolve({ data: [{ id: 7 }] }),
+    listApplications: async () => ({ data: { items: [{ id: 20, resumeId: 7 }], hasNext: false } })
+  })
+  try {
+    const old = fixture.page.openPicker('resumes')
+    await fixture.page.openPicker('applications')
+    oldResumes.reject(new Error('过期简历请求失败'))
+    await old
+    assert.equal(fixture.page.pickerError.value, '')
+    assert.equal(fixture.page.pickerLoading.value, false)
+    assert.equal(fixture.page.pickerItems.value[0].id, 20)
+    const late = pendingRequest()
+    const closed = assistantPage(true, null, { getResumes: () => late.promise })
+    try {
+      const loading = closed.page.openPicker('resumes')
+      closed.page.closePanel()
+      late.resolve({ data: [{ id: 99 }] })
+      await loading
+      assert.equal(closed.page.view.value, 'chat')
+      assert.deepEqual(closed.page.pickerItems.value, [])
+    } finally { closed.stop() }
+  } finally { fixture.stop() }
 })
