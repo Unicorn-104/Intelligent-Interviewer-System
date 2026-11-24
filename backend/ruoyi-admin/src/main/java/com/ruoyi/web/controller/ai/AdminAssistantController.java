@@ -51,7 +51,7 @@ import java.net.http.HttpResponse;
 import java.util.stream.Stream;
 
 /**
- * 后台管理 AI 助手：只读问答，不做任何写操作。
+ * 后台管理 AI 助手：只读工具直接查询，写工具生成草稿并在用户确认后执行。
  * 能力：RAG 知识库检索 + Function Calling 只读工具 + 路由跳转建议。
  *
  * @author TQY
@@ -141,22 +141,36 @@ public class AdminAssistantController extends BaseController {
     private static final java.util.regex.Pattern TEXT_PARAM_PATTERN =
             java.util.regex.Pattern.compile("<[^<>]*parameter\\s+name=\"([A-Za-z0-9_]+)\"[^>]*>([^<]*)");
     private static final java.util.regex.Pattern TEXT_TAG_PATTERN =
-            java.util.regex.Pattern.compile("<[^<>]*(?:invoke|parameter|calls)[^<>]*>");
+            java.util.regex.Pattern.compile("<[^<>]*(?:invoke|parameter|calls|tool_call)[^<>]*>");
+
+    /** 兼容 <tool_call name="x">JSON</tool_call> 与模型常写的 <tool_callname="x">JSON</tool_call>。 */
+    private static final java.util.regex.Pattern TEXT_TOOL_CALL_PATTERN =
+            java.util.regex.Pattern.compile("<tool_call\\s*name=\"([A-Za-z0-9_]+)\">([\\s\\S]*?)</tool_call>");
 
     public AdminAssistantController(IModelProviderService providerService) {
         this.providerService = providerService;
     }
 
     private static final String SYSTEM_PROMPT = """
-            你是招聘管理系统后台AI助手。既能查业务数据，也能代用户起草题库题目与调整分类。
+            你是招聘管理系统后台AI助手。既能查业务数据，也能代用户起草题目、修改题目与调整分类。
             严格要求：
             0. 调用工具必须使用工具调用接口（tool_calls），禁止把调用写成任何文本标记或伪标签；
-            1. 任何写操作都必须先调用 create_questions / classify_questions / undo_import_batch 生成待确认草稿，
-               然后告诉用户"请点击下方卡片确认"，绝不能声称已经写入或已经撤销；
+            1. 任何写操作都必须先调用 create_questions / update_questions / classify_questions / delete_questions / undo_import_batch / create_companies
+               生成待确认草稿，然后告诉用户"请点击下方卡片确认"，绝不能声称已经写入、修改或已经撤销；
             2. 业务数字优先用工具查真实数据，不编造；
             3. 中文简洁分点回答；
             4. 题库口径：分类 1-5；题型 1 单选、2 多选、3 判断、4 简答、5 编程；
-            5. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
+            5. 用户问某题的答案、解析、选项或分值时，直接调用 get_question_detail（只读），
+               不得凭 search_questions 的题干摘要猜测答案；回答必须完整列出题干与全部选项
+               （按 A/B/C/D 逐条，不得省略、合并或只给部分），再给答案与解析；
+               问是否有重复题时调用 check_duplicate_questions，结果只是相似度预检，不得据此断言两题完全相同；
+            6. 用户明确给出题号并要求调整分类或题型时，直接调用 classify_questions，工具会自行核验；
+               search_questions 只返回有限筛选结果，不得据此判断未列出的题号不存在；
+            7. 用户明确给出题号并要求修改题干、答案、解析、难度或分值时，直接调用 update_questions；
+               未指定题库时默认 platform，不得把平台题目修改写入企业题库；
+            8. 用户明确要求删除题目时，直接调用 delete_questions；删除不可恢复，工具会自动保留被考卷或答卷
+               引用的题，回复中必须说明保留数量，不得声称已删除；
+            9. 用户问"在哪/怎么进"时，最后一行输出 [[route:path]]，path从以下选：
             /dashboard /company/company/list /company/user /business/list /business/verify
             /recruit/job /recruit/candidate /recruit/resume /recruit/interview /recruit/exam
             /msg/template /msg/record /msg/channel /msg/sent
@@ -164,6 +178,15 @@ public class AdminAssistantController extends BaseController {
             /system/role /system/menu /monitor/online /monitor/job /monitor/cache /monitor/operlog /monitor/logininfor
             /content/advert /content/question /content/feedback
             /question/platform
+            10. 输出排版：结论放第一行；用「### 小标题」或「- 要点」组织，一条一行；
+                段落之间最多一个空行，禁止连续空行与行尾空格；不把 JSON、工具名或参数原文贴给用户；
+                不复述用户问题；简单查询不超过 8 行，复杂查询不超过 15 行，用户要求详细时除外。
+            11. 附件处理：用户随消息带附件时，先读附件文本再判断意图：
+                - 要求提取/整理题目：按题库口径整理成 items，调用 create_questions 生成草稿，默认 platform，不得编造附件未出现的题干、答案或选项；
+                - 要求录入公司/企业：提取名称、信用代码、行业、规模、城市、地址、官网、简介、联系人、电话，调用 create_companies 生成草稿；
+                - 其他要求：基于附件内容回答；附件里没有的信息一律留空，不得猜测。
+            12. 修改类请求先定位对象再改：题目先用 search_questions 确认 questionId 再调用 update_questions；
+                命中多条时先列候选让用户选择，不得批量修改不明确的记录。
             """;
 
     @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
@@ -191,6 +214,10 @@ public class AdminAssistantController extends BaseController {
             ArrayNode messages = json.createArrayNode();
             String sysContent = SYSTEM_PROMPT + (ragCtx.isEmpty() ? "" : "\n\n【知识库参考资料】\n" + ragCtx);
             messages.addObject().put("role", "system").put("content", sysContent);
+            String attachCtx = attachmentContext(body.get("attachments"), 6000);
+            if (!attachCtx.isEmpty()) {
+                messages.addObject().put("role", "system").put("content", attachCtx);
+            }
             for (Map<String, String> h : history) {
                 String r = h.get("role");
                 String c = h.get("content");
@@ -206,7 +233,7 @@ public class AdminAssistantController extends BaseController {
             String answer = callModel(provider.getMppModelName(), provider.getMppApiUrl(), apiKey, messages, tools);
 
             Map<String, Object> data = new java.util.LinkedHashMap<>();
-            data.put("answer", answer == null ? "" : answer);
+            data.put("answer", normalizeAnswer(answer));
             data.put("pendings", new ArrayList<>(PENDING_CARDS.get()));
             return success(data);
         } catch (Exception e) {
@@ -244,7 +271,7 @@ public class AdminAssistantController extends BaseController {
             List<Map<String, String>> shortHistory = history.size() > 5
                     ? history.subList(history.size() - 5, history.size())
                     : history;
-            ArrayNode messages = buildMessages(message, shortHistory);
+            ArrayNode messages = buildMessages(message, shortHistory, body.get("attachments"));
 
             // 题库类问题走工具路径：可查库、可生成待确认草稿；普通问答仍走流式
             if (needsQuestionTools(message)) {
@@ -252,7 +279,7 @@ public class AdminAssistantController extends BaseController {
                 ArrayNode tools = buildTools();
                 String answer = callModel(model, url, apiKey, messages, tools);
                 Map<String, Object> answerEvent = new java.util.LinkedHashMap<>();
-                answerEvent.put("text", answer == null ? "" : answer);
+                answerEvent.put("text", normalizeAnswer(answer));
                 out.write("event: answer\ndata: " + json.writeValueAsString(answerEvent) + "\n\n");
                 out.flush();
                 List<Map<String, Object>> cards = new ArrayList<>(PENDING_CARDS.get());
@@ -406,7 +433,10 @@ public class AdminAssistantController extends BaseController {
     private boolean needsQuestionTools(String q) {
         if (q == null) return false;
         String[] keywords = {"题库", "题目", "出题", "出几道", "生成题", "加题", "新增题", "导入记录",
-                "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干"};
+                "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干",
+                "修改题", "改题", "答案", "解析", "难度", "分值", "选项",
+                "删除题", "删题", "移除题", "清除题", "删除", "删掉", "移除", "清除",
+                "附件", "这个文件", "这份文档", "提取题", "整理题", "录入", "新增企业", "企业信息", "公司信息", "导入企业"};
         for (String kw : keywords) {
             if (q.contains(kw)) return true;
         }
@@ -449,11 +479,35 @@ public class AdminAssistantController extends BaseController {
         return success(Map.of("discarded", actionStore.discard(id)));
     }
 
-    private ArrayNode buildMessages(String message, List<Map<String, String>> history) throws Exception {
+    /** 把随消息上传的附件文本整理为上下文；总量受限，避免挤压对话预算。 */
+    private String attachmentContext(Object raw, int limit) {
+        if (!(raw instanceof List<?> list) || list.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        int total = 0;
+        for (Object o : list) {
+            if (!(o instanceof Map<?, ?> m)) continue;
+            String name = m.get("name") == null ? "附件" : String.valueOf(m.get("name"));
+            String text = m.get("text") == null ? "" : String.valueOf(m.get("text")).trim();
+            if (text.isEmpty() || total >= limit) continue;
+            int room = Math.min(2000, limit - total);
+            if (text.length() > room) {
+                text = text.substring(0, room) + "\n…（已截断）";
+            }
+            sb.append("\n### 附件：").append(name).append('\n').append(text).append('\n');
+            total += text.length();
+        }
+        return sb.length() == 0 ? "" : "【用户随消息上传的附件内容】" + sb;
+    }
+
+    private ArrayNode buildMessages(String message, List<Map<String, String>> history, Object attachRaw) throws Exception {
         ArrayNode messages = json.createArrayNode();
         String ragCtx = searchKnowledge(message);
         String sysContent = SYSTEM_PROMPT + (ragCtx.isEmpty() ? "" : "\n\n【知识库参考资料】\n" + ragCtx);
         messages.addObject().put("role", "system").put("content", sysContent);
+        String attachCtx = attachmentContext(attachRaw, 6000);
+        if (!attachCtx.isEmpty()) {
+            messages.addObject().put("role", "system").put("content", attachCtx);
+        }
         for (Map<String, String> h : history) {
             String r = h.get("role");
             String c = h.get("content");
@@ -502,9 +556,8 @@ public class AdminAssistantController extends BaseController {
         reqBody.set("messages", messages);
         reqBody.put("stream", true);
         reqBody.put("temperature", 0.3);
-        reqBody.put("max_tokens", 1024);
+        reqBody.put("max_tokens", 2048);
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(280))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(reqBody)))
@@ -528,7 +581,8 @@ public class AdminAssistantController extends BaseController {
                 JsonNode node = json.readTree(data);
                 String delta = node.path("choices").path(0).path("delta").path("content").asText("");
                 if (!delta.isEmpty()) {
-                    out.write("data: " + delta + "\n\n");
+                    // JSON 编码后再写入：正文含换行时不会破坏 SSE 帧，前端可原样还原
+                    out.write("data: " + json.writeValueAsString(delta) + "\n\n");
                     out.flush();
                 }
             }
@@ -609,8 +663,30 @@ public class AdminAssistantController extends BaseController {
         if (text == null || text.isEmpty()) {
             return calls;
         }
-        java.util.regex.Matcher inv = TEXT_INVOKE_PATTERN.matcher(text);
         int seq = 0;
+        // 先解析 <tool_call name="x">{...}</tool_call>（含无空格的 <tool_callname="x">）
+        java.util.regex.Matcher tc = TEXT_TOOL_CALL_PATTERN.matcher(text);
+        while (tc.find()) {
+            String body = tc.group(2).trim();
+            ObjectNode args = json.createObjectNode();
+            if (body.startsWith("{")) {
+                try {
+                    JsonNode parsed = json.readTree(body);
+                    if (parsed != null && parsed.isObject()) {
+                        args = (ObjectNode) parsed;
+                    }
+                } catch (Exception ignore) {
+                    // 非法 JSON 按空参数处理，交给工具自身兜底
+                }
+            }
+            ObjectNode call = json.createObjectNode();
+            call.put("id", "text_call_" + (++seq));
+            ObjectNode fn = call.putObject("function");
+            fn.put("name", tc.group(1));
+            fn.put("arguments", json.writeValueAsString(args));
+            calls.add(call);
+        }
+        java.util.regex.Matcher inv = TEXT_INVOKE_PATTERN.matcher(text);
         while (inv.find()) {
             String name = inv.group(1);
             ObjectNode args = json.createObjectNode();
@@ -692,6 +768,16 @@ public class AdminAssistantController extends BaseController {
     }
 
     /** 执行工具：在工具包里按名查找并执行。写工具只登记草稿，不产生业务副作用。 */
+    /** 输出规范化：压缩多余空行、去行尾空格、清除残留的伪工具标签。 */
+    private String normalizeAnswer(String text) {
+        if (text == null) return "";
+        String s = text.replace("\r\n", "\n").replaceAll("[ \t]+\n", "\n");
+        s = s.replaceAll("(?is)<tool_call[^>]*>.*?</tool_call>", "");
+        s = TEXT_TAG_PATTERN.matcher(s).replaceAll("");
+        s = s.replaceAll("\n{3,}", "\n\n").trim();
+        return s.isEmpty() ? "（没有可展示的回答内容，请重试）" : s;
+    }
+
     private String executeTool(String name, String args) {
         long start = System.currentTimeMillis();
         ToolContext ctx = toolContext();

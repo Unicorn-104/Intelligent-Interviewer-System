@@ -13,6 +13,11 @@ abstract final class AppConfig {
     'TRUST_BAOTA_CERTIFICATE',
   );
 
+  static const privateCertificateAsset = String.fromEnvironment(
+    'PRIVATE_CERTIFICATE_ASSET',
+    defaultValue: 'assets/certificates/baota_root.pem',
+  );
+
   static const fileUploadTimeout = Duration(seconds: 180);
   static const aiRequestTimeout = Duration(seconds: 60);
 }

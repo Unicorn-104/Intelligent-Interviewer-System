@@ -13,9 +13,11 @@ class ChatMessage {
     required this.createdAt,
     this.type = 1,
     this.deliveryStatus,
+    this.attachmentUrl,
   });
   final int messageId, senderId, type;
   final String? deliveryStatus;
+  final String? attachmentUrl;
   final String content;
   final bool mine;
   final DateTime createdAt;
@@ -42,7 +44,10 @@ class ChatMessage {
     messageId: AppMessage._asInt(json['messageId']),
     senderId: AppMessage._asInt(json['senderId']),
     content: json['content']?.toString() ?? '',
-    mine: json['mine'] == true || json['mine']?.toString() == '1',
+    mine:
+        (json['mine'] ?? json['isMine']) == true ||
+        (json['mine'] ?? json['isMine'])?.toString() == '1',
+    attachmentUrl: AppMessage._asNullableString(json['attachmentUrl']),
     type: int.tryParse('${json['type']}') ?? 1,
     deliveryStatus:
         ['read', 'delivered', 'received'].contains(json['deliveryStatus'])
@@ -50,7 +55,8 @@ class ChatMessage {
         : null,
     createdAt:
         DateTime.tryParse(
-          (json['createdAt']?.toString() ?? '').replaceFirst(' ', 'T'),
+          ((json['createdAt'] ?? json['sendTime'])?.toString() ?? '')
+              .replaceFirst(' ', 'T'),
         ) ??
         DateTime.fromMillisecondsSinceEpoch(0),
   );
@@ -67,6 +73,9 @@ class AppMessage {
     this.avatarUrl,
     this.targetUrl,
     this.badge,
+    this.threadType,
+    this.threadId,
+    this.messageCount = 1,
   });
 
   final int sourceId;
@@ -78,6 +87,9 @@ class AppMessage {
   final String? avatarUrl;
   final String? targetUrl;
   final String? badge;
+  final String? threadType;
+  final int? threadId;
+  final int messageCount;
 
   int? get companyId {
     if (category != AppMessageCategory.company || targetUrl == null) {
@@ -114,6 +126,9 @@ class AppMessage {
       avatarUrl: _asNullableString(json['avatarUrl']),
       targetUrl: _asNullableString(json['targetUrl']),
       badge: _asNullableString(json['badge']),
+      threadType: _asNullableString(json['threadType']),
+      threadId: int.tryParse('${json['threadId']}'),
+      messageCount: int.tryParse('${json['messageCount']}') ?? 1,
     );
   }
 
@@ -128,6 +143,9 @@ class AppMessage {
       avatarUrl: avatarUrl,
       targetUrl: targetUrl,
       badge: badge,
+      threadType: threadType,
+      threadId: threadId,
+      messageCount: messageCount,
     );
   }
 

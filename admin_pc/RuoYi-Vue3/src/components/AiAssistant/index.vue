@@ -36,19 +36,9 @@
             <el-tooltip content="导出对话" placement="bottom">
               <el-icon @click="exportMd" :size="16"><Download /></el-icon>
             </el-tooltip>
-            <el-upload
-              :show-file-list="false"
-              :before-upload="beforeUpload"
-              action="/prod-api/ai/kb/upload"
-              :headers="{ Authorization: 'Bearer ' + token }"
-              name="file"
-              :data="{ category: '操作手册' }"
-              accept=".txt,.md"
-            >
-              <el-tooltip content="上传知识库文档" placement="bottom">
-                <el-icon :size="16"><UploadFilled /></el-icon>
-              </el-tooltip>
-            </el-upload>
+            <el-tooltip content="导入知识库文档或文件夹" placement="bottom">
+              <el-icon @click="kbDialogVisible = true" :size="16"><UploadFilled /></el-icon>
+            </el-tooltip>
             <el-tooltip content="清空对话" placement="bottom">
               <el-icon @click="clearAll" :size="16"><Delete /></el-icon>
             </el-tooltip>
@@ -61,7 +51,7 @@
             <div v-if="messages.length === 0" class="ai-empty">
               <div class="ai-empty-avatar">AI</div>
               <h3>你好，我是后台助手</h3>
-              <p>业务数据统计、模块入口、操作指引、登录异常排查，问我就行。</p>
+              <p>查业务数据、找功能入口、起草改动；点左下「+」上传附件，可提取题库、录入企业信息。</p>
               <div class="ai-quick">
                 <div v-for="q in quickQuestions" :key="q" class="ai-chip" @click="quickAsk(q)">
                   {{ q }}
@@ -125,9 +115,10 @@
             </div>
           </div>
 
-          <div class="ai-input">
+          <div class="ai-composer">
             <el-input
               v-model="input"
+              class="ai-composer-text"
               placeholder="输入问题，Enter 发送，Shift+Enter 换行"
               type="textarea"
               :autosize="{ minRows: 1, maxRows: 4 }"
@@ -135,15 +126,69 @@
               resize="none"
               @keydown.enter.exact.prevent="send()"
             />
-            <button v-if="!loading" class="ai-send" @click="send()">
-              <el-icon :size="16"><Promotion /></el-icon>
-            </button>
-            <button v-else class="ai-send ai-stop" @click="stop"><span class="stop-square"></span></button>
+            <div class="ai-composer-bar">
+              <el-popover v-model:visible="attachMenuVisible" placement="top-start" :width="150" trigger="click">
+                <template #reference>
+                  <button class="ai-plus" :disabled="loading" title="添加附件">+</button>
+                </template>
+                <div class="attach-menu">
+                  <div class="attach-menu-item" @click="pickChatFiles">选择文件</div>
+                  <div class="attach-menu-item" @click="pickChatFolder">选择文件夹</div>
+                  <div class="attach-menu-item" @click="attachMenuVisible = false; kbDialogVisible = true">导入知识库</div>
+                </div>
+              </el-popover>
+              <div class="ai-attach-chips">
+                <span v-for="(a, i) in chatAttachments" :key="a.name + i" class="attach-chip">
+                  <el-icon :size="12"><Document /></el-icon>
+                  <span class="chip-name">{{ a.name }}</span>
+                  <el-icon class="chip-del" @click="removeChatAttachment(i)"><Close /></el-icon>
+                </span>
+                <span v-if="attachParsing" class="attach-chip attach-parsing">解析中…</span>
+              </div>
+              <button v-if="!loading" class="ai-composer-send" @click="send()">
+                <el-icon :size="15"><Top /></el-icon>
+              </button>
+              <button v-else class="ai-composer-send ai-stop" @click="stop"><span class="stop-square"></span></button>
+            </div>
           </div>
           <div class="ai-foot">查数据直接答 · 写题库需你点卡片确认</div>
         </div>
       </div>
     </el-drawer>
+
+    <el-dialog v-model="kbDialogVisible" title="导入知识库" width="440px" append-to-body :close-on-click-modal="false">
+      <div class="kb-actions">
+        <el-button size="small" @click="pickKbFiles">选择文件</el-button>
+        <el-button size="small" @click="pickKbFolder">选择文件夹</el-button>
+        <el-button size="small" text :disabled="!kbFiles.length" @click="clearKbFiles">清空</el-button>
+      </div>
+      <div class="kb-tip">支持 txt / md / csv / json / pdf / docx / xlsx 等，单文件不超过 10MB</div>
+      <div v-if="kbFiles.length" class="kb-list">
+        <div v-for="(f, i) in kbFiles" :key="f.name + '_' + f.size" class="kb-item">
+          <span class="kb-name">{{ f.name }}</span>
+          <span class="kb-size">{{ fmtSize(f.size) }}</span>
+          <el-icon class="kb-del" @click="removeKbFile(i)"><Close /></el-icon>
+        </div>
+      </div>
+      <div v-else class="kb-empty">尚未选择文件</div>
+      <div class="kb-cat">
+        <span>分类</span>
+        <el-input v-model="kbCategory" size="small" placeholder="操作手册" style="width: 200px" />
+      </div>
+      <template #footer>
+        <el-button size="small" @click="kbDialogVisible = false">取消</el-button>
+        <el-button size="small" type="primary" :loading="kbUploading" @click="submitKb">开始导入</el-button>
+      </template>
+    </el-dialog>
+
+    <input ref="kbFileInput" type="file" multiple hidden
+      accept=".txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.sql,.log,.java,.py,.js,.ts,.html,.css,.pdf,.docx,.xlsx"
+      @change="onKbPick" />
+    <input ref="kbDirInput" type="file" webkitdirectory multiple hidden @change="onKbPick" />
+    <input ref="chatFileInput" type="file" multiple hidden
+      accept=".txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.sql,.log,.java,.py,.js,.ts,.html,.css,.pdf,.docx,.xlsx"
+      @change="onChatPick" />
+    <input ref="chatDirInput" type="file" webkitdirectory multiple hidden @change="onChatPick" />
   </div>
 </template>
 
@@ -154,22 +199,25 @@ import { useRouter } from 'vue-router'
 import {
   ChatDotRound,
   DocumentCopy,
+  Document,
   RefreshRight,
   Position,
   Download,
   Delete,
   Close,
   Loading,
-  Promotion,
   Microphone,
   Plus,
   Clock,
+  Top,
   UploadFilled
 } from '@element-plus/icons-vue'
 import { getToken } from '@/utils/auth'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
+/** 与全局请求一致：dev 为 /dev-api，生产为 /prod-api */
+const BASE_API = import.meta.env.VITE_APP_BASE_API || '/prod-api'
 const open = ref(false)
 const isLoginPage = computed(
   () => router.currentRoute.value.path === '/login' || router.currentRoute.value.path.startsWith('/login')
@@ -180,6 +228,19 @@ const toolTip = ref('')
 const sessions = ref([])
 const currentId = ref(null)
 const listRef = ref(null)
+const kbDialogVisible = ref(false)
+const kbFiles = ref([])
+const kbCategory = ref('操作手册')
+const kbUploading = ref(false)
+const kbFileInput = ref(null)
+const kbDirInput = ref(null)
+const chatAttachments = ref([])
+const attachParsing = ref(false)
+const attachMenuVisible = ref(false)
+const chatFileInput = ref(null)
+const chatDirInput = ref(null)
+const KB_EXT = ['txt', 'md', 'markdown', 'csv', 'json', 'xml', 'yml', 'yaml', 'sql', 'log',
+  'java', 'py', 'js', 'ts', 'html', 'css', 'pdf', 'docx', 'xlsx']
 let abortCtrl = null
 
 const messages = computed(() => {
@@ -188,7 +249,7 @@ const messages = computed(() => {
 })
 
 const HISTORY_KEY = 'ai-assistant-sessions-v2'
-const quickQuestions = ['平台现在有多少岗位和候选人？', '待审核的企业和岗位有哪些？', '最近有没有登录失败的异常？', 'Offer 即将到期的有几个？', 'AI 调用量今天用了多少？', '帮我看看哪个企业快到期了']
+const quickQuestions = ['平台现在有多少岗位和候选人？', '待审核的企业和岗位有哪些？', '最近有没有登录失败的异常？', 'Offer 即将到期的有几个？', 'AI 调用量今天用了多少？', '把附件里的题目提取到题库', '把附件里的公司信息录入系统']
 
 const drawerSize = computed(() => (window.innerWidth < 768 ? '100%' : '440px'))
 
@@ -280,10 +341,129 @@ function clearAll() {
   persistHistory()
 }
 
-function beforeUpload(file) {
-  const ok = file.name.endsWith('.txt') || file.name.endsWith('.md')
-  if (!ok) ElMessage.warning('只支持 .txt / .md 文件')
-  return ok
+function pickKbFiles() {
+  if (kbFileInput.value) kbFileInput.value.click()
+}
+
+function pickKbFolder() {
+  if (kbDirInput.value) kbDirInput.value.click()
+}
+
+function clearKbFiles() {
+  kbFiles.value = []
+}
+
+function removeKbFile(i) {
+  kbFiles.value.splice(i, 1)
+}
+
+/** 多选文件或整个文件夹：过滤格式与大小，按 name+size 去重 */
+function onKbPick(e) {
+  const picked = Array.from(e.target.files || [])
+  let rejected = 0
+  picked.forEach((f) => {
+    const ext = (f.name.split('.').pop() || '').toLowerCase()
+    if (!KB_EXT.includes(ext) || f.size > 10 * 1024 * 1024) {
+      rejected++
+      return
+    }
+    if (kbFiles.value.some((x) => x.name === f.name && x.size === f.size)) return
+    kbFiles.value.push(f)
+  })
+  if (rejected) ElMessage.warning(`已过滤 ${rejected} 个不支持或超过 10MB 的文件`)
+  e.target.value = ''
+}
+
+function fmtSize(n) {
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'
+}
+
+async function submitKb() {
+  if (!kbFiles.value.length) {
+    ElMessage.warning('请先选择文件或文件夹')
+    return
+  }
+  kbUploading.value = true
+  try {
+    const fd = new FormData()
+    kbFiles.value.forEach((f) => fd.append('files', f, f.webkitRelativePath || f.name))
+    const resp = await fetch(`${BASE_API}/ai/kb/upload-batch?category=${encodeURIComponent(kbCategory.value || '未分类')}`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + getToken() },
+      body: fd
+    })
+    const j = await resp.json()
+    if (j.code !== 200) throw new Error(j.msg || '导入失败')
+    const d = j.data || {}
+    const failedTip = d.failed ? `，失败 ${d.failed} 个` : ''
+    ElMessage.success(`导入完成：${d.success || 0} 个文件、${d.chunks || 0} 段${failedTip}`)
+    const firstError = (d.files || []).find((x) => x.error)
+    if (firstError) ElMessage.warning(`${firstError.name}：${firstError.error}`)
+    kbFiles.value = []
+    kbDialogVisible.value = false
+  } catch (err) {
+    ElMessage.error('导入失败：' + (err.message || '网络异常'))
+  } finally {
+    kbUploading.value = false
+  }
+}
+
+/** 输入框「+」：选择随本次对话使用的附件 */
+function pickChatFiles() {
+  attachMenuVisible.value = false
+  if (chatFileInput.value) chatFileInput.value.click()
+}
+
+function pickChatFolder() {
+  attachMenuVisible.value = false
+  if (chatDirInput.value) chatDirInput.value.click()
+}
+
+function removeChatAttachment(i) {
+  chatAttachments.value.splice(i, 1)
+}
+
+/** 选中文件后交给后端解析成文本，仅用于本次对话，不写入知识库 */
+async function onChatPick(e) {
+  const picked = Array.from(e.target.files || [])
+  e.target.value = ''
+  if (!picked.length) return
+  const valid = picked.filter((f) => {
+    const ext = (f.name.split('.').pop() || '').toLowerCase()
+    return KB_EXT.includes(ext) && f.size <= 10 * 1024 * 1024
+  })
+  if (!valid.length) {
+    ElMessage.warning('没有可解析的文件（格式不支持或超过 10MB）')
+    return
+  }
+  if (valid.length < picked.length) {
+    ElMessage.warning(`已过滤 ${picked.length - valid.length} 个不支持或超限的文件`)
+  }
+  attachParsing.value = true
+  try {
+    const fd = new FormData()
+    valid.forEach((f) => fd.append('files', f, f.webkitRelativePath || f.name))
+    const resp = await fetch(`${BASE_API}/ai/kb/parse`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + getToken() },
+      body: fd
+    })
+    const j = await resp.json()
+    if (j.code !== 200) throw new Error(j.msg || '解析失败')
+    const list = (j.data && j.data.files) || []
+    list.forEach((x) => {
+      if (x.error) {
+        ElMessage.warning(`${x.name}：${x.error}`)
+        return
+      }
+      if (chatAttachments.value.some((a) => a.name === x.name)) return
+      chatAttachments.value.push({ name: x.name, text: x.text })
+    })
+  } catch (err) {
+    ElMessage.error('附件解析失败：' + (err.message || '网络异常'))
+  } finally {
+    attachParsing.value = false
+  }
 }
 
 function stop() {
@@ -368,6 +548,10 @@ function exportMd() {
 // Markdown 渲染（表格/标题/加粗/行内code/代码块/有序无序列表/链接）
 function renderMd(src) {
   if (!src) return '<span class="ai-cursor"></span>'
+  src = String(src)
+    .replace(/<tool_call[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/<[^>]*(?:invoke|parameter|calls)[^>]*>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
   let s = src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   // 代码块
   s = s.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
@@ -406,13 +590,23 @@ function renderMd(src) {
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
   // 链接
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+  const toList = (tag, mark, m) => {
+    const re = new RegExp(`<${mark}>[\\s\\S]*?</${mark}>`, 'g')
+    const items = (m.match(re) || [])
+      .map((x) => `<li>${x.replace(new RegExp(`</?${mark}>`, 'g'), '')}</li>`)
+      .join('')
+    return `<${tag}>${items}</${tag}>`
+  }
   // 有序列表（先处理，用临时标记避免和无序列表混淆）
   s = s.replace(/^\d+\. (.*)$/gm, '<olist>$1</olist>')
-  s = s.replace(/(?:<olist>[\s\S]*?<\/olist>)+/g, (m) => '<ol>' + m.replace(/<\/?olist>/g, '<li>') + '</ol>')
+  s = s.replace(/(?:<olist>[\s\S]*?<\/olist>\n?)+/g, (m) => toList('ol', 'olist', m))
   // 无序列表
   s = s.replace(/^[-•] (.*)$/gm, '<ulist>$1</ulist>')
-  s = s.replace(/(?:<ulist>[\s\S]*?<\/ulist>)+/g, (m) => '<ul>' + m.replace(/<\/?ulist>/g, '<li>') + '</ul>')
-  // 换行
+  s = s.replace(/(?:<ulist>[\s\S]*?<\/ulist>\n?)+/g, (m) => toList('ul', 'ulist', m))
+  // 换行：块级元素前后不重复产生 <br/>，连续空行只保留一个段间距
+  s = s.replace(/(<\/(?:h3|h4|ul|ol|table|pre)>)\n+/g, '$1')
+  s = s.replace(/\n+(?=<(?:h3|h4|ul|ol|table|pre)>)/g, '')
+  s = s.replace(/\n{2,}/g, '<br/><br/>')
   s = s.replace(/\n/g, '<br/>')
   s += '<span class="ai-cursor"></span>'
   return s
@@ -440,10 +634,14 @@ async function send(preset) {
       .slice(-10)
       .map((m) => ({ role: m.role, content: m.content }))
     abortCtrl = new AbortController()
-    const resp = await fetch('/prod-api/ai/assistant/chat/stream', {
+    const resp = await fetch(`${BASE_API}/ai/assistant/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
-      body: JSON.stringify({ message: text, history: hist }),
+      body: JSON.stringify({
+        message: text,
+        history: hist,
+        attachments: chatAttachments.value.map((a) => ({ name: a.name, text: a.text }))
+      }),
       signal: abortCtrl.signal
     })
     const reader = resp.body.getReader()
@@ -494,11 +692,21 @@ async function send(preset) {
           expectTool = false
         } else {
           if (aiMsg.tool) aiMsg.tool = ''
-          aiMsg.content += d
+          let seg = d
+          try {
+            const j = JSON.parse(d)
+            if (typeof j === 'string') seg = j
+            else if (j && j.error) seg = '（' + j.error + '）'
+            else seg = ''
+          } catch (e) {
+            /* 非 JSON 的旧格式按原文追加 */
+          }
+          aiMsg.content += seg
           await scrollBottom()
         }
       }
     }
+    chatAttachments.value = []
     const m = aiMsg.content.match(/\[\[route:([^\]]+)\]\]/)
     if (m) {
       aiMsg.route = m[1].trim()
@@ -521,7 +729,10 @@ async function send(preset) {
 function kindLabel(kind) {
   if (kind === 'create') return '建题'
   if (kind === 'classify') return '改分类/题型'
+  if (kind === 'update') return '修改题目'
+  if (kind === 'delete') return '删除题目'
   if (kind === 'undo') return '撤销批次'
+  if (kind === 'create_companies') return '录入企业'
   return '待确认'
 }
 
@@ -530,7 +741,7 @@ async function applyPending(msg, card) {
   if (card.loading || card.done) return
   card.loading = true
   try {
-    const resp = await fetch('/prod-api/ai/assistant/pending/apply', {
+    const resp = await fetch(`${BASE_API}/ai/assistant/pending/apply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
       body: JSON.stringify({ id: card.id })
@@ -546,8 +757,18 @@ async function applyPending(msg, card) {
       card.result = `已入库 ${d.inserted} 题${d.failed ? '，失败 ' + d.failed + ' 题' : ''}，批次 #${d.batchId}`
     } else if (d.kind === 'classify') {
       card.result = `已更新 ${d.updated} 题`
+    } else if (d.kind === 'update') {
+      card.result = `已修改 ${d.updated} 题${d.skipped ? '，跳过 ' + d.skipped + ' 题' : ''}`
+    } else if (d.kind === 'delete') {
+      card.result = `已删除 ${d.deleted || 0} 题${d.referenced ? '，被引用保留 ' + d.referenced + ' 题' : ''}${d.missing ? '，已不存在 ' + d.missing + ' 题' : ''}`
+    } else if (d.kind === 'create_companies') {
+      const skipped = Array.isArray(d.skipped) ? d.skipped.length : 0
+      const errors = Array.isArray(d.errors) ? d.errors.length : 0
+      card.result = `已录入 ${d.inserted || 0} 家企业${skipped ? '，跳过同名 ' + skipped + ' 家' : ''}${errors ? '，失败 ' + errors + ' 家' : ''}`
+    } else if (d.kind === 'undo') {
+      card.result = `已撤销：删除 ${d.deleted || 0} 题${d.skipped ? '，保留 ' + d.skipped + ' 题' : ''}`
     } else {
-      card.result = `已撤销：删除 ${d.deleted} 题${d.skipped ? '，保留 ' + d.skipped + ' 题' : ''}`
+      card.result = '已提交'
     }
   } catch (e) {
     card.result = '请求失败：' + (e.message || '网络错误')
@@ -560,7 +781,7 @@ async function applyPending(msg, card) {
 async function discardPending(msg, card) {
   if (card.loading) return
   try {
-    await fetch('/prod-api/ai/assistant/pending/discard', {
+    await fetch(`${BASE_API}/ai/assistant/pending/discard`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
       body: JSON.stringify({ id: card.id })
@@ -574,7 +795,7 @@ async function discardPending(msg, card) {
 
 function focusInput() {
   nextTick(() => {
-    const el = document.querySelector('.ai-input textarea')
+    const el = document.querySelector('.ai-composer textarea')
     if (el) el.focus()
   })
 }
@@ -804,12 +1025,120 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 
+.kb-actions {
+  display: flex;
+  gap: 8px;
+}
+.kb-tip {
+  margin: 8px 0 6px;
+  font-size: 12px;
+  color: #8a8f99;
+}
+.kb-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #eef0f5;
+  border-radius: 8px;
+}
+.kb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  border-bottom: 1px solid #f4f5f7;
+}
+.kb-item:last-child {
+  border-bottom: none;
+}
+.kb-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-size {
+  font-size: 12px;
+  color: #8a8f99;
+}
+.kb-del {
+  color: #c0c4cc;
+  cursor: pointer;
+}
+.kb-del:hover {
+  color: #f56c6c;
+}
+.kb-empty {
+  padding: 20px;
+  text-align: center;
+  font-size: 12.5px;
+  color: #a8adb8;
+  border: 1px dashed #e5e7eb;
+  border-radius: 8px;
+}
+.kb-cat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: #4b5563;
+}
 .ai-bubble {
   padding: 9px 13px;
   border-radius: 12px;
   font-size: 13.5px;
   line-height: 1.65;
   word-break: break-word;
+}
+.ai-bubble :deep(h3),
+.ai-bubble :deep(h4) {
+  margin: 10px 0 4px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: #1f2329;
+}
+.ai-bubble :deep(ul),
+.ai-bubble :deep(ol) {
+  margin: 4px 0 6px;
+  padding-left: 18px;
+}
+.ai-bubble :deep(li) {
+  margin: 1px 0;
+  line-height: 1.6;
+}
+.ai-bubble :deep(table) {
+  width: 100%;
+  margin: 6px 0;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.ai-bubble :deep(table th),
+.ai-bubble :deep(table td) {
+  padding: 4px 8px;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+}
+.ai-bubble :deep(table th) {
+  background: #f7f8fa;
+  font-weight: 600;
+}
+.ai-bubble :deep(pre) {
+  margin: 6px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  background: #f6f7f9;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ai-bubble :deep(code) {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+.ai-bubble :deep(a) {
+  color: #3b82f6;
 }
 .ai-row.assistant .ai-bubble {
   background: #fff;
@@ -976,39 +1305,120 @@ onBeforeUnmount(() => {
   margin: 6px 0 3px;
 }
 
-.ai-input {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  padding: 10px 14px;
+.ai-composer {
+  margin: 0 14px;
+  padding: 8px 10px 8px 12px;
   background: #fff;
-  border-top: 1px solid #eef0f5;
+  border: 1px solid #e3e6ec;
+  border-radius: 14px;
+  transition: border-color 0.18s, box-shadow 0.18s;
 }
-.ai-send {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+.ai-composer:focus-within {
+  border-color: #4f6ef7;
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.08);
+}
+.ai-composer-text .el-textarea__inner {
+  padding: 0;
   border: none;
+  box-shadow: none;
+  font-size: 13.5px;
+  line-height: 1.6;
+  background: transparent;
+  resize: none;
+}
+.ai-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.ai-plus {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #e3e6ec;
+  border-radius: 50%;
+  background: #fff;
+  color: #5c6472;
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
-  background: linear-gradient(135deg, #4f6ef7, #7c3aed);
+  flex-shrink: 0;
+}
+.ai-plus:hover:not(:disabled) {
+  border-color: #4f6ef7;
+  color: #4f6ef7;
+}
+.ai-plus:disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+.ai-attach-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 190px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #eff3ff;
+  color: #3b5bdb;
+  font-size: 12px;
+}
+.attach-chip .chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.attach-chip .chip-del {
+  cursor: pointer;
+  color: #8fa3e8;
+}
+.attach-chip .chip-del:hover {
+  color: #ef4444;
+}
+.attach-parsing {
+  color: #8a8f99;
+  background: #f5f6f8;
+}
+.ai-composer-send {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #2563eb;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
   flex-shrink: 0;
 }
-.ai-stop {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
+.ai-composer-send:hover {
+  background: #1d4ed8;
+}
+.ai-composer-send.ai-stop {
   background: #ef4444;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+}
+.attach-menu {
+  padding: 4px 0;
+}
+.attach-menu-item {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #1f2329;
+  cursor: pointer;
+}
+.attach-menu-item:hover {
+  background: #f4f6fb;
+  color: #4f6ef7;
 }
 .stop-square {
   width: 12px;
@@ -1068,6 +1478,12 @@ onBeforeUnmount(() => {
   color: #b45309;
   background: #fdf4e7;
   border-color: #f3d8ae;
+}
+
+.ai-pending-tag.kind-delete {
+  color: #b91c1c;
+  background: #fdecec;
+  border-color: #f3c2c2;
 }
 
 .ai-pending-sum {

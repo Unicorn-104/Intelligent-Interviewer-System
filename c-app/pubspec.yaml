@@ -41,6 +41,7 @@ dependencies:
   pdfx: ^2.11.0
   livekit_client: 2.13.2
   permission_handler: 12.0.1
+  speech_to_text: 7.3.0
 
 dev_dependencies:
   flutter_test:

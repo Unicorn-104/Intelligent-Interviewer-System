@@ -50,37 +50,52 @@ public class ContentExamQuestionController extends BaseController {
                               @RequestParam(required = false) Integer type,
                               @RequestParam(required = false) Integer category,
                               @RequestParam(required = false) Integer difficulty,
-                              @RequestParam(required = false) String keyword) {
-        StringBuilder sql = new StringBuilder("SELECT " + COLUMNS + FROM_CLAUSE + " WHERE 1=1");
+                              @RequestParam(required = false) String keyword,
+                              @RequestParam(defaultValue = "1") Integer pageNum,
+                              @RequestParam(defaultValue = "10") Integer pageSize) {
+        // 本接口走 JdbcTemplate 原生 SQL，PageHelper 拦截不到，必须自己拼 LIMIT 并返回真实总数
+        StringBuilder where = new StringBuilder(" WHERE 1=1");
         List<Object> args = new ArrayList<>();
         if ("platform".equals(bankType)) {
-            sql.append(" AND e.eqs_company_id IS NULL");
+            where.append(" AND e.eqs_company_id IS NULL");
         } else if ("enterprise".equals(bankType)) {
-            sql.append(" AND e.eqs_company_id IS NOT NULL");
+            where.append(" AND e.eqs_company_id IS NOT NULL");
             if (companyId != null) {
-                sql.append(" AND e.eqs_company_id = ?");
+                where.append(" AND e.eqs_company_id = ?");
                 args.add(companyId);
             }
         }
         if (type != null) {
-            sql.append(" AND e.eqs_type = ?");
+            where.append(" AND e.eqs_type = ?");
             args.add(type);
         }
         if (category != null) {
-            sql.append(" AND e.eqs_category = ?");
+            where.append(" AND e.eqs_category = ?");
             args.add(category);
         }
         if (difficulty != null) {
-            sql.append(" AND e.eqs_difficulty = ?");
+            where.append(" AND e.eqs_difficulty = ?");
             args.add(difficulty);
         }
         if (keyword != null && !keyword.isBlank()) {
-            sql.append(" AND e.eqs_content LIKE ?");
+            where.append(" AND e.eqs_content LIKE ?");
             args.add("%" + keyword.trim() + "%");
         }
-        sql.append(" ORDER BY e.eqs_id DESC");
-        startPage();
-        return getDataTable(jdbcTemplate.queryForList(sql.toString(), args.toArray()));
+        int size = pageSize == null ? 10 : Math.min(Math.max(pageSize, 1), 200);
+        int page = pageNum == null ? 1 : Math.max(pageNum, 1);
+        Long total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM t_exam_question e" + where, Long.class, args.toArray());
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(size);
+        pageArgs.add((page - 1) * size);
+        TableDataInfo rsp = new TableDataInfo();
+        rsp.setCode(200);
+        rsp.setMsg("查询成功");
+        rsp.setRows(jdbcTemplate.queryForList(
+                "SELECT " + COLUMNS + FROM_CLAUSE + where + " ORDER BY e.eqs_id DESC LIMIT ? OFFSET ?",
+                pageArgs.toArray()));
+        rsp.setTotal(total == null ? 0L : total);
+        return rsp;
     }
 
     @PreAuthorize("@ss.hasPermi('content:question:list')")

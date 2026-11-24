@@ -1,16 +1,20 @@
 package com.ruoyi.ai.core;
 
+import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * 待确认动作：模型"打算做什么"的唯一载体。
  *
- * <p>业务参数放在 payload 中。草稿只活在内存里、不序列化，因此 payload 可以直接放
- * List/Map 等对象引用，读取方按写入时的类型取回即可。</p>
+ * <p>业务参数放在 payload 中。payload 内是 List/Map/Long 等普通对象：
+ * 内存存储时按对象引用取回；切到 Redis 时走 {@link PendingActionCodec} 的 JDK 序列化，
+ * 以保留 Long 等精确类型（JSON 会把 Long 退化成 Integer）。</p>
  */
-public class PendingAction
+public class PendingAction implements Serializable
 {
+    private static final long serialVersionUID = 1L;
+
     public String id;
 
     /** 归属端，apply 时校验，防止跨端消费。 */
