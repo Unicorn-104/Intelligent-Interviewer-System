@@ -19,6 +19,8 @@ public class McpToolAdapter implements AgentTool
 {
     private static final Logger logger = LoggerFactory.getLogger(McpToolAdapter.class);
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private final String exposedName;
 
     private final String remoteName;
@@ -83,10 +85,9 @@ public class McpToolAdapter implements AgentTool
     {
         try
         {
-            ObjectNode params = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+            ObjectNode params = JSON.createObjectNode();
             params.put("name", remoteName);
-            params.set("arguments", args == null ? new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode()
-                    : args);
+            params.set("arguments", args == null ? JSON.createObjectNode() : args);
             JsonNode response = client.request("tools/call", params);
             JsonNode result = response.path("result");
             logger.info("MCP tool {} executed, isError={}", exposedName, result.path("isError").asBoolean(false));

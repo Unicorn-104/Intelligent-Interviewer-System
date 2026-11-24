@@ -5,7 +5,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -32,8 +31,12 @@ public class McpToolRegistry
 
     private final List<McpStdioClient> clients = new CopyOnWriteArrayList<>();
 
-    @Autowired
-    private McpServerProperties properties;
+    private final McpServerProperties properties;
+
+    public McpToolRegistry(McpServerProperties properties)
+    {
+        this.properties = properties;
+    }
 
     @PostConstruct
     public void init()
