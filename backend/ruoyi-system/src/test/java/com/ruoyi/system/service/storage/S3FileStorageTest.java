@@ -77,6 +77,27 @@ class S3FileStorageTest
         assertTrue(objects.isEmpty());
     }
 
+    @Test void privateKnowledgeRoundTripsWithoutExposingOtherNamespaces() throws Exception
+    {
+        var knowledge = new com.ruoyi.system.service.app.knowledge.KnowledgeFileStore(storage);
+        byte[] bytes = "synthetic knowledge".getBytes(StandardCharsets.UTF_8);
+        for (String extension : java.util.List.of("pdf", "docx", "txt", "md"))
+        {
+            String reference = knowledge.store(17L, extension, bytes);
+            assertTrue(reference.startsWith("s3:recruit-files/private-knowledge/17/"));
+            assertArrayEquals(bytes, knowledge.read(17L, reference));
+            int before = requests.get();
+            assertThrows(IllegalArgumentException.class, () -> knowledge.read(18L, reference));
+            assertThrows(IllegalArgumentException.class, () -> knowledge.delete(18L, reference));
+            assertEquals(before, requests.get());
+            knowledge.delete(17L, reference);
+        }
+        assertThrows(IllegalArgumentException.class, () -> knowledge.read(17L, "s3:recruit-files/" + KEY));
+        assertThrows(ServiceException.class, () -> storage.reference(
+                "private-knowledge/17/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.exe"));
+        assertTrue(objects.isEmpty());
+    }
+
     @Test void rejectsCrossUserAndPublicNamespaceBeforeReadingS3() throws Exception
     {
         ResumePdfStorage pdf = new ResumePdfStorage(new ResumePdfProperties(), storage);
