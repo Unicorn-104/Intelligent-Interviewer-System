@@ -51,6 +51,14 @@ const pendingNotices = ref([])
 // 未读总数 = 聊天未读 + 待确认面试邀约（与消息中心角标口径一致）
 const unreadTotal = computed(() => totalUnread.value + pendingNotices.value.length)
 
+// 预约时间已过：不再计为待确认（与消息中心角标口径一致）
+function noticeExpired(n) {
+  const raw = n?.appointmentEndAt || n?.appointmentStartAt
+  if (!raw) return false
+  const ts = new Date(String(raw).replace(/-/g, '/')).getTime()
+  return Number.isFinite(ts) && ts < Date.now()
+}
+
 async function loadUnread() {
   await refreshUnread()
   try {
@@ -69,7 +77,7 @@ async function loadUnread() {
   }
   try {
     const res = await listInterviewerNotices()
-    pendingNotices.value = (res.data || []).filter(n => Number(n.acceptStatus) === 0)
+    pendingNotices.value = (res.data || []).filter(n => Number(n.acceptStatus) === 0 && !noticeExpired(n))
   } catch (e) {
     pendingNotices.value = []
   }

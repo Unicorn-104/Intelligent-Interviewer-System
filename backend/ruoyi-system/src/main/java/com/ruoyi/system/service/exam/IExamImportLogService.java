@@ -30,6 +30,9 @@ public interface IExamImportLogService
     /** 导入记录分页列表，按时间倒序。 */
     Map<String, Object> list(int pageNum, int pageSize);
 
+    /** 导入记录分页列表（仅指定企业），按时间倒序。 */
+    Map<String, Object> listByCompany(Long companyId, int pageNum, int pageSize);
+
     /**
      * 撤销一次导入。
      *
@@ -37,4 +40,11 @@ public interface IExamImportLogService
      *         skipped = 已不存在或已被考卷引用而未删除的条数
      */
     Map<String, Object> undo(Long batchId, String operator);
+
+    /**
+     * 撤销一次导入（企业端）：仅允许撤销本企业批次，且只删除本企业题目。
+     *
+     * @return 同 {@link #undo(Long, String)}
+     */
+    Map<String, Object> undoByCompany(Long batchId, Long companyId, String operator);
 }

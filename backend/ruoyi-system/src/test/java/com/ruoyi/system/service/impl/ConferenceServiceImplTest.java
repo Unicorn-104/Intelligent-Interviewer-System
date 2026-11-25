@@ -9,47 +9,40 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ScreeningMapper;
 import com.ruoyi.enterprise.service.ApplicationStatusService;
-import com.ruoyi.enterprise.service.IInterviewScheduleService;
 import com.ruoyi.enterprise.service.TalStatusService;
+import com.ruoyi.system.event.InterviewSessionCreatedEvent;
 import com.ruoyi.system.mapper.ConferenceMapper;
 
 /**
- * 重新发起面试（createRoomLink）的统一取消链路：
- * 旧待面试预约逐个经面试调度服务的取消逻辑处理（释放时段 + 恢复状态），
- * 会议创建与投递状态推进保持原有顺序与语义。
+ * 发起视频面试（createRoomLink）：有效预约互斥、时间窗口校验与纯AI 自动出题事件。
  */
 public class ConferenceServiceImplTest
 {
     private ConferenceServiceImpl service;
     private ConferenceMapper conferenceMapper;
-    private IInterviewScheduleService scheduleService;
-    private ScreeningMapper screeningMapper;
-    private ApplicationStatusMapper applicationStatusMapper;
-    private ApplicationStatusService applicationStatusService;
+    private ApplicationEventPublisher eventPublisher;
     private TalStatusService talStatusService;
 
     @BeforeEach
     void setUp()
     {
         conferenceMapper = mock(ConferenceMapper.class);
-        scheduleService = mock(IInterviewScheduleService.class);
-        screeningMapper = mock(ScreeningMapper.class);
-        applicationStatusMapper = mock(ApplicationStatusMapper.class);
-        applicationStatusService = mock(ApplicationStatusService.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        talStatusService = mock(TalStatusService.class);
+        when(talStatusService.change(anyLong(), anyInt(), anyList(), anyLong(), any(), any(), anyLong()))
+                .thenReturn(true);
         service = new ConferenceServiceImpl();
         ReflectionTestUtils.setField(service, "conferenceMapper", conferenceMapper);
-        ReflectionTestUtils.setField(service, "scheduleService", scheduleService);
-        ReflectionTestUtils.setField(service, "screeningMapper", screeningMapper);
-        ReflectionTestUtils.setField(service, "applicationStatusMapper", applicationStatusMapper);
-        ReflectionTestUtils.setField(service, "applicationStatusService", applicationStatusService);
-        talStatusService = mock(TalStatusService.class);
-        when(talStatusService.change(anyLong(), anyInt(), anyList(), anyLong(), any(), any(), anyLong())).thenReturn(true);
+        ReflectionTestUtils.setField(service, "eventPublisher", eventPublisher);
+        ReflectionTestUtils.setField(service, "screeningMapper", mock(ScreeningMapper.class));
+        ReflectionTestUtils.setField(service, "applicationStatusMapper", mock(ApplicationStatusMapper.class));
+        ReflectionTestUtils.setField(service, "applicationStatusService", mock(ApplicationStatusService.class));
         ReflectionTestUtils.setField(service, "talStatusService", talStatusService);
     }
 
@@ -60,10 +53,10 @@ public class ConferenceServiceImplTest
         when(conferenceMapper.selectTalentByUserId(11L, 2L)).thenReturn(Map.of("candidateId", 11L));
         when(conferenceMapper.selectPositionCompanyId(7L)).thenReturn(2L);
         when(conferenceMapper.countSchedulableApplication(11L, 7L)).thenReturn(1);
-        // 重新发起时投递已处于招聘中(1)，selectAppId 给出精确投递、状态非0故不重复触发 startRecruitment
-        when(applicationStatusMapper.selectAppId(11L, 7L)).thenReturn(501L);
-        when(applicationStatusMapper.selectApplicationById(501L)).thenReturn(Map.of("status", 1));
         when(conferenceMapper.selectCompanyEmployees(anyMap())).thenReturn(List.of(Map.of("userId", 19L)));
+        when(conferenceMapper.lockCandidateForUpdate(11L)).thenReturn(11L);
+        // Mockito 对 Map 返回值默认返回空 Map，这里显式声明「没有有效预约」
+        when(conferenceMapper.selectActiveAppointment(11L, 7L, 2L)).thenReturn(null);
         when(conferenceMapper.insertAppointment(anyMap())).thenAnswer(invocation ->
         {
             ((Map<String, Object>) invocation.getArgument(0)).put("appointmentId", 201L);
@@ -82,62 +75,48 @@ public class ConferenceServiceImplTest
     }
 
     @Test
-    void relaunchCancelsEachPendingAppointmentViaScheduleServiceBeforeCreatingNew()
+    void activeAppointmentBlocksNewLaunch()
     {
         stubRelaunchBasics();
-        when(conferenceMapper.selectPendingAppointmentIds(11L, 2L)).thenReturn(List.of(101L, 102L));
-        when(scheduleService.cancelForRelaunch(5L, 101L)).thenReturn(Map.of("appointmentId", 101L));
-        when(scheduleService.cancelForRelaunch(5L, 102L)).thenReturn(Map.of("appointmentId", 102L));
+        Map<String, Object> active = new LinkedHashMap<>();
+        active.put("appointmentId", 101L);
+        active.put("positionTitle", "合成岗位");
+        active.put("startTime", "2026-10-30 10:00");
+        when(conferenceMapper.selectActiveAppointment(11L, 7L, 2L)).thenReturn(active);
 
-        var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L), null);
-
-        // 顺序契约：先终止旧场次 → 逐个统一取消旧预约 → 再创建新预约/场次 → 推进投递状态
-        InOrder order = inOrder(conferenceMapper, scheduleService, screeningMapper);
-        order.verify(conferenceMapper).abortActiveSessionsByCandidate(11L, 2L);
-        order.verify(scheduleService).cancelForRelaunch(5L, 101L);
-        order.verify(scheduleService).cancelForRelaunch(5L, 102L);
-        order.verify(conferenceMapper).insertAppointment(anyMap());
-        verify(talStatusService).change(11L, TalStatusService.TAL_INTERVIEWING,
-                List.of(TalStatusService.TAL_NEW, TalStatusService.TAL_SCREENED, TalStatusService.TAL_INTERVIEWING,
-                        TalStatusService.TAL_EXAM_PASSED), 7L, null, "发起视频面试", 5L);
-        assertEquals(301L, ((Number) result.get("sessionId")).longValue());
-        assertEquals("合成候选人", result.get("candidateName"));
+        assertThrows(ServiceException.class,
+                () -> service.createRoomLink(5L, 11L, 7L, null, 45, 2, List.of(19L), null));
+        verify(conferenceMapper, never()).insertAppointment(anyMap());
     }
 
     @Test
-    void relaunchWithoutPendingAppointmentsStillCreatesSessionAndAdvancesStatus()
+    void pureAiSessionPublishesOutlineGenerationEvent()
     {
         stubRelaunchBasics();
-        when(conferenceMapper.selectPendingAppointmentIds(11L, 2L)).thenReturn(List.of());
 
-        var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L), null);
+        var result = service.createRoomLink(5L, 11L, 7L, null, 45, 1, List.of(), null);
 
-        verify(scheduleService, never()).cancelForRelaunch(anyLong(), anyLong());
         assertEquals(301L, ((Number) result.get("sessionId")).longValue());
+        ArgumentCaptor<InterviewSessionCreatedEvent> captor =
+                ArgumentCaptor.forClass(InterviewSessionCreatedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals(301L, captor.getValue().getSessionId().longValue());
     }
 
     @Test
-    void relaunchIgnoresSkippedCancelResultsAndKeepsCreating()
+    void humanModeDoesNotPublishOutlineGenerationEvent()
     {
         stubRelaunchBasics();
-        when(conferenceMapper.selectPendingAppointmentIds(11L, 2L)).thenReturn(List.of(101L, 102L));
-        // 101 已完成/已取消被统一入口跳过；102 正常取消
-        when(scheduleService.cancelForRelaunch(5L, 101L)).thenReturn(Map.of("message", "该面试安排已完成，已跳过"));
-        when(scheduleService.cancelForRelaunch(5L, 102L)).thenReturn(Map.of("message", "已取消该面试安排，面试官时段已释放"));
 
-        var result = service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L), null);
+        service.createRoomLink(5L, 11L, 7L, null, 45, 2, List.of(19L), null);
 
-        verify(scheduleService).cancelForRelaunch(5L, 101L);
-        verify(scheduleService).cancelForRelaunch(5L, 102L);
-        verify(conferenceMapper).insertAppointment(anyMap());
-        assertEquals(301L, ((Number) result.get("sessionId")).longValue());
+        verify(eventPublisher, never()).publishEvent(any(InterviewSessionCreatedEvent.class));
     }
 
     @Test
     void explicitStartTimeBuildsAppointmentWindow()
     {
         stubRelaunchBasics();
-        when(conferenceMapper.selectPendingAppointmentIds(11L, 2L)).thenReturn(List.of());
 
         service.createRoomLink(5L, 11L, 7L, null, 45, null, List.of(19L), "2099-01-01 09:00");
 
