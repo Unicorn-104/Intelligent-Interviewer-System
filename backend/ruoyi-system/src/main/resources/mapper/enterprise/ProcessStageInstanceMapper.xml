@@ -66,6 +66,24 @@
         limit 1
     </select>
 
+    <select id="selectExamNodeByStage" resultMap="nodeMap">
+        select <include refid="nodeColumns"/>
+        from t_process_instance_stage
+        where pis_instance_id = #{instanceId}
+          and pis_stage_id = #{stageId}
+          and pis_node_type = 1
+        order by pis_id desc
+        limit 1
+    </select>
+
+    <update id="reopenExamNode">
+        update t_process_instance_stage
+        set pis_status = 1, pis_result = null, pis_start_at = now(),
+            pis_end_at = null, pis_result_note = null
+        where pis_id = #{id} and pis_node_type = 1
+          and (pis_result is null or pis_result != 1)
+    </update>
+
     <select id="listNodesByInstance" resultMap="nodeMap">
         select <include refid="nodeColumns"/>
         from t_process_instance_stage

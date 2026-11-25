@@ -5,6 +5,42 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:intelligent_interviewer/features/interviews/data/conference_connection.dart';
 
 void main() {
+  test(
+    'mobile connection keeps SDK ICE discovery and allows slow negotiation',
+    () {
+      expect(conferenceConnectOptions.rtcConfiguration.iceServers, isNull);
+      expect(
+        conferenceConnectOptions.rtcConfiguration.iceTransportPolicy,
+        isNull,
+      );
+      expect(
+        conferenceConnectOptions.timeouts.connection,
+        const Duration(seconds: 30),
+      );
+      expect(
+        conferenceConnectOptions.timeouts.peerConnection,
+        const Duration(seconds: 30),
+      );
+    },
+  );
+  test('WSS without an explicit port survives dart:io HTTPS conversion', () {
+    final uri = conferenceSignalingUri(
+      Uri.parse('wss://backend.example/livekit'),
+    );
+    expect(uri.hasPort, isTrue);
+    expect(uri.port, 443);
+    // Mirrors dart:io WebSocket.connect rather than Uri.replace scheme defaults.
+    final httpUri = Uri(
+      scheme: 'https',
+      host: uri.host,
+      port: uri.port,
+      path: uri.path,
+    );
+    expect(httpUri.port, 443);
+    expect(uri.path, '/livekit');
+    final custom = Uri.parse('wss://backend.example:8444/livekit');
+    expect(conferenceSignalingUri(custom), custom);
+  });
   final backend = Uri.parse('https://backend.example/prod-api');
   bool trusts(String signaling, {bool enabled = true, Uri? origin}) =>
       usesConferencePrivateCa(

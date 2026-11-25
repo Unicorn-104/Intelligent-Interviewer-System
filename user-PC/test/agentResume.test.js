@@ -1,13 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { clearResumeDraft, readResumeDraft, resumeDraftKey, writeResumeDraft } from '../src/utils/agentResumeDraft.js'
 import { mergeParsedResume, profileResumeDefaults, resumeDate, resumeDegree, resumeSections } from '../src/utils/agentResume.js'
 
 function editor(overrides = {}, search = '?id=new') {
   const script = fs.readFileSync(new URL('../src/views/agent/pages/resume-editor.vue', import.meta.url), 'utf8')
     .match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
   const dependencies = {
+    computed, watch, useRouter: () => ({ replace: async () => {} }), onBeforeRouteLeave() {}, onBeforeUnmount() {}, useUserStore: () => ({ id: 11 }),
+    clearResumeDraft, readResumeDraft, resumeDraftKey, writeResumeDraft,
     reactive, ref, mergeParsedResume, profileResumeDefaults, resumeDate, resumeDegree, resumeSections,
     onMounted() {},
     window: { location: { search }, clearTimeout() {}, setTimeout() {}, confirm: () => true },
@@ -15,9 +18,10 @@ function editor(overrides = {}, search = '?id=new') {
     getResume: async () => ({ data: { id: 20, realName: '原简历姓名', educations: [], works: [], projects: [], skills: [] } }),
     getResumeAttachments: async () => ({ data: [] }),
     validateResumeFile: () => ({ valid: true }),
-    ...overrides
+    ...overrides,
+    window: { location: { search }, clearTimeout() {}, setTimeout() {}, confirm: () => true, ...overrides.window }
   }
-  return new Function(...Object.keys(dependencies), `${script}\nreturn { loadResume, resume, loading, toastMessage, applyParsedDraft, buildPayload, handlePdfChange, pendingPdf }`)(...Object.values(dependencies))
+  return new Function(...Object.keys(dependencies), `${script}\nreturn { loadResume, resume, loading, toastMessage, applyParsedDraft, buildPayload, handlePdfChange, pendingPdf, saveResume, dirty, persistDraft, restoreDraft, discardDraft, recoverableDraft, confirmLeave, draftStatus }`)(...Object.values(dependencies))
 }
 
 test('基础资料按明确字段映射，数字 sex=0 和求职状态不会漏填', () => {
@@ -151,4 +155,73 @@ test('简历列表直接上传 PDF 同样以基础资料优先，发送真实导
   assert.equal(imported.payload.targetRole, '后端研发')
   assert.equal(imported.payload.educations[0].school, '示例大学')
   assert.equal(imported.originalFile, file)
+})
+
+
+test('编辑草稿按账号和简历隔离；保存失败保留草稿，成功后清除', async () => {
+  const values = new Map()
+  const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
+  let fail = true
+  const page = editor({ window: { sessionStorage: storage }, updateResume: async (id, payload) => {
+    if (fail) throw new Error('保存失败')
+    return { data: { id, ...payload } }
+  } }, '?id=20')
+  await page.loadResume()
+  assert.equal(page.dirty.value, false)
+  page.resume.realName = '修改后的合成姓名'
+  assert.equal(page.dirty.value, true)
+  page.persistDraft()
+  assert.equal(readResumeDraft(storage, resumeDraftKey(12, 20)), null)
+  assert.equal(readResumeDraft(storage, resumeDraftKey(11, 21)), null)
+  assert.equal(readResumeDraft(storage, resumeDraftKey(11, 20)).payload.realName, '修改后的合成姓名')
+  await page.saveResume()
+  assert.equal(page.dirty.value, true)
+  assert.ok(readResumeDraft(storage, resumeDraftKey(11, 20)))
+  fail = false
+  await page.saveResume()
+  assert.equal(page.dirty.value, false)
+  assert.equal(readResumeDraft(storage, resumeDraftKey(11, 20)), null)
+})
+
+test('恢复文字草稿不伪造 PDF 文件，过期草稿自动失效，离开可取消', async () => {
+  const values = new Map()
+  const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
+  const key = resumeDraftKey(11, 20)
+  writeResumeDraft(storage, key, { realName: '恢复的合成姓名' }, true)
+  const page = editor({ window: { sessionStorage: storage, confirm: () => false } }, '?id=20')
+  await page.loadResume()
+  assert.ok(page.recoverableDraft.value)
+  page.restoreDraft()
+  assert.equal(page.resume.realName, '恢复的合成姓名')
+  assert.equal(page.pendingPdf.value, null)
+  assert.match(page.draftStatus.value, /PDF.*重新选择/)
+  assert.equal(page.confirmLeave(), false)
+  assert.ok(readResumeDraft(storage, key))
+  writeResumeDraft(storage, key, {}, false, 1000)
+  assert.equal(readResumeDraft(storage, key, 1000 + 86400001), null)
+  assert.equal(values.has(key), false)
+  assert.equal(resumeDraftKey(null, 20), null)
+  assert.equal(writeResumeDraft({ setItem() { throw new Error('quota') } }, key, {}, false), false)
+})
+
+
+test('新简历保存后跳转真实编号，后续草稿不再使用 new 的键', async () => {
+  const values = new Map()
+  const paths = []
+  const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
+  const page = editor({ window: { sessionStorage: storage },
+    useRouter: () => ({ replace: async path => paths.push(path) }),
+    createResume: async () => ({ data: { id: 21 } }),
+    updateResume: async (id, payload) => ({ data: { id, ...payload } })
+  })
+  await page.loadResume()
+  page.resume.resumeName = '新合成简历'
+  page.persistDraft()
+  assert.ok(readResumeDraft(storage, resumeDraftKey(11, null)))
+  await page.saveResume()
+  assert.deepEqual(paths, ['/resume-editor?id=21'])
+  assert.equal(readResumeDraft(storage, resumeDraftKey(11, null)), null)
+  page.resume.targetRole = '前端开发'
+  page.persistDraft()
+  assert.equal(readResumeDraft(storage, resumeDraftKey(11, 21)).payload.targetRole, '前端开发')
 })

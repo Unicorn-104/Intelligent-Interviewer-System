@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -16,10 +15,10 @@ const _stageTypeLabels = <int, String>{
   4: '编程实操',
 };
 
-/// 邀请面试弹窗：阶段列表、周历、时间轴与「面试时间设置」整合在同一个可滚动页面，
+/// 邀请面试弹窗：阶段列表、周历、推荐时段与「面试时间设置」整合在同一个可滚动页面，
 /// 步骤二「确认邀请」最终确认后才调用邀请接口。
 ///
-/// 开始时间只有一份状态（当前阶段的日期 + 时间），点击时间轴与手动选择
+/// 开始时间只有一份状态（当前阶段的日期 + 时间），选择推荐时段与手动选择
 /// 日期/时间都会写入同一份状态并互相同步；时长只读，来自岗位招聘流程配置。
 class TalentInterviewInviteSheet extends StatefulWidget {
   const TalentInterviewInviteSheet({
@@ -362,7 +361,7 @@ class _TalentInterviewInviteSheetState
   }
 
   /// 加载所选面试官在查看日期（以及跨天选择覆盖到的时间段）的忙闲，
-  /// 用于时间轴展示与冲突提示。保存与提交时仍会再次检查。
+  /// 用于日程展示与冲突提示。保存与提交时仍会再次检查。
   Future<void> _loadAvailability() async {
     final interviewer = _current?.interviewerId;
     final dayStart = TalentUtc8.fromSelection(_day, 0, 0);
@@ -428,7 +427,7 @@ class _TalentInterviewInviteSheetState
     _loadAvailability();
   }
 
-  /// 时间轴点击：写入当前阶段的日期与时间（唯一的开始时间状态源）。
+  /// 选择推荐时段：写入当前阶段的日期与时间（唯一的开始时间状态源）。
   void _selectSlot(DateTime day, int hour, int minute) {
     final stage = _current;
     if (stage == null || _locked) return;
@@ -444,7 +443,7 @@ class _TalentInterviewInviteSheetState
     _loadAvailability();
   }
 
-  /// 手动选择面试日期：与时间轴共用同一份 stage.date/time 状态。
+  /// 手动选择面试日期：与推荐时段共用同一份 stage.date/time 状态。
   Future<void> _pickDate() async {
     final stage = _current;
     if (stage == null || _locked) return;
@@ -622,17 +621,19 @@ class _TalentInterviewInviteSheetState
     return changedTime || changedInterviewer;
   }
 
+  bool get _currentIsExam => _current?.stageType == 1;
+
   Future<void> _enterConfirm() async {
     if (_locked || _positionId == null || _workflowError != null) return;
     final pending = _stages
-        .where((stage) => stage.appointment == null)
+        .where((stage) => stage.stageType != 1 && stage.appointment == null)
         .toList();
     if (pending.isEmpty) {
       // 全部已安排，无需再发邀约。
       Navigator.pop(context, _changed);
       return;
     }
-    if (_stages.any((stage) => !stage.durationConfigured)) {
+    if (_stages.any((stage) => stage.stageType != 1 && !stage.durationConfigured)) {
       setState(() => _submitError = '部分阶段未配置面试时长，请先在岗位详情完善招聘流程');
       return;
     }
@@ -698,7 +699,7 @@ class _TalentInterviewInviteSheetState
   Future<void> _send() async {
     if (_locked || _positionId == null || _workflowError != null) return;
     final pending = _stages
-        .where((stage) => stage.appointment == null)
+        .where((stage) => stage.stageType != 1 && stage.appointment == null)
         .toList();
     if (pending.isEmpty) {
       Navigator.pop(context, _changed);
@@ -882,10 +883,12 @@ class _TalentInterviewInviteSheetState
       _peopleError == null &&
       _people.isNotEmpty &&
       _stages.isNotEmpty &&
+      _stages.any((item) => item.stageType != 1) &&
       _busy != true &&
       !_hasPendingConflict &&
-      _stages.every((item) => item.durationConfigured) &&
-      _stages.every((item) => item.appointment != null || item.ready);
+      _stages.where((item) => item.stageType != 1).every((item) => item.durationConfigured) &&
+      _stages.where((item) => item.stageType != 1)
+          .every((item) => item.appointment != null || item.ready);
 
   bool get _canSaveArranged {
     final stage = _current;
@@ -996,7 +999,7 @@ class _TalentInterviewInviteSheetState
     );
   }
 
-  /// 步骤一：阶段列表、周历、时间轴、推荐时段与面试时间设置整合在同一页面。
+  /// 步骤一：阶段列表、周历、推荐时段与面试时间设置整合在同一页面。
   Widget _setupContent() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -1058,16 +1061,21 @@ class _TalentInterviewInviteSheetState
       ],
       if (_stages.isNotEmpty) ...[
         _stageList(),
-        const SizedBox(height: 14),
-        _weekStrip(),
-        const SizedBox(height: 14),
-        _timeline(),
-        const SizedBox(height: 10),
-        _recommendations(),
-        const SizedBox(height: 14),
-        _timeEditorCard(),
-        const SizedBox(height: 12),
-        _interviewerRow(),
+        if (_currentIsExam)
+          ...[
+            const SizedBox(height: 14),
+            _examReadOnlyCard(),
+          ]
+        else ...[
+          const SizedBox(height: 14),
+          _weekStrip(),
+          const SizedBox(height: 14),
+          _recommendations(),
+          const SizedBox(height: 14),
+          _timeEditorCard(),
+          const SizedBox(height: 12),
+          _interviewerRow(),
+        ],
       ],
       if (_loadingPeople)
         const Padding(
@@ -1214,8 +1222,32 @@ class _TalentInterviewInviteSheetState
     ],
   );
 
+  Widget _examReadOnlyCard() => Container(
+    key: const Key('invite-exam-readonly'),
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: AppColors.primarySoft,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: AppColors.hairline),
+    ),
+    child: const Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.assignment_outlined, color: AppColors.interactive, size: 22),
+        SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '在线笔试由“笔试安排”统一管理。请先为候选人加入考试场次并完成笔试，笔试通过后再设置面试时间。',
+            style: TextStyle(color: AppColors.body, fontSize: 12, height: 1.5),
+          ),
+        ),
+      ],
+    ),
+  );
+
   Widget _stageCard(int index, _StageDraft item) {
     final arranged = item.appointment != null;
+    final isExam = item.stageType == 1;
     final selected = index == _selected;
     return Material(
       key: ValueKey('invite-stage-$index'),
@@ -1229,7 +1261,7 @@ class _TalentInterviewInviteSheetState
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: _locked ? null : () => _selectStage(index),
+        onTap: _locked || isExam ? null : () => _selectStage(index),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -1277,7 +1309,7 @@ class _TalentInterviewInviteSheetState
                           const SizedBox(width: 6),
                           _miniBadge('可跳过', AppColors.textMuted),
                         ],
-                        if (!item.durationConfigured) ...[
+                        if (!isExam && !item.durationConfigured) ...[
                           const SizedBox(width: 6),
                           _miniBadge('未配置时长', AppColors.error),
                         ],
@@ -1285,7 +1317,9 @@ class _TalentInterviewInviteSheetState
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${_stageTypeLabels[item.stageType] ?? '面试'} · ${item.durationConfigured ? '${item.duration}分钟' : '时长缺失'}',
+                      isExam
+                          ? '在线笔试 · 由笔试安排管理'
+                          : '${_stageTypeLabels[item.stageType] ?? '面试'} · ${item.durationConfigured ? '${item.duration}分钟' : '时长缺失'}',
                       style: const TextStyle(
                         color: AppColors.textMuted,
                         fontSize: 12,
@@ -1293,7 +1327,9 @@ class _TalentInterviewInviteSheetState
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _scheduleLabel(item),
+                      isExam
+                          ? (arranged ? '历史笔试安排（只读）' : '由笔试安排统一管理')
+                          : _scheduleLabel(item),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1308,7 +1344,9 @@ class _TalentInterviewInviteSheetState
                 ),
               ),
               const SizedBox(width: 8),
-              if (arranged)
+              if (isExam)
+                const _StatusTag(text: '只读')
+              else if (arranged)
                 const _StatusTag(text: '已安排')
               else
                 Container(
@@ -1798,355 +1836,6 @@ class _TalentInterviewInviteSheetState
     final wall = TalentUtc8.wallTime(instant);
     return '${wall.hour.toString().padLeft(2, '0')}:${wall.minute.toString().padLeft(2, '0')}';
   }
-
-  static const _pxPerHour = 56.0;
-
-  /// 24 小时时间轴：点击选择开始时间（15 分钟粒度，允许跨天），
-  /// 与下方「面试时间设置」卡片共用同一份开始时间状态。
-  Widget _timeline() {
-    final stage = _current;
-    final rows = stage == null
-        ? const <Map<String, dynamic>>[]
-        : _rowsOnDay(_day);
-    final lanes = <int, int>{};
-    final laneEnds = <DateTime>[];
-    for (final row in rows) {
-      final start = TalentUtc8.parseServer(row['startTime'])!;
-      var lane = laneEnds.indexWhere((end) => !end.isAfter(start));
-      if (lane < 0) {
-        lane = laneEnds.length;
-        laneEnds.add(TalentUtc8.parseServer(row['endTime'])!);
-      } else {
-        laneEnds[lane] = TalentUtc8.parseServer(row['endTime'])!;
-      }
-      lanes[talentId(row['appointmentId'])!] = lane;
-    }
-    final busySlots = <Map<String, dynamic>>[];
-    if (_availability.isNotEmpty) {
-      for (final slot in _availability) {
-        if (int.tryParse('${slot['status']}') != 0) continue;
-        final a = TalentUtc8.parseServer(slot['startTime']);
-        final b = TalentUtc8.parseServer(slot['endTime']);
-        if (a == null || b == null) continue;
-        final overlapsEvent = rows.any((row) {
-          final ra = TalentUtc8.parseServer(row['startTime'])!;
-          final rb = TalentUtc8.parseServer(row['endTime'])!;
-          return TalentUtc8.overlaps(a, b, ra, rb);
-        });
-        if (!overlapsEvent) busySlots.add(slot);
-      }
-    }
-    final laneCount = math.max(1, laneEnds.length);
-    final dayStart = TalentUtc8.fromSelection(_day, 0, 0);
-    final dayEnd = dayStart.add(const Duration(days: 1));
-    final slotStart = stage?.start;
-    final slotEnd = stage?.end;
-    final conflict = _currentConflict;
-    final visibleStart = slotStart == null
-        ? null
-        : slotStart.isBefore(dayStart)
-        ? dayStart
-        : slotStart;
-    final visibleEnd = slotEnd == null
-        ? null
-        : slotEnd.isAfter(dayEnd)
-        ? dayEnd
-        : slotEnd;
-    final selectionVisible =
-        visibleStart != null &&
-        visibleEnd != null &&
-        visibleStart.isBefore(visibleEnd);
-    final slotTop = !selectionVisible
-        ? null
-        : visibleStart.difference(dayStart).inMinutes * _pxPerHour / 60;
-    final slotHeight = !selectionVisible
-        ? 0.0
-        : visibleEnd.difference(visibleStart).inMinutes * _pxPerHour / 60;
-    final readOnly =
-        stage?.appointment != null && !_editable(stage!.appointment!);
-    return Container(
-      key: const Key('invite-timeline'),
-      height: 420,
-      decoration: BoxDecoration(
-        color: AppColors.canvas,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.hairline),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Scrollbar(
-        controller: _timelineScroll,
-        child: SingleChildScrollView(
-          controller: _timelineScroll,
-          child: SizedBox(
-            height: 24 * _pxPerHour,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final width = math.max(
-                  constraints.maxWidth,
-                  46 + laneCount * 118.0,
-                );
-                final columnWidth = (width - 46) / laneCount;
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: width,
-                    height: 24 * _pxPerHour,
-                    child: Stack(
-                      children: [
-                        if (!readOnly)
-                          Positioned(
-                            left: 46,
-                            top: 0,
-                            right: 0,
-                            bottom: 0,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTapUp: (details) {
-                                final minutes =
-                                    ((details.localPosition.dy /
-                                                _pxPerHour *
-                                                60) /
-                                            15)
-                                        .floor() *
-                                    15;
-                                if (minutes < 0) return;
-                                final clamped = math.min(minutes, 24 * 60 - 15);
-                                _selectSlot(_day, clamped ~/ 60, clamped % 60);
-                              },
-                              child: const ColoredBox(
-                                color: Colors.transparent,
-                              ),
-                            ),
-                          ),
-                        for (var hour = 0; hour < 24; hour++) ...[
-                          Positioned(
-                            top: hour * _pxPerHour,
-                            left: 0,
-                            width: 42,
-                            child: Text(
-                              '${hour.toString().padLeft(2, '0')}:00',
-                              style: const TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            top: hour * _pxPerHour,
-                            left: 46,
-                            right: 0,
-                            child: const Divider(
-                              height: 1,
-                              color: AppColors.hairline,
-                            ),
-                          ),
-                        ],
-                        for (final slot in busySlots)
-                          _busyBlock(slot, dayStart, dayEnd, columnWidth),
-                        for (final row in rows)
-                          _eventBlock(
-                            row,
-                            lanes[talentId(row['appointmentId'])!]!,
-                            columnWidth,
-                            dayStart,
-                            dayEnd,
-                          ),
-                        if (slotTop != null &&
-                            slotStart != null &&
-                            selectionVisible)
-                          _selectionBlock(
-                            slotTop,
-                            slotHeight,
-                            conflict != null,
-                            slotStart.isBefore(dayStart),
-                            slotEnd!.isAfter(dayEnd),
-                            TalentUtc8.serverTime(slotStart).substring(11, 16),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  late final ScrollController _timelineScroll = ScrollController(
-    initialScrollOffset:
-        (_wallNow().hour * 60 + _wallNow().minute - 60).clamp(0, 20 * 60) *
-        _pxPerHour /
-        60,
-  );
-
-  @override
-  void dispose() {
-    _timelineScroll.dispose();
-    super.dispose();
-  }
-
-  Widget _busyBlock(
-    Map<String, dynamic> slot,
-    DateTime dayStart,
-    DateTime dayEnd,
-    double columnWidth,
-  ) {
-    final start = TalentUtc8.parseServer(slot['startTime'])!;
-    final end = TalentUtc8.parseServer(slot['endTime'])!;
-    final visibleStart = start.isBefore(dayStart) ? dayStart : start;
-    final visibleEnd = end.isAfter(dayEnd) ? dayEnd : end;
-    final top = visibleStart.difference(dayStart).inMinutes * _pxPerHour / 60;
-    final height = math.max(
-      4.0,
-      visibleEnd.difference(visibleStart).inMinutes * _pxPerHour / 60,
-    );
-    return Positioned(
-      top: top,
-      left: 48,
-      width: columnWidth * 2 - 8,
-      height: height,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          color: AppColors.dangerSoft,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: AppColors.error.withValues(alpha: .4)),
-        ),
-        child: const Center(
-          child: Text(
-            '面试官占用',
-            style: TextStyle(color: AppColors.error, fontSize: 10),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _eventBlock(
-    Map<String, dynamic> row,
-    int lane,
-    double columnWidth,
-    DateTime dayStart,
-    DateTime dayEnd,
-  ) {
-    final start = TalentUtc8.parseServer(row['startTime'])!;
-    final end = TalentUtc8.parseServer(row['endTime'])!;
-    final visibleStart = start.isBefore(dayStart) ? dayStart : start;
-    final visibleEnd = end.isAfter(dayEnd) ? dayEnd : end;
-    final top = visibleStart.difference(dayStart).inMinutes * _pxPerHour / 60;
-    final height = math.max(
-      4.0,
-      visibleEnd.difference(visibleStart).inMinutes * _pxPerHour / 60,
-    );
-    final label =
-        '${talentText(row['candidateName'], '候选人')} · ${talentText(row['stageName'], '面试')}';
-    return Positioned(
-      top: top,
-      left: 48 + lane * columnWidth,
-      width: columnWidth - 6,
-      height: height,
-      child: Container(
-        key: ValueKey('invite-event-${row['appointmentId']}'),
-        margin: const EdgeInsets.only(right: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: AppColors.primarySoft,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: AppColors.interactive.withValues(alpha: .5),
-          ),
-        ),
-        child: height >= 40
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${_rangeLabel(row)}\n$label',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.interactive,
-                      fontSize: 10,
-                      height: 1.3,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (height >= 64)
-                    Text(
-                      talentText(row['positionTitle'], ''),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.interactive,
-                        fontSize: 10,
-                      ),
-                    ),
-                ],
-              )
-            : Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _rangeLabel(row),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.interactive,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-      ),
-    );
-  }
-
-  /// 当前所选时段的可见部分：跨天选择在次日显示延续块。
-  Widget _selectionBlock(
-    double top,
-    double height,
-    bool conflict,
-    bool continuesFromYesterday,
-    bool continuesToTomorrow,
-    String startLabel,
-  ) => Positioned(
-    top: top,
-    left: 48,
-    right: 2,
-    height: height,
-    child: IgnorePointer(
-      child: CustomPaint(
-        key: const Key('invite-selection'),
-        painter: _DashedRectPainter(
-          color: conflict ? AppColors.error : AppColors.teal,
-        ),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          color: (conflict ? AppColors.dangerSoft : AppColors.tealSoft)
-              .withValues(alpha: .75),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              height >= 24
-                  ? continuesFromYesterday
-                        ? '跨日延续（已选 $startLabel 开始）'
-                        : '已选 $startLabel 开始${continuesToTomorrow ? ' · 延续至次日' : ''}'
-                  : '',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: conflict ? AppColors.error : AppColors.tealDeep,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
 
   /// 「面试时间设置」卡片：手动选择日期与开始时间，时长只读，
   /// 结束时间按开始时间 + 阶段配置时长自动计算。
@@ -2982,36 +2671,4 @@ class _InterviewerSheetState extends State<_InterviewerSheet> {
       ),
     );
   }
-}
-
-class _DashedRectPainter extends CustomPainter {
-  const _DashedRectPainter({required this.color});
-  final Color color;
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.6
-      ..style = PaintingStyle.stroke;
-    const dash = 6.0, gap = 4.0;
-    final radius = Radius.circular(size.width > 0 ? 8 : 0);
-    final rect = Offset.zero & size;
-    final path = Path()..addRRect(RRect.fromRectAndRadius(rect, radius));
-    final metrics = path.computeMetrics().first;
-    var distance = 0.0;
-    while (distance < metrics.length) {
-      canvas.drawPath(
-        metrics.extractPath(
-          distance,
-          math.min(distance + dash, metrics.length),
-        ),
-        paint,
-      );
-      distance += dash + gap;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedRectPainter oldDelegate) =>
-      oldDelegate.color != color;
 }

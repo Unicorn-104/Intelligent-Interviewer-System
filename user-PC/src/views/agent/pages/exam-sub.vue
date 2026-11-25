@@ -1,4 +1,5 @@
 <template>
+  <div class="candidate-page--exam-sub">
   <div class="sub">
     <header class="sub-head">
       <strong>笔试副机位</strong>
@@ -28,6 +29,7 @@
     </main>
 
     <footer class="sub-foot">© 2026 企业级智能招聘面试官 Agent 系统</footer>
+  </div>
   </div>
 </template>
 
@@ -134,7 +136,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-:global(body){margin:0;background:#0F1722;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+:where(.candidate-page--exam-sub){margin:0;background:#0F1722;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
 .sub{min-height:100vh;display:flex;flex-direction:column;color:#E6EDF6}
 .sub-head{padding:14px 16px;display:flex;flex-direction:column;gap:3px;border-bottom:1px solid #223047}
 .sub-head strong{font-size:14px}
@@ -150,7 +152,7 @@ onBeforeUnmount(() => {
 .sub-card.err p{margin:0 0 16px}
 .sub-card.err button{height:34px;padding:0 20px;border:0;border-radius:8px;color:#fff;background:#2B7FFF;font-size:12px;font-weight:700;cursor:pointer}
 .sub-status{display:flex;align-items:center;gap:8px;margin-top:14px;color:#3DD68C;font-size:12px}
-.dot{width:8px;height:8px;border-radius:50%;background:#3DD68C;animation:blink 1.6s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.dot{width:8px;height:8px;border-radius:50%;background:#3DD68C;animation:candidate-page--exam-sub-blink 1.6s infinite}
+@keyframes candidate-page--exam-sub-blink{0%,100%{opacity:1}50%{opacity:.3}}
 .sub-foot{padding:12px;text-align:center;color:#4C5B70;font-size:10px}
 </style>

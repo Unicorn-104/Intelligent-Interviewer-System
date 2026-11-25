@@ -56,7 +56,25 @@ Map<String, dynamic> interview({
 };
 
 void main() {
-  testWidgets('单页整合：阶段列表、日历、时间轴与面试时间设置同屏展示', (tester) async {
+  testWidgets('在线笔试阶段在邀请面试页只读显示并禁止设置面试时间', (tester) async {
+    final source = TalentFakeSource()
+      ..workflow = {
+        'template': {'name': '笔试流程'},
+        'stages': [
+          {'stageId': 31, 'name': '在线笔试', 'type': 1},
+        ],
+      };
+    await openInvite(tester, source);
+    expect(find.byKey(const Key('invite-exam-readonly')), findsOneWidget);
+    expect(find.byKey(const Key('invite-time-editor')), findsNothing);
+    expect(
+      tester.widget<FilledButton>(find.byKey(const Key('invite-submit'))).onPressed,
+      isNull,
+    );
+    expect(source.stageInvites, isEmpty);
+  });
+
+  testWidgets('单页整合：阶段列表、日历、推荐时段与面试时间设置同屏展示', (tester) async {
     final source = TalentFakeSource();
     await openInvite(tester, source);
     expect(find.text('邀请面试'), findsOneWidget);
@@ -70,11 +88,11 @@ void main() {
     expect(find.text('91'), findsOneWidget);
     expect(find.byKey(const Key('invite-stage-0')), findsOneWidget);
     expect(find.text('招聘流程阶段（1）'), findsOneWidget);
-    expect(find.textContaining('在线笔试 · 45分钟'), findsOneWidget);
+    expect(find.textContaining('HR 综合面试 · 45分钟'), findsOneWidget);
     expect(find.text('待安排面试时间'), findsOneWidget);
     expect(find.byKey(const Key('invite-week-strip')), findsOneWidget);
     expect(find.text('查看排期，避免冲突'), findsOneWidget);
-    expect(find.byKey(const Key('invite-timeline')), findsOneWidget);
+    expect(find.byKey(const Key('invite-timeline')), findsNothing);
     expect(find.byKey(const Key('invite-time-editor')), findsOneWidget);
     expect(find.text('面试时间设置'), findsOneWidget);
     expect(find.text('45分钟 · 来自岗位招聘流程配置'), findsOneWidget);
@@ -101,7 +119,7 @@ void main() {
           {
             'stageId': 31,
             'name': '在线笔试',
-            'type': 1,
+            'type': 3,
             'configJson': '{"duration":40}',
           },
         ],
@@ -129,7 +147,7 @@ void main() {
           {
             'stageId': 31,
             'name': '在线笔试',
-            'type': 1,
+            'type': 3,
             'configJson': '{"duration":40}',
           },
         ],
@@ -141,7 +159,7 @@ void main() {
     expect(find.text('2027-01-02 00:20'), findsOneWidget);
     expect(find.byKey(const Key('invite-cross-day')), findsOneWidget);
     expect(find.text('跨天面试'), findsOneWidget);
-    // 次日日历：当天列表显示延续部分，时间轴显示跨日延续块。
+    // 次日日历：当天列表显示跨日延续部分。
     final day2 = find.byKey(const Key('invite-week-day-5'));
     await tester.ensureVisible(day2);
     await tester.tap(day2);
@@ -152,7 +170,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('点击时间轴自动同步手动时间设置区（同一份状态）', (tester) async {
+  testWidgets('手动选择开始时间写入当前阶段并同步日期卡片', (tester) async {
     final source = TalentFakeSource();
     await openInvite(tester, source);
     await fillTalentInvite(tester, hour: 9, minute: 30);
@@ -190,7 +208,7 @@ void main() {
     await tester.tap(find.byKey(const Key('invite-week-day-2')));
     await tester.pumpAndSettle();
     expect(find.textContaining('12月30日 · 1场面试'), findsOneWidget);
-    // 当天列表与时间轴事件块各展示一次。
+    // 当天列表展示 1 次面试记录。
     expect(find.textContaining('23:40–00:20'), findsWidgets);
     expect(find.textContaining('其他候选人'), findsOneWidget);
   });
@@ -262,7 +280,7 @@ void main() {
           {
             'stageId': 31,
             'name': '在线笔试',
-            'type': 1,
+            'type': 3,
             'configJson': '{"duration":40}',
           },
         ],
@@ -287,7 +305,7 @@ void main() {
           {
             'stageId': 31,
             'name': '在线笔试',
-            'type': 1,
+            'type': 3,
             'required': 1,
             'configJson': '{"duration":30}',
           },
@@ -318,7 +336,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('09:30'), findsOneWidget);
     expect(find.text('30分钟 · 来自岗位招聘流程配置'), findsOneWidget);
-    // 再回第二阶段：11:00 仍在（时间轴小时刻度也有「11:00」，限定在时间设置卡片内断言）。
+    // 再回第二阶段：11:00 仍在。
     final stage1Again = find.byKey(const Key('invite-stage-1'));
     await tester.ensureVisible(stage1Again);
     await tester.tap(stage1Again);
@@ -365,7 +383,7 @@ void main() {
       ..workflow = {
         'template': {'name': '合成流程'},
         'stages': [
-          {'stageId': 31, 'name': '在线笔试', 'type': 1},
+          {'stageId': 31, 'name': '在线笔试', 'type': 3},
         ],
       };
     await openInvite(tester, source);
@@ -393,7 +411,7 @@ void main() {
     expect(find.byKey(const Key('invite-confirm-candidate')), findsOneWidget);
     expect(find.text('面试安排汇总'), findsOneWidget);
     expect(find.byKey(const Key('invite-confirm-stage-0')), findsOneWidget);
-    expect(find.textContaining('面试方式：在线笔试'), findsOneWidget);
+    expect(find.textContaining('面试方式：HR 综合面试'), findsOneWidget);
     expect(find.textContaining('2027-01-01 09:30'), findsOneWidget);
     expect(find.textContaining('2027-01-01 10:15'), findsOneWidget);
     expect(find.textContaining('时长 45 分钟'), findsOneWidget);
@@ -421,7 +439,7 @@ void main() {
           {
             'stageId': 31,
             'name': '在线笔试',
-            'type': 1,
+            'type': 3,
             'configJson': '{"duration":30}',
           },
           {
@@ -488,7 +506,7 @@ void main() {
           {
             'stageId': 31,
             'name': '在线笔试',
-            'type': 1,
+            'type': 3,
             'configJson': '{"duration":30}',
           },
         ],
@@ -702,9 +720,6 @@ void main() {
     testWidgets('邀请面试弹窗在 $size 及键盘场景下无溢出', (tester) async {
       await openInvite(tester, TalentFakeSource());
       tester.view.physicalSize = size;
-      await tester.pumpAndSettle();
-      final timeline = find.byKey(const Key('invite-timeline'));
-      await tester.ensureVisible(timeline);
       await tester.pumpAndSettle();
       final editor = find.byKey(const Key('invite-time-editor'));
       await tester.ensureVisible(editor);

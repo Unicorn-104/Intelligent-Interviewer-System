@@ -40,24 +40,41 @@ public class AiAgentMonitorController extends BaseController {
         return AjaxResult.success(res);
     }
 
-    /** 事件列表 */
+    /** 单页上限，防止前端误传超大 pageSize 再次拖垮页面 */
+    private static final int MAX_PAGE_SIZE = 200;
+
+    /** 事件列表：JdbcTemplate 不经过 PageHelper，必须手动 COUNT + LIMIT/OFFSET，否则会全量返回拖垮页面。 */
     @GetMapping("/list")
     public TableDataInfo list(@RequestParam(required = false) String eventType,
-                             @RequestParam(required = false) String keyword) {
-        startPage();
-        StringBuilder sql = new StringBuilder("SELECT id, run_id, event_type, LEFT(data_json, 500) AS data_preview, created_at FROM t_capp_ai_event WHERE 1=1");
+                             @RequestParam(required = false) String keyword,
+                             @RequestParam(required = false) Integer pageNum,
+                             @RequestParam(required = false) Integer page,
+                             @RequestParam(required = false) Integer pageSize) {
+        int pn = pageNum != null ? pageNum : (page != null ? page : 1);
+        int ps = pageSize != null ? pageSize : 20;
+        pn = Math.max(pn, 1);
+        ps = Math.min(Math.max(ps, 1), MAX_PAGE_SIZE);
+        StringBuilder where = new StringBuilder(" FROM t_capp_ai_event WHERE 1=1");
         List<Object> args = new java.util.ArrayList<>();
         if (eventType != null && !eventType.isEmpty()) {
-            sql.append(" AND event_type=?");
+            where.append(" AND event_type=?");
             args.add(eventType);
         }
         if (keyword != null && !keyword.isEmpty()) {
-            sql.append(" AND data_json LIKE ?");
+            where.append(" AND data_json LIKE ?");
             args.add("%" + keyword + "%");
         }
-        sql.append(" ORDER BY id DESC");
-        List<Map<String, Object>> list = jdbc.queryForList(sql.toString(), args.toArray());
-        return getDataTable(list);
+        Long total = jdbc.queryForObject("SELECT COUNT(*)" + where, Long.class, args.toArray());
+        List<Object> limitArgs = new java.util.ArrayList<>(args);
+        limitArgs.add(ps);
+        limitArgs.add((long) (pn - 1) * ps);
+        List<Map<String, Object>> list = jdbc.queryForList(
+                "SELECT id, run_id, event_type, LEFT(data_json, 500) AS data_preview, created_at"
+                        + where + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                limitArgs.toArray());
+        TableDataInfo rsp = getDataTable(list);
+        rsp.setTotal(total == null ? 0L : total);
+        return rsp;
     }
 
     /** 按 run_id 查完整事件链 */

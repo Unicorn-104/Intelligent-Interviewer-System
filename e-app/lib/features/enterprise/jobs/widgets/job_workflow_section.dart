@@ -199,15 +199,16 @@ class _WorkflowEditorState extends State<_WorkflowEditor> {
       return;
     }
     for (final stage in _stages) {
+      final isExam = stage.type == 1;
       final duration = int.tryParse(stage.duration.text);
       final threshold = int.tryParse(stage.threshold.text);
+      final durationInvalid =
+          !isExam && (duration == null || duration < 1 || duration > 1440);
+      final thresholdInvalid =
+          threshold == null || threshold < (isExam ? 1 : 0) || threshold > 100;
       if (stage.name.text.trim().isEmpty ||
-          duration == null ||
-          duration < 1 ||
-          duration > 1440 ||
-          threshold == null ||
-          threshold < 0 ||
-          threshold > 100) {
+          durationInvalid ||
+          thresholdInvalid) {
         setState(() => _error = '请编辑并完善「${stage.name.text.trim()}」的阶段设置');
         return;
       }

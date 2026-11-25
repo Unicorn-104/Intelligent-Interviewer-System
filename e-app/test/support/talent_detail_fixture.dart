@@ -92,8 +92,8 @@ class TalentFakeSource extends TalentDetailDataSource {
     'stages': [
       {
         'stageId': 31,
-        'name': '在线笔试',
-        'type': 1,
+        'name': 'HR 综合面试',
+        'type': 3,
         'configJson': '{"duration":45}',
       },
     ],
@@ -345,8 +345,8 @@ Future<void> scrollTalentTo(
   await tester.pumpAndSettle();
 }
 
-/// 通过时间轴点选开始时间（目标行位于视口顶部 1 小时处），
-/// 单页模式下无需额外保存步骤，时间直接写入当前阶段。
+/// 通过「面试时间设置」入口填写开始时间，单页模式下无需额外保存步骤，
+/// 时间直接写入当前阶段。
 Future<void> fillTalentInvite(
   WidgetTester tester, {
   int hour = 9,
@@ -373,25 +373,10 @@ Future<void> fillTalentInvite(
     await tester.tap(find.byKey(const Key('interviewer-confirm')));
     await tester.pumpAndSettle();
   }
-  // 时间轴点选开始时间。
-  final timeline = find.byKey(const Key('invite-timeline'));
-  await tester.ensureVisible(timeline);
-  await tester.pumpAndSettle();
-  final scrollable = find
-      .descendant(of: timeline, matching: find.byType(Scrollable))
-      .first;
-  tester
-      .state<ScrollableState>(scrollable)
-      .position
-      .jumpTo((hour * 60 + minute - 60) * 56 / 60);
-  await tester.pumpAndSettle();
-  final rect = tester.getRect(timeline);
-  await tester.tapAt(Offset(rect.left + 120, rect.top + 58));
-  await tester.pumpAndSettle();
+  await pickInviteTimeField(tester, hour, minute);
 }
 
-/// 通过「面试时间设置」的手动开始时间入口，用时间选择器的文本输入模式设置时间
-/// （时间轴点击难以覆盖深夜时段，跨天用例使用此入口）。
+/// 通过「面试时间设置」的手动开始时间入口，用时间选择器的文本输入模式设置时间。
 Future<void> pickInviteTimeField(
   WidgetTester tester,
   int hour,

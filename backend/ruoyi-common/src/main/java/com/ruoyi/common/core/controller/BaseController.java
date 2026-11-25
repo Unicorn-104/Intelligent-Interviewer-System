@@ -1,12 +1,14 @@
 package com.ruoyi.common.core.controller;
 
 import java.beans.PropertyEditorSupport;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.InitBinder;
+import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import com.ruoyi.common.constant.HttpStatus;
@@ -78,6 +80,10 @@ public class BaseController
 
     /**
      * 响应请求分页数据
+     *
+     * 兼容 JdbcTemplate 查询：PageHelper 只拦截 MyBatis，startPage() 之后若走 JdbcTemplate，
+     * 拿到的是全量结果。此处按线程中的分页参数切出当前页（total 取全量），并清理线程变量，
+     * 避免分页参数泄漏到同线程后续的 MyBatis 查询。
      */
     @SuppressWarnings({ "rawtypes", "unchecked" })
     protected TableDataInfo getDataTable(List<?> list)
@@ -85,6 +91,19 @@ public class BaseController
         TableDataInfo rspData = new TableDataInfo();
         rspData.setCode(HttpStatus.SUCCESS);
         rspData.setMsg("查询成功");
+        Page local = PageHelper.getLocalPage();
+        if (local != null && !(list instanceof Page))
+        {
+            PageHelper.clearPage();
+            int total = list == null ? 0 : list.size();
+            int from = Math.max(0, (local.getPageNum() - 1) * local.getPageSize());
+            List<?> rows = list == null || from >= total
+                    ? new ArrayList<>()
+                    : new ArrayList<>(list.subList(from, Math.min(from + local.getPageSize(), total)));
+            rspData.setRows(rows);
+            rspData.setTotal(total);
+            return rspData;
+        }
         rspData.setRows(list);
         rspData.setTotal(new PageInfo(list).getTotal());
         return rspData;

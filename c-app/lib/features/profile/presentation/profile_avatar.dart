@@ -66,7 +66,7 @@ class _AvatarFallback extends StatelessWidget {
       radius: radius,
       backgroundColor: backgroundColor,
       child: Text(
-        value.isEmpty ? '用' : value.substring(0, 1).toUpperCase(),
+        value.isEmpty ? '用' : value.characters.first.toUpperCase(),
         style: TextStyle(
           color: foregroundColor ?? Theme.of(context).colorScheme.primary,
           fontSize: radius * 0.7,

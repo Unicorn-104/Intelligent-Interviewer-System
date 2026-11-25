@@ -21,6 +21,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                date_format(s.esd_start_at, '%Y-%m-%d %H:%i') as startAt,
                date_format(s.esd_end_at, '%Y-%m-%d %H:%i') as endAt,
                s.esd_status as status, s.esd_max_attempts as maxAttempts,
+               s.esd_stage_id as stageId, s.esd_template_version as templateVersion,
                r.erc_id as recordId, r.erc_status as recordStatus,
                date_format(r.erc_start_at, '%Y-%m-%d %H:%i') as recordStartAt,
                date_format(r.erc_submit_at, '%Y-%m-%d %H:%i') as recordSubmitAt,
@@ -29,8 +30,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         join t_exam_paper p on p.epa_id = s.esd_paper_id
         join t_pos pos on pos.pos_id = s.esd_position_id
         join t_tal t on t.tal_user_id = #{userId}
-        join t_app_record a on a.app_position_id = s.esd_position_id
-            and a.app_candidate_id = t.tal_id
+        join t_exam_schedule_candidate ec on ec.esc_schedule_id = s.esd_id
+            and ec.esc_candidate_id = t.tal_id and ec.esc_revoked_at is null
+        join t_app_record a on a.app_id = ec.esc_application_id
         left join t_exam_record r on r.erc_schedule_id = s.esd_id
             and r.erc_candidate_id = t.tal_id
         order by s.esd_start_at desc, s.esd_id desc
@@ -44,6 +46,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                date_format(s.esd_start_at, '%Y-%m-%d %H:%i:%s') as startAt,
                date_format(s.esd_end_at, '%Y-%m-%d %H:%i:%s') as endAt,
                s.esd_status as status, s.esd_max_attempts as maxAttempts,
+               s.esd_stage_id as stageId, s.esd_template_version as templateVersion,
                s.esd_pass_threshold as passThreshold,
                s.esd_force_dual_camera as forceDualCamera,
                s.esd_submit_rule_json as submitRule,
@@ -53,8 +56,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         join t_exam_paper p on p.epa_id = s.esd_paper_id
         join t_pos pos on pos.pos_id = s.esd_position_id
         join t_tal t on t.tal_user_id = #{userId}
-        join t_app_record a on a.app_position_id = s.esd_position_id
-            and a.app_candidate_id = t.tal_id
+        join t_exam_schedule_candidate ec on ec.esc_schedule_id = s.esd_id
+            and ec.esc_candidate_id = t.tal_id and ec.esc_revoked_at is null
+        join t_app_record a on a.app_id = ec.esc_application_id
         left join t_exam_record r on r.erc_schedule_id = s.esd_id
             and r.erc_candidate_id = t.tal_id
         where s.esd_id = #{scheduleId}

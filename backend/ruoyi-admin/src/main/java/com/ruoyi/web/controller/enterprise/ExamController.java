@@ -257,6 +257,14 @@ public class ExamController extends BaseController
         return success("已取消");
     }
 
+    /** 将候选人加入笔试场次；重复加入保持幂等。 */
+    @PostMapping("/schedules/{scheduleId}/candidates")
+    public AjaxResult assignCandidates(@PathVariable("scheduleId") Long scheduleId,
+            @RequestBody Map<String, Object> body)
+    {
+        return success(examService.assignCandidates(getUserId(), scheduleId, body));
+    }
+
     // ==================== 笔试通知 ====================
 
     /** 保存笔试通知配置（渠道 email/inapp、标题/正文模板、考试入口地址） */

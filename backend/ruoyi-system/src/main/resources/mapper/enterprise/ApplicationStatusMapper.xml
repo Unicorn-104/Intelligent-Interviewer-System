@@ -19,6 +19,13 @@
         from t_app_record where app_id = #{appId}
     </select>
 
+    <select id="selectCurrentStageId" resultType="java.lang.Long">
+        select pin_current_stage_id
+        from t_process_instance pi
+        join t_app_record a on a.app_process_instance_id = pi.pin_id
+        where a.app_id = #{appId}
+    </select>
+
     <!-- 守卫更新：where 限定当前状态，配合行锁实现并发保护与终态保护 -->
     <update id="updateAppStatus">
         update t_app_record

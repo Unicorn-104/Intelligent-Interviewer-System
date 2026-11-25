@@ -5,6 +5,21 @@ export function normalizeSavedJobIds(values) {
     .map(value => String(BigInt(value))))]
 }
 
+export async function fetchSavedJobIds(listFavorites) {
+  const ids = []
+  let page = 1
+  while (true) {
+    const response = await listFavorites({ page, size: 100 })
+    const data = response.data
+    if (!Array.isArray(data?.items)) throw new Error('收藏数据格式异常，请重试')
+    ids.push(...data.items.map(job => job.positionId))
+    const hasNext = data.hasNext === true || Number(data.total) > page * 100
+    if (!hasNext) return normalizeSavedJobIds(ids)
+    if (!data.items.length) throw new Error('收藏分页数据异常，请重试')
+    page++
+  }
+}
+
 export function sortSavedJobItems(items, sort) {
   return [...items].sort((first, second) => {
     const score = sort === 'salary' ? Number(second.salaryMax ?? -1) - Number(first.salaryMax ?? -1)

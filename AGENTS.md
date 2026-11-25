@@ -1,5 +1,15 @@
 # Project Memory
 
+## 最近增量分功能交付（2026-11-24）
+
+- 用户指定缩写 `MZR`；固定采用 `feature/* -> dev -> main`。远端已有 dev/main，本轮各 feature 均从同步后的 `origin/dev` 创建，保留原始脏工作区，使用独立 worktree。
+- 本轮将“最近开发的都上传”按完整功能拆分：消息与聊天 `feature/capp-message-experience-MZR`、面试体验 `feature/capp-interview-experience-MZR`、投递简历关联 `feature/capp-application-resume-link-MZR`、记忆设置 `feature/capp-memory-settings-MZR`；知识库存储兼容修复 `feature/capp-knowledge-storage-compatibility-MZR`；规范更新在 `feature/governance-recent-delivery-MZR`。
+- 每个可独立理解、验证和回滚的子功能分别 Conventional Commit，每个完整功能统一一个 PR 到 dev。详细范围、提交顺序、验证、配置与回滚见 [最近增量交付规范](c-app/提交与发布规范.md#最近增量分功能交付2026-11-24)。
+- 已合入的 RAG、游客登录、RustFS、旧版面试实现不重复提交。逐项保留最新 dev 的企业独立简历快照、游客搜索、资源地址校验和面试报告失败处理，不用旧文件覆盖新实现。
+- 排除历史 SQL 删除、本机启动脚本/配置/证书、模拟岗位与业务数据、凭据、日志、APK、缓存和其他端。此次不部署、不批量改业务记录、不清理原目录。
+- 授权覆盖创建、提交、推送这些 feature 及各自 PR；不包含代替人工 Review 合并、直接推送 dev/main、推进 main、打标签或生产发布。自动检查与设备/跨端验收分别记录，未完成验收保持 Draft。
+
+
 ## E-App 多面试官与多人会议交付（2026-11-23）
 
 - 本轮功能为「邀请面试多选面试官 + 多人视频会议」，范围仅 `backend/` 与 `e-app/`；不修改 `c-app`、企业 PC 等其他端。继续使用现有功能分支 `feature/eapp-core-services-zx`，按 `feature/* -> dev -> main` 流转。

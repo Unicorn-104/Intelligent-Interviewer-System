@@ -284,6 +284,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                date_format(s.esd_start_at, '%Y-%m-%d %H:%i') as startAt,
                date_format(s.esd_end_at, '%Y-%m-%d %H:%i') as endAt,
                s.esd_max_attempts as maxAttempts, s.esd_pass_threshold as passThreshold,
+               s.esd_stage_id as stageId, s.esd_template_version as templateVersion,
+               s.esd_stage_snapshot_json as stageSnapshotJson,
                s.esd_force_dual_camera as forceDualCamera,
                s.esd_dual_camera_config_json as dualCameraConfig, s.esd_submit_rule_json as submitRule,
                s.esd_notify_config_json as notifyConfig, s.esd_auto_flow_json as autoFlow,
@@ -309,6 +311,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                date_format(s.esd_start_at, '%Y-%m-%d %H:%i') as startAt,
                date_format(s.esd_end_at, '%Y-%m-%d %H:%i') as endAt,
                s.esd_max_attempts as maxAttempts, s.esd_pass_threshold as passThreshold,
+               s.esd_stage_id as stageId, s.esd_template_version as templateVersion,
+               s.esd_stage_snapshot_json as stageSnapshotJson,
                s.esd_force_dual_camera as forceDualCamera,
                s.esd_dual_camera_config_json as dualCameraConfig, s.esd_submit_rule_json as submitRule,
                s.esd_notify_config_json as notifyConfig, s.esd_auto_flow_json as autoFlow,
@@ -322,11 +326,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <insert id="insertSchedule">
         insert into t_exam_schedule
             (esd_position_id, esd_paper_id, esd_start_at, esd_end_at, esd_max_attempts,
-             esd_pass_threshold, esd_force_dual_camera, esd_dual_camera_config_json,
+             esd_pass_threshold, esd_stage_id, esd_template_version, esd_stage_snapshot_json,
+             esd_force_dual_camera, esd_dual_camera_config_json,
              esd_submit_rule_json, esd_auto_flow_json, esd_status)
         values
             (#{positionId}, #{paperId}, #{startAt}, #{endAt}, #{maxAttempts},
-             #{passThreshold}, #{forceDualCamera}, #{dualCameraConfig},
+            #{passThreshold}, #{stageId}, #{templateVersion}, #{stageSnapshotJson},
+            #{forceDualCamera}, #{dualCameraConfig},
              #{submitRule}, #{autoFlow}, 0)
     </insert>
 
@@ -338,6 +344,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update t_exam_schedule
         set esd_paper_id = #{paperId}, esd_start_at = #{startAt}, esd_end_at = #{endAt},
             esd_max_attempts = #{maxAttempts}, esd_pass_threshold = #{passThreshold},
+            esd_stage_id = #{stageId}, esd_template_version = #{templateVersion},
+            esd_stage_snapshot_json = #{stageSnapshotJson},
             esd_force_dual_camera = #{forceDualCamera}, esd_dual_camera_config_json = #{dualCameraConfig},
             esd_submit_rule_json = #{submitRule}, esd_auto_flow_json = #{autoFlow}, esd_updated_at = now()
         where esd_id = #{id}
@@ -361,6 +369,64 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where esd_paper_id = #{paperId} and esd_status in (0, 1)
     </select>
 
+    <select id="countStartedRecords" resultType="int">
+        select count(1) from t_exam_record
+        where erc_schedule_id = #{scheduleId} and erc_start_at is not null
+    </select>
+
+    <select id="selectExamStage" resultType="java.util.LinkedHashMap">
+        select s.psg_id as stageId, s.psg_name as stageName, s.psg_type as stageType,
+               s.psg_sort_order as stageOrder, s.psg_is_required as required,
+               p.pos_process_template_id as templateId, t.ptl_version as templateVersion
+        from t_process_stage s
+        join t_process_template t on t.ptl_id = s.psg_template_id
+        join t_pos p on p.pos_process_template_id = t.ptl_id
+        where p.pos_company_id = #{companyId}
+          and p.pos_id = #{positionId}
+          and s.psg_id = #{stageId}
+          and s.psg_type = 1
+    </select>
+
+    <insert id="upsertScheduleCandidate" parameterType="map">
+        insert into t_exam_schedule_candidate
+            (esc_schedule_id, esc_application_id, esc_candidate_id, esc_process_instance_id,
+             esc_stage_id, esc_template_version, esc_source, esc_assignment_revision, esc_created_by)
+        values (#{scheduleId}, #{applicationId}, #{candidateId}, #{processInstanceId},
+                #{stageId}, #{templateVersion}, #{source}, 1, #{createdBy})
+        on duplicate key update
+            esc_application_id = values(esc_application_id),
+            esc_process_instance_id = values(esc_process_instance_id),
+            esc_stage_id = values(esc_stage_id),
+            esc_template_version = values(esc_template_version),
+            esc_source = values(esc_source),
+            esc_assignment_revision = esc_assignment_revision + 1,
+            esc_assigned_at = now(), esc_revoked_at = null,
+            esc_updated_at = now(), esc_created_by = values(esc_created_by)
+    </insert>
+
+    <select id="countActiveScheduleCandidate" resultType="int">
+        select count(1) from t_exam_schedule_candidate
+        where esc_schedule_id = #{scheduleId} and esc_candidate_id = #{candidateId}
+          and esc_revoked_at is null
+    </select>
+
+    <update id="revokeScheduleCandidate">
+        update t_exam_schedule_candidate
+        set esc_revoked_at = now(), esc_updated_at = now()
+        where esc_schedule_id = #{scheduleId} and esc_candidate_id = #{candidateId}
+          and esc_revoked_at is null
+    </update>
+
+    <update id="markScheduleCandidateNotify" parameterType="map">
+        update t_exam_schedule_candidate
+        set esc_notify_at = case when #{success} = 1 then now() else esc_notify_at end,
+            esc_notify_count = esc_notify_count + 1,
+            esc_last_notify_status = #{status}, esc_last_notify_error = #{error},
+            esc_notify_result_json = #{resultJson}, esc_updated_at = now()
+        where esc_schedule_id = #{scheduleId} and esc_candidate_id = #{candidateId}
+          and esc_revoked_at is null
+    </update>
+
     <!-- ============ 笔试通知（UC 通知配置与发送） ============ -->
 
     <update id="updateScheduleNotifyConfig">
@@ -374,7 +440,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                u.email as email, u.phonenumber as phone,
                date_format(a.app_created_at, '%Y-%m-%d %H:%i') as appliedAt
         from t_exam_schedule s
-        join t_app_record a on a.app_position_id = s.esd_position_id
+        join t_exam_schedule_candidate ec on ec.esc_schedule_id = s.esd_id
+            and ec.esc_revoked_at is null
+        join t_app_record a on a.app_id = ec.esc_application_id
+            and a.app_candidate_id = ec.esc_candidate_id
         join t_tal t on t.tal_id = a.app_candidate_id and t.tal_company_id = #{companyId}
         join sys_user u on u.user_id = t.tal_user_id
         where s.esd_id = #{scheduleId}

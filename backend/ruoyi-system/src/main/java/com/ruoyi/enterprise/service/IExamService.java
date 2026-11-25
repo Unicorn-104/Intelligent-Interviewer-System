@@ -92,6 +92,9 @@ public interface IExamService
     /** 取消考试安排 */
     public void cancelSchedule(Long userId, Long scheduleId);
 
+    /** 加入候选人到考试场次，返回新增/复用/拒绝统计。 */
+    public Map<String, Object> assignCandidates(Long userId, Long scheduleId, Map<String, Object> body);
+
     /** 保存笔试通知配置（渠道/标题/正文模板/考试入口地址） */
     public void saveNotifyConfig(Long userId, Long scheduleId, Map<String, Object> body);
 

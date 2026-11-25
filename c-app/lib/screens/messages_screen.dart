@@ -44,6 +44,8 @@ class _MessagesScreenState extends State<MessagesScreen>
   bool _loading = false, _openingMessage = false;
   int _mutationEpoch = 0;
   Timer? _refreshTimer;
+  Map<String, int> _unreadCounts = {};
+  bool _hasMore = false, _loadingMore = false;
 
   @override
   void initState() {
@@ -88,18 +90,22 @@ class _MessagesScreenState extends State<MessagesScreen>
   }
 
   Future<void> _load({bool silent = false}) async {
-    if (_loading || _markingAllRead || _openingMessage) return;
+    if (_loading || _loadingMore || _markingAllRead || _openingMessage) return;
     _loading = true;
     final epoch = _mutationEpoch;
     if (!silent) setState(() => _error = null);
     try {
-      final messages = await _api.fetchMessages(widget.session.token);
-      if (!mounted || epoch != _mutationEpoch) return;
+      final page = await _api.fetchThreads(widget.session.token);
+      if (!mounted || epoch != _mutationEpoch) {
+        return;
+      }
       setState(() {
-        _messages = messages;
+        _messages = page.items;
+        _hasMore = page.hasMore;
+        _unreadCounts = page.unreadCounts;
         _error = null;
       });
-      _notifyUnread(messages);
+      _notifyUnread();
     } on ApiException catch (error) {
       if (mounted &&
           epoch == _mutationEpoch &&
@@ -111,15 +117,63 @@ class _MessagesScreenState extends State<MessagesScreen>
     }
   }
 
-  void _notifyUnread(List<AppMessage> messages) {
+  void _notifyUnread() {
     widget.onUnreadChanged(
-      messages.fold(0, (total, message) => total + message.unreadCount),
+      _unreadCounts.values.fold(0, (total, count) => total + count),
     );
+  }
+
+  Future<void> _loadMore() async {
+    final messages = _messages;
+    if (_loadingMore ||
+        _loading ||
+        _markingAllRead ||
+        _openingMessage ||
+        !_hasMore ||
+        messages == null ||
+        messages.isEmpty) {
+      return;
+    }
+    setState(() => _loadingMore = true);
+    try {
+      final page = await _api.fetchThreads(
+        widget.session.token,
+        before: messages.last,
+      );
+      if (!mounted) return;
+      final keys = messages
+          .map((item) => '${item.threadType}:${item.threadId}')
+          .toSet();
+      setState(() {
+        _messages = [
+          ...messages,
+          ...page.items.where(
+            (item) => keys.add('${item.threadType}:${item.threadId}'),
+          ),
+        ];
+        _hasMore = page.hasMore;
+        _unreadCounts = page.unreadCounts;
+      });
+      _notifyUnread();
+    } on ApiException catch (error) {
+      if (mounted) {
+        _showSnackBar(error.message);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loadingMore = false);
+      }
+    }
   }
 
   Future<void> _markAllRead() async {
     final messages = _messages;
-    if (messages == null || _markingAllRead || _openingMessage) return;
+    if (messages == null ||
+        _loadingMore ||
+        _markingAllRead ||
+        _openingMessage) {
+      return;
+    }
     _mutationEpoch++;
     setState(() => _markingAllRead = true);
     try {
@@ -129,12 +183,10 @@ class _MessagesScreenState extends State<MessagesScreen>
           .map((message) => message.copyWith(unreadCount: 0))
           .toList();
       setState(() => _messages = updated);
-      _notifyUnread(updated);
-      _showSnackBar(
-        messages.any((message) => message.unreadCount > 0)
-            ? '已将全部消息标记为已读'
-            : '当前没有未读消息',
-      );
+      final hadUnread = _unreadCounts.values.any((count) => count > 0);
+      _unreadCounts = {for (final key in _unreadCounts.keys) key: 0};
+      _notifyUnread();
+      _showSnackBar(hadUnread ? '已将全部消息标记为已读' : '当前没有未读消息');
     } on ApiException catch (error) {
       if (mounted) _showSnackBar(error.message);
     } finally {
@@ -143,7 +195,7 @@ class _MessagesScreenState extends State<MessagesScreen>
   }
 
   Future<void> _openMessage(AppMessage message) async {
-    if (_openingMessage || _markingAllRead) return;
+    if (_openingMessage || _markingAllRead || _loadingMore) return;
     _openingMessage = true;
     _mutationEpoch++;
     try {
@@ -155,7 +207,7 @@ class _MessagesScreenState extends State<MessagesScreen>
   }
 
   Future<void> _openMessageDetails(AppMessage message) async {
-    if (message.unreadCount > 0) {
+    if (message.category == AppMessageCategory.hr && message.unreadCount > 0) {
       try {
         await _api.markRead(widget.session.token, message);
         if (!mounted) return;
@@ -169,7 +221,9 @@ class _MessagesScreenState extends State<MessagesScreen>
             )
             .toList();
         setState(() => _messages = updated);
-        _notifyUnread(updated);
+        _unreadCounts['HR'] = ((_unreadCounts['HR'] ?? 0) - message.unreadCount)
+            .clamp(0, 1 << 30);
+        _notifyUnread();
       } on ApiException catch (error) {
         if (mounted) _showSnackBar(error.message);
         return;
@@ -188,8 +242,11 @@ class _MessagesScreenState extends State<MessagesScreen>
     }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            MessageDetailScreen(message: message, session: widget.session),
+        builder: (_) => MessageDetailScreen(
+          message: message,
+          session: widget.session,
+          messageApi: _api,
+        ),
       ),
     );
     if (mounted) await _load();
@@ -303,7 +360,7 @@ class _MessagesScreenState extends State<MessagesScreen>
       return _MessageState(
         icon: Icons.chat_bubble_outline,
         title: '暂无消息',
-        message: 'HR 沟通、系统通知和关注企业动态会显示在这里。',
+        message: 'HR 沟通、企业动态和系统通知会统一显示在这里。',
         action: '刷新',
         onAction: _load,
       );
@@ -332,6 +389,14 @@ class _MessagesScreenState extends State<MessagesScreen>
               ],
             ),
           ),
+          if (_hasMore)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextButton(
+                onPressed: _loadingMore ? null : _loadMore,
+                child: Text(_loadingMore ? '正在加载…' : '加载更多'),
+              ),
+            ),
         ],
       ),
     );
@@ -395,7 +460,10 @@ class _MessageRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    item.content,
+                    item.category != AppMessageCategory.hr &&
+                            item.messageCount > 1
+                        ? '共${item.messageCount}条 · ${item.content}'
+                        : item.content,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall,
@@ -404,14 +472,17 @@ class _MessageRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            SizedBox(
-              width: 48,
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 48),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
                     _formatListTime(item.occurredAt),
+                    maxLines: 1,
+                    softWrap: false,
                     textAlign: TextAlign.right,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -429,7 +500,7 @@ class _MessageRow extends StatelessWidget {
                         borderRadius: BorderRadius.all(Radius.circular(10)),
                       ),
                       child: Text(
-                        '${item.unreadCount}',
+                        item.unreadCount > 99 ? '99+' : '${item.unreadCount}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,

@@ -63,6 +63,13 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="企业状态" align="center" width="80">
+          <template #default="scope">
+            <el-tag :type="scope.row.status === 0 ? 'info' : 'success'" size="small">
+              {{ scope.row.status === 0 ? '已下架' : '正常' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="提交时间" align="center" width="160">
           <template #default="scope">{{ formatTime(scope.row.createTime) }}</template>
         </el-table-column>

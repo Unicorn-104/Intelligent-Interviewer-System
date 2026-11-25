@@ -125,12 +125,13 @@ public class S3FileStorage
 
     private static String[] location(String reference)
     {
-        // 引用分两类：原有按 用户/日期/uuid 的对象，以及企业投递快照独立命名空间
+        // 保留上传、简历、企业快照和个人知识库各自的受限命名空间。
         // enterprise-application-resume/企业/投递/uuid.pdf
         if (reference == null || !reference.matches("s3:[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/"
                 + "(?:(?:private-resume|private-resume-attachment|avatars|uploads)/[1-9][0-9]*/"
                 + "[0-9]{4}/[0-9]{2}/[0-9]{2}/[a-f0-9]{32}\\.(?:pdf|doc|docx|jpg|jpeg|png|gif|bmp|xls|xlsx|ppt|pptx|txt|rar|zip|gz|bz2|mp4|avi|rmvb)"
-                + "|enterprise-application-resume/[1-9][0-9]*/[1-9][0-9]*/[a-f0-9]{32}\\.pdf)"))
+                + "|enterprise-application-resume/[1-9][0-9]*/[1-9][0-9]*/[a-f0-9]{32}\\.pdf"
+                + "|private-knowledge/[1-9][0-9]*/[a-f0-9-]{36}\\.(?:pdf|docx|txt|md))"))
             throw new ServiceException("对象文件引用无效");
         return reference.substring(3).split("/", 2);
     }

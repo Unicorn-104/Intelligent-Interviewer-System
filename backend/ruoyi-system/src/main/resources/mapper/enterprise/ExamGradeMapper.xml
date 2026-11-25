@@ -12,6 +12,7 @@
                t.tal_user_id as candidateUserId,
                ifnull(u.real_name, u.nick_name) as candidateName,
                s.esd_id as scheduleId, s.esd_position_id as positionId,
+               s.esd_stage_id as stageId, s.esd_template_version as templateVersion,
                s.esd_paper_id as paperId, s.esd_pass_threshold as passThreshold,
                s.esd_auto_flow_json as autoFlow,
                p.epa_name as paperName, p.epa_total_score as paperTotalScore,

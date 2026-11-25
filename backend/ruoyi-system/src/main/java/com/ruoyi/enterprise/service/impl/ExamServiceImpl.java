@@ -1,6 +1,7 @@
 package com.ruoyi.enterprise.service.impl;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.PageUtils;
@@ -955,6 +957,85 @@ public class ExamServiceImpl implements IExamService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> assignCandidates(Long userId, Long scheduleId, Map<String, Object> body)
+    {
+        Long companyId = resolveCompanyId(userId);
+        Map<String, Object> schedule = requireSchedule(companyId, scheduleId);
+        int status = asInt(schedule.get("status"), 0);
+        if (status >= 2)
+        {
+            throw new ServiceException("考试安排已结束或已取消，不能加入候选人");
+        }
+        LocalDateTime endTime = parseScheduleTime(asString(schedule.get("endAt")));
+        int durationMin = asInt(schedule.get("durationMin"), 0);
+        if (endTime != null && durationMin > 0
+                && java.time.Duration.between(LocalDateTime.now(), endTime).toMinutes() < durationMin)
+        {
+            throw new ServiceException("场次剩余时间不足一份试卷时长，请创建新的考试安排");
+        }
+        Long positionId = asLong(schedule.get("positionId"));
+        Long stageId = asLong(schedule.get("stageId"));
+        if (stageId == null)
+        {
+            throw new ServiceException("考试安排缺少笔试阶段，请重新创建场次");
+        }
+        Map<String, Object> stage = examMapper.selectExamStage(companyId, positionId, stageId);
+        if (stage == null)
+        {
+            throw new ServiceException("笔试阶段已变更，不能加入候选人");
+        }
+        Object raw = body == null ? null : body.get("candidateIds");
+        if (!(raw instanceof List<?> ids) || ids.isEmpty())
+        {
+            throw new ServiceException("请选择要加入笔试的候选人");
+        }
+        int assigned = 0;
+        int skipped = 0;
+        List<Map<String, Object>> rejected = new ArrayList<>();
+        for (Object rawId : ids)
+        {
+            Long candidateId = asLong(rawId);
+            if (candidateId == null)
+            {
+                skipped++;
+                continue;
+            }
+            Long appId = applicationStatusMapper.selectAppId(candidateId, positionId);
+            if (appId == null)
+            {
+                rejected.add(Map.of("candidateId", candidateId, "reason", "未投递该岗位"));
+                continue;
+            }
+            Map<String, Object> app = applicationStatusMapper.selectApplicationById(appId);
+            Long instanceId = app == null ? null : asLong(app.get("instanceId"));
+            if (instanceId == null)
+            {
+                rejected.add(Map.of("candidateId", candidateId, "reason", "投递流程实例缺失，请先修复流程"));
+                continue;
+            }
+            Object currentStage = applicationStatusMapper.selectCurrentStageId(appId);
+            if (currentStage != null && !String.valueOf(stageId).equals(String.valueOf(currentStage)))
+            {
+                rejected.add(Map.of("candidateId", candidateId, "reason", "候选人尚未进入该笔试阶段"));
+                continue;
+            }
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("scheduleId", scheduleId);
+            params.put("applicationId", appId);
+            params.put("candidateId", candidateId);
+            params.put("processInstanceId", instanceId);
+            params.put("stageId", stageId);
+            params.put("templateVersion", schedule.get("templateVersion"));
+            params.put("source", body.getOrDefault("source", "manual"));
+            params.put("createdBy", userId);
+            examMapper.upsertScheduleCandidate(params);
+            assigned++;
+        }
+        return Map.of("assigned", assigned, "skipped", skipped, "rejected", rejected);
+    }
+
+    @Override
     public void updateSchedule(Long userId, Long scheduleId, Map<String, Object> body)
     {
         Long companyId = resolveCompanyId(userId);
@@ -963,6 +1044,25 @@ public class ExamServiceImpl implements IExamService
         if (status >= 2)
         {
             throw new ServiceException("已结束或已取消的考试安排不能修改");
+        }
+        if (examMapper.countStartedRecords(scheduleId) > 0)
+        {
+            Long paperId = asLong(body.get("paperId"));
+            Integer attempts = asInt(body.get("maxAttempts"), asInt(existing.get("maxAttempts"), 1));
+            BigDecimal threshold = asDecimal(body.get("passThreshold"));
+            BigDecimal oldThreshold = asDecimal(existing.get("passThreshold"));
+            String start = normalizeTime(asString(body.get("startAt")));
+            String end = normalizeTime(asString(body.get("endAt")));
+            String oldStart = normalizeTime(asString(existing.get("startAt")));
+            String oldEnd = normalizeTime(asString(existing.get("endAt")));
+            if ((paperId != null && !paperId.equals(asLong(existing.get("paperId"))))
+                    || attempts != asInt(existing.get("maxAttempts"), 1)
+                    || (threshold != null && oldThreshold != null && threshold.compareTo(oldThreshold) != 0)
+                    || (start != null && oldStart != null && !start.equals(oldStart))
+                    || (end != null && oldEnd != null && !end.equals(oldEnd)))
+            {
+                throw new ServiceException("已有候选人开始考试，试卷、阈值和次数规则已冻结");
+            }
         }
         Map<String, Object> params = buildScheduleParams(body, scheduleId, companyId);
         examMapper.updateSchedule(params);
@@ -1013,6 +1113,13 @@ public class ExamServiceImpl implements IExamService
             throw new ServiceException("考试安排岗位与试卷关联岗位不一致");
         }
         requireExamStage(positionId);
+        Long stageId = asLong(body.get("stageId"));
+        Map<String, Object> stage = stageId == null ? null
+                : examMapper.selectExamStage(companyId, positionId, stageId);
+        if (stageId == null || stage == null)
+        {
+            throw new ServiceException("请选择该岗位流程中的具体笔试阶段");
+        }
         String startAt = normalizeTime(asString(body.get("startAt")));
         String endAt = normalizeTime(asString(body.get("endAt")));
         if (startAt == null || endAt == null)
@@ -1024,20 +1131,21 @@ public class ExamServiceImpl implements IExamService
             throw new ServiceException("截止时间必须晚于开考时间");
         }
         Integer maxAttempts = asInt(body.get("maxAttempts"), 1);
-        BigDecimal passThreshold = asDecimal(body.get("passThreshold"));
+        BigDecimal totalScore = new BigDecimal(String.valueOf(paper.get("totalScore")));
+        int durationMin = asInt(paper.get("durationMin"), 0);
+        LocalDateTime startTime = parseScheduleTime(startAt);
+        LocalDateTime endTime = parseScheduleTime(endAt);
+        if (durationMin > 0 && startTime != null && endTime != null
+                && java.time.Duration.between(startTime, endTime).toMinutes() < durationMin)
+        {
+            throw new ServiceException("考试时间窗必须至少覆盖一份试卷时长");
+        }
         if (maxAttempts == null || maxAttempts < 1)
         {
             throw new ServiceException("最大考试次数至少为1");
         }
-        if (passThreshold == null || passThreshold.compareTo(BigDecimal.ZERO) <= 0)
-        {
-            throw new ServiceException("通过阈值必须大于0");
-        }
-        BigDecimal totalScore = new BigDecimal(String.valueOf(paper.get("totalScore")));
-        if (passThreshold.compareTo(totalScore) > 0)
-        {
-            throw new ServiceException("通过阈值不能超过试卷总分 " + totalScore);
-        }
+        BigDecimal passThreshold = resolvePassThreshold(totalScore, asDecimal(body.get("passThreshold")),
+                asDecimal(body.get("passThresholdPercent")));
         Object dual = body.get("dualCameraConfig");
         Object submit = body.get("submitRule");
         Object autoFlow = body.get("autoFlow");
@@ -1045,6 +1153,11 @@ public class ExamServiceImpl implements IExamService
         params.put("id", id);
         params.put("positionId", positionId);
         params.put("paperId", paperId);
+        params.put("stageId", stageId);
+        params.put("templateVersion", stage.get("templateVersion"));
+        params.put("stageSnapshotJson", JSON.toJSONString(Map.of(
+                "stageId", stage.get("stageId"), "name", stage.get("stageName"),
+                "type", stage.get("stageType"), "sortOrder", stage.get("stageOrder"))));
         params.put("startAt", startAt);
         params.put("endAt", endAt);
         params.put("maxAttempts", maxAttempts);
@@ -1057,6 +1170,34 @@ public class ExamServiceImpl implements IExamService
         params.put("autoFlow", autoFlow == null ? null
                 : (autoFlow instanceof String ? autoFlow : JSON.toJSONString(autoFlow)));
         return params;
+    }
+
+    /**
+     * 将流程中的百分比阈值按试卷总分折算为实际合格线。
+     * 同时保留旧客户端直接传具体分数的兼容路径。
+     */
+    static BigDecimal resolvePassThreshold(BigDecimal totalScore, BigDecimal passThreshold,
+            BigDecimal passThresholdPercent)
+    {
+        if (passThresholdPercent != null)
+        {
+            if (passThresholdPercent.compareTo(BigDecimal.ONE) < 0
+                    || passThresholdPercent.compareTo(new BigDecimal("100")) > 0)
+            {
+                throw new ServiceException("通过阈值百分比必须在1到100之间");
+            }
+            passThreshold = totalScore.multiply(passThresholdPercent)
+                    .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+        }
+        if (passThreshold == null || passThreshold.compareTo(BigDecimal.ZERO) <= 0)
+        {
+            throw new ServiceException("通过阈值必须大于0");
+        }
+        if (passThreshold.compareTo(totalScore) > 0)
+        {
+            throw new ServiceException("通过阈值不能超过试卷总分 " + totalScore);
+        }
+        return passThreshold;
     }
 
     private void decorateSchedule(Map<String, Object> item)
@@ -1188,13 +1329,23 @@ public class ExamServiceImpl implements IExamService
             {
                 channelsResult.put("inapp", "not_selected");
             }
-            sentCount++;
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("talId", target.get("talId"));
             item.put("name", target.get("name"));
             item.put("email", target.get("email"));
             item.put("channels", channelsResult);
             results.add(item);
+            boolean channelSuccess = channelsResult.values().stream()
+                    .anyMatch(value -> "sent".equals(String.valueOf(value)));
+            if (channelSuccess) sentCount++;
+            Map<String, Object> notify = new LinkedHashMap<>();
+            notify.put("scheduleId", scheduleId);
+            notify.put("candidateId", target.get("talId"));
+            notify.put("success", channelSuccess ? 1 : 0);
+            notify.put("status", channelSuccess ? "success" : "failed");
+            notify.put("error", channelSuccess ? null : "所有通知渠道均未发送成功");
+            notify.put("resultJson", JSON.toJSONString(channelsResult));
+            examMapper.markScheduleCandidateNotify(notify);
         }
         // HR 正式发送第一场笔试通知 = 启动招聘流程：已投递(0)→招聘中(1)。
         // 多轮笔试/补考/改期全程保持招聘中，不重复流转；已终态(已录用/未录用)不动。
@@ -1334,6 +1485,15 @@ public class ExamServiceImpl implements IExamService
         {
             return null;
         }
+    }
+
+    private LocalDateTime parseScheduleTime(String value)
+    {
+        if (StringUtils.isEmpty(value)) return null;
+        String text = value.trim().replace('T', ' ');
+        if (text.length() == 16) text += ":00";
+        try { return LocalDateTime.parse(text, TIME_FORMAT); }
+        catch (RuntimeException ignored) { return null; }
     }
 
     private Object parseJson(Object value)

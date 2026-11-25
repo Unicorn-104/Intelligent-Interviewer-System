@@ -72,7 +72,7 @@ public class InterviewScheduleServiceImplTest
             "insert into t_process_instance values(11,7,0),(12,7,0)",
             "insert into t_cmp_binding values(1,19,1),(1,20,1)",
             "insert into t_app_record(app_candidate_id,app_position_id,app_status) values(11,7,1),(12,7,1)",
-            "insert into t_process_stage(psg_id,psg_template_id,psg_name,psg_type,psg_sort_order,psg_interviewer_config_json) values(31,1,'在线笔试',1,1,'{\"duration\":30}'),(32,1,'技术面试',2,2,'{\"duration\":60}')")) jdbc.execute(sql);
+            "insert into t_process_stage(psg_id,psg_template_id,psg_name,psg_type,psg_sort_order,psg_interviewer_config_json) values(31,1,'HR综合面试',3,1,'{\"duration\":30}'),(32,1,'技术面试',2,2,'{\"duration\":60}')")) jdbc.execute(sql);
         var factory = new SqlSessionFactoryBean();
         factory.setDataSource(ds);
         factory.setMapperLocations(new ClassPathResource("mapper/enterprise/InterviewScheduleMapper.xml"));
@@ -147,7 +147,7 @@ public class InterviewScheduleServiceImplTest
         assertEquals(2,count("t_sch_appointment"));
         assertNotEquals(results.get(0).get("appointmentId"),results.get(1).get("appointmentId"));
         var list = service.candidateAppointments(1L,11L,7L);
-        assertEquals("在线笔试",list.get(0).get("stageName"));
+        assertEquals("HR综合面试",list.get(0).get("stageName"));
         assertEquals(31L,((Number)list.get(0).get("stageId")).longValue());
         assertEquals("2099-01-02 10:30",list.get(1).get("endTime"));
     }

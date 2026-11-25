@@ -6,6 +6,7 @@ import '../../../core/formatters/backend_date.dart';
 import '../../auth/domain/auth_session.dart';
 import '../domain/interview_schedule.dart';
 import 'conference_controller.dart';
+import 'conference_stage.dart';
 
 // Match E-App's conference palette; keep the dark surface local to the room.
 const _bg = Color(0xFF0B0D12);
@@ -212,15 +213,97 @@ class _ConferenceRoomViewState extends State<ConferenceRoomView> {
     ),
   );
 
-  Widget _stage() => Padding(
+  List<ConferenceStageFeed> get _stageFeeds {
+    final feeds = <ConferenceStageFeed>[];
+    final people = [..._remotes]
+      ..sort((a, b) => a.identity.compareTo(b.identity));
+    for (final person in people) {
+      final camera = person.videoTrackPublications
+          .where(
+            (p) =>
+                p.source == lk.TrackSource.camera &&
+                p.track != null &&
+                !p.muted,
+          )
+          .firstOrNull;
+      feeds.add(
+        ConferenceStageFeed(
+          id: person.identity,
+          name: _participantName(person),
+          track: camera?.track,
+          microphone: person.isMicrophoneEnabled(),
+          speaking: person.isSpeaking,
+        ),
+      );
+      for (final screen in person.videoTrackPublications.where(
+        (p) =>
+            p.source == lk.TrackSource.screenShareVideo &&
+            p.track != null &&
+            !p.muted,
+      )) {
+        feeds.add(
+          ConferenceStageFeed(
+            id: '${person.identity}:screen',
+            name: '${_participantName(person)} · 屏幕共享',
+            track: screen.track,
+            microphone: person.isMicrophoneEnabled(),
+            screenShare: true,
+          ),
+        );
+      }
+    }
+    feeds.add(
+      ConferenceStageFeed(
+        id: 'self',
+        name: '我 · $_selfName',
+        track: c.media.cameraOn ? c.media.camera : null,
+        microphone: c.media.microphoneOn,
+        local: true,
+        speaking: c.media.room?.localParticipant?.isSpeaking ?? false,
+      ),
+    );
+    return feeds;
+  }
+
+  Widget _stage() {
+    if (_waiting || _remotes.isEmpty) return _placeholderStage();
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+          child: Row(
+            children: [
+              _badge(
+                c.media.connected
+                    ? '已连接'
+                    : c.connecting
+                    ? '连接中'
+                    : '连接已断开',
+                icon: Icons.circle,
+                color: c.media.connected ? _green : _orange,
+              ),
+              const Spacer(),
+              const Flexible(
+                child: Text(
+                  '左右滑动切换视图',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: _muted, fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: ConferenceStage(feeds: _stageFeeds)),
+      ],
+    );
+  }
+
+  Widget _placeholderStage() => Padding(
     padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
     child: Stack(
       children: [
-        Positioned.fill(
-          child: _waiting || _remotes.isEmpty
-              ? _waitingSurface()
-              : _remoteGrid(),
-        ),
+        Positioned.fill(child: _waitingSurface()),
         Positioned(
           top: 8,
           left: 8,
@@ -392,51 +475,6 @@ class _ConferenceRoomViewState extends State<ConferenceRoomView> {
       ),
     ],
   );
-
-  Widget _remoteGrid() {
-    final tiles = <Widget>[];
-    for (final person in _remotes) {
-      final videos = person.videoTrackPublications.where(
-        (p) => p.track != null && !p.muted,
-      );
-      final name = _participantName(person);
-      if (videos.isEmpty) {
-        tiles.add(
-          _ParticipantSurface(
-            name: name,
-            micEnabled: person.isMicrophoneEnabled(),
-            speaking: person.isSpeaking,
-          ),
-        );
-      } else {
-        for (final video in videos) {
-          tiles.add(
-            _ParticipantSurface(
-              name: video.source == lk.TrackSource.screenShareVideo
-                  ? '$name · 屏幕共享'
-                  : name,
-              track: video.track,
-              screenShare: video.source == lk.TrackSource.screenShareVideo,
-              micEnabled: person.isMicrophoneEnabled(),
-              speaking: person.isSpeaking,
-            ),
-          );
-        }
-      }
-    }
-    return Padding(
-      padding: EdgeInsets.only(top: tiles.length == 1 ? 42 : 146),
-      child: tiles.length == 1
-          ? tiles.single
-          : GridView.count(
-              crossAxisCount: 2,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: .78,
-              children: tiles,
-            ),
-    );
-  }
 
   String _participantName(lk.RemoteParticipant person) {
     if (person.name.isNotEmpty) return person.name;
@@ -976,15 +1014,13 @@ class _ParticipantSurface extends StatelessWidget {
     required this.name,
     this.track,
     this.micEnabled = false,
-    this.speaking = false,
     this.compact = false,
     this.mirror = false,
-    this.screenShare = false,
     this.placeholder,
   });
   final String name;
   final lk.VideoTrack? track;
-  final bool micEnabled, speaking, compact, mirror, screenShare;
+  final bool micEnabled, compact, mirror;
   final String? placeholder;
 
   @override
@@ -993,9 +1029,7 @@ class _ParticipantSurface extends StatelessWidget {
     child: Container(
       decoration: BoxDecoration(
         color: _panel,
-        border: speaking
-            ? Border.all(color: _green, width: 2)
-            : Border.all(color: _line),
+        border: Border.all(color: _line),
         borderRadius: BorderRadius.circular(compact ? 10 : 16),
       ),
       child: Stack(
@@ -1004,9 +1038,7 @@ class _ParticipantSurface extends StatelessWidget {
           if (track != null)
             lk.VideoTrackRenderer(
               track!,
-              fit: screenShare
-                  ? lk.VideoViewFit.contain
-                  : lk.VideoViewFit.cover,
+              fit: lk.VideoViewFit.cover,
               mirrorMode: mirror
                   ? lk.VideoViewMirrorMode.auto
                   : lk.VideoViewMirrorMode.off,

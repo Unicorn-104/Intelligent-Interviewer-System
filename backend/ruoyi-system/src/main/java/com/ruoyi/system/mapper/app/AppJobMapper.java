@@ -31,6 +31,11 @@ public interface AppJobMapper
                         @Param("companyId") Long companyId,
                         @Param("resumeId") Long resumeId);
 
+    int updateCandidateResume(@Param("candidateId") Long candidateId,
+                              @Param("userId") Long userId,
+                              @Param("companyId") Long companyId,
+                              @Param("resumeId") Long resumeId);
+
     int countApplication(@Param("candidateId") Long candidateId,
                          @Param("positionId") Long positionId);
 

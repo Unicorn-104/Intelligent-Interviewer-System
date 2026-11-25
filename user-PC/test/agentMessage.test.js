@@ -1,6 +1,128 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageAttachmentUploadName, messageLinkParts, resolveMessageAttachment, uploadedMessageAttachmentPath } from '../src/utils/agentMessage.js'
+import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageAttachmentUploadName, messageContentCard, messageLinkParts, messagePreview, resolveMessageAttachment, uploadedMessageAttachmentPath } from '../src/utils/agentMessage.js'
+
+const sharedJob = {
+  kind: 'job_card', version: 1, positionId: 26, title: '前端开发工程师',
+  company: '示例企业', city: '杭州', experience: '1-3年', education: 3,
+  salaryMin: 10000, salaryMax: 18000
+}
+
+test('企业与 App 分享的岗位 JSON 渲染为真实字段卡片和本端详情入口', () => {
+  const card = messageContentCard({ type: '6', content: JSON.stringify(sharedJob) })
+  assert.equal(card.kind, 'job')
+  assert.equal(card.title, sharedJob.title)
+  assert.equal(card.subtitle, sharedJob.company)
+  assert.equal(card.highlight, '10,000–18,000 元/月')
+  assert.deepEqual(card.tags, ['杭州', '1-3年', '本科'])
+  assert.equal(card.action.to, '/job-detail?id=26')
+  assert.equal(messagePreview(JSON.stringify(sharedJob)), '[HR 分享的岗位] 前端开发工程师')
+})
+
+test('岗位卡片兼容字符串数值、双重编码和缺失字段，不伪造薪资', () => {
+  const partial = { ...sharedJob, salaryMin: null, salaryMax: null, education: null, city: '', experience: '' }
+  const card = messageContentCard({ type: 6, content: JSON.stringify(JSON.stringify(partial)) })
+  assert.equal(card.highlight, '薪资面议')
+  assert.deepEqual(card.tags, ['城市不限', '经验不限', '学历不限'])
+  assert.equal(messageContentCard({ content: JSON.stringify({ ...sharedJob, salaryMax: null }) }).highlight, '10,000 元/月起')
+  assert.equal(messageContentCard({ content: JSON.stringify({ ...sharedJob, salaryMin: null }) }).highlight, '最高 18,000 元/月')
+})
+
+test('非法岗位编号及未来版本不生成可点击操作', () => {
+  for (const positionId of [0, -1, 1.5, 'javascript:alert(1)', '26&admin=true', '9007199254740993']) {
+    const card = messageContentCard({ type: 6, content: JSON.stringify({ ...sharedJob, positionId }) })
+    assert.equal(card.kind, 'notice')
+    assert.equal(card.action, undefined)
+  }
+  assert.equal(messageContentCard({ type: 6, content: JSON.stringify({ ...sharedJob, version: 2 }) }).action, undefined)
+})
+
+test('异常对象字段不会让整页消息加载失败，也不把布尔值当成薪资', () => {
+  for (const field of ['positionId', 'salaryMin', 'salaryMax', 'education', 'version']) {
+    assert.doesNotThrow(() => messageContentCard({ type: 6, content: JSON.stringify({ ...sharedJob, [field]: { toString: null } }) }))
+  }
+  const card = messageContentCard({ type: 6, content: JSON.stringify({ ...sharedJob, salaryMin: true, salaryMax: false }) })
+  assert.equal(card.highlight, '薪资面议')
+  assert.doesNotThrow(() => messageContentCard({ content: '{"kind":"interview_reschedule","version":1,"status":{"toString":null}}' }))
+})
+
+test('面试改期按真实状态展示新旧时间、原因和审批说明，统一北京时间', () => {
+  const payload = {
+    kind: 'interview_reschedule', version: 1, positionName: 'Java 开发工程师',
+    originalStartTime: '2026-11-17T01:00:00Z', originalEndTime: '2026-11-17T02:00:00Z',
+    newStartTime: '2026-11-18 14:00:00', newEndTime: '2026-11-18 15:00:00',
+    reason: '与课程时间冲突', reviewNote: '已确认时间'
+  }
+  for (const [status, title, badge] of [
+    ['pending', '改期申请已提交', '等待处理'], ['approved', '改期申请已同意', '已同意'],
+    ['rejected', '改期申请未通过', '未通过'], ['changed', '面试时间已更新', '时间已变更']
+  ]) {
+    const card = messageContentCard({ type: 5, content: JSON.stringify({ ...payload, status }) })
+    assert.equal(card.title, title)
+    assert.equal(card.status, badge)
+    assert.equal(card.fields[0].value, '2026-11-17 09:00 ～ 10:00')
+    assert.equal(card.fields[1].value, '2026-11-18 14:00 ～ 15:00')
+    assert.equal(card.fields[1].label, ['approved', 'changed'].includes(status) ? '新面试时间' : '申请调整至')
+    assert.equal(card.fields[3].value, payload.reviewNote)
+    assert.equal(card.footnote, '以上时间均为北京时间')
+  }
+})
+
+test('未知改期状态与空值不崩溃、不输出 null 或 Invalid Date', () => {
+  for (const status of ['unknown', '__proto__', 'constructor', null]) {
+    const card = messageContentCard({ type: 5, content: JSON.stringify({ kind: 'interview_reschedule', version: 1, status, originalStartTime: 'not-a-date' }) })
+    assert.equal(card.status, '待确认')
+    assert.deepEqual(card.fields, [])
+  }
+})
+
+test('跨日面试保留起止日期，避免把次日结束时间当成同一天', () => {
+  const card = messageContentCard({ type: 5, content: JSON.stringify({ kind: 'interview_reschedule', version: 1, status: 'changed', newStartTime: '2026-11-17 23:30:00', newEndTime: '2026-11-18 00:30:00' }) })
+  assert.equal(card.fields[0].value, '2026-11-17 23:30 ～ 2026-11-18 00:30')
+})
+
+test('历史文本面试邀请转为卡片，仅提取会议令牌进入本端，不导航到消息主机', () => {
+  const token = 'synthetic-room-token-1234'
+  const card = messageContentCard({ type: 1, content: `【面试邀请·技术一面】明天上午10点，视频面试请点击链接进入：https://other.example.com/conference-join?token=${token}` })
+  assert.equal(card.kind, 'interview')
+  assert.equal(card.title, '技术一面')
+  assert.equal(card.action.to, `/conference-join?token=${token}`)
+  assert.equal(card.description.includes(token), false)
+  assert.deepEqual(card.links, [])
+})
+
+test('面试入口拒绝伪造路径、重复或非法令牌，其他安全链接保持可查看', () => {
+  for (const link of [
+    'https://example.com/evil?token=synthetic-room-token-1234',
+    'https://example.com/conference-join?token=synthetic-room-token-1234&token=other',
+    'https://example.com/conference-join?token=short'
+  ]) {
+    assert.equal(messageContentCard({ content: `【面试邀请】请参加 ${link}` }).action, undefined)
+  }
+  const card = messageContentCard({ content: '【面试邀请】详情 https://example.com/meeting/26' })
+  assert.equal(card.links[0].href, 'https://example.com/meeting/26')
+})
+
+test('未知 JSON 使用中文摘要与可读字段，不展示内部标识或密钥', () => {
+  const content = JSON.stringify({ title: '笔试安排', content: '请查看 https://example.com/exam', requestId: 'internal-id', token: 'private-token', metadata: { raw: true } })
+  const card = messageContentCard({ type: 4, content })
+  assert.equal(card.title, '笔试安排')
+  assert.deepEqual(card.fields, [{ label: '内容', value: '请查看 https://example.com/exam' }])
+  assert.equal(JSON.stringify(card).includes('private-token'), false)
+  assert.equal(messagePreview(content), '[消息通知] 笔试安排')
+  assert.match(messageContentCard({ content: '{"kind":"future_card"}' }).description, /暂不支持/)
+})
+
+test('普通文本、图片附件以及损坏的 JSON 不影响原有消息处理', () => {
+  for (const content of ['你好 HR 😊', '面试 https://example.com/meeting', '请看 {"name":"示例"}', '{broken', '123', 'null']) {
+    assert.equal(messageContentCard({ type: 1, content }), null)
+    assert.equal(messagePreview(content), content)
+  }
+  for (const type of [2, '2', 3, '3']) {
+    assert.equal(messageContentCard({ type, content: JSON.stringify(sharedJob) }), null)
+  }
+  assert.equal(messageContentCard({ type: 6, content: '{broken' }).kind, 'notice')
+})
 
 test('跨端附件统一使用当前环境代理，兼容旧域名及 API 前缀', () => {
   for (const value of [

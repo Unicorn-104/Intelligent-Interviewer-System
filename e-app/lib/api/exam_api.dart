@@ -167,25 +167,58 @@ Future<List<Map<String, dynamic>>> listExamPapers({int? positionId}) async {
 Future<int?> createExamSchedule({
   required int positionId,
   required int paperId,
+  required int stageId,
   required String startAt,
   required String endAt,
   required num passThreshold,
+  int? passThresholdPercent,
   int maxAttempts = 1,
 }) async {
+  final body = <String, Object?>{
+    'positionId': positionId,
+    'paperId': paperId,
+    'stageId': stageId,
+    'startAt': startAt,
+    'endAt': endAt,
+    'maxAttempts': maxAttempts,
+    'passThreshold': passThreshold,
+  };
+  if (passThresholdPercent != null) {
+    body['passThresholdPercent'] = passThresholdPercent;
+  }
   final response = await EnterpriseApiClient().post(
     '/enterprise/exam/schedules',
-    body: {
-      'positionId': positionId,
-      'paperId': paperId,
-      'startAt': startAt,
-      'endAt': endAt,
-      'maxAttempts': maxAttempts,
-      'passThreshold': passThreshold,
-    },
+    body: body,
   );
   final data = response['data'];
   if (data is int) return data;
   return int.tryParse('$data');
+}
+
+Future<List<Map<String, dynamic>>> listExamSchedules({
+  required int positionId,
+}) async {
+  final response = await EnterpriseApiClient().get(
+    '/enterprise/exam/schedules',
+    query: {'positionId': positionId, 'pageNum': 1, 'pageSize': 50},
+  );
+  final rows = response['rows'];
+  if (rows is! List) return const <Map<String, dynamic>>[];
+  return rows
+      .whereType<Map>()
+      .map((row) => Map<String, dynamic>.from(row))
+      .toList(growable: false);
+}
+
+Future<Map<String, dynamic>> assignExamCandidates(
+  int scheduleId, {
+  required List<int> candidateIds,
+}) async {
+  final response = await EnterpriseApiClient().post(
+    '/enterprise/exam/schedules/$scheduleId/candidates',
+    body: {'candidateIds': candidateIds, 'source': 'manual'},
+  );
+  return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
 Future<Map<String, dynamic>> sendExamNotify(

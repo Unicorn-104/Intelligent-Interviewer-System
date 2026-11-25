@@ -5,12 +5,16 @@ import 'package:intelligent_interviewer/core/network/api_client.dart';
 import 'package:intelligent_interviewer/features/auth/domain/auth_session.dart';
 import 'package:intelligent_interviewer/features/messages/data/message_api.dart';
 import 'package:intelligent_interviewer/features/messages/domain/app_message.dart';
+import 'package:intelligent_interviewer/features/messages/domain/message_page.dart';
 import 'package:intelligent_interviewer/screens/messages_screen.dart';
 import 'package:intelligent_interviewer/theme/app_theme.dart';
 
 class _Messages extends MessageApi {
   _Messages(this.client) : super(client);
   final ApiClient client;
+  @override
+  Future<MessagePage> fetchThreads(String token, {AppMessage? before}) async =>
+      MessagePage(items: await fetchMessages(token), hasMore: false);
   @override
   Future<List<AppMessage>> fetchMessages(String token) async => List.generate(
     20,

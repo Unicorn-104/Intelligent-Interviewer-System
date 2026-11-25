@@ -1,4 +1,5 @@
 <template>
+  <div class="candidate-page--exam">
   <div class="page">
     <AgentTopbar active="exam" />
     <main class="main">
@@ -83,6 +84,7 @@
       </section>
     </main>
     <footer class="footer">© 2026 企业级智能招聘面试官 Agent 系统</footer>
+  </div>
   </div>
 </template>
 
@@ -220,7 +222,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-:global(*){box-sizing:border-box}:global(body){margin:0;color:#172B4D;background:#F5F7FA;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+*{box-sizing:border-box}:where(.candidate-page--exam){margin:0;color:#172B4D;background:#F5F7FA;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
 .main{width:min(1080px,calc(100% - 48px));margin:0 auto;padding:27px 0 54px}
 .page-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:16px}
 .page-heading h1{margin:0;color:#1A3C6E;font-size:25px}

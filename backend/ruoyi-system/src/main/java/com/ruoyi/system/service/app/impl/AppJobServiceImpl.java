@@ -87,6 +87,11 @@ public class AppJobServiceImpl implements IAppJobService
         {
             throw new ServiceException("投递失败，请稍后重试");
         }
+        // 更新当前企业人才档案的简历关联，历史投递与企业独立快照仍保留各自版本。
+        if (jobMapper.updateCandidateResume(candidateId, userId, companyId, resumeId) <= 0)
+        {
+            throw new ServiceException("候选人简历关联失败，请稍后重试");
+        }
         // 生成企业独立投递快照：与 Agent 投递一致，复制源简历 PDF 与结构化内容为企业不可变对象，
         // 缺快照会导致企业端投递详情 SNAPSHOT_NOT_AVAILABLE。countApplication 查重保证候选人+岗位唯一。
         Long applicationId = jobMapper.selectAppId(candidateId, positionId);

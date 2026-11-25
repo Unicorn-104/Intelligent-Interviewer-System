@@ -2,6 +2,8 @@ package com.ruoyi.system.service.impl;
 
 import java.net.URI;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -52,6 +54,37 @@ public class ImServiceImpl implements IImService
         }
         if (receipts != null) receipts.decorate(userId, session, list);
         return list;
+    }
+
+    @Override
+    public List<ImMessage> selectMessageSnapshot(Long sessionId, Long userId, List<Long> messageIds)
+    {
+        if (sessionId == null || sessionId <= 0 || messageIds == null || messageIds.isEmpty()
+                || messageIds.size() > 100 || messageIds.stream().anyMatch(id -> id == null || id <= 0))
+            throw new ServiceException("消息快照参数无效");
+        ImSession session = sessionMapper.selectSessionByIdAndUser(sessionId, userId);
+        if (session == null) throw new ServiceException("会话不存在或无权访问");
+        List<ImMessage> rows = messageMapper.selectMessageSnapshot(sessionId, messageIds.stream().distinct().toList());
+        for (ImMessage row : rows) row.setIsMine(userId.equals(row.getSenderId()));
+        if (receipts != null) receipts.decorate(userId, session, rows);
+        return rows;
+    }
+
+    @Override
+    public Map<String, Object> selectMessagePage(Long sessionId, Long userId, Long beforeId, Long afterId, int size)
+    {
+        if (size < 1 || size > 100 || beforeId != null && beforeId <= 0 || afterId != null && afterId <= 0
+                || beforeId != null && afterId != null)
+            throw new ServiceException("消息分页参数无效");
+        ImSession session = sessionMapper.selectSessionByIdAndUser(sessionId, userId);
+        if (session == null) throw new ServiceException("会话不存在或无权访问");
+        List<ImMessage> rows = new ArrayList<>(messageMapper.selectMessagePage(sessionId, beforeId, afterId, size + 1));
+        boolean hasMore = rows.size() > size;
+        if (hasMore) rows.remove(rows.size() - 1);
+        if (afterId == null) Collections.reverse(rows);
+        for (ImMessage row : rows) row.setIsMine(userId.equals(row.getSenderId()));
+        if (receipts != null) receipts.decorate(userId, session, rows);
+        return Map.of("items", rows, "hasMore", hasMore);
     }
 
     @Override

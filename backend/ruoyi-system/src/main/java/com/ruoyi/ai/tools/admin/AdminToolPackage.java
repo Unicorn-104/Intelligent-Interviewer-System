@@ -1,11 +1,13 @@
 package com.ruoyi.ai.tools.admin;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.stereotype.Component;
 
 import com.ruoyi.ai.core.AgentTool;
 import com.ruoyi.ai.core.AgentToolPackage;
+import com.ruoyi.ai.mcp.McpToolRegistry;
 
 /**
  * 管理端工具包。新增管理端工具时在这里登记一次即可，编排层无需改动。
@@ -15,19 +17,34 @@ import com.ruoyi.ai.core.AgentToolPackage;
 @Component
 public class AdminToolPackage implements AgentToolPackage
 {
-    private final List<AgentTool> tools;
+    private final List<AgentTool> baseTools;
+
+    private final McpToolRegistry mcpRegistry;
 
     public AdminToolPackage(GetDashboardStatsTool dashboardStats,
             GetRecentLoginAlertsTool loginAlerts,
             SearchQuestionsTool searchQuestions,
+            GetQuestionDetailTool questionDetail,
+            CheckDuplicateQuestionsTool checkDuplicates,
             GetQuestionStatsTool questionStats,
             ListImportBatchesTool listBatches,
             CreateQuestionsTool createQuestions,
             ClassifyQuestionsTool classifyQuestions,
-            UndoImportBatchTool undoImportBatch)
+            UpdateQuestionsTool updateQuestions,
+            DeleteQuestionsTool deleteQuestions,
+            UndoImportBatchTool undoImportBatch,
+            CreateCompaniesTool createCompanies,
+            CreatePositionsTool createPositions,
+            SearchJobsTool searchJobs,
+            SearchTalentTool searchTalent,
+            ListMessageTemplatesTool listMessageTemplates,
+            McpToolRegistry mcpRegistry)
     {
-        this.tools = List.of(dashboardStats, loginAlerts, searchQuestions, questionStats,
-                listBatches, createQuestions, classifyQuestions, undoImportBatch);
+        this.baseTools = List.of(dashboardStats, loginAlerts, searchQuestions, questionDetail, checkDuplicates,
+                questionStats, listBatches, createQuestions, classifyQuestions, updateQuestions,
+                deleteQuestions, undoImportBatch, createCompanies, createPositions, searchJobs, searchTalent,
+                listMessageTemplates);
+        this.mcpRegistry = mcpRegistry;
     }
 
     @Override
@@ -39,6 +56,13 @@ public class AdminToolPackage implements AgentToolPackage
     @Override
     public List<AgentTool> tools()
     {
-        return tools;
+        List<AgentTool> mcpTools = mcpRegistry.tools();
+        if (mcpTools.isEmpty())
+        {
+            return baseTools;
+        }
+        List<AgentTool> all = new ArrayList<>(baseTools);
+        all.addAll(mcpTools);
+        return all;
     }
 }
