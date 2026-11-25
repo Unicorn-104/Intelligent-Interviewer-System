@@ -16,6 +16,11 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.util.Arrays;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -23,6 +28,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.ai.core.AgentActionStore;
+import com.ruoyi.ai.core.AgentRunRegistry;
 import com.ruoyi.ai.core.AgentTool;
 import com.ruoyi.ai.core.AgentToolPackage;
 import com.ruoyi.ai.core.PendingAction;
@@ -37,6 +43,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -61,13 +68,10 @@ import java.util.stream.Stream;
 public class AdminAssistantController extends BaseController {
 
     private static final String ENC_PREFIX = "ENC:";
-    private static volatile ModelProvider cachedProvider;
-    /** Provider selection has a single source: AgentModelClient.resolve() (status 1 = enabled, api_key non-blank). */
+    /** Provider selection has a single source: AgentModelClient.resolve() (status 1 = enabled, api_key non-blank). 每次实时读取，配置修改后无需重启。 */
     private ModelProvider activeProvider() {
-        if (cachedProvider != null) return cachedProvider;
         try {
-            cachedProvider = agentModelClient.resolve();
-            return cachedProvider;
+            return agentModelClient.resolve();
         } catch (Exception e) {
             logger.error("resolve provider error", e);
             return null;
@@ -120,6 +124,19 @@ public class AdminAssistantController extends BaseController {
     @Autowired
     private AgentActionStore actionStore;
 
+    /** 流式请求登记表：停止按钮按 runId 取消并中断上游模型请求。 */
+    @Autowired
+    private AgentRunRegistry runRegistry;
+
+    /** 上游请求被用户取消；由本类内部抛出，不再向上抛为错误。 */
+    private static final class RunCancelledException extends Exception
+    {
+        RunCancelledException()
+        {
+            super("run cancelled");
+        }
+    }
+
     /** 各端写工具自报的草稿执行器。 */
     @Autowired
     private List<PendingActionHandler> pendingHandlers;
@@ -155,9 +172,13 @@ public class AdminAssistantController extends BaseController {
             你是招聘管理系统后台AI助手。既能查业务数据，也能代用户起草题目、修改题目与调整分类。
             严格要求：
             0. 调用工具必须使用工具调用接口（tool_calls），禁止把调用写成任何文本标记或伪标签；
-            1. 任何写操作都必须先调用 create_questions / update_questions / classify_questions / delete_questions / undo_import_batch / create_companies
+            1. 任何写操作都必须先调用 create_questions / update_questions / classify_questions / delete_questions / undo_import_batch / create_companies / create_positions
                生成待确认草稿，然后告诉用户"请点击下方卡片确认"，绝不能声称已经写入、修改或已经撤销；
             2. 业务数字优先用工具查真实数据，不编造；
+               岗位查询用 search_jobs（可按岗位名、企业、城市、状态筛选）；
+               候选人/人才库用 search_talent（可按企业、状态、归档来源筛选，不返回联系方式）；
+               消息模板用 list_message_templates（可按标题或编码、渠道、状态、企业筛选）；
+               岗位录入用 create_positions（需岗位名与有效企业ID，入库后默认未上架，需在岗位管理页上架）；
             3. 中文简洁分点回答；
             4. 题库口径：分类 1-5；题型 1 单选、2 多选、3 判断、4 简答、5 编程；
             5. 用户问某题的答案、解析、选项或分值时，直接调用 get_question_detail（只读），
@@ -187,7 +208,26 @@ public class AdminAssistantController extends BaseController {
                 - 其他要求：基于附件内容回答；附件里没有的信息一律留空，不得猜测。
             12. 修改类请求先定位对象再改：题目先用 search_questions 确认 questionId 再调用 update_questions；
                 命中多条时先列候选让用户选择，不得批量修改不明确的记录。
+            13. 名字以 mcp_ 开头的是外部 MCP 工具（由配置决定是否启用）：用户明确要求使用外部工具
+                （点名 mcp_ 工具，或要求"用 echo 工具""调用外部工具"）时必须真的发起工具调用，
+                不得用文字模拟调用结果；工具不存在或不可用时直接说明"当前没有该外部工具"。
             """;
+
+    /** 当前生效模型（不含密钥），供前端标题实时展示。 */
+    @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
+    @GetMapping("/provider")
+    public AjaxResult provider() {
+        ModelProvider p = activeProvider();
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        if (p == null) {
+            out.put("enabled", false);
+            return success(out);
+        }
+        out.put("enabled", true);
+        out.put("name", p.getMppName());
+        out.put("model", p.getMppModelName());
+        return success(out);
+    }
 
     @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
     @PostMapping("/chat")
@@ -230,7 +270,7 @@ public class AdminAssistantController extends BaseController {
             // 2) 带工具请求：只读工具直查，写工具只生成待确认草稿
             PENDING_CARDS.remove();
             ArrayNode tools = buildTools();
-            String answer = callModel(provider.getMppModelName(), provider.getMppApiUrl(), apiKey, messages, tools);
+            String answer = callModel(provider.getMppModelName(), provider.getMppApiUrl(), apiKey, messages, tools, null);
 
             Map<String, Object> data = new java.util.LinkedHashMap<>();
             data.put("answer", normalizeAnswer(answer));
@@ -244,13 +284,17 @@ public class AdminAssistantController extends BaseController {
         }
     }
 
-    /** 流式端点：同步写 SSE（请求线程内完成，避免异步分发丢鉴权）。 */
+    /** 流式端点：同步写 SSE（请求线程内完成，避免异步分发丢鉴权）。runId 先于正文下发，供"停止"按钮取消。 */
     @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
     @PostMapping(value = "/chat/stream", produces = "text/event-stream;charset=UTF-8")
     public void chatStream(HttpServletResponse response, @RequestBody Map<String, Object> body) throws Exception {
         String message = body.get("message") == null ? "" : body.get("message").toString().trim();
         @SuppressWarnings("unchecked")
         List<Map<String, String>> history = (List<Map<String, String>>) body.getOrDefault("history", new ArrayList<>());
+        Object runIdRaw = body.get("runId");
+        String runId = runIdRaw == null || runIdRaw.toString().isBlank()
+                ? UUID.randomUUID().toString()
+                : runIdRaw.toString().trim();
         ModelProvider provider = activeProvider();
         response.setContentType("text/event-stream");
         response.setCharacterEncoding("UTF-8");
@@ -258,7 +302,18 @@ public class AdminAssistantController extends BaseController {
         response.setHeader("Cache-Control", "no-cache");
         response.setHeader("X-Accel-Buffering", "no");
         java.io.PrintWriter out = response.getWriter();
-        if (message.isEmpty() || provider == null) {
+        if (message.isEmpty()) {
+            out.write("data: [DONE]\n\n");
+            out.flush();
+            return;
+        }
+        // 先下发 runId：前端在收到任何正文前就拿到可用于取消的编号
+        out.write("event: run\ndata: " + json.writeValueAsString(Map.of("runId", runId)) + "\n\n");
+        out.flush();
+        if (provider == null) {
+            Map<String, Object> tip = new java.util.LinkedHashMap<>();
+            tip.put("text", "AI 模型未启用：请到「系统管理 → 模型配置」启用一个模型后再试。");
+            out.write("event: answer\ndata: " + json.writeValueAsString(tip) + "\n\n");
             out.write("data: [DONE]\n\n");
             out.flush();
             return;
@@ -266,6 +321,7 @@ public class AdminAssistantController extends BaseController {
         String apiKey = decryptKey(provider.getMppApiKey());
         String model = provider.getMppModelName();
         String url = provider.getMppApiUrl();
+        AgentRunRegistry.Handle run = runRegistry.register(runId);
         try {
             // 只传最近5条历史，减少token
             List<Map<String, String>> shortHistory = history.size() > 5
@@ -274,10 +330,10 @@ public class AdminAssistantController extends BaseController {
             ArrayNode messages = buildMessages(message, shortHistory, body.get("attachments"));
 
             // 题库类问题走工具路径：可查库、可生成待确认草稿；普通问答仍走流式
-            if (needsQuestionTools(message)) {
+            if (needsQuestionTools(message) || mentionsKnownTool(message)) {
                 PENDING_CARDS.remove();
                 ArrayNode tools = buildTools();
-                String answer = callModel(model, url, apiKey, messages, tools);
+                String answer = callModel(model, url, apiKey, messages, tools, run);
                 Map<String, Object> answerEvent = new java.util.LinkedHashMap<>();
                 answerEvent.put("text", normalizeAnswer(answer));
                 out.write("event: answer\ndata: " + json.writeValueAsString(answerEvent) + "\n\n");
@@ -307,13 +363,98 @@ public class AdminAssistantController extends BaseController {
                 messages.addObject().put("role", "system").put("content",
                         "【实时业务数据】\n" + stats + "\n请基于以上真实数据回答用户问题，不要编造数字。如果用户问的是某家公司，就用【指定公司详细数据】里的数字回答。");
             }
-            streamGenerate(model, url, apiKey, messages, out);
+            streamGenerate(model, url, apiKey, messages, out, run);
             out.write("data: [DONE]\n\n");
             out.flush();
+        } catch (RunCancelledException e) {
+            logger.info("assistant run cancelled runId={}", runId);
+            // 用户在看到卡片前就停止：本轮已登记的草稿一并作废，避免留下永远无法确认的孤儿草稿
+            for (Map<String, Object> card : PENDING_CARDS.get()) {
+                Object pid = card.get("id");
+                if (pid != null) {
+                    actionStore.discard(pid.toString());
+                }
+            }
+            writeQuietly(out, "data: [DONE]\n\n");
         } catch (Exception e) {
+            // 前端已 abort 时写入必然失败：按取消处理并立即中断上游，不再记为错误
+            if (isClientAbort(e)) {
+                runRegistry.cancel(runId);
+                logger.info("assistant client disconnected runId={}", runId);
+                return;
+            }
             logger.error("assistant stream error", e);
-            out.write("data: {\"error\":\"stream failed\"}\n\n");
+            writeQuietly(out, "data: {\"error\":\"stream failed\"}\n\n");
+        } finally {
+            runRegistry.unregister(runId);
+            PENDING_CARDS.remove();
+        }
+    }
+
+    /** 前端"停止"按钮：置取消标记并中断上游模型请求；runId 不存在（已结束）也返回成功，保证幂等。 */
+    @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
+    @PostMapping("/runs/{runId}/cancel")
+    public AjaxResult cancelRun(@org.springframework.web.bind.annotation.PathVariable("runId") String runId) {
+        boolean hit = runRegistry.cancel(runId);
+        return success(Map.of("runId", runId, "cancelled", hit));
+    }
+
+    /** 客户端断开（Broken pipe / Connection reset / Tomcat ClientAbortException）判定。 */
+    private static boolean isClientAbort(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t.getClass().getName().endsWith("ClientAbortException")) {
+                return true;
+            }
+            String msg = t.getMessage();
+            if (t instanceof java.io.IOException && msg != null
+                    && (msg.contains("Broken pipe") || msg.contains("Connection reset")
+                        || msg.contains("connection was aborted"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void writeQuietly(java.io.PrintWriter out, String s) {
+        try {
+            out.write(s);
             out.flush();
+        } catch (Exception ignored) {
+            // 客户端已断开，忽略
+        }
+    }
+
+    /** 轮询等待上游结果：期间持续检查取消标记与超时，保证"停止"能立刻打断阻塞等待。 */
+    private <T> T await(CompletableFuture<T> future, AgentRunRegistry.Handle run, long timeoutSec) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSec);
+        while (true) {
+            try {
+                return future.get(300, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException waitTimeout) {
+                if (run != null && run.isCancelled()) {
+                    future.cancel(true);
+                    throw new RunCancelledException();
+                }
+                if (System.nanoTime() - deadline >= 0) {
+                    future.cancel(true);
+                    throw new java.net.http.HttpTimeoutException("模型响应超时(" + timeoutSec + "s)");
+                }
+            } catch (ExecutionException ee) {
+                // JDK 取消 HTTP/2 流后 Future 以 IOException("Stream N cancelled") 异常完成，并非 CancellationException
+                if (run != null && run.isCancelled()) {
+                    throw new RunCancelledException();
+                }
+                Throwable c = ee.getCause();
+                if (c instanceof Exception ex) {
+                    throw ex;
+                }
+                throw ee;
+            } catch (java.util.concurrent.CancellationException ce) {
+                if (run != null && run.isCancelled()) {
+                    throw new RunCancelledException();
+                }
+                throw ce;
+            }
         }
     }
 
@@ -436,9 +577,28 @@ public class AdminAssistantController extends BaseController {
                 "撤销", "批次", "改分类", "分类调整", "查重", "重复题", "题型", "题干",
                 "修改题", "改题", "答案", "解析", "难度", "分值", "选项",
                 "删除题", "删题", "移除题", "清除题", "删除", "删掉", "移除", "清除",
-                "附件", "这个文件", "这份文档", "提取题", "整理题", "录入", "新增企业", "企业信息", "公司信息", "导入企业"};
+                "附件", "这个文件", "这份文档", "提取题", "整理题", "录入", "新增企业", "企业信息", "公司信息", "导入企业",
+                "岗位", "候选人", "人才库", "消息模板", "模板", "mcp", "MCP", "外部工具"};
         for (String kw : keywords) {
             if (q.contains(kw)) return true;
+        }
+        return false;
+    }
+
+    /** 用户点名了已注册工具（含 MCP 工具的短名）时必须走工具路径，否则模型看不到工具只能用文本模拟。 */
+    private boolean mentionsKnownTool(String q) {
+        if (q == null || q.isBlank()) return false;
+        for (AgentToolPackage pkg : toolPackages) {
+            if (!SCOPE.equals(pkg.scope())) continue;
+            for (AgentTool tool : pkg.tools()) {
+                String name = tool.name();
+                if (name == null || name.length() < 3) continue;
+                if (q.contains(name)) return true;
+                if (name.startsWith("mcp_")) {
+                    String shortName = name.substring(name.lastIndexOf('_') + 1);
+                    if (shortName.length() >= 3 && q.contains(shortName) && q.contains("工具")) return true;
+                }
+            }
         }
         return false;
     }
@@ -548,8 +708,9 @@ public class AdminAssistantController extends BaseController {
         }
     }
 
-    /** 流式调用：逐行读 ARK SSE，把 delta.content 写成 SSE 行给前端。 */
-    private void streamGenerate(String model, String url, String apiKey, ArrayNode messages, java.io.PrintWriter out) throws Exception {
+    /** 流式调用：逐行读 ARK SSE，把 delta.content 写成 SSE 行给前端；用户取消时关闭上游行流并抛 RunCancelledException。 */
+    private void streamGenerate(String model, String url, String apiKey, ArrayNode messages,
+                                java.io.PrintWriter out, AgentRunRegistry.Handle run) throws Exception {
         logger.info("streamGenerate model={} url={} msgs={}", model, url, messages.size());
         ObjectNode reqBody = json.createObjectNode();
         reqBody.put("model", model);
@@ -562,35 +723,61 @@ public class AdminAssistantController extends BaseController {
                 .header("Authorization", "Bearer " + apiKey)
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(reqBody)))
                 .build();
-        HttpResponse<Stream<String>> resp = http.send(request, HttpResponse.BodyHandlers.ofLines());
+        CompletableFuture<HttpResponse<Stream<String>>> pending =
+                http.sendAsync(request, HttpResponse.BodyHandlers.ofLines());
+        if (run != null) {
+            // 响应头未到：取消动作 = 取消 Future（直接断开连接）
+            run.onCancel(() -> pending.cancel(true));
+        }
+        HttpResponse<Stream<String>> resp = await(pending, run, 60);
         int status = resp.statusCode();
         if (status != 200) {
             StringBuilder errBody = new StringBuilder();
-            resp.body().forEach(errBody::append);
+            try (Stream<String> lines = resp.body()) {
+                lines.forEach(errBody::append);
+            }
             logger.error("ark stream http {} body={}", status, errBody);
             out.write("data: {\"error\":\"模型服务异常(" + status + ")\"}\n\n");
             out.flush();
             return;
         }
         try (Stream<String> lines = resp.body()) {
-            for (String line : (Iterable<String>) lines::iterator) {
-                logger.info("ark raw: {}", line);
-                if (!line.startsWith("data:")) continue;
-                String data = line.substring(5).trim();
-                if (data.isEmpty() || "[DONE]".equals(data)) continue;
-                JsonNode node = json.readTree(data);
-                String delta = node.path("choices").path(0).path("delta").path("content").asText("");
-                if (!delta.isEmpty()) {
-                    // JSON 编码后再写入：正文含换行时不会破坏 SSE 帧，前端可原样还原
-                    out.write("data: " + json.writeValueAsString(delta) + "\n\n");
-                    out.flush();
+            if (run != null) {
+                // 响应已到达：取消动作 = 关闭行流（关闭即释放上游连接）
+                run.onCancel(lines::close);
+            }
+            try {
+                for (String line : (Iterable<String>) lines::iterator) {
+                    if (run != null && run.isCancelled()) {
+                        throw new RunCancelledException();
+                    }
+                    logger.info("ark raw: {}", line);
+                    if (!line.startsWith("data:")) continue;
+                    String data = line.substring(5).trim();
+                    if (data.isEmpty() || "[DONE]".equals(data)) continue;
+                    JsonNode node = json.readTree(data);
+                    String delta = node.path("choices").path(0).path("delta").path("content").asText("");
+                    if (!delta.isEmpty()) {
+                        // JSON 编码后再写入：正文含换行时不会破坏 SSE 帧，前端可原样还原
+                        out.write("data: " + json.writeValueAsString(delta) + "\n\n");
+                        out.flush();
+                    }
                 }
+            } catch (RunCancelledException e) {
+                throw e;
+            } catch (Exception e) {
+                // 取消动作在另一线程关闭流时，本线程的读取会抛异常：按取消处理而非错误
+                if (run != null && run.isCancelled()) {
+                    throw new RunCancelledException();
+                }
+                throw e;
             }
         }
     }
 
-    /** 调模型；若返回 tool_calls 则执行工具后二次请求。 */
-    private String callModel(String model, String url, String apiKey, ArrayNode messages, ArrayNode tools) throws Exception {
+    /** 调模型；若返回 tool_calls 则执行工具后二次请求。run 非空时支持用户中途取消。 */
+    private String callModel(String model, String url, String apiKey, ArrayNode messages, ArrayNode tools,
+                             AgentRunRegistry.Handle run) throws Exception {
         ObjectNode reqBody = json.createObjectNode();
         reqBody.put("model", model);
         reqBody.set("messages", messages);
@@ -608,7 +795,12 @@ public class AdminAssistantController extends BaseController {
                 .header("Authorization", "Bearer " + apiKey)
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(reqBody)))
                 .build();
-        HttpResponse<String> resp = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        CompletableFuture<HttpResponse<String>> pending =
+                http.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (run != null) {
+            run.onCancel(() -> pending.cancel(true));
+        }
+        HttpResponse<String> resp = await(pending, run, 280);
         if (resp.statusCode() != 200) {
             return "（模型调用失败 HTTP " + resp.statusCode() + "）";
         }
@@ -637,12 +829,15 @@ public class AdminAssistantController extends BaseController {
             }
             results.append("\n请基于以上工具结果回答用户，不要再输出任何工具标记文本。");
             messages.addObject().put("role", "user").put("content", results.toString());
-            return callModel(model, url, apiKey, messages, null);
+            return callModel(model, url, apiKey, messages, null, run);
         }
 
         // 有工具调用：把 assistant(tool_calls) 消息追加，逐个执行工具
         messages.add(msg);
         for (JsonNode call : toolCalls) {
+            if (run != null && run.isCancelled()) {
+                throw new RunCancelledException();
+            }
             String name = call.path("function").path("name").asText("");
             String args = call.path("function").path("arguments").asText("{}");
             String result = executeTool(name, args);
@@ -654,7 +849,7 @@ public class AdminAssistantController extends BaseController {
             messages.add(toolMsg);
         }
         // 二次请求，不再带工具
-        return callModel(model, url, apiKey, messages, null);
+        return callModel(model, url, apiKey, messages, null, run);
     }
 
     /** 从文本里解析出工具调用列表；解析不到返回空。 */

@@ -24,6 +24,11 @@ export function chatAssistant(message, history) {
   })
 }
 
+/** 停止正在流式输出的助手回答：后端置取消标记并中断上游模型请求 */
+export function cancelAssistantRun(runId) {
+  return request({ url: '/ai/assistant/runs/' + runId + '/cancel', method: 'post' })
+}
+
 export function listDataExport() {
   return request({ url: '/system/data/exportList', method: 'get' })
 }

@@ -13,6 +13,7 @@ import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.ruoyi.common.config.RuoYiConfig;
 import com.ruoyi.common.constant.Constants;
+import com.ruoyi.framework.interceptor.PageContextCleanInterceptor;
 import com.ruoyi.framework.interceptor.RepeatSubmitInterceptor;
 
 /**
@@ -25,6 +26,9 @@ public class ResourcesConfig implements WebMvcConfigurer
 {
     @Autowired
     private RepeatSubmitInterceptor repeatSubmitInterceptor;
+
+    @Autowired
+    private PageContextCleanInterceptor pageContextCleanInterceptor;
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry)
@@ -46,6 +50,8 @@ public class ResourcesConfig implements WebMvcConfigurer
     public void addInterceptors(InterceptorRegistry registry)
     {
         registry.addInterceptor(repeatSubmitInterceptor).addPathPatterns("/**");
+        // 分页线程变量兜底清理：须注册在业务拦截器之后，afterCompletion 才会最先执行
+        registry.addInterceptor(pageContextCleanInterceptor).addPathPatterns("/**");
     }
 
     /**

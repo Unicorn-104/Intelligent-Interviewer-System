@@ -134,21 +134,39 @@ mysql -h<db_host> -u<db_user> -p recruit_agent < backend/doc/migrate_alter_colum
 # 其余历史 migration_*.sql 按需补跑；重复执行不报错（IF NOT EXISTS / IGNORE / 判断式 ALTER）
 ```
 
-### 3.3 后端数据源配置（不提交明文）
+### 3.3 后端数据源与 Redis 配置（环境变量覆盖，不提交明文）
 
-服务器上单独维护一份 `application-druid.yml` / 用环境变量覆盖，**不要改仓库里的默认值并提交**：
+`application.yml` / `application-druid.yml` 已改为占位符 + 开发默认值，服务器用环境变量覆盖即可，不改仓库文件：
 
+| 环境变量 | 对应配置 | 说明 |
+| --- | --- | --- |
+| `DB_URL` | `spring.datasource.druid.master.url` | 服务器 MySQL 地址 / 库名 |
+| `DB_USERNAME` / `DB_PASSWORD` | 同上 `username` / `password` | 服务器库账号 |
+| `REDIS_HOST` / `REDIS_PORT` | `spring.data.redis.host` / `port` | 服务器 Redis |
+| `REDIS_DATABASE` / `REDIS_PASSWORD` | `spring.data.redis.database` / `password` | 库索引 / 密码（无密码留空） |
 
+模板见 `deploy/backend/env.example`：复制为 `backend.env`（`chmod 600`），启动前 `set -a; . ./backend.env; set +a; ./run-backend.sh`。
 
-* `spring.datasource.druid.master.url` → 服务器 MySQL 地址 / 库名
+### 3.4 服务器 Redis 安装（不依赖开发机的 Windows 版）
 
-* `username` / `password` → 服务器库账号
+开发机上用的 `Redis-7.4.2-Windows-x64-msys2` 目录版仅用于本地调试，服务器按下面任一方式装：
 
-* `spring.data.redis.host/port/password` → 服务器 Redis
+```
+# 方式一：发行版仓库（Ubuntu/Debian）
+sudo apt install -y redis-server
+sudo sed -i 's/^# requirepass .*/requirepass <强密码>/' /etc/redis/redis.conf
+sudo sed -i 's/^bind .*/bind 127.0.0.1 ::1/' /etc/redis/redis.conf
+sudo systemctl enable --now redis-server
+redis-cli -a '<强密码>' ping        # 返回 PONG
 
+# 方式二：容器
+docker run -d --name recruit-redis --restart always \
+  -p 127.0.0.1:6379:6379 \
+  -v /data/redis:/data \
+  redis:7 redis-server --requirepass '<强密码>' --appendonly yes
+```
 
-
-***
+要点：`bind`/端口只对本机或内网开放，`requirepass` 必设，`appendonly yes` 开启持久化；容器方式挂载 `/data` 防重启丢数据。装好后把 `REDIS_HOST/PASSWORD` 写进 `backend.env`。
 
 ## 4. 后端打包与启动
 
