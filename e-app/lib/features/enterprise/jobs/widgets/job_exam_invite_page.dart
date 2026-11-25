@@ -31,6 +31,7 @@ class JobExamInvitePage extends StatefulWidget {
     required this.candidates,
     required this.examStageNames,
     required this.examStageId,
+    this.initialCandidateId,
     this.examPassPercent = 70,
     this.paperLoader,
     this.scheduleLoader,
@@ -41,6 +42,7 @@ class JobExamInvitePage extends StatefulWidget {
   final List<Map<String, dynamic>> candidates;
   final Set<String> examStageNames;
   final int examStageId;
+  final int? initialCandidateId;
 
   /// 招聘流程中在线笔试阶段配置的通过阈值百分比。
   final int examPassPercent;
@@ -74,7 +76,10 @@ class _JobExamInvitePageState extends State<JobExamInvitePage> {
     _selectedCandidates = {};
     for (final row in widget.candidates) {
       final id = _candidateId(row);
-      if (id != null && _isEligible(row)) {
+      final shouldSelect = widget.initialCandidateId == null
+          ? true
+          : id == widget.initialCandidateId;
+      if (id != null && shouldSelect && _isEligible(row)) {
         _selectedCandidates.add(id);
       }
     }

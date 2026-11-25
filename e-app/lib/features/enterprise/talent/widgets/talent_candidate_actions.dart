@@ -30,6 +30,8 @@ class TalentCandidateActions extends StatefulWidget {
     this.job,
     this.onInvited,
     this.beforeInvite,
+    this.examStage = false,
+    this.onSendExam,
     this.workflowRevision = 0,
     this.keyPrefix = 'talent',
     this.appStatusCode,
@@ -45,6 +47,8 @@ class TalentCandidateActions extends StatefulWidget {
   final TalentJobContext? job;
   final VoidCallback? onInvited;
   final Future<bool> Function()? beforeInvite;
+  final bool examStage;
+  final VoidCallback? onSendExam;
   final String keyPrefix;
   final int workflowRevision;
 
@@ -119,6 +123,11 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _openExam() {
+    if (!_enabled || widget.onSendExam == null) return;
+    widget.onSendExam!();
   }
 
   /// HR 淘汰：二次确认并选择终止原因（落库为 NOT_HIRED + endReason）。
@@ -333,8 +342,12 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
           children: [
             Expanded(
               child: FilledButton.icon(
-                key: ValueKey('${widget.keyPrefix}-invite'),
-                onPressed: (_enabled && !terminal) ? _openInvite : null,
+                key: ValueKey(
+                  '${widget.keyPrefix}-${widget.examStage ? 'send-exam' : 'invite'}',
+                ),
+                onPressed: (_enabled && !terminal)
+                    ? (widget.examStage ? _openExam : _openInvite)
+                    : null,
                 style: FilledButton.styleFrom(
                   // 紧凑化：按钮高度 46→40
                   minimumSize: const Size(0, 40),
@@ -353,10 +366,15 @@ class _TalentCandidateActionsState extends State<TalentCandidateActions> {
                     ),
                   ),
                 ),
-                icon: const Icon(Icons.event_available_outlined, size: 18),
-                label: const FittedBox(
+                icon: Icon(
+                  widget.examStage
+                      ? Icons.assignment_outlined
+                      : Icons.event_available_outlined,
+                  size: 18,
+                ),
+                label: FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Text('邀请面试'),
+                  child: Text(widget.examStage ? '发送笔试' : '邀请面试'),
                 ),
               ),
             ),
