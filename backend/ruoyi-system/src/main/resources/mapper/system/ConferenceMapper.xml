@@ -480,6 +480,24 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by oln_order asc, oln_id asc
     </select>
 
+    <select id="countOutlineQuestions" resultType="int">
+        select count(*) from t_int_outline where oln_session_id = #{sessionId}
+    </select>
+
+    <insert id="insertOutlineQuestion" parameterType="java.util.Map" useGeneratedKeys="true" keyProperty="questionId">
+        insert into t_int_outline
+            (oln_session_id, oln_dimension, oln_topic, oln_order, oln_description)
+        values
+            (#{sessionId}, #{dimension}, #{topic}, #{order}, #{description,jdbcType=LONGVARCHAR})
+    </insert>
+
+    <update id="updateMeetingTotalQuestions">
+        update t_int_meeting_state
+        set mst_total_question = #{total},
+            mst_updated_at = sysdate()
+        where mst_session_id = #{sessionId}
+    </update>
+
     <select id="selectHintPreferences" resultType="java.util.LinkedHashMap">
         select hip_hint_key      as hintKey,
                hip_used_count    as usedCount,
