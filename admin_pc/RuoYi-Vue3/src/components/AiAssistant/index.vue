@@ -224,6 +224,7 @@ import {
 } from '@element-plus/icons-vue'
 import { getToken } from '@/utils/auth'
 import { ElMessage } from 'element-plus'
+import { cancelAssistantRun } from '@/api/system/service'
 
 const router = useRouter()
 /** 与全局请求一致：dev 为 /dev-api，生产为 /prod-api */
@@ -270,6 +271,8 @@ const chatDirInput = ref(null)
 const KB_EXT = ['txt', 'md', 'markdown', 'csv', 'json', 'xml', 'yml', 'yaml', 'sql', 'log',
   'java', 'py', 'js', 'ts', 'html', 'css', 'pdf', 'docx', 'xlsx']
 let abortCtrl = null
+/** 当前流式请求的运行编号：点"停止"时用它通知后端中断上游模型请求 */
+let currentRunId = null
 
 const messages = computed(() => {
   const s = sessions.value.find((x) => x.id === currentId.value)
@@ -554,6 +557,12 @@ async function onChatPick(e) {
 
 function stop() {
   if (abortCtrl) abortCtrl.abort()
+  // 前端断流只停止接收；同时通知后端取消，避免模型继续生成、白耗 token
+  if (currentRunId) {
+    const runId = currentRunId
+    currentRunId = null
+    cancelAssistantRun(runId).catch(() => {})
+  }
   loading.value = false
   toolTip.value = ''
 }
@@ -772,12 +781,16 @@ async function send(preset) {
       .slice(-10)
       .map((m) => ({ role: m.role, content: m.content }))
     abortCtrl = new AbortController()
+    // 客户端先生成 runId 随请求带上，发出去就能立刻取消，不依赖首个 SSE 帧
+    const runId = (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    currentRunId = runId
     const resp = await fetch(`${BASE_API}/ai/assistant/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
       body: JSON.stringify({
         message: text,
         history: hist,
+        runId,
         attachments: chatAttachments.value.map((a) => ({ name: a.name, text: a.text }))
       }),
       signal: abortCtrl.signal
@@ -788,6 +801,7 @@ async function send(preset) {
     let expectTool = false
     let expectAnswer = false
     let expectPending = false
+    let expectRun = false
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -800,11 +814,23 @@ async function send(preset) {
           expectTool = evName === 'tool'
           expectAnswer = evName === 'answer'
           expectPending = evName === 'pending'
+          expectRun = evName === 'run'
           continue
         }
         if (!line.startsWith('data:')) continue
         const d = line.slice(5).trim()
         if (!d || d === '[DONE]') continue
+        if (expectRun) {
+          // 后端回传实际使用的 runId（兼容服务端生成），以它为准
+          try {
+            const serverRunId = JSON.parse(d).runId
+            if (serverRunId) currentRunId = serverRunId
+          } catch (e) {
+            /* 解析失败忽略 */
+          }
+          expectRun = false
+          continue
+        }
         if (expectPending) {
           try {
             aiMsg.pending = JSON.parse(d)
@@ -857,11 +883,16 @@ async function send(preset) {
   } catch (e) {
     if (e.name !== 'AbortError') {
       aiMsg.content = aiMsg.content || ('请求失败：' + (e.message || '网络错误') + '，点下方"重试"。')
+    } else {
+      // 用户主动停止：保留已生成的部分正文并落历史
+      aiMsg.content = aiMsg.content || '（已停止生成）'
+      persistHistory()
     }
   } finally {
     loading.value = false
     toolTip.value = ''
     abortCtrl = null
+    currentRunId = null
     await scrollBottom()
     focusInput()
   }
