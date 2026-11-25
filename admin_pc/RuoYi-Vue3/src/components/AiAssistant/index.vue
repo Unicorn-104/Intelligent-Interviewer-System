@@ -5,48 +5,46 @@
     </div>
 
     <el-drawer v-model="open" :size="drawerSize" :with-header="false" :close-on-press-escape="true" class="ai-drawer">
-      <div class="ai-panel">
+      <div class="ai-panel" @click="onDocClick">
         <div class="ai-header">
           <div class="ai-header-left">
             <div class="ai-avatar ai-avatar-bot">AI</div>
             <div>
               <div class="ai-title">后台助手</div>
-              <div class="ai-sub"><span class="dot"></span>在线 · 豆包大模型</div>
+              <div class="ai-sub"><span class="dot"></span>{{ modelLabel }}</div>
             </div>
           </div>
           <div class="ai-header-actions">
             <el-tooltip content="新对话" placement="bottom">
               <el-icon @click="newSession" :size="16"><Plus /></el-icon>
             </el-tooltip>
-            <el-dropdown trigger="click" @command="switchSession">
-              <el-tooltip content="历史会话" placement="bottom">
+            <div class="ai-menu-wrap">
+              <span class="ai-icon-btn" title="历史会话" @click="toggleMenu('hist')">
                 <el-icon :size="16"><Clock /></el-icon>
-              </el-tooltip>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item v-for="s in sessions" :key="s.id" :command="s.id">
-                    <div class="session-item" :class="{ 'session-active': s.id === currentId }">
-                      <div class="session-main">
-                        <span class="session-title">{{ s.title || '新对话' }}</span>
-                        <span class="session-meta">{{ formatTime(s.updatedAt || s.id) }} · {{ (s.msgs || []).length }} 条</span>
-                      </div>
-                      <el-icon class="session-del" @click.stop="deleteSession(s.id)"><Close /></el-icon>
+                <span v-if="sessionCount" class="ai-badge">{{ sessionCount }}</span>
+              </span>
+              <div v-if="histOpen" class="ai-menu">
+                <div v-if="!sessions.length" class="ai-menu-empty">暂无历史会话</div>
+                <div v-for="s in sessions" :key="s.id" class="ai-menu-item" @click="switchSession(s.id)">
+                  <div class="session-item" :class="{ 'session-active': s.id === currentId }">
+                    <div class="session-main">
+                      <span class="session-title">{{ s.title || '新对话' }}</span>
+                      <span class="session-meta">{{ formatTime(s.updatedAt || s.id) }} · {{ (s.msgs || []).length }} 条</span>
                     </div>
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-dropdown trigger="click" @command="onExport">
-              <el-tooltip content="导出对话" placement="bottom">
+                    <el-icon class="session-del" @click.stop="deleteSession(s.id)"><Close /></el-icon>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="ai-menu-wrap">
+              <span class="ai-icon-btn" title="导出对话" @click="toggleMenu('exp')">
                 <el-icon :size="16"><Download /></el-icon>
-              </el-tooltip>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="current">导出当前对话</el-dropdown-item>
-                  <el-dropdown-item command="all">导出全部历史</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+              </span>
+              <div v-if="expOpen" class="ai-menu">
+                <div class="ai-menu-item" @click="onExport('current')">导出当前对话</div>
+                <div class="ai-menu-item" @click="onExport('all')">导出全部历史</div>
+              </div>
+            </div>
             <el-tooltip content="导入知识库文档或文件夹" placement="bottom">
               <el-icon @click="kbDialogVisible = true" :size="16"><UploadFilled /></el-icon>
             </el-tooltip>
@@ -206,7 +204,7 @@
 
 <script setup name="AiAssistant">
 /* global AbortController, TextDecoder, SpeechSynthesisUtterance */
-import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ChatDotRound,
@@ -239,6 +237,24 @@ const loading = ref(false)
 const toolTip = ref('')
 const sessions = ref([])
 const currentId = ref(null)
+const histOpen = ref(false)
+const expOpen = ref(false)
+function toggleMenu(which) {
+  if (which === 'hist') {
+    histOpen.value = !histOpen.value
+    expOpen.value = false
+  } else {
+    expOpen.value = !expOpen.value
+    histOpen.value = false
+  }
+}
+// 点击面板其它区域时收起历史/导出菜单。
+// 注意：el-drawer 根节点带 @click.stop，抽屉内的点击不会冒泡到 document，因此监听挂在 .ai-panel 上
+function onDocClick(e) {
+  if (e.target && e.target.closest && e.target.closest('.ai-menu-wrap')) return
+  histOpen.value = false
+  expOpen.value = false
+}
 const listRef = ref(null)
 const kbDialogVisible = ref(false)
 const kbFiles = ref([])
@@ -259,6 +275,8 @@ const messages = computed(() => {
   const s = sessions.value.find((x) => x.id === currentId.value)
   return s ? s.msgs : []
 })
+/** 仅统计有消息的会话，空会话不显示角标 */
+const sessionCount = computed(() => sessions.value.filter((x) => (x.msgs || []).length).length)
 
 const HISTORY_KEY = 'ai-assistant-sessions-v2'
 const quickQuestions = ['平台现在有多少岗位和候选人？', '待审核的企业和岗位有哪些？', '最近有没有登录失败的异常？', 'Offer 即将到期的有几个？', 'AI 调用量今天用了多少？', '把附件里的题目提取到题库', '把附件里的公司信息录入系统']
@@ -348,6 +366,26 @@ function persistHistory() {
   }
 }
 
+const modelLabel = ref('在线 · 读取中…')
+async function loadProviderInfo() {
+  const token = getToken()
+  if (!token) return
+  try {
+    const resp = await fetch(`${BASE_API}/ai/assistant/provider`, {
+      headers: { Authorization: 'Bearer ' + token }
+    })
+    const j = await resp.json()
+    const d = j && j.data
+    if (d && d.enabled) modelLabel.value = '在线 · ' + (d.model || d.name || '模型')
+    else modelLabel.value = '未启用模型'
+  } catch {
+    modelLabel.value = '在线'
+  }
+}
+watch(open, (v) => {
+  if (v) loadProviderInfo()
+})
+
 function newSession() {
   const cur = sessions.value.find((x) => x.id === currentId.value)
   if (cur && (!cur.msgs || cur.msgs.length === 0)) {
@@ -364,6 +402,7 @@ function newSession() {
 
 function switchSession(id) {
   currentId.value = id
+  histOpen.value = false
 }
 
 function deleteSession(id) {
@@ -593,13 +632,15 @@ function buildSessionMd(s, roleLevel = '##') {
 
 function downloadMd(name, content) {
   const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
+  a.href = url
   a.download = name
   document.body.appendChild(a)
   a.click()
   a.remove()
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  setTimeout(() => URL.revokeObjectURL(url), 3000)
+  ElMessage.success(`已导出 ${name}`)
 }
 
 function timeStamp() {
@@ -635,6 +676,7 @@ function exportAll() {
 }
 
 function onExport(cmd) {
+  expOpen.value = false
   if (cmd === 'all') exportAll()
   else exportCurrent()
 }
@@ -922,6 +964,7 @@ async function scrollBottom() {
 
 onMounted(() => {
   window.addEventListener('keydown', onKey)
+  loadProviderInfo()
   try {
     const savedPos = JSON.parse(localStorage.getItem(POS_KEY))
     if (savedPos && typeof savedPos.x === 'number') {
@@ -1644,8 +1687,8 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 .ai-avatar-bot {
-  background: #f1f2f4;
-  color: #374151;
+  background: #e8f0fe;
+  color: #2563eb;
   font-size: 11px;
 }
 .ai-title {
@@ -1667,8 +1710,69 @@ onBeforeUnmount(() => {
   align-items: center;
   color: #8a919c;
 }
+.ai-icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.ai-badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+}
 .ai-header-actions .el-icon:hover {
   color: #2563eb;
+}
+.ai-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.ai-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 208px;
+  max-width: 268px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  z-index: 30;
+}
+.ai-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #1f2329;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ai-menu-item:hover {
+  background: #f4f5f7;
+}
+.ai-menu-empty {
+  padding: 10px 8px;
+  font-size: 12px;
+  color: #a0a6b0;
+  text-align: center;
 }
 .session-item {
   width: 200px;
@@ -1753,8 +1857,8 @@ onBeforeUnmount(() => {
 .ai-empty-avatar {
   width: 40px;
   height: 40px;
-  background: #f1f2f4;
-  color: #374151;
+  background: #e8f0fe;
+  color: #2563eb;
   font-size: 12px;
 }
 .ai-empty h3 {
@@ -1768,9 +1872,9 @@ onBeforeUnmount(() => {
   font-size: 11.5px;
   padding: 5px 10px;
   border-radius: 13px;
-  color: #475467;
-  border-color: #e8eaee;
-  background: #fafbfc;
+  color: #35507a;
+  border-color: #dbe6fb;
+  background: #f7faff;
 }
 .ai-chip:hover {
   border-color: #2563eb;
@@ -1778,8 +1882,11 @@ onBeforeUnmount(() => {
   color: #2563eb;
 }
 .ai-fab {
-  background: #1f2937;
-  box-shadow: 0 5px 16px rgba(17, 24, 39, 0.22);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 5px 16px rgba(37, 99, 235, 0.32);
+}
+.ai-fab:hover {
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.4);
 }
 .ai-row.assistant .ai-bubble.ai-bubble-empty {
   color: #9aa1ac;

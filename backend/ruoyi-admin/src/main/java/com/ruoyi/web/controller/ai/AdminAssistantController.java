@@ -37,6 +37,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -61,13 +62,10 @@ import java.util.stream.Stream;
 public class AdminAssistantController extends BaseController {
 
     private static final String ENC_PREFIX = "ENC:";
-    private static volatile ModelProvider cachedProvider;
-    /** Provider selection has a single source: AgentModelClient.resolve() (status 1 = enabled, api_key non-blank). */
+    /** Provider selection has a single source: AgentModelClient.resolve() (status 1 = enabled, api_key non-blank). 每次实时读取，配置修改后无需重启。 */
     private ModelProvider activeProvider() {
-        if (cachedProvider != null) return cachedProvider;
         try {
-            cachedProvider = agentModelClient.resolve();
-            return cachedProvider;
+            return agentModelClient.resolve();
         } catch (Exception e) {
             logger.error("resolve provider error", e);
             return null;
@@ -195,6 +193,22 @@ public class AdminAssistantController extends BaseController {
                 （点名 mcp_ 工具，或要求"用 echo 工具""调用外部工具"）时必须真的发起工具调用，
                 不得用文字模拟调用结果；工具不存在或不可用时直接说明"当前没有该外部工具"。
             """;
+
+    /** 当前生效模型（不含密钥），供前端标题实时展示。 */
+    @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
+    @GetMapping("/provider")
+    public AjaxResult provider() {
+        ModelProvider p = activeProvider();
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        if (p == null) {
+            out.put("enabled", false);
+            return success(out);
+        }
+        out.put("enabled", true);
+        out.put("name", p.getMppName());
+        out.put("model", p.getMppModelName());
+        return success(out);
+    }
 
     @PreAuthorize("@ss.hasPermi('system:ai:assistant')")
     @PostMapping("/chat")
