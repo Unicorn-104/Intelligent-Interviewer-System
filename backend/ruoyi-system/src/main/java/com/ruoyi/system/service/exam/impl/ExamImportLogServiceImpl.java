@@ -62,18 +62,35 @@ public class ExamImportLogServiceImpl implements IExamImportLogService
     @Override
     public Map<String, Object> list(int pageNum, int pageSize)
     {
+        return listInternal(null, pageNum, pageSize);
+    }
+
+    @Override
+    public Map<String, Object> listByCompany(Long companyId, int pageNum, int pageSize)
+    {
+        return listInternal(companyId, pageNum, pageSize);
+    }
+
+    private Map<String, Object> listInternal(Long companyId, int pageNum, int pageSize)
+    {
         int size = pageSize <= 0 ? 10 : Math.min(pageSize, 50);
         int page = pageNum <= 0 ? 1 : pageNum;
         int offset = (page - 1) * size;
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT b.eqb_id AS id, b.eqb_type AS type, b.eqb_file_name AS fileName, "
+        String where = companyId == null ? "" : " WHERE b.eqb_company_id = ?";
+        String countWhere = companyId == null ? "" : " WHERE eqb_company_id = ?";
+        String baseSql = "SELECT b.eqb_id AS id, b.eqb_type AS type, b.eqb_file_name AS fileName, "
                 + "b.eqb_company_id AS companyId, c.cmp_name AS companyName, "
                 + "b.eqb_total AS total, b.eqb_inserted AS inserted, b.eqb_failed AS failed, "
                 + "b.eqb_status AS status, b.eqb_operator AS operator, b.eqb_created_at AS createTime "
-                + "FROM t_exam_question_import_batch b LEFT JOIN t_cmp c ON c.cmp_id = b.eqb_company_id "
-                + "ORDER BY b.eqb_id DESC LIMIT ? OFFSET ?",
-                size, offset);
-        Integer count = jdbc.queryForObject("SELECT COUNT(1) FROM t_exam_question_import_batch", Integer.class);
+                + "FROM t_exam_question_import_batch b LEFT JOIN t_cmp c ON c.cmp_id = b.eqb_company_id"
+                + where + " ORDER BY b.eqb_id DESC LIMIT ? OFFSET ?";
+        List<Map<String, Object>> rows = companyId == null
+                ? jdbc.queryForList(baseSql, size, offset)
+                : jdbc.queryForList(baseSql, companyId, size, offset);
+        Integer count = companyId == null
+                ? jdbc.queryForObject("SELECT COUNT(1) FROM t_exam_question_import_batch" + countWhere, Integer.class)
+                : jdbc.queryForObject("SELECT COUNT(1) FROM t_exam_question_import_batch" + countWhere,
+                        Integer.class, companyId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("rows", rows);
         result.put("total", count == null ? 0 : count);
@@ -82,6 +99,21 @@ public class ExamImportLogServiceImpl implements IExamImportLogService
 
     @Override
     public Map<String, Object> undo(Long batchId, String operator)
+    {
+        return doUndo(batchId, null, operator);
+    }
+
+    @Override
+    public Map<String, Object> undoByCompany(Long batchId, Long companyId, String operator)
+    {
+        if (companyId == null || companyId <= 0)
+        {
+            throw new ServiceException("导入记录不存在", 404);
+        }
+        return doUndo(batchId, companyId, operator);
+    }
+
+    private Map<String, Object> doUndo(Long batchId, Long companyId, String operator)
     {
         if (batchId == null || batchId <= 0)
         {
@@ -95,6 +127,14 @@ public class ExamImportLogServiceImpl implements IExamImportLogService
             throw new ServiceException("导入记录不存在", 404);
         }
         Map<String, Object> batch = batches.get(0);
+        if (companyId != null)
+        {
+            Object batchCompany = batch.get("companyId");
+            if (batchCompany == null || Long.parseLong(String.valueOf(batchCompany)) != companyId)
+            {
+                throw new ServiceException("导入记录不存在", 404);
+            }
+        }
         Object statusObj = batch.get("status");
         if (statusObj != null && Integer.parseInt(String.valueOf(statusObj)) == 1)
         {
@@ -131,8 +171,11 @@ public class ExamImportLogServiceImpl implements IExamImportLogService
             }
             if (!deletable.isEmpty())
             {
-                deleted = jdbc.update("DELETE FROM t_exam_question WHERE eqs_id IN ("
-                        + joinIds(deletable) + ")");
+                String idList = joinIds(deletable);
+                deleted = companyId == null
+                        ? jdbc.update("DELETE FROM t_exam_question WHERE eqs_id IN (" + idList + ")")
+                        : jdbc.update("DELETE FROM t_exam_question WHERE eqs_id IN (" + idList
+                                + ") AND eqs_company_id = ?", companyId);
             }
         }
         jdbc.update("UPDATE t_exam_question_import_batch SET eqb_status = 1 WHERE eqb_id = ?", batchId);
