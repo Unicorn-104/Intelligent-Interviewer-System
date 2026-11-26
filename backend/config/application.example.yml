@@ -32,6 +32,9 @@ app:
           model: ${ENTERPRISE_MEMORY_RERANK_MODEL:BAAI/bge-reranker-base}
           timeout-seconds: ${ENTERPRISE_MEMORY_RERANK_TIMEOUT_SECONDS:3}
           top-n: ${ENTERPRISE_MEMORY_RERANK_TOP_N:5}
+      rag:
+        enabled: ${ENTERPRISE_RAG_ENABLED:false}
+        collection: ${ENTERPRISE_RAG_COLLECTION:enterprise_knowledge_bge_small_zh_v1}
   resume:
     structure:
       enabled: true

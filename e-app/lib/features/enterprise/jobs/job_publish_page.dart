@@ -692,6 +692,11 @@ class _JobPublishPageState extends State<JobPublishPage> {
     final stage = existing == null
         ? JobPublishStageDraft(_nextStageId++)
         : JobPublishStageDraft.copy(existing);
+    if (existing == null && _stages.isEmpty) {
+      stage
+        ..type = 1
+        ..name.text = jobPublishStageDefaultName(1);
+    }
     _allStages.add(stage);
     setState(() => _stageEditorOpen = true);
     try {

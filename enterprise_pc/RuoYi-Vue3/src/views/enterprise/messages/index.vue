@@ -177,12 +177,21 @@ function linkParts(text) {
 }
 
 // ---------- 面试邀请消息（type=1，内容以【面试邀请 开头） ----------
+// 去掉旧阶段名/旧卡片标签遗留的「无AI纯人工」后缀
+function cleanInterviewTag(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s*[·•]?\s*无\s*AI\s*(?:[·•]\s*)?纯人工\s*$/i, '')
+    .replace(/[·•\s]+$/, '')
+    .trim()
+}
+
 // 与候选人端约定同一条文本，PC 端解析后以卡片展示，不改变原始消息内容
 function parseInvite(text) {
   if (!text || !text.startsWith('【面试邀请')) return null
   const end = text.indexOf('】')
   if (end < 0) return null
-  const tags = text.slice(5, end).split('·').map(t => t.trim()).filter(Boolean)
+  const tags = cleanInterviewTag(text.slice(5, end)).split('·').map(t => t.trim()).filter(Boolean)
   const rest = text.slice(end + 1)
   const link = rest.match(/https?:\/\/\S+/)?.[0] || ''
   return { tags, desc: rest.replace(/https?:\/\/\S+/, '').replace(/视频面试.*$/, '').trim(), link }
@@ -827,8 +836,12 @@ async function sendLinkToChat() {
   try {
     const company = linkResult.value.companyName || '公司'
     const position = linkResult.value.positionTitle || '岗位'
-    const modeLabel = MODE_LABEL[linkResult.value.mode ?? linkForm.value.mode] || '视频面试'
-    const inviteTag = generatedStageName.value ? `·${generatedStageName.value}·${modeLabel}` : `·${modeLabel}`
+    const mode = Number(linkResult.value.mode ?? linkForm.value.mode)
+    const modeLabel = MODE_LABEL[mode] || '视频面试'
+    const stage = cleanInterviewTag(generatedStageName.value)
+    const inviteTag = mode === 4
+      ? `·${stage || '面试'}`
+      : stage ? `·${stage}·${modeLabel}` : `·${modeLabel}`
     // 以普通文本消息发送（type=1），与日常聊天一致，链接在气泡内可点击
     const body = { type: 1, content: `【面试邀请${inviteTag}】${company} ${position} 视频面试，请点击链接进入：${linkUrl.value}` }
     if (activeId.value != null) body.sessionId = activeId.value

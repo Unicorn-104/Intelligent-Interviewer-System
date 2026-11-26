@@ -528,6 +528,22 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         {
             throw new ServiceException("流程至少需要一个阶段");
         }
+        for (Map<String, Object> stage : stages)
+        {
+            int type;
+            try
+            {
+                type = stage.get("type") == null ? 3 : Integer.parseInt(String.valueOf(stage.get("type")));
+            }
+            catch (NumberFormatException e)
+            {
+                throw new ServiceException("招聘阶段类型无效", ErrorCode.BAD_REQUEST);
+            }
+            if (type != 1 && type != 3)
+            {
+                throw new ServiceException("招聘流程只能使用笔试和面试两种阶段", ErrorCode.BAD_REQUEST);
+            }
+        }
         Map<String, Object> template = jobMapper.selectTemplateByPos(posId, companyId);
         Long templateId;
         if (template == null)
@@ -550,14 +566,32 @@ public class EnterpriseJobServiceImpl implements IEnterpriseJobService
         int order = 1;
         for (Map<String, Object> s : stages)
         {
-            String name = str(s.get("name"));
-            if (StringUtils.isEmpty(name))
-            {
-                throw new ServiceException("阶段名称不能为空");
-            }
             int type = s.get("type") == null ? 3 : Integer.parseInt(String.valueOf(s.get("type")));
+            String name = str(s.get("name"));
+            if (StringUtils.isEmpty(name) || name.trim().isEmpty())
+            {
+                name = type == 1 ? "在线笔试" : "HR综合面试";
+            }
+            name = name.trim();
+            if (name.length() > 100)
+            {
+                throw new ServiceException("阶段名称不能超过100个字符", ErrorCode.BAD_REQUEST);
+            }
             int required = Boolean.TRUE.equals(s.get("required")) || "true".equals(String.valueOf(s.get("required"))) ? 1 : 0;
-            int threshold = s.get("threshold") == null ? 70 : Integer.parseInt(String.valueOf(s.get("threshold")));
+            int threshold;
+            try
+            {
+                threshold = s.get("threshold") == null ? 70 : Integer.parseInt(String.valueOf(s.get("threshold")));
+            }
+            catch (NumberFormatException e)
+            {
+                throw new ServiceException("阶段通过阈值无效", ErrorCode.BAD_REQUEST);
+            }
+            int minimumThreshold = type == 1 ? 1 : 0;
+            if (threshold < minimumThreshold || threshold > 100)
+            {
+                throw new ServiceException("阶段通过阈值必须在有效范围内", ErrorCode.BAD_REQUEST);
+            }
             jobMapper.insertStage(templateId, name, type, order++, required, threshold, buildStageConfig(s));
         }
         Map<String, Object> fresh = jobMapper.selectTemplateByPos(posId, companyId);

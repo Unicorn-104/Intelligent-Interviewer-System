@@ -38,7 +38,6 @@ Future<void> showJobWorkflowStageEditor({
       ..duration.text = (int.tryParse('${source['duration']}') ?? 45).toString()
       ..threshold.text = (int.tryParse('${source['threshold']}') ?? 70)
           .toString()
-      ..target.text = source['target']?.toString() ?? ''
       ..required = source['required'] == true
       ..skip = source['skip'] == true || '${source['skip']}' == '1'
       ..terminate =
@@ -113,23 +112,34 @@ class _WorkflowEditorState extends State<_WorkflowEditor> {
   @override
   void initState() {
     super.initState();
-    _templateName = widget.initial['templateName']?.toString() ?? '岗位招聘流程';
+    _templateName =
+        widget.initial['templateName']?.toString() ??
+        '\u5c97\u4f4d\u62db\u8058\u6d41\u7a0b';
+    final byType = <int, Map<String, Object?>>{};
     for (final raw in widget.initial['stages'] as List) {
       final data = Map<String, Object?>.from(raw as Map);
+      final type = int.tryParse('${data['type']}');
+      if (type != 1 && type != 3) continue;
+      byType.putIfAbsent(type!, () => data);
+    }
+    for (final type in [1, 3]) {
+      final data = byType[type];
+      final rawName = data?['name']?.toString().trim() ?? '';
       final stage = JobPublishStageDraft(_nextId++)
-        ..name.text = data['name']?.toString() ?? ''
-        ..type = int.tryParse('${data['type']}') ?? 3
-        ..duration.text = (int.tryParse('${data['duration']}') ?? 45).toString()
-        ..threshold.text = (int.tryParse('${data['threshold']}') ?? 70)
+        ..type = type
+        ..name.text = rawName.isEmpty
+            ? jobPublishStageDefaultName(type)
+            : rawName
+        ..duration.text = (int.tryParse('${data?['duration']}') ?? 45)
             .toString()
-        ..target.text = data['target']?.toString() ?? ''
-        ..required = _flag(data['required'])
-        ..skip = _flag(data['skip'])
-        ..terminate = _flag(data['terminate']);
+        ..threshold.text = (int.tryParse('${data?['threshold']}') ?? 70)
+            .toString()
+        ..required = _flag(data?['required'])
+        ..skip = _flag(data?['skip'])
+        ..terminate = _flag(data?['terminate']);
       _stages.add(stage);
       _allStages.add(stage);
-      // Keep unexposed fields and omitted values unchanged unless edited.
-      _original[stage.id] = data;
+      if (data != null) _original[stage.id] = data;
       _baseline[stage.id] = stage.toJson();
     }
   }
@@ -147,6 +157,12 @@ class _WorkflowEditorState extends State<_WorkflowEditor> {
     final draft = existing == null
         ? JobPublishStageDraft(_nextId++)
         : JobPublishStageDraft.copy(existing);
+    if (existing == null) {
+      final type = _stages.any((stage) => stage.type == 1) ? 3 : 1;
+      draft
+        ..type = type
+        ..name.text = jobPublishStageDefaultName(type);
+    }
     _allStages.add(draft);
     setState(() => _editing = true);
     try {
@@ -198,6 +214,11 @@ class _WorkflowEditorState extends State<_WorkflowEditor> {
       setState(() => _error = '至少添加一个阶段');
       return;
     }
+    final chainError = validateJobPublishStageChain(_stages);
+    if (chainError != null) {
+      setState(() => _error = chainError);
+      return;
+    }
     for (final stage in _stages) {
       final isExam = stage.type == 1;
       final duration = int.tryParse(stage.duration.text);
@@ -229,11 +250,6 @@ class _WorkflowEditorState extends State<_WorkflowEditor> {
     });
     if (saved) Navigator.pop(context);
   }
-
-  void _move(int index, int delta) => setState(() {
-    final stage = _stages.removeAt(index);
-    _stages.insert(index + delta, stage);
-  });
 
   @override
   Widget build(BuildContext context) => PopScope(
@@ -305,44 +321,7 @@ class _WorkflowEditorState extends State<_WorkflowEditor> {
                           _stages.remove(stage);
                           _error = null;
                         }),
-                        bottomActions: _stages.length > 1
-                            ? Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  IconButton(
-                                    key: ValueKey(
-                                      'job-workflow-up-${stage.id}',
-                                    ),
-                                    tooltip: '上移阶段',
-                                    onPressed: _saving || _editing || index == 0
-                                        ? null
-                                        : () => _move(index, -1),
-                                    icon: const Icon(
-                                      Icons.arrow_upward,
-                                      size: 18,
-                                      color: AppColors.textMuted,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    key: ValueKey(
-                                      'job-workflow-down-${stage.id}',
-                                    ),
-                                    tooltip: '下移阶段',
-                                    onPressed:
-                                        _saving ||
-                                            _editing ||
-                                            index == _stages.length - 1
-                                        ? null
-                                        : () => _move(index, 1),
-                                    icon: const Icon(
-                                      Icons.arrow_downward,
-                                      size: 18,
-                                      color: AppColors.textMuted,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : null,
+                        bottomActions: null,
                       ),
                     ],
                     if (_error != null)

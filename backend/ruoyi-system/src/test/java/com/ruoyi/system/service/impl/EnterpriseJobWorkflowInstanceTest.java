@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.mapper.DashboardMapper;
 import com.ruoyi.system.mapper.EnterpriseJobMapper;
 import org.h2.jdbcx.JdbcDataSource;
@@ -133,8 +134,8 @@ public class EnterpriseJobWorkflowInstanceTest
     {
         List<Map<String, Object>> stages = new ArrayList<>();
         Map<String, Object> first = new LinkedHashMap<>();
-        first.put("name", "AI 简历筛选");
-        first.put("type", 2);
+        first.put("name", "在线笔试");
+        first.put("type", 1);
         first.put("required", true);
         first.put("threshold", 70);
         first.put("duration", 45);
@@ -143,7 +144,7 @@ public class EnterpriseJobWorkflowInstanceTest
         first.put("terminate", false);
         stages.add(first);
         Map<String, Object> second = new LinkedHashMap<>();
-        second.put("name", "技术面试");
+        second.put("name", "HR综合面试");
         second.put("type", 3);
         second.put("required", false);
         second.put("threshold", 80);
@@ -176,10 +177,10 @@ public class EnterpriseJobWorkflowInstanceTest
         company(2);
         long positionId = position(2);
         service.saveWorkflow(100L, positionId, "岗位招聘流程", stages());
-        Map<String, Object> result = service.saveWorkflow(100L, positionId, "岗位招聘流程", stages().subList(0, 1));
+        Map<String, Object> result = service.saveWorkflow(100L, positionId, "岗位招聘流程", stages());
         assertEquals(2, jdbc.queryForObject(
                 "select count(*) from t_process_template where ptl_position_id = ?", Integer.class, positionId));
-        assertEquals(3, jdbc.queryForObject(
+        assertEquals(4, jdbc.queryForObject(
                 "select count(*) from t_process_stage s join t_process_template t on t.ptl_id = s.psg_template_id " +
                 "where t.ptl_position_id = ?", Integer.class, positionId));
         // H2 对 decimal->char 的格式化与 MySQL 不同，仅断言版本已递增
@@ -253,5 +254,30 @@ public class EnterpriseJobWorkflowInstanceTest
                 Integer.class, positionId, talentId));
         assertEquals(1, jdbc.queryForObject(
                 "select count(*) from t_process_template where ptl_position_id = ?", Integer.class, positionId));
+    }
+
+    @Test
+    void saveWorkflowRejectsUnsupportedStageType()
+    {
+        company(2);
+        long positionId = position(2);
+        List<Map<String, Object>> stages = stages();
+        stages.get(0).put("type", 2);
+        assertThrows(ServiceException.class, () -> service.saveWorkflow(100L, positionId, "招聘流程", stages));
+    }
+
+    @Test
+    void saveWorkflowUsesDefaultNamesWhenStageNamesAreBlank()
+    {
+        company(2);
+        long positionId = position(2);
+        List<Map<String, Object>> stages = stages();
+        stages.get(0).put("name", " ");
+        stages.get(1).put("name", "");
+        service.saveWorkflow(100L, positionId, "招聘流程", stages);
+        List<String> names = jdbc.queryForList(
+                "select s.psg_name from t_process_stage s join t_process_template t on t.ptl_id = s.psg_template_id " +
+                "where t.ptl_position_id = ? order by s.psg_sort_order", String.class, positionId);
+        assertEquals(List.of("在线笔试", "HR综合面试"), names);
     }
 }

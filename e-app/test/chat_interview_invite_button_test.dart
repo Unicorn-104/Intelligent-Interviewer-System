@@ -176,6 +176,26 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('历史面试邀请卡片不再展示无AI纯人工后缀', (tester) async {
+    final source = InviteChatSource();
+    source.messages = [
+      ConversationMessage.fromJson({
+        'messageId': 1,
+        'type': 1,
+        'content':
+            '【面试邀请·HR 综合面试·无AI纯人工】示例企业 示例岗位 视频面试，'
+            '请点击链接进入：$inviteUrl',
+        'isMine': true,
+        'sendTime': '2026-11-28 20:00',
+      }),
+    ];
+    await mountChat(tester, source);
+    expect(find.text('HR 综合面试'), findsOneWidget);
+    expect(find.textContaining('无AI纯人工'), findsNothing);
+    expect(find.textContaining('无 AI'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('面试已结束时提示本场面试已结束', (tester) async {
     final source = InviteChatSource()..inviteSession = {};
     source.messages = [

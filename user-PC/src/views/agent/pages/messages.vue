@@ -101,6 +101,19 @@
                        <span class="attachment-file-icon" aria-hidden="true">↧</span>
                        <span class="attachment-file-copy"><strong>{{ message.content || '文件附件' }}</strong><small>点击打开或下载</small></span>
                      </button>
+                     <div v-else-if="message.examInvitation" class="exam-invite-card">
+                       <div class="exam-invite-head">
+                         <span class="exam-invite-icon" aria-hidden="true">✎</span>
+                         <strong>笔试邀请</strong>
+                         <span class="exam-invite-badge">在线笔试</span>
+                       </div>
+                       <h3 class="exam-invite-title">{{ message.examInvitation.paperName }}</h3>
+                       <p class="exam-invite-detail">{{ message.examInvitation.detail }}</p>
+                       <div class="exam-invite-footer">
+                         <span class="exam-invite-session">场次 #{{ message.examInvitation.scheduleId }}</span>
+                         <a class="exam-invite-action" :href="appHref(`/exam?scheduleId=${message.examInvitation.scheduleId}`)">查看安排 · 进入考试 →</a>
+                       </div>
+                     </div>
                      <span v-else class="message-text"><template v-for="(part, index) in message.linkParts" :key="index"><a v-if="part.href" class="message-link" :href="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a><template v-else>{{ part.text }}</template></template></span>
                    </div>
                    <div class="bubble-time">{{ formatMessageTime(message.sendTime) }}</div>
@@ -249,6 +262,7 @@ import AiAssistant from '@/components/agent/AiAssistant.vue'
 import { getToken } from '@/utils/auth'
 import { unreadBadge, unreadCount } from '@/utils/agentUnread'
 import { formatMessageTime, formatShortTime } from '@/utils/agentTime'
+import { parseExamInvitation } from '@/utils/examInvitation'
 import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageLinkParts, resolveMessageAttachment, uploadedMessageAttachmentPath } from '@/utils/agentMessage'
 
 const sessions = ref([])
@@ -388,6 +402,7 @@ async function loadMessages(sessionId, { silent = false } = {}) {
         return {
           ...message,
           type: Number(message.type),
+          examInvitation: parseExamInvitation(message.content),
           attachmentUrl: url,
           attachmentUnavailable: previous?.attachmentUrl === url && previous.attachmentUnavailable,
           linkParts: messageLinkParts(message.content || '[非文本消息]')
@@ -711,6 +726,17 @@ onBeforeUnmount(() => {
 .message-shell .message-link{color:#1761bd;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
 .message-shell .message-link:hover{color:#0d438a}
 .message-shell .me .message-link,.message-shell .me .message-link:hover{color:#fff}
+.message-shell .exam-invite-card{min-width:238px;max-width:320px;padding:2px 0 0;overflow-wrap:anywhere}
+.exam-invite-head{display:flex;align-items:center;gap:7px;color:var(--primary)}
+.exam-invite-icon{display:grid;width:28px;height:28px;place-items:center;flex:0 0 auto;border-radius:7px;color:var(--blue);background:var(--blue-soft);font-size:15px}
+.exam-invite-head strong{font-size:12px}
+.exam-invite-badge{margin-left:auto;padding:2px 6px;border-radius:4px;color:var(--blue);background:var(--blue-soft);font-size:9px}
+.exam-invite-title{margin:10px 0 4px;color:var(--primary);font-size:14px}
+.exam-invite-detail{margin:0;color:#64758D;font-size:10px;line-height:1.65}
+.exam-invite-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+.exam-invite-session{color:var(--light);font-size:9px;white-space:nowrap}
+.exam-invite-action{color:var(--blue);font-size:10px;font-weight:700;text-decoration:none;white-space:nowrap}
+.exam-invite-action:hover{color:#1761bd;text-decoration:underline}
 .message-shell .message-emoji-picker{position:relative;flex:0 0 auto}
 .message-shell .message-emoji-panel{position:absolute;bottom:calc(100% + 8px);left:0;z-index:10;display:grid;grid-template-columns:repeat(6,32px);gap:4px;padding:10px;border:1px solid #d8e3ef;border-radius:10px;background:#fff;box-shadow:0 6px 24px rgba(26,60,110,.16)}
 .message-shell .message-emoji-panel button{display:grid;width:32px;height:32px;place-items:center;padding:0;border:0;border-radius:6px;background:transparent;font-family:'Segoe UI Emoji','Apple Color Emoji',sans-serif;font-size:22px;line-height:1}

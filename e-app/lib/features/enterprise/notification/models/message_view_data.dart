@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'exam_invitation.dart';
 import 'shared_job_card.dart';
 
 class ChatQuickReply {
@@ -93,6 +94,7 @@ class ConversationMessage {
   final String content, attachment;
   final DateTime? time;
   SharedJobCard? get jobCard => SharedJobCard.parse(type, content);
+  ExamInvitation? get examInvitation => ExamInvitation.parse(content);
 
   Map<String, dynamic>? get reschedule {
     if (type != 5) return null;

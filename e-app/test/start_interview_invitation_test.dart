@@ -178,6 +178,18 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('纯人工面试邀请不再拼接无AI纯人工', (tester) async {
+    final source = InviteSource()..existingSession = 8;
+    final harness = InviteHarness(linkResult: {'mode': 4});
+    final raw = {...interviewRow(), 'stageType': 3, 'stageName': 'HR 综合面试'};
+    await mountInvite(tester, source, harness, raw: raw);
+    expect(harness.linkCalls.single['mode'], 4);
+    final sent = source.sends.single;
+    expect(sent, contains('【面试邀请·HR 综合面试】'));
+    expect(sent, isNot(contains('无AI纯人工')));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('没有会话时新建会话发送邀请', (tester) async {
     final source = InviteSource();
     final harness = InviteHarness();

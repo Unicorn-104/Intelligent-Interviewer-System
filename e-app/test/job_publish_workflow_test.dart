@@ -57,9 +57,10 @@ Future<void> saveStage(WidgetTester tester) async {
 }
 
 Future<void> chooseType(WidgetTester tester, int id, String label) async {
-  await tapKey(tester, 'job-publish-stage-type-$id');
-  await tester.tap(find.text(label).last);
-  await tester.pumpAndSettle();
+  final type = jobPublishStageTypes.entries
+      .firstWhere((entry) => entry.value == label)
+      .key;
+  await tapKey(tester, 'job-publish-stage-type-$id-$type');
 }
 
 Future<void> preview(WidgetTester tester) async {
@@ -72,8 +73,8 @@ void main() {
     await mountWorkflow(tester);
     await tapKey(tester, 'job-publish-add-stage');
     await chooseType(tester, 0, '在线笔试');
-    expect(find.byKey(const Key('job-publish-stage-name-0')), findsNothing);
-    expect(find.text('阶段名称 *'), findsNothing);
+    expect(find.byKey(const Key('job-publish-stage-name-0')), findsOneWidget);
+    expect(find.text('阶段名称 *'), findsOneWidget);
     await tapKey(tester, 'job-publish-stage-cancel');
     expect(find.byType(JobPublishStageCard), findsNothing);
     expect(find.byType(JobPublishStageDialog), findsNothing);
@@ -90,9 +91,9 @@ void main() {
     await tapKey(tester, 'job-publish-add-stage');
     await saveStage(tester);
     await tapKey(tester, 'job-publish-stage-edit-0');
+    await chooseType(tester, 0, jobPublishStageTypes[3]!);
     await enter(tester, 'job-publish-stage-duration-0', '60');
     await enter(tester, 'job-publish-stage-threshold-0', '90');
-    await enter(tester, 'job-publish-stage-target-0', '取消的考察项');
     await chooseType(tester, 0, '在线笔试');
     await tester.ensureVisible(find.text('必选阶段'));
     await tester.tap(find.text('必选阶段'));
@@ -103,23 +104,22 @@ void main() {
           find.byKey(const Key('job-publish-stage-card-0')),
         )
         .stage;
-    expect(original.name.text, 'HR 综合面试');
-    expect(original.type, 3);
+    expect(original.name.text, jobPublishStageDefaultName(1));
+    expect(original.type, 1);
     expect(original.duration.text, '45');
     expect(original.threshold.text, '70');
-    expect(original.target.text, isEmpty);
     expect(original.required, isFalse);
     expect(original.skip, isTrue);
     await tapKey(tester, 'job-publish-stage-edit-0');
-    await chooseType(tester, 0, '编程实操');
+    await chooseType(tester, 0, '在线笔试');
     await saveStage(tester);
     final cards = tester
         .widgetList<JobPublishStageCard>(find.byType(JobPublishStageCard))
         .toList();
     expect(cards.map((card) => card.stage.id), [0, 1]);
     expect(cards.map((card) => card.index), [0, 1]);
-    expect(cards.first.stage.name.text, '编程实操');
-    expect(cards.first.stage.type, 4);
+    expect(cards.first.stage.name.text, '在线笔试');
+    expect(cards.first.stage.type, 1);
     expect(find.byType(JobPublishStageEditor), findsNothing);
     expect(find.byKey(const Key('job-publish-stage-name-0')), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -128,6 +128,7 @@ void main() {
   testWidgets('数字输入框右侧上下按钮每次调整1并遵守范围', (tester) async {
     await mountWorkflow(tester);
     await tapKey(tester, 'job-publish-add-stage');
+    await chooseType(tester, 0, jobPublishStageTypes[3]!);
 
     final duration = find.byKey(const Key('job-publish-stage-duration-0'));
     final threshold = find.byKey(const Key('job-publish-stage-threshold-0'));
@@ -185,6 +186,7 @@ void main() {
   testWidgets('关闭按钮、系统返回和点击遮罩均取消编辑', (tester) async {
     await mountWorkflow(tester);
     await tapKey(tester, 'job-publish-add-stage');
+    await chooseType(tester, 0, jobPublishStageTypes[3]!);
     await saveStage(tester);
     for (var action = 0; action < 3; action++) {
       await tapKey(tester, 'job-publish-stage-edit-0');
@@ -204,7 +206,7 @@ void main() {
             .stage
             .name
             .text,
-        'HR 综合面试',
+        'HR综合面试',
       );
     }
     await tester.pumpWidget(const SizedBox.shrink());
@@ -218,7 +220,7 @@ void main() {
     await chooseType(tester, 0, '在线笔试');
     await saveStage(tester);
     await tapKey(tester, 'job-publish-add-stage');
-    await chooseType(tester, 1, 'AI 技术面试');
+    await chooseType(tester, 1, 'HR综合面试');
     await saveStage(tester);
     await tapKey(tester, 'job-publish-add-stage');
     await saveStage(tester);
@@ -229,8 +231,8 @@ void main() {
     expect(editors.map((editor) => editor.index), [0, 1, 2]);
     expect(editors[0].stage.name.text, '在线笔试');
     expect(editors[0].stage.type, 1);
-    expect(editors[1].stage.name.text, 'AI 技术面试');
-    expect(editors[2].stage.name.text, 'HR 综合面试');
+    expect(editors[1].stage.name.text, 'HR综合面试');
+    expect(editors[2].stage.name.text, jobPublishStageDefaultName(3));
     final import = find.byKey(const Key('jd-document-import-card'));
     final add = find.byKey(const Key('job-publish-add-stage'));
     expect(
@@ -246,61 +248,47 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('删除中间阶段后重新编号，继续新增仍追加末尾，不串改已有值', (tester) async {
+  testWidgets('supported stages only', (tester) async {
     await mountWorkflow(tester);
-    for (var i = 0; i < 3; i++) {
-      await tapKey(tester, 'job-publish-add-stage');
-      await chooseType(tester, i, jobPublishStageTypes[i + 1]!);
-      await saveStage(tester);
-    }
-    await tapKey(tester, 'job-publish-stage-remove-1');
     await tapKey(tester, 'job-publish-add-stage');
+    await chooseType(tester, 0, jobPublishStageTypes[1]!);
     await saveStage(tester);
-    final editors = tester
+    await tapKey(tester, 'job-publish-add-stage');
+    await chooseType(tester, 1, jobPublishStageTypes[3]!);
+    await saveStage(tester);
+    await tapKey(tester, 'job-publish-stage-remove-0');
+    await tapKey(tester, 'job-publish-add-stage');
+    await chooseType(tester, 2, jobPublishStageTypes[1]!);
+    await saveStage(tester);
+    final cards = tester
         .widgetList<JobPublishStageCard>(find.byType(JobPublishStageCard))
         .toList();
-    expect(editors.map((editor) => editor.stage.id), [0, 2, 3]);
-    expect(editors.map((editor) => editor.index), [0, 1, 2]);
-    expect(editors[0].stage.name.text, '在线笔试');
-    expect(editors[1].stage.name.text, 'HR 综合面试');
+    expect(cards.length, 2);
+    expect(
+      cards.every((card) => jobPublishStageTypes.containsKey(card.stage.type)),
+      isTrue,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('四种面试方式与PC字段编码一致，预览往返保留所有流程及原岗位输入', (tester) async {
+  testWidgets('custom stage names', (tester) async {
     await mountWorkflow(tester);
-    for (final (index, label) in jobPublishStageTypes.values.indexed) {
-      await tapKey(tester, 'job-publish-add-stage');
-      await chooseType(tester, index, label);
-      expect(
-        find.byKey(ValueKey('job-publish-stage-name-$index')),
-        findsNothing,
-      );
-      await saveStage(tester);
-    }
-    await fill(tester);
-    await preview(tester);
-    final workflow = find.byType(JobPublishWorkflowPreview);
-    await tester.ensureVisible(workflow);
-    await tester.pumpAndSettle();
-    expect(workflow, findsOneWidget);
-    final drafts = tester.widget<JobPublishWorkflowPreview>(workflow).stages;
-    expect(drafts.map((stage) => stage.type), [1, 2, 3, 4]);
-    expect(drafts.map((stage) => stage.name.text), jobPublishStageTypes.values);
-    await tester.tap(find.text('返回修改'));
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widgetList<JobPublishStageCard>(find.byType(JobPublishStageCard))
-          .length,
-      4,
-    );
-    expect(
-      tester
-          .widget<TextFormField>(find.byKey(const Key('job-title')))
-          .controller!
-          .text,
-      'Flutter 开发工程师',
-    );
+    await tapKey(tester, 'job-publish-add-stage');
+    await chooseType(tester, 0, jobPublishStageTypes[1]!);
+    await enter(tester, 'job-publish-stage-name-0', 'written-custom');
+    await saveStage(tester);
+    await tapKey(tester, 'job-publish-add-stage');
+    await chooseType(tester, 1, jobPublishStageTypes[3]!);
+    await enter(tester, 'job-publish-stage-name-1', 'interview-custom');
+    await saveStage(tester);
+    final cards = tester
+        .widgetList<JobPublishStageCard>(find.byType(JobPublishStageCard))
+        .toList();
+    expect(cards.map((card) => card.stage.type), [1, 3]);
+    expect(cards.map((card) => card.stage.name.text), [
+      'written-custom',
+      'interview-custom',
+    ]);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -314,13 +302,14 @@ void main() {
       },
     );
     await tapKey(tester, 'job-publish-add-stage');
+    await chooseType(tester, 0, jobPublishStageTypes[3]!);
     await enter(tester, 'job-publish-stage-duration-0', '0');
     await enter(tester, 'job-publish-stage-threshold-0', '101');
     await saveStage(tester);
     expect(find.byType(JobPublishStageDialog), findsOneWidget);
     expect(find.byType(JobPublishStageCard), findsNothing);
     expect(find.text('确认发布'), findsNothing);
-    expect(find.byKey(const Key('job-publish-stage-name-0')), findsNothing);
+    expect(find.byKey(const Key('job-publish-stage-name-0')), findsOneWidget);
     expect(find.text('请输入1至1440的整数'), findsOneWidget);
     expect(find.text('请输入0至100的整数'), findsOneWidget);
     expect(created, 0);
@@ -348,10 +337,9 @@ void main() {
     await tapKey(tester, 'job-publish-add-stage');
     await chooseType(tester, 0, '在线笔试');
     await enter(tester, 'job-publish-stage-threshold-0', '90');
-    await enter(tester, 'job-publish-stage-target-0', '算法与基础知识');
     await saveStage(tester);
     await tapKey(tester, 'job-publish-add-stage');
-    await chooseType(tester, 1, 'AI 技术面试');
+    await chooseType(tester, 1, 'HR综合面试');
     await saveStage(tester);
     await fill(tester);
     await preview(tester);
@@ -363,11 +351,14 @@ void main() {
     expect(sentJob!.containsKey('stages'), isFalse);
     expect(sentWorkflow!['templateName'], 'Flutter 开发工程师招聘流程');
     final stages = sentWorkflow!['stages'] as List;
-    expect(stages.map((stage) => stage['name']), ['在线笔试', 'AI 技术面试']);
-    expect(stages.map((stage) => stage['type']), [1, 2]);
+    expect(stages.map((stage) => stage['name']), [
+      jobPublishStageDefaultName(1),
+      jobPublishStageDefaultName(3),
+    ]);
+    expect(stages.map((stage) => stage['type']), [1, 3]);
     expect((stages[0] as Map).containsKey('duration'), isFalse);
     expect(stages[0]['threshold'], 90);
-    expect(stages[0]['target'], '算法与基础知识');
+    expect((stages[0] as Map).containsKey('target'), isFalse);
     final action = tester.widget<FilledButton>(
       find.byKey(const Key('job-publish-action')),
     );
@@ -498,10 +489,10 @@ void main() {
       await mountWorkflow(tester, size: size);
       await tapKey(tester, 'job-publish-add-stage');
       await chooseType(tester, 0, '在线笔试');
-      final target = find.byKey(const Key('job-publish-stage-target-0'));
-      await tester.ensureVisible(target);
+      final threshold = find.byKey(const Key('job-publish-stage-threshold-0'));
+      await tester.ensureVisible(threshold);
       await tester.pumpAndSettle();
-      await tester.tap(target);
+      await tester.tap(threshold);
       tester.view.viewInsets = FakeViewPadding(
         bottom: size.height < 500 ? 120 : 260,
       );
