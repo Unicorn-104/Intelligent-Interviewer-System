@@ -16,6 +16,7 @@ public class EnterpriseAssistantController extends BaseController
     public EnterpriseAssistantController(EnterpriseAssistantService service) {this.service=service;}
     public record SendRequest(String requestId,String content) { }
     public record MemoryRequest(String action,String key,String value,Boolean enabled,Long revision,Long sessionId) { }
+    public record MemoryFactRequest(String memoryType,String content,String evidence) { }
     @GetMapping("/sessions") public AjaxResult sessions(@RequestParam(required=false) Long before)
     {return success(service.sessions(getUserId(),before));}
     @PostMapping("/sessions") public AjaxResult create() {return success(service.create(getUserId()));}
@@ -36,6 +37,17 @@ public class EnterpriseAssistantController extends BaseController
     @PostMapping("/runs/{id}/cancel") public AjaxResult cancel(@PathVariable Long id) {return success(service.cancel(getUserId(),id));}
     @DeleteMapping("/sessions/{id}") public AjaxResult delete(@PathVariable Long id) {service.delete(getUserId(),id);return success();}
     @GetMapping("/memory") public AjaxResult memory() { return success(service.memory(getUserId())); }
+    @GetMapping("/memory/items") public AjaxResult memoryItems() { return success(service.memoryFacts(getUserId())); }
+    @GetMapping("/memory/index-status") public AjaxResult memoryIndexStatus() { return success(service.memoryIndexStatus(getUserId())); }
+    @PutMapping("/memory/items/{id}") public AjaxResult updateMemoryFact(@PathVariable String id,@RequestBody MemoryFactRequest body)
+    { if(body==null) throw new com.ruoyi.common.exception.ServiceException("记忆参数无效",400);
+      return success(service.updateMemoryFact(getUserId(),id,body.memoryType(),body.content(),body.evidence())); }
+    @DeleteMapping("/memory/items/{id}") public AjaxResult deleteMemoryFact(@PathVariable String id)
+    { return success(service.deleteMemoryFact(getUserId(),id)); }
+    @PostMapping("/memory/clear") public AjaxResult clearMemoryFacts()
+    { return success(service.clearMemoryFacts(getUserId())); }
+    @PostMapping("/memory/reindex") public AjaxResult reindexMemory()
+    { return success(service.reindexMemory(getUserId())); }
     @PostMapping("/memory") public AjaxResult changeMemory(@RequestBody MemoryRequest body)
     { if(body==null) throw new com.ruoyi.common.exception.ServiceException("记忆参数无效",400);
       return success(service.changeMemory(getUserId(),body.action(),body.key(),body.value(),body.enabled(),body.revision(),body.sessionId())); }

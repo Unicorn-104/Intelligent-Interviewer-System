@@ -39,21 +39,41 @@ public class QdrantMemoryIndex
 
     public List<Double> embed(String text, boolean query) throws Exception
     {
-        if (!properties.isConfigured()) return List.of();
-        ObjectNode body = json.createObjectNode().put("model", properties.getEmbeddingModel())
-                .put("input_type", query ? "query" : "passage");
-        body.putArray("input").add(text);
-        JsonNode root = json.readTree(send("POST", properties.getEmbeddingUrl(), body,
-                properties.getEmbeddingApiKey(), "Authorization", 200));
-        JsonNode vector = root.path("data").path(0).path("embedding");
-        if (!vector.isArray() || vector.size() != properties.getDimension())
-            throw new IllegalStateException("EMBEDDING_DIMENSION_MISMATCH");
-        List<Double> result = new ArrayList<>(vector.size());
-        for (JsonNode value : vector)
+        List<List<Double>> vectors = embedBatch(List.of(text), query);
+        return vectors.isEmpty() ? List.of() : vectors.get(0);
+    }
+
+    /** One request per provider batch; the local adapter accepts at most 16 inputs. */
+    public List<List<Double>> embedBatch(List<String> texts, boolean query) throws Exception
+    {
+        if (!properties.isConfigured() || texts == null || texts.isEmpty()) return List.of();
+        List<List<Double>> result = new ArrayList<>(texts.size());
+        for (int start = 0; start < texts.size(); start += 16)
         {
-            if (!value.isNumber() || !Double.isFinite(value.asDouble()))
-                throw new IllegalStateException("EMBEDDING_VECTOR_INVALID");
-            result.add(value.asDouble());
+            List<String> batch = texts.subList(start, Math.min(texts.size(), start + 16));
+            ObjectNode body = json.createObjectNode().put("model", properties.getEmbeddingModel())
+                    .put("input_type", query ? "query" : "passage");
+            ArrayNode input = body.putArray("input");
+            batch.forEach(input::add);
+            JsonNode root = json.readTree(send("POST", properties.getEmbeddingUrl(), body,
+                    properties.getEmbeddingApiKey(), "Authorization", 200));
+            JsonNode rows = root.path("data");
+            if (!rows.isArray() || rows.size() != batch.size())
+                throw new IllegalStateException("EMBEDDING_RESPONSE_INVALID");
+            for (JsonNode row : rows)
+            {
+                JsonNode vector = row.path("embedding");
+                if (!vector.isArray() || vector.size() != properties.getDimension())
+                    throw new IllegalStateException("EMBEDDING_DIMENSION_MISMATCH");
+                List<Double> values = new ArrayList<>(vector.size());
+                for (JsonNode value : vector)
+                {
+                    if (!value.isNumber() || !Double.isFinite(value.asDouble()))
+                        throw new IllegalStateException("EMBEDDING_VECTOR_INVALID");
+                    values.add(value.asDouble());
+                }
+                result.add(values);
+            }
         }
         return result;
     }
