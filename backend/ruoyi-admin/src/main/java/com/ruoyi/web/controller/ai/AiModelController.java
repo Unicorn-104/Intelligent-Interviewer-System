@@ -108,7 +108,8 @@ public class AiModelController extends BaseController {
     @GetMapping("/list")
     public TableDataInfo list(ModelProvider modelProvider,
                               @RequestParam(required = false) String modelName,
-                              @RequestParam(required = false) String provider) {
+                              @RequestParam(required = false) String provider,
+                              @RequestParam(required = false) Integer status) {
         startPage();
         if (modelName != null && !modelName.isEmpty()) {
             modelProvider.setMppName(modelName);
@@ -117,8 +118,11 @@ public class AiModelController extends BaseController {
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (ModelProvider m : list) {
+            // 状态与提供商都存于列/参数字段，做内存过滤
+            if (status != null && !status.equals(m.getMppStatus())) {
+                continue;
+            }
             Map<String, Object> p = parseParams(m.getMppParamsJson());
-            // provider 存于 paramsJson，做内存过滤
             if (provider != null && !provider.isEmpty()
                     && !provider.equals(String.valueOf(p.getOrDefault("provider", "other")))) {
                 continue;
@@ -236,7 +240,8 @@ public class AiModelController extends BaseController {
         m.setMppApiKey(encryptKey(str(body, "apiKey")));
         m.setMppParamsJson(buildParamsJson(body));
         Object status = body.get("status");
-        m.setMppStatus(status == null ? 0 : Integer.valueOf(status.toString()));
+        // 与新增表单默认值保持一致：未传状态时按启用处理
+        m.setMppStatus(status == null ? 1 : Integer.valueOf(status.toString()));
         return toAjax(modelProviderService.insertModelProvider(m));
     }
 
@@ -297,7 +302,8 @@ public class AiModelController extends BaseController {
         List<ModelProvider> all = modelProviderService.selectModelProviderList(new ModelProvider());
         int total = all.size(), enabled = 0, disabled = 0;
         for (ModelProvider m : all) {
-            if (m.getMppStatus() != null && m.getMppStatus() == 0) enabled++;
+            // 与模型管理页、AgentModelClient 保持一致：mpp_status = 1 为启用
+            if (m.getMppStatus() != null && m.getMppStatus() == 1) enabled++;
             else disabled++;
         }
         Map<String, Object> out = new HashMap<>();

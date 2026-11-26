@@ -52,6 +52,7 @@ public class AgentModelClient
 
     public AgentModelClient(IModelProviderService providers) { this.providers = providers; }
 
+    /** Provider availability follows the model admin page and table comment: 1 = enabled, 0 = disabled. */
     public ModelProvider resolve()
     {
         return resolve(null);
@@ -60,6 +61,7 @@ public class AgentModelClient
     /**
      * 按业务场景解析 Provider：场景写在 t_model_provider.mpp_params_json 的 scene 字段。
      * 未指定场景、没有匹配记录或参数非法时回退到通用第一条，避免新场景配置缺失导致功能不可用。
+     * 启用口径与模型管理页、表注释一致：mpp_status = 1 为启用，且 api_key 非空。
      */
     public ModelProvider resolve(String scene)
     {

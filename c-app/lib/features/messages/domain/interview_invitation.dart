@@ -16,7 +16,11 @@ class InterviewInvitation {
       final uri = Uri.tryParse(match.group(0)!);
       if (uri == null ||
           uri.userInfo.isNotEmpty ||
-          !['/conference-join', '/agent/conference-entry'].contains(uri.path)) {
+          ![
+            '/conference-join',
+            '/agent/conference-entry',
+            '/user/conference-join',
+          ].contains(uri.path)) {
         continue;
       }
       final tokens = uri.queryParametersAll['token'];

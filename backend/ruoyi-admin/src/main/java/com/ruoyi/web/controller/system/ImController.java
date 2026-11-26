@@ -78,6 +78,20 @@ public class ImController extends BaseController
         return success(list);
     }
 
+    @GetMapping("/sessions/{sessionId}/messages/snapshot")
+    public AjaxResult messageSnapshot(@PathVariable Long sessionId, @RequestParam List<Long> messageIds)
+    {
+        return success(imService.selectMessageSnapshot(sessionId, getUserId(), messageIds));
+    }
+
+    @GetMapping("/sessions/{sessionId}/messages/page")
+    public AjaxResult messagePage(@PathVariable Long sessionId,
+            @RequestParam(required = false) Long beforeId, @RequestParam(required = false) Long afterId,
+            @RequestParam(defaultValue = "30") int size)
+    {
+        return success(imService.selectMessagePage(sessionId, getUserId(), beforeId, afterId, size));
+    }
+
     /**
      * 发送消息。sessionId 为空时按 peerId 查找或创建会话。
      */

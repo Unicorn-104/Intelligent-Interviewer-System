@@ -197,4 +197,79 @@ public class ImServiceMessageTest
         service.selectNotifications(11L,100L,50);
         verifyNoMoreInteractions(notices);
     }
+
+    @Test
+    void messagePagesReadLatestOlderAndIncrementalWithoutDuplicates()
+    {
+        when(sessions.selectSessionByIdAndUser(8L,11L)).thenReturn(session());
+        for (int index = 1; index <= 65; index++)
+            jdbc.update("insert into t_im_message(imsg_session_id,imsg_sender_id,imsg_type,imsg_content) values(8,12,1,?)", "合成消息" + index);
+        jdbc.execute("insert into t_im_message(imsg_session_id,imsg_sender_id,imsg_type,imsg_content,imsg_is_recalled) values(8,12,1,'撤回消息',1),(9,12,1,'其他会话',0)");
+        var latest = service.selectMessagePage(8L,11L,null,null,30);
+        var rows = (List<ImMessage>) latest.get("items");
+        assertEquals(30,rows.size());
+        assertEquals(36L,rows.get(0).getMessageId());
+        assertEquals(65L,rows.get(29).getMessageId());
+        assertEquals(true,latest.get("hasMore"));
+        assertFalse(rows.get(0).getIsMine());
+        var older = service.selectMessagePage(8L,11L,36L,null,30);
+        var oldRows = (List<ImMessage>) older.get("items");
+        assertEquals(6L,oldRows.get(0).getMessageId());
+        assertEquals(35L,oldRows.get(29).getMessageId());
+        var first = service.selectMessagePage(8L,11L,6L,null,30);
+        assertEquals(false,first.get("hasMore"));
+        assertEquals(5,((List<?>)first.get("items")).size());
+        var increment = service.selectMessagePage(8L,11L,null,60L,3);
+        var newRows = (List<ImMessage>) increment.get("items");
+        assertEquals(List.of(61L,62L,63L),newRows.stream().map(ImMessage::getMessageId).toList());
+        assertEquals(true,increment.get("hasMore"));
+        var tail = service.selectMessagePage(8L,11L,null,65L,30);
+        assertTrue(((List<?>)tail.get("items")).isEmpty());
+        assertEquals(false,tail.get("hasMore"));
+    }
+
+    @Test
+    void messagePageRejectsForeignSessionAndInvalidCursors()
+    {
+        assertThrows(ServiceException.class,()->service.selectMessagePage(8L,99L,null,null,30));
+        assertThrows(ServiceException.class,()->service.selectMessagePage(8L,11L,1L,2L,30));
+        assertThrows(ServiceException.class,()->service.selectMessagePage(8L,11L,0L,null,30));
+        assertThrows(ServiceException.class,()->service.selectMessagePage(8L,11L,null,-1L,30));
+        assertThrows(ServiceException.class,()->service.selectMessagePage(8L,11L,null,null,0));
+        assertThrows(ServiceException.class,()->service.selectMessagePage(8L,11L,null,null,101));
+    }
+
+    @Test
+    void snapshotReadsUpdatedOldCardsWithoutRequiringNewMessagesAndExcludesForeignOrRecalledRows()
+    {
+        when(sessions.selectSessionByIdAndUser(8L,11L)).thenReturn(session());
+        jdbc.update("insert into t_im_message(imsg_id,imsg_session_id,imsg_sender_id,imsg_type,imsg_content) values(1,8,12,5,?)",
+                "{\"kind\":\"interview_reschedule\",\"version\":1,\"status\":\"pending\"}");
+        jdbc.execute("insert into t_im_message(imsg_id,imsg_session_id,imsg_sender_id,imsg_type,imsg_content,imsg_is_recalled) values(2,8,11,1,'我方消息',0),(3,9,12,5,'其他会话',0),(4,8,12,5,'已撤回',1)");
+        var before = service.selectMessageSnapshot(8L,11L,List.of(1L,2L,3L,4L,999L,1L));
+        assertEquals(List.of(1L,2L),before.stream().map(ImMessage::getMessageId).toList());
+        assertFalse(before.get(0).getIsMine());
+        assertTrue(before.get(1).getIsMine());
+        jdbc.update("update t_im_message set imsg_content=? where imsg_id=1",
+                "{\"kind\":\"interview_reschedule\",\"version\":1,\"status\":\"approved\",\"reviewNote\":\"已审核\"}");
+        var after = service.selectMessageSnapshot(8L,11L,List.of(1L));
+        assertTrue(after.get(0).getContent().contains("approved"));
+        assertTrue(after.get(0).getContent().contains("已审核"));
+        jdbc.update("update t_im_message set imsg_is_recalled=1 where imsg_id=1");
+        assertTrue(service.selectMessageSnapshot(8L,11L,List.of(1L)).isEmpty());
+    }
+
+    @Test
+    void snapshotRejectsForeignSessionsAndInvalidOrUnboundedIdLists()
+    {
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,99L,List.of(1L)));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(0L,11L,List.of(1L)));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,null));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,List.of()));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,List.of(-1L)));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,java.util.Arrays.asList(1L,null)));
+        assertThrows(ServiceException.class,()->service.selectMessageSnapshot(8L,11L,java.util.Collections.nCopies(101,1L)));
+        when(sessions.selectSessionByIdAndUser(8L,11L)).thenReturn(session());
+        assertTrue(service.selectMessageSnapshot(8L,11L,java.util.stream.LongStream.rangeClosed(1,100).boxed().toList()).isEmpty());
+    }
 }

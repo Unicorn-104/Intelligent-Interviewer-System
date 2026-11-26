@@ -32,6 +32,7 @@ import com.ruoyi.enterprise.service.ProcessStageInstanceService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.asr.AsrConfigResolver;
 import com.ruoyi.system.event.InterviewFinishedEvent;
+import com.ruoyi.system.event.InterviewSessionCreatedEvent;
 import com.ruoyi.system.mapper.ConferenceMapper;
 import com.ruoyi.system.mapper.InterviewReportMapper;
 import com.ruoyi.system.service.IConferenceService;
@@ -461,6 +462,11 @@ public class ConferenceServiceImpl implements IConferenceService
         if (newSession && !selected.isEmpty())
         {
             notifyInterviewEntryCards(userId, sessionId, selected, ctx, roomToken);
+        }
+        // 纯AI 面试没有人工面试官，建场后异步生成面试题目
+        if (interviewMode == MODE_AI_ONLY && eventPublisher != null)
+        {
+            eventPublisher.publishEvent(new InterviewSessionCreatedEvent(sessionId));
         }
         return result;
     }
@@ -1068,6 +1074,11 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             throw new ServiceException("面试状态已变化，请刷新后重试");
         }
+        // 纯AI 面试开考时兜底补题：建场时的异步出题失败或场次由其他入口创建时仍能拿到题目
+        if (toInt(latest.get("mode")) == MODE_AI_ONLY && eventPublisher != null)
+        {
+            eventPublisher.publishEvent(new InterviewSessionCreatedEvent(sessionId));
+        }
         return getSessionContext(userId, sessionId);
     }
 
@@ -1076,7 +1087,8 @@ public class ConferenceServiceImpl implements IConferenceService
     {
         requireAccess(userId, sessionId);
         Map<String, Object> state = meetingState(sessionId);
-        int total = toInt(state.get("totalQuestionNo"));
+        // 题目总数实时统计：异步自动出题晚于会议状态创建时也能正确显示
+        int total = conferenceMapper.countOutlineQuestions(sessionId);
         int answered = toInt(state.get("answeredCount"));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", sessionId);
@@ -2160,8 +2172,10 @@ public class ConferenceServiceImpl implements IConferenceService
         {
             result = new LinkedHashMap<>();
         }
-        int total = toInt(result.get("totalQuestionNo"));
+        // 与面试进度一致，题目总数按提纲实时统计
+        int total = conferenceMapper.countOutlineQuestions(sessionId);
         int answered = toInt(result.get("answeredCount"));
+        result.put("totalQuestionNo", total);
         result.put("completionRate", total > 0 ? Math.round(answered * 1000.0 / total) / 10.0 : 0);
         // 状态机：0未触发 1生成中 2成功 3失败；历史数据无状态字段时回落到「评估行是否存在」
         int reportStatusValue = toInt(result.get("reportStatusValue"));

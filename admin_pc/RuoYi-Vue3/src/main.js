@@ -79,6 +79,12 @@ app.component('svg-icon', SvgIcon)
 
 directive(app)
 
+// 全局渲染错误兜底：避免白屏且无任何提示（须在 mount 前注册，才能覆盖初始挂载错误）
+app.config.errorHandler = (err, _vm, info) => {
+  console.error('[Vue error]', err, info)
+  ElMessage.error('页面出现异常，请刷新重试或联系管理员')
+}
+
 // 使用element-plus 并且设置全局的大小
 app.use(ElementPlus, {
   locale: locale,
@@ -87,9 +93,3 @@ app.use(ElementPlus, {
 })
 
 app.mount('#app')
-
-// 全局渲染错误兜底：避免白屏且无任何提示
-app.config.errorHandler = (err, _vm, info) => {
-  console.error('[Vue error]', err, info)
-  ElMessage.error('页面出现异常，请刷新重试或联系管理员')
-}

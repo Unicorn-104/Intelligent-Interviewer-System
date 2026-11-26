@@ -13,6 +13,8 @@ import 'package:intelligent_interviewer/features/interviews/presentation/confere
 import 'package:intelligent_interviewer/features/messages/domain/interview_invitation.dart';
 import 'package:intelligent_interviewer/features/messages/domain/app_message.dart';
 import 'package:intelligent_interviewer/features/messages/presentation/interview_invitation_card.dart';
+import 'package:intelligent_interviewer/features/messages/data/message_api.dart';
+import 'package:intelligent_interviewer/screens/hr_chat_screen.dart';
 import 'package:intelligent_interviewer/theme/app_theme.dart';
 
 const token = 'synthetic-room-token-123456';
@@ -26,6 +28,23 @@ const session = AuthSession(
 );
 
 class RealHttpOverrides extends HttpOverrides {}
+
+class InvitationMessages extends MessageApi {
+  InvitationMessages(super.client, this.content);
+  final String content;
+
+  @override
+  Future<List<ChatMessage>> fetchHrChat(String token, int sessionId) async => [
+    ChatMessage(
+      messageId: 23,
+      senderId: 9,
+      content: content,
+      mine: false,
+      createdAt: DateTime(2026, 11, 5),
+      type: 1,
+    ),
+  ];
+}
 
 class FakeMedia extends ConferenceMedia {
   bool available = false, online = false;
@@ -201,6 +220,17 @@ void main() {
         'content': invitationText,
       });
       expect(message.interviewInvitation, isNotNull);
+      final publicGatewayMessage = invitationText.replaceFirst(
+        '/conference-join',
+        '/user/conference-join',
+      );
+      expect(
+        ChatMessage.fromJson({
+          'type': 1,
+          'content': publicGatewayMessage,
+        }).interviewInvitation?.token,
+        token,
+      );
       expect(
         InterviewInvitation.parse(
           '普通聊天 https://example.org/conference-join?token=$token',
@@ -229,6 +259,38 @@ void main() {
       );
     },
   );
+
+  testWidgets('公开网关 /user/conference-join 面试邀请显示卡片而非原始文本', (tester) async {
+    final client = ApiClient();
+    addTearDown(client.close);
+    final content = invitationText.replaceFirst(
+      '/conference-join',
+      '/user/conference-join',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: HrChatScreen(
+          session: session,
+          conversation: AppMessage(
+            sourceId: 8,
+            category: AppMessageCategory.hr,
+            title: '示例企业 HR',
+            content: '',
+            occurredAt: DateTime(2026, 11, 5),
+            unreadCount: 0,
+          ),
+          messageApi: InvitationMessages(client, content),
+          pollInterval: Duration.zero,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(InterviewInvitationCard), findsOneWidget);
+    expect(find.textContaining('https://'), findsNothing);
+    expect(find.textContaining(token), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   test(
     'conference HTTP calls use authenticated existing endpoints and expected bodies',

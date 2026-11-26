@@ -285,7 +285,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsOneWidget);
-    expect(find.text('想聊什么，直接输入…'), findsOneWidget);
+    expect(find.text('发消息或切换语音…'), findsOneWidget);
     expect(find.text('岗位推荐'), findsOneWidget);
     expect(find.text('换一换'), findsOneWidget);
     expect(api.creates, 0);
@@ -331,7 +331,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('完整回答'), findsOneWidget);
-    expect(find.byTooltip('发送'), findsOneWidget);
+    expect(find.byTooltip('切换语音输入'), findsOneWidget);
+    expect(find.byTooltip('发送'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     api.client.close();

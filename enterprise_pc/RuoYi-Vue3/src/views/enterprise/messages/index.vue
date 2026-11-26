@@ -3,16 +3,18 @@ import { resolveResourceUrl } from "@/utils/resourceUrl"
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Video, Play, Zap, Smile, Paperclip, Camera, Send, Settings2, FileText, Bell, Copy, MessageSquareText, CalendarClock } from '@/views/enterprise/components/icons'
+import { Search, Video, Play, Zap, Smile, Paperclip, Camera, Send, Settings2, FileText, Bell, Copy, MessageSquareText, CalendarClock, Clock3 } from '@/views/enterprise/components/icons'
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import { listSessions, listMessages, sendMessage, readSession, readAll, uploadAttachment, listQuickReplies, saveQuickReply, deleteQuickReply, suggestQuickReplies } from '@/api/system/im'
 import { candidateAppBase } from '@/utils/appLink'
-import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice, notifyPrimaryConflict } from '@/api/system/conference'
+import { createRoomLink, listCandidatePositions, listInterviewers, listInterviewerNotices, respondInterviewNotice, notifyPrimaryConflict, verifyRoomToken } from '@/api/system/conference'
 import { listSurveyTemplates, sendSurvey } from '@/api/survey'
 import { listPapers, listSchedules, createSchedule } from '@/api/exam'
 import { refreshUnread, totalUnread } from '@/views/enterprise/store/unread'
 import { match as pinyinMatch } from 'pinyin-pro'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
+import ScheduleConfigFields from '../exam/components/ScheduleConfigFields.vue'
+import { schedulePayload } from '../exam/scheduleForm'
 
 const route = useRoute()
 const router = useRouter()
@@ -192,9 +194,14 @@ function parseInvite(text) {
   const end = text.indexOf('】')
   if (end < 0) return null
   const tags = cleanInterviewTag(text.slice(5, end)).split('·').map(t => t.trim()).filter(Boolean)
-  const rest = text.slice(end + 1)
+  let rest = text.slice(end + 1)
   const link = rest.match(/https?:\/\/\S+/)?.[0] || ''
-  return { tags, desc: rest.replace(/https?:\/\/\S+/, '').replace(/视频面试.*$/, '').trim(), link }
+  rest = rest.replace(/https?:\/\/\S+/, '')
+  // 新发送的邀请携带预约时间；历史消息没有该段，按原样展示
+  const timeMatch = rest.match(/(?:面试|预约)时间[:：]\s*(.+?)(?=\s*视频面试|[，,]|$)/)
+  const time = timeMatch ? timeMatch[1].trim() : ''
+  if (timeMatch) rest = rest.replace(timeMatch[0], '')
+  return { tags, desc: rest.replace(/视频面试.*$/, '').trim(), link, time }
 }
 
 // ---------- 岗位卡片消息（type=6，内容为 kind=job_card 的 JSON） ----------
@@ -282,7 +289,7 @@ const NOTICE_MODE_LABEL = { 1: '纯AI', 2: 'AI + 单面试官', 3: 'AI + 多面�
 const notices = ref([])
 const noticesLoading = ref(false)
 
-const pendingNoticeCount = computed(() => notices.value.filter(n => Number(n.acceptStatus) === 0).length)
+const pendingNoticeCount = computed(() => notices.value.filter(n => Number(n.acceptStatus) === 0 && !noticeExpired(n)).length)
 
 // 系统会话：始终置顶，未读数为待确认邀约数
 const noticeConv = computed(() => ({
@@ -297,6 +304,14 @@ const noticeConv = computed(() => ({
 
 function noticeStatusText(s) {
   return Number(s) === 1 ? '已接受' : Number(s) === 2 ? '已拒绝' : '待确认'
+}
+
+// 预约时间（结束时间）已过：不再允许回应，仅提示
+function noticeExpired(n) {
+  const raw = n?.appointmentEndAt || n?.appointmentStartAt
+  if (!raw) return false
+  const ts = new Date(String(raw).replace(/-/g, '/')).getTime()
+  return Number.isFinite(ts) && ts < Date.now()
 }
 
 async function loadNotices() {
@@ -396,6 +411,35 @@ async function loadMessages(sessionId) {
     invite: m.type === 1 ? parseInvite(m.content) : null,
     attachmentUrl: attachmentUrl(m.attachmentUrl),
     time: fmtTime(m.sendTime)
+  }))
+  fillInviteTimes()
+}
+
+// 历史邀请消息正文没有预约时间：按链接令牌补全卡片上的面试时间
+const inviteTimeCache = new Map()
+async function fillInviteTimes() {
+  const grouped = new Map()
+  for (const m of messages.value) {
+    const inv = m.invite
+    if (!inv || inv.time || !inv.link) continue
+    const token = inv.link.match(/[?&]token=([A-Za-z0-9_-]+)/)?.[1]
+    if (!token) continue
+    if (!grouped.has(token)) grouped.set(token, [])
+    grouped.get(token).push(inv)
+  }
+  await Promise.all([...grouped].map(async ([token, invites]) => {
+    if (!inviteTimeCache.has(token)) {
+      let time = ''
+      try {
+        const d = (await verifyRoomToken(token)).data || {}
+        if (d.appointmentStartAt) {
+          time = d.appointmentStartAt + (d.appointmentEndAt ? ' ~ ' + d.appointmentEndAt : '')
+        }
+      } catch (e) { /* 令牌无效则不显示时间 */ }
+      inviteTimeCache.set(token, time)
+    }
+    const time = inviteTimeCache.get(token)
+    if (time) invites.forEach(inv => { inv.time = time })
   }))
 }
 
@@ -506,7 +550,7 @@ const examLoading = ref(false)
 const examSending = ref(false)
 const examPapers = ref([])
 const examMinStart = ref('')
-const examForm = ref({ positionId: null, paperKey: null, startTime: '', endTime: '', forceDualCamera: false })
+const examForm = ref({ positionId: null, paperKey: null, startAt: '', endAt: '', maxAttempts: 1, passThreshold: 60, forceDualCamera: 0, dualAngle: '侧后方 45°，须拍到桌面与双手', dualNote: '' })
 // 可发送笔试的岗位（只保留有启用试卷的投递岗位）
 const examPositions = computed(() => {
   const map = new Map()
@@ -542,7 +586,7 @@ async function openExamModal() {
   examPapers.value = []
   const start = defaultStartTime()
   examMinStart.value = start
-  examForm.value = { positionId: null, paperKey: null, startTime: start, endTime: addDays(start, 7), forceDualCamera: false }
+  examForm.value = { positionId: null, paperKey: null, startAt: start, endAt: addDays(start, 7), maxAttempts: 1, passThreshold: 60, forceDualCamera: 0, dualAngle: '侧后方 45°，须拍到桌面与双手', dualNote: '' }
   examOpen.value = true
   examLoading.value = true
   try {
@@ -575,14 +619,14 @@ async function sendExamToChat() {
   const paper = selectedExamPaper.value
   if (peer == null || !paper) { ElMessage.warning('请选择要发送的试卷'); return }
   if (!candidateBase) { ElMessage.error('未配置候选人端地址，无法生成完整链接'); return }
-  if (!examForm.value.startTime || !examForm.value.endTime) { ElMessage.warning('请设置考试开始和结束时间'); return }
-  const startAt = String(examForm.value.startTime).replace('T', ' ')
-  const endAt = String(examForm.value.endTime).replace('T', ' ')
+  if (!examForm.value.startAt || !examForm.value.endAt) { ElMessage.warning('请设置考试开始和结束时间'); return }
+  const startAt = String(examForm.value.startAt).replace('T', ' ')
+  const endAt = String(examForm.value.endAt).replace('T', ' ')
   if (toTs(endAt) <= toTs(startAt)) { ElMessage.warning('考试结束时间必须晚于开始时间'); return }
   examSending.value = true
   try {
     let scheduleId = null
-    const dual = examForm.value.forceDualCamera ? 1 : 0
+    const dual = Number(examForm.value.forceDualCamera) ? 1 : 0
     const sres = await listSchedules({ positionId: paper.positionId, pageNum: 1, pageSize: 50 }).catch(() => null)
     // 仅复用试卷、开放时间与双机位设置完全一致的进行中安排；设置不同则新建
     const hit = (sres?.rows || []).find(s => {
@@ -594,16 +638,14 @@ async function sendExamToChat() {
     if (hit) {
       scheduleId = hit.scheduleId
     } else {
-      const res = await createSchedule({
-        positionId: paper.positionId,
+      const payload = schedulePayload({
+        ...examForm.value,
         paperId: paper.paperId,
-        startAt,
-        endAt,
         maxAttempts: 1,
         passThreshold: Math.min(60, Number(paper.totalScore) || 60),
-        forceDualCamera: dual,
-        submitRule: { autoSubmit: true, allowEarly: true, autosaveInterval: 30 }
-      })
+        autoInterviewerId: ''
+      }, { positionId: paper.positionId })
+      const res = await createSchedule(payload)
       scheduleId = res?.data
     }
     if (!scheduleId) throw new Error('创建考试安排失败')
@@ -842,8 +884,12 @@ async function sendLinkToChat() {
     const inviteTag = mode === 4
       ? `·${stage || '面试'}`
       : stage ? `·${stage}·${modeLabel}` : `·${modeLabel}`
+    // 带上预约起止时间，便于 HR 与候选人在会话中直接核对
+    const startAt = linkResult.value.appointmentStartAt || String(linkForm.value.startTime || '').replace('T', ' ')
+    const endAt = linkResult.value.appointmentEndAt || ''
+    const timePart = startAt ? `面试时间：${startAt}${endAt ? ' ~ ' + endAt : ''} ` : ''
     // 以普通文本消息发送（type=1），与日常聊天一致，链接在气泡内可点击
-    const body = { type: 1, content: `【面试邀请${inviteTag}】${company} ${position} 视频面试，请点击链接进入：${linkUrl.value}` }
+    const body = { type: 1, content: `【面试邀请${inviteTag}】${company} ${position} ${timePart}视频面试，请点击链接进入：${linkUrl.value}` }
     if (activeId.value != null) body.sessionId = activeId.value
     else body.peerId = newChat.value.peerId
     await sendMessage(body)
@@ -949,7 +995,7 @@ onBeforeUnmount(() => {
       <div class="conversation-list">
         <article v-for="item in filtered" :key="item.id" :class="{active:activeId===item.id}" @click="openConv(item)">
           <MiniAvatar :name="item.name" :size="40" color="#356f65" :src="item.avatar"/>
-          <div><h3>{{item.name}}</h3><p>{{item.summary || '暂无消息'}}</p></div><time>{{item.time}}</time><em v-if="item.unread">{{item.unread}}</em>
+          <div><h3>{{item.name}}</h3><p v-if="!item.system">{{item.summary || '暂无消息'}}</p></div><time v-if="!item.system">{{item.time}}</time><em v-if="item.unread">{{item.unread}}</em>
         </article>
         <p v-if="!filtered.length" class="empty-list">没有匹配的会话</p>
       </div>
@@ -976,8 +1022,11 @@ onBeforeUnmount(() => {
             <p class="nc-line">预约时间：{{ n.appointmentStartAt }} ~ {{ n.appointmentEndAt }}</p>
             <div class="nc-actions">
               <template v-if="Number(n.acceptStatus)===0">
-                <button class="nc-accept" @click="respondNotice(n, true)">接受担任本次面试</button>
-                <button class="nc-reject" @click="respondNotice(n, false)">拒绝</button>
+                <span v-if="noticeExpired(n)" class="nc-expired">面试时间已过，您尚未确认是否参加本次面试</span>
+                <template v-else>
+                  <button class="nc-accept" @click="respondNotice(n, true)">接受担任本次面试</button>
+                  <button class="nc-reject" @click="respondNotice(n, false)">拒绝</button>
+                </template>
               </template>
               <button v-else-if="Number(n.acceptStatus)===1" class="nc-enter" @click="enterWaitingRoom(n)">进入等候室</button>
               <span v-else class="nc-rejected">已拒绝本次面试</span>
@@ -1015,6 +1064,7 @@ onBeforeUnmount(() => {
               <article class="invite-bubble">
                 <div class="ib-head"><Video :size="16"/><span>面试邀请</span></div>
                 <div v-if="msg.invite.tags.length" class="ib-tags"><span v-for="t in msg.invite.tags" :key="t">{{ t }}</span></div>
+                <p v-if="msg.invite.time" class="ib-time"><Clock3 :size="13"/>{{ msg.invite.time }}</p>
                 <p class="ib-desc">{{ msg.invite.desc }}</p>
                 <a v-if="msg.invite.link" class="ib-link" :href="msg.invite.link" target="_blank" rel="noopener noreferrer"><Video :size="14"/>进入面试间</a>
               </article>
@@ -1183,19 +1233,7 @@ onBeforeUnmount(() => {
               <div><b>{{ p.name }}</b><small>{{ p.durationMin }} 分钟 · {{ p.totalScore }} 分</small></div>
             </label>
           </div>
-          <label class="lf-row">
-            <span>开始时间</span>
-            <input class="lf-time" type="datetime-local" v-model="examForm.startTime" :min="examMinStart" />
-          </label>
-          <label class="lf-row">
-            <span>结束时间</span>
-            <input class="lf-time" type="datetime-local" v-model="examForm.endTime" :min="examForm.startTime" />
-          </label>
-          <label class="lf-row exam-dual">
-            <span>强制双机位</span>
-            <input type="checkbox" v-model="examForm.forceDualCamera" />
-            <em>开启后候选人需同时启用主、副设备监考</em>
-          </label>
+          <ScheduleConfigFields :form="examForm" :min-start="examMinStart" :show-submit-rule="false" :show-auto-flow="false" />
         </template>
         <div class="sf-foot">
           <button class="btn" @click="examOpen=false">取消</button>
@@ -1267,6 +1305,7 @@ onBeforeUnmount(() => {
 .nc-reject{border:1px solid #dfe6ef;background:#fff;color:#64748b;padding:0 18px}
 .nc-enter{border:0;background:#16a34a;color:#fff}
 .nc-rejected{font-size:12px;color:#9aa7b8}
+.nc-expired{font-size:12px;color:#d97706}
 .survey-form{display:flex;flex-direction:column;gap:12px}
 .sf-tip{font-size:12px;color:#5b6b82;line-height:1.6}
 .sf-empty{font-size:12px;color:#9aa7b8;text-align:center;padding:18px 0}
@@ -1294,6 +1333,7 @@ onBeforeUnmount(() => {
 .ib-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
 .ib-tags span{font-size:10px;color:#2563eb;background:#eef4ff;border-radius:6px;padding:2px 8px}
 .ib-desc{margin-top:8px;font-size:12px;color:#40516a;line-height:1.55}
+.ib-time{display:flex;align-items:center;gap:5px;margin-top:8px;font-size:12px;color:#1d4ed8;font-weight:600}
 .ib-link{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:10px;height:32px;border-radius:8px;background:#2563eb;color:white;font-size:12px;text-decoration:none}
 .ib-link:hover{background:#1d4ed8}
 .reschedule-bubble{width:300px;max-width:80%;background:white;border:1px solid #dce5f0;border-radius:13px 5px 13px 13px;padding:12px 13px;transition:.18s ease}

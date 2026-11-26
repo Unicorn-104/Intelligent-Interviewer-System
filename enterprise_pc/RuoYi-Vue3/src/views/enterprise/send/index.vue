@@ -99,48 +99,7 @@
                   </option>
                 </select>
               </label>
-              <div class="sc-grid2">
-                <label class="sc-field">
-                  <span>开始时间</span>
-                  <input v-model="exam.startAt" type="datetime-local" class="sc-input" />
-                </label>
-                <label class="sc-field">
-                  <span>截止时间</span>
-                  <input v-model="exam.endAt" type="datetime-local" class="sc-input" />
-                </label>
-              </div>
-              <div class="sc-grid2">
-                <label class="sc-field">
-                  <span>作答次数</span>
-                  <input v-model.number="exam.maxAttempts" type="number" min="1" max="5" class="sc-input" />
-                </label>
-                <label class="sc-field">
-                  <span>通过分数线</span>
-                  <input v-model.number="exam.passThreshold" type="number" min="0" max="100" class="sc-input" />
-                </label>
-              </div>
-              <div class="sc-block">
-                <div class="sc-block-title">自动邀约面试（可选）</div>
-                <div class="sc-grid3">
-                  <label class="sc-field">
-                    <span>面试官</span>
-                    <select v-model="exam.autoInterviewerId" class="sc-input">
-                      <option value="">不自动流转</option>
-                      <option v-for="it in interviewers" :key="it.userId" :value="String(it.userId)">
-                        {{ interviewerName(it) }}
-                      </option>
-                    </select>
-                  </label>
-                  <label class="sc-field">
-                    <span>结束后 N 天</span>
-                    <input v-model.number="exam.autoInviteDays" type="number" min="1" max="30" class="sc-input" />
-                  </label>
-                  <label class="sc-field">
-                    <span>面试时长（分钟）</span>
-                    <input v-model.number="exam.autoInviteDuration" type="number" min="15" max="180" step="5" class="sc-input" />
-                  </label>
-                </div>
-              </div>
+              <ScheduleConfigFields :form="exam" :interviewers="interviewers" :total-score="examPaperTotal" :show-submit-rule="false" />
             </template>
 
             <div class="sc-field">
@@ -298,6 +257,8 @@ import { listTalents, listApplications } from '@/api/talent'
 import { getSendContext, inviteInterviewStages } from '@/api/send'
 import { listPapers, listSchedules, createSchedule, sendExamNotify } from '@/api/exam'
 import { listInterviewers, createRoomLink } from '@/api/system/conference'
+import ScheduleConfigFields from '../exam/components/ScheduleConfigFields.vue'
+import { schedulePayload } from '../exam/scheduleForm'
 
 const STAGE_TYPE_MODE = { 2: 2, 3: 4, 4: 1 }
 const MODE_OPTIONS = [
@@ -327,9 +288,13 @@ const interviewers = ref([])
 
 const exam = reactive({
   scheduleId: null, paperId: null, startAt: '', endAt: '',
-  maxAttempts: 1, passThreshold: 60, channels: ['inapp'], title: '',
+  maxAttempts: 1, passThreshold: 60,
+  forceDualCamera: 0, dualAngle: '侧后方 45°，须拍到桌面与双手', dualNote: '',
+  autoSubmit: true, allowEarly: true, autosaveInterval: 30,
+  channels: ['inapp'], title: '',
   autoInterviewerId: '', autoInviteDays: 3, autoInviteDuration: 45, sending: false
 })
+const examPaperTotal = computed(() => papers.value.find(p => Number(p.paperId) === Number(exam.paperId))?.totalScore || '')
 const examResult = ref(null)
 
 const interview = reactive({
@@ -499,22 +464,7 @@ async function sendExam() {
   try {
     let scheduleId = exam.scheduleId
     if (!scheduleId) {
-      const res = await createSchedule({
-        positionId: current.value.positionId,
-        paperId: Number(exam.paperId),
-        startAt: exam.startAt.replace('T', ' '),
-        endAt: exam.endAt.replace('T', ' '),
-        maxAttempts: Number(exam.maxAttempts) || 1,
-        passThreshold: Number(exam.passThreshold) || 60,
-        forceDualCamera: 0,
-        dualCameraConfig: null,
-        submitRule: { autoSubmit: true, allowEarly: true, autosaveInterval: 30 },
-        autoFlow: exam.autoInterviewerId ? {
-          interviewerId: Number(exam.autoInterviewerId),
-          startAfterDays: Number(exam.autoInviteDays) || 3,
-          durationMin: Number(exam.autoInviteDuration) || 45
-        } : null
-      })
+      const res = await createSchedule(schedulePayload(exam, { positionId: current.value.positionId }))
       scheduleId = res.data
       exam.scheduleId = scheduleId
     }

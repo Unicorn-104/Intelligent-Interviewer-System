@@ -124,6 +124,21 @@ public interface ConferenceMapper
     public List<Map<String, Object>> selectOutlineQuestions(@Param("sessionId") Long sessionId);
 
     /**
+     * 场次当前题目总数（实时统计，不依赖 meeting_state 快照）
+     */
+    public int countOutlineQuestions(@Param("sessionId") Long sessionId);
+
+    /**
+     * 追加一道面试题目（纯AI 面试自动出题）
+     */
+    public int insertOutlineQuestion(Map<String, Object> params);
+
+    /**
+     * 同步场次题目总数到 meeting_state（无会议状态行时不报错）
+     */
+    public int updateMeetingTotalQuestions(@Param("sessionId") Long sessionId, @Param("total") int total);
+
+    /**
      * 查询面试官对参考提示的采纳 / 忽略累计次数（偏好学习）
      */
     public List<Map<String, Object>> selectHintPreferences(@Param("userId") Long userId, @Param("companyId") Long companyId);

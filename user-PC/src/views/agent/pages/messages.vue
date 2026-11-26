@@ -1,4 +1,5 @@
 <template>
+  <div class="candidate-page--messages">
   <AgentTopbar active="messages" />
   <main class="message-shell" :class="{ 'system-mode': activeView === 'system' }">
     <aside class="conversation-sidebar">
@@ -48,7 +49,7 @@
             <span class="conversation-avatar">{{ avatarText(session.peerName) }}</span>
             <span class="conversation-copy">
               <span class="conversation-name">{{ session.peerName || '联系人' }}</span>
-              <span class="conversation-preview">{{ session.lastMessage || '暂无消息内容' }}</span>
+              <span class="conversation-preview">{{ messagePreview(session.lastMessage) || '暂无消息内容' }}</span>
             </span>
             <span class="conversation-meta">
               <span class="conversation-time">{{ formatShortTime(session.lastMessageAt) }}</span>
@@ -83,12 +84,17 @@
                <button class="notification-retry" type="button" @click="selectedSessionId && loadMessages(selectedSessionId)">重新加载</button>
             </div>
             <template v-else-if="messages.length">
-              <div class="time-divider">聊天记录</div>
+              <div class="history-controls">
+                <button v-if="hasOlderMessages" class="notification-retry" type="button" :disabled="olderLoading" @click="loadOlderMessages">{{ olderLoading ? '加载中…' : '加载更早消息' }}</button>
+                <span v-else>已显示全部聊天记录</span>
+                <span v-if="olderError" role="alert">{{ olderError }}</span>
+              </div>
               <div v-for="message in messages" :key="message.messageId" class="message-row" :class="{ me: message.isMine }">
                  <span v-if="!message.isMine" class="bubble-avatar">{{ avatarText(activeConversation.peerName) }}</span>
                   <div class="bubble-wrap">
-                   <div class="bubble">
-                     <template v-if="isImageMessage(message)">
+                   <div class="bubble" :class="{ 'bubble--card': message.card }">
+                     <MessageContentCard v-if="message.card" :card="message.card" />
+                     <template v-else-if="isImageMessage(message)">
                        <template v-if="!message.attachmentUnavailable">
                          <button class="attachment-image-button" type="button" :aria-label="`查看图片 ${message.content || ''}`" @click="previewAttachment(message)">
                            <img class="attachment-image" :src="message.attachmentUrl" :alt="message.content || '聊天图片'" @load="handleMessageImageLoad" @error="markAttachmentUnavailable(message)" />
@@ -123,6 +129,10 @@
              <div v-else class="notification-state">{{ newConversation ? '输入消息，开始联系该企业 HR' : '暂无聊天记录' }}</div>
           </div>
 
+          <div v-if="messageSyncError || hasPendingMessages" class="message-sync-state" role="status">
+            {{ messageSyncError || '正在同步更多新消息…' }}
+            <button v-if="messageSyncError" type="button" @click="loadMessages(selectedSessionId, { silent: true })">重试</button>
+          </div>
           <form class="composer" @submit.prevent="sendMessage">
             <input ref="imageInput" class="attachment-input" type="file" accept="image/jpeg,image/png,image/gif,image/bmp" @change="handleAttachmentChange($event, true)" />
             <input ref="fileInput" class="attachment-input" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" @change="handleAttachmentChange($event, false)" />
@@ -201,7 +211,7 @@
               <span class="notice-dot"></span>
               <div>
                 <div class="notice-title">{{ item.noticeTitle || '系统通知' }}</div>
-                <div class="notice-desc">{{ plainText(item.noticeContent) || item.noticeTitle || '暂无通知内容' }}</div>
+                <div class="notice-desc">{{ messagePreview(plainText(item.noticeContent)) || item.noticeTitle || '暂无通知内容' }}</div>
               </div>
               <span class="notice-tag" :class="{ gray: item.noticeType !== '1' }">{{ item.noticeType === '1' ? '通知' : '公告' }}</span>
               <span class="notice-time">{{ formatShortTime(item.createTime) }}　›</span>
@@ -219,14 +229,14 @@
           <span class="mini-avatar">{{ avatarText(activeConversation.peerName) }}</span>
           <div>
             <strong>{{ activeConversation.peerName || '联系人' }}</strong>
-            <span>消息会话联系人</span>
+            <a v-if="activeConversation.peerId" :href="appHref('/contact-profile?id=' + encodeURIComponent(activeConversation.peerId))">查看 HR 公开资料</a>
           </div>
         </div>
-        <div class="person-info">
-          <div>会话编号：{{ activeConversation.sessionId || '发送首条消息后创建' }}</div>
-          <div>最近消息：{{ activeConversation.lastMessage || '暂无消息内容' }}</div>
-          <div>更新时间：{{ formatMessageTime(activeConversation.lastMessageAt) }}</div>
-        </div>
+        <dl class="conversation-facts">
+          <div><dt>会话编号</dt><dd>{{ activeConversation.sessionId || '发送首条消息后创建' }}</dd></div>
+          <div><dt>最近消息</dt><dd>{{ messagePreview(activeConversation.lastMessage) || '暂无消息内容' }}</dd></div>
+          <div><dt>更新时间</dt><dd>{{ formatMessageTime(activeConversation.lastMessageAt) }}</dd></div>
+        </dl>
       </div>
     </aside>
   </main>
@@ -235,35 +245,39 @@
     <div class="call-dialog" role="dialog" aria-modal="true" aria-labelledby="noticeDetailTitle">
       <div class="call-avatar">!</div>
       <h2 id="noticeDetailTitle">{{ activeNotice.noticeTitle || '系统通知' }}</h2>
-      <p>{{ plainText(activeNotice.noticeContent) || '暂无通知内容' }}</p>
+      <MessageContentCard v-if="activeNoticeCard" :card="activeNoticeCard" />
+      <p v-else>{{ plainText(activeNotice.noticeContent) || '暂无通知内容' }}</p>
       <div class="call-actions">
         <button class="call-cancel" type="button" @click="activeNotice = null">关闭</button>
       </div>
     </div>
   </div>
 
-  <AiAssistant />
   <div class="toast" :class="{ show: toastVisible }" role="status" aria-live="polite">{{ toastText }}</div>
   <Teleport to="body">
+    <div class="candidate-page--messages">
     <div v-if="previewImage" class="message-image-preview" role="dialog" aria-modal="true" aria-label="聊天图片预览" @click.self="closeImagePreview" @keydown.esc="closeImagePreview" @keydown.tab.prevent="previewCloseButton?.focus()">
       <button ref="previewCloseButton" class="message-image-preview-close" type="button" aria-label="关闭图片预览" @click="closeImagePreview">×</button>
       <img :src="previewImage.attachmentUrl" :alt="previewImage.content || '聊天图片'" />
     </div>
+      </div>
   </Teleport>
+  </div>
 </template>
 
 <script setup>
 import { appHref } from '@/utils/agentNavigation'
+import { mergeMessagePages, mergeMessageSnapshot, messagePageData } from '@/utils/agentMessagePage'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { getNotice, listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
-import { listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
-import AiAssistant from '@/components/agent/AiAssistant.vue'
+import { getImMessageSnapshot, listImMessages, listImSessions, markImSessionRead, sendImMessage, uploadImAttachment } from '@/api/system/im'
+import MessageContentCard from '@/components/agent/MessageContentCard.vue'
 import { getToken } from '@/utils/auth'
 import { unreadBadge, unreadCount } from '@/utils/agentUnread'
 import { formatMessageTime, formatShortTime } from '@/utils/agentTime'
 import { parseExamInvitation } from '@/utils/examInvitation'
-import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageLinkParts, resolveMessageAttachment, uploadedMessageAttachmentPath } from '@/utils/agentMessage'
+import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageContentCard, messageLinkParts, messagePreview, resolveMessageAttachment, uploadedMessageAttachmentPath } from '@/utils/agentMessage'
 
 const sessions = ref([])
 const selectedSessionId = ref(null)
@@ -274,6 +288,14 @@ const sessionsError = ref(false)
 const messages = ref([])
 const messagesLoading = ref(false)
 const messagesError = ref(false)
+const olderLoading = ref(false)
+const olderError = ref('')
+const hasOlderMessages = ref(false)
+const hasPendingMessages = ref(false)
+const messageSyncError = ref('')
+let messageRevision = 0
+let messageFetch = null
+let cardRefreshAfterId = null
 const newConversation = ref(null)
 const draftMessage = ref('')
 const sending = ref(false)
@@ -303,6 +325,7 @@ const noticeItems = ref([])
 const noticesLoading = ref(true)
 const noticesError = ref(false)
 const activeNotice = ref(null)
+const activeNoticeCard = computed(() => messageContentCard({ content: activeNotice.value?.noticeContent }))
 const messagesContainer = ref(null)
 const followLatestMessages = ref(true)
 const toastText = ref('')
@@ -316,7 +339,7 @@ const activeConversation = computed(() => selectedSession.value || newConversati
 const filteredSessions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) return sessions.value
-  return sessions.value.filter(item => `${item.peerName || ''} ${item.lastMessage || ''}`.toLowerCase().includes(query))
+  return sessions.value.filter(item => `${item.peerName || ''} ${messagePreview(item.lastMessage)}`.toLowerCase().includes(query))
 })
 const systemUnreadCount = computed(() => noticeItems.value.filter(item => !item.isRead).length)
 const systemPreview = computed(() => systemUnreadCount.value ? `你有 ${systemUnreadCount.value} 条新的系统通知` : '暂无未读系统通知')
@@ -378,51 +401,138 @@ function startNewConversation(peerId, peerName = '企业 HR', updateUrl = true) 
   activeView.value = 'chat'
   selectedSessionId.value = null
   newConversation.value = { peerId, peerName }
-  messages.value = []
+  resetMessagePage()
   messagesError.value = false
   if (updateUrl) {
     history.replaceState(history.state, '', appHref(`/messages?peerId=${encodeURIComponent(peerId)}&peerName=${encodeURIComponent(peerName)}`))
   }
 }
 
+function normalizeMessages(items) {
+  const previous = new Map(messages.value.map(message => [String(message.messageId), message]))
+  return items.map(message => {
+    const url = attachmentUrl(message.attachmentUrl)
+    const old = previous.get(String(message.messageId))
+    return {
+      ...message,
+      type: Number(message.type),
+      card: messageContentCard(message),
+      examInvitation: parseExamInvitation(message.content),
+      attachmentUrl: url,
+      attachmentUnavailable: old?.attachmentUrl === url && old.attachmentUnavailable,
+      linkParts: messageLinkParts(message.content || '[非文本消息]')
+    }
+  })
+}
+
+function resetMessagePage() {
+  messageRevision++
+  messageFetch = null
+  cardRefreshAfterId = null
+  messages.value = []
+  messagesLoading.value = false
+  hasOlderMessages.value = false
+  hasPendingMessages.value = false
+  olderLoading.value = false
+  olderError.value = ''
+  messageSyncError.value = ''
+}
+
+async function refreshMutableMessages(sessionId, revision) {
+  const cards = messages.value.filter(message => Number(message.type) === 5)
+  const following = cardRefreshAfterId == null ? cards : cards.filter(message => BigInt(message.messageId) > BigInt(cardRefreshAfterId))
+  const batch = (following.length ? following : cards).slice(0, 100)
+  if (!batch.length) return
+  const ids = batch.map(message => message.messageId)
+  const response = await getImMessageSnapshot(sessionId, ids)
+  if (revision !== messageRevision || selectedSessionId.value !== sessionId) return
+  if (!Array.isArray(response.data)) throw new Error('消息状态接口不可用，请同步更新后端后重试')
+  const container = messagesContainer.value
+  const top = container?.scrollTop || 0
+  const updated = mergeMessageSnapshot(messages.value, ids, normalizeMessages(response.data))
+  if (updated !== messages.value) {
+    messages.value = updated
+    await nextTick()
+    if (revision === messageRevision && selectedSessionId.value === sessionId && !followLatestMessages.value && container) container.scrollTop = top
+  }
+  if (revision === messageRevision && selectedSessionId.value === sessionId) cardRefreshAfterId = ids.at(-1)
+}
+
 async function loadMessages(sessionId, { silent = false } = {}) {
   if (!sessionId) return false
+  if (messageFetch) return messageFetch
+  const revision = messageRevision
   const shouldFollowLatest = !silent || followLatestMessages.value
   if (!silent) followLatestMessages.value = true
   if (!silent && !messages.value.length) messagesLoading.value = true
   messagesError.value = false
-  try {
-    const response = await listImMessages(sessionId)
-    if (selectedSessionId.value !== sessionId) return false
-    const previousMessages = new Map(messages.value.map(message => [message.messageId, message]))
-    messages.value = Array.isArray(response.data)
-      ? response.data.map(message => {
-        const url = attachmentUrl(message.attachmentUrl)
-        const previous = previousMessages.get(message.messageId)
-        return {
-          ...message,
-          type: Number(message.type),
-          examInvitation: parseExamInvitation(message.content),
-          attachmentUrl: url,
-          attachmentUnavailable: previous?.attachmentUrl === url && previous.attachmentUnavailable,
-          linkParts: messageLinkParts(message.content || '[非文本消息]')
+  const request = (async () => {
+    try {
+      for (let page = 0; page < 10; page++) {
+        const afterId = messages.value.at(-1)?.messageId
+        const data = messagePageData(await listImMessages(sessionId, afterId ? { afterId } : {}))
+        if (revision !== messageRevision || selectedSessionId.value !== sessionId) return false
+        if (afterId && data.items.some(item => BigInt(item.messageId) <= BigInt(afterId))) throw new Error('消息游标没有前进，请重试')
+        if (data.items.length) messages.value = mergeMessagePages(messages.value, normalizeMessages(data.items))
+        if (!afterId) {
+          hasOlderMessages.value = data.hasMore
+          hasPendingMessages.value = false
+        } else {
+          hasPendingMessages.value = data.hasMore
         }
-      })
-      : []
-    return true
-  } catch (error) {
-    if (!silent) {
-      messagesError.value = true
-      showToast(error?.message || '聊天记录加载失败')
+        if (!hasPendingMessages.value) {
+          if (afterId) await refreshMutableMessages(sessionId, revision)
+          if (revision !== messageRevision || selectedSessionId.value !== sessionId) return false
+          messageSyncError.value = ''
+          return true
+        }
+      }
+      return false
+    } catch (error) {
+      if (revision === messageRevision && selectedSessionId.value === sessionId) {
+        messageSyncError.value = error?.message || '新消息同步失败，可重试'
+        if (!silent && !messages.value.length) messagesError.value = true
+      }
+      return false
+    } finally {
+      if (revision === messageRevision) {
+        messagesLoading.value = false
+        await nextTick()
+        if (selectedSessionId.value === sessionId && shouldFollowLatest && (!silent || followLatestMessages.value) && messagesContainer.value) {
+          followLatestMessages.value = true
+          messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+        }
+      }
     }
-    return false
-  } finally {
-    if (!silent) messagesLoading.value = false
+  })()
+  messageFetch = request
+  try { return await request }
+  finally { if (messageFetch === request) messageFetch = null }
+}
+
+async function loadOlderMessages() {
+  const sessionId = selectedSessionId.value
+  const beforeId = messages.value[0]?.messageId
+  if (!sessionId || !beforeId || olderLoading.value || !hasOlderMessages.value) return
+  const revision = messageRevision
+  const container = messagesContainer.value
+  olderLoading.value = true
+  olderError.value = ''
+  try {
+    const data = messagePageData(await listImMessages(sessionId, { beforeId }))
+    if (revision !== messageRevision || selectedSessionId.value !== sessionId) return
+    if (data.items.some(item => BigInt(item.messageId) >= BigInt(beforeId))) throw new Error('历史消息游标异常，请重试')
+    const height = container?.scrollHeight || 0
+    const top = container?.scrollTop || 0
+    messages.value = mergeMessagePages(messages.value, normalizeMessages(data.items))
+    hasOlderMessages.value = data.hasMore
+    followLatestMessages.value = false
     await nextTick()
-    if (selectedSessionId.value === sessionId && shouldFollowLatest && messagesContainer.value) {
-      followLatestMessages.value = true
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-    }
+    if (revision === messageRevision && container) container.scrollTop = top + container.scrollHeight - height
+  } catch (error) {
+    if (revision === messageRevision) olderError.value = error?.message || '历史消息加载失败'
+  } finally {
+    if (revision === messageRevision) olderLoading.value = false
   }
 }
 
@@ -443,14 +553,14 @@ async function selectSession(session, updateUrl = true) {
   activeView.value = 'chat'
   selectedSessionId.value = session.sessionId
   newConversation.value = null
-  messages.value = []
+  resetMessagePage()
   if (updateUrl) history.replaceState(history.state, '', appHref(`/messages?conversation=${encodeURIComponent(session.sessionId)}`))
   const loaded = await loadMessages(session.sessionId)
   if (loaded) await markConversationRead(session.sessionId)
 }
 
 async function markConversationRead(sessionId) {
-  if (document.visibilityState === 'hidden' || activeView.value !== 'chat' || selectedSessionId.value !== sessionId) return
+  if (document.visibilityState === 'hidden' || activeView.value !== 'chat' || selectedSessionId.value !== sessionId || hasPendingMessages.value) return
   try {
     await markImSessionRead(sessionId)
     const session = sessions.value.find(item => item.sessionId === sessionId)
@@ -465,6 +575,7 @@ function selectSystem(updateUrl = true) {
   activeView.value = 'system'
   selectedSessionId.value = null
   newConversation.value = null
+  resetMessagePage()
   if (updateUrl) history.replaceState(history.state, '', appHref('/messages?view=system'))
 }
 
@@ -486,6 +597,7 @@ async function sendMessage() {
       const createdSession = sessions.value.find(item => item.sessionId === createdSessionId || String(item.peerId) === String(newConversation.value.peerId))
       if (createdSession) await selectSession(createdSession, false)
     } else {
+      if (messageFetch) await messageFetch
       await loadMessages(selectedSession.value.sessionId)
     }
     showToast('消息已发送')
@@ -618,6 +730,7 @@ async function handleAttachmentChange(event, isImage) {
       const createdSession = sessions.value.find(item => item.sessionId === createdSessionId || String(item.peerId) === String(newConversation.value.peerId))
       if (createdSession) await selectSession(createdSession, false)
     } else {
+      if (messageFetch) await messageFetch
       await loadMessages(selectedSession.value.sessionId)
     }
     showToast(isImage ? '图片已发送' : '文件已发送')
@@ -707,6 +820,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  messageRevision++
   document.removeEventListener('pointerdown', closeEmojiPicker)
   document.removeEventListener('visibilitychange', refreshMessages)
   if (refreshTimer) window.clearInterval(refreshTimer)
@@ -715,50 +829,58 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
-.message-shell .conversation-sidebar{padding:0}
-.message-shell .conversation-item{position:relative}
-.message-shell .conversation-unread{position:absolute;right:10px;top:33px;max-width:42px;margin:0;background:#D94B55;color:#fff}
-@media(max-width:700px){.message-shell .conversation-unread{top:2px;right:0;max-width:36px;min-width:16px;height:16px;padding:0 4px;font-size:9px}}
-.message-shell .message-text{white-space:pre-wrap;overflow-wrap:anywhere}
-.message-shell .bubble .attachment-image-button{max-width:100%}
-.message-shell .attachment-image,.message-shell .attachment-name{max-width:100%}
-.message-shell .attachment-file{min-width:0;max-width:100%;width:220px}
-.message-shell .message-link{color:#1761bd;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
-.message-shell .message-link:hover{color:#0d438a}
-.message-shell .me .message-link,.message-shell .me .message-link:hover{color:#fff}
-.message-shell .exam-invite-card{min-width:238px;max-width:320px;padding:2px 0 0;overflow-wrap:anywhere}
-.exam-invite-head{display:flex;align-items:center;gap:7px;color:var(--primary)}
-.exam-invite-icon{display:grid;width:28px;height:28px;place-items:center;flex:0 0 auto;border-radius:7px;color:var(--blue);background:var(--blue-soft);font-size:15px}
-.exam-invite-head strong{font-size:12px}
-.exam-invite-badge{margin-left:auto;padding:2px 6px;border-radius:4px;color:var(--blue);background:var(--blue-soft);font-size:9px}
-.exam-invite-title{margin:10px 0 4px;color:var(--primary);font-size:14px}
-.exam-invite-detail{margin:0;color:#64758D;font-size:10px;line-height:1.65}
-.exam-invite-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
-.exam-invite-session{color:var(--light);font-size:9px;white-space:nowrap}
-.exam-invite-action{color:var(--blue);font-size:10px;font-weight:700;text-decoration:none;white-space:nowrap}
-.exam-invite-action:hover{color:#1761bd;text-decoration:underline}
-.message-shell .message-emoji-picker{position:relative;flex:0 0 auto}
-.message-shell .message-emoji-panel{position:absolute;bottom:calc(100% + 8px);left:0;z-index:10;display:grid;grid-template-columns:repeat(6,32px);gap:4px;padding:10px;border:1px solid #d8e3ef;border-radius:10px;background:#fff;box-shadow:0 6px 24px rgba(26,60,110,.16)}
-.message-shell .message-emoji-panel button{display:grid;width:32px;height:32px;place-items:center;padding:0;border:0;border-radius:6px;background:transparent;font-family:'Segoe UI Emoji','Apple Color Emoji',sans-serif;font-size:22px;line-height:1}
-.message-shell .message-emoji-panel button:hover,.message-shell .message-emoji-panel button:focus-visible{background:#eaf2ff;outline:2px solid #afc9ec}
-.message-shell .attachment-unavailable button{padding:2px 5px;border:0;color:#1761bd;background:transparent;text-decoration:underline}
-.message-image-preview{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;padding:56px 20px;background:rgba(13,23,39,.85)}
-.message-image-preview img{display:block;max-width:100%;max-height:100%;object-fit:contain}
-.message-image-preview-close{position:absolute;top:12px;right:16px;display:grid;width:36px;height:36px;place-items:center;padding:0;border:1px solid #fff;border-radius:50%;color:#fff;background:#263445;font-size:25px;cursor:pointer}
-.message-shell{--primary:#1A3C6E;--blue:#2B7FFF;--blue-soft:#EAF2FF;--bg:#F5F7FA;--text:#172B4D;--muted:#6B7A90;--light:#96A3B5;--line:#E6EBF2;--red:#D94B55;--shadow:0 5px 18px rgba(26,60,110,.045)}
-.attachment-input{display:none}.attachment-actions{display:flex;align-items:center;gap:6px}.attachment-button{height:34px;padding:0 9px;border:1px solid #D8E3EF;border-radius:7px;color:var(--muted);background:#fff;font-size:10px}.attachment-button:hover:not(:disabled){border-color:#AFC9EC;color:var(--blue);background:var(--blue-soft)}.attachment-button:disabled{cursor:not-allowed;opacity:.5}.bubble .attachment-image-button{display:block;max-width:220px;padding:0;border:0;border-radius:7px;background:transparent;overflow:hidden}.attachment-image{display:block;max-width:220px;max-height:180px;border-radius:7px;object-fit:contain;background:#F2F5F9}.attachment-name{display:block;max-width:220px;margin-top:6px;padding:0;border:0;color:inherit;background:transparent;font-size:10px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-name:hover{color:var(--blue)}.attachment-unavailable{display:block;max-width:220px;padding:18px 12px;border:1px dashed #D5DEE9;border-radius:7px;color:var(--muted);font-size:10px}.attachment-file{display:flex;align-items:center;gap:9px;min-width:180px;max-width:260px;padding:0;border:0;color:inherit;background:transparent;text-align:left;text-decoration:none}.attachment-file:hover .attachment-file-copy strong{text-decoration:underline}.attachment-file-icon{display:grid;width:28px;height:28px;place-items:center;flex:0 0 auto;border-radius:7px;background:rgba(255,255,255,.2);font-size:18px;font-weight:800}.attachment-file-copy{min-width:0}.attachment-file-copy strong,.attachment-file-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-file-copy strong{font-size:11px}.attachment-file-copy small{margin-top:3px;opacity:.72;font-size:9px}.me .attachment-file-icon{color:#fff;background:rgba(255,255,255,.2)}
-.message-shell,.message-shell *{box-sizing:border-box}.message-shell button,.message-shell input{font:inherit}.message-shell button{cursor:pointer}.message-shell svg{display:block}
-.message-shell{width:min(1380px,calc(100% - 48px));height:calc(100vh - 108px);min-height:650px;margin:18px auto;display:grid;grid-template-columns:290px minmax(0,1fr) 300px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
-.conversation-sidebar{display:flex;min-width:0;flex-direction:column;border-right:1px solid var(--line);background:#fff}.sidebar-head{padding:17px 15px 12px}.sidebar-title{display:flex;align-items:center;gap:7px;color:var(--primary);font-size:17px;font-weight:800}.sidebar-title span{color:var(--light);font-size:10px;font-weight:500}.search-box{position:relative;margin-top:11px}.search-box svg{position:absolute;top:10px;left:11px;width:15px;height:15px;color:#8F9EAF;stroke:currentColor;fill:none;stroke-width:1.8}.search-box input{width:100%;height:36px;padding:0 12px 0 34px;border:1px solid transparent;border-radius:7px;outline:none;color:var(--text);background:#F2F5F9;font-size:11px}.search-box input:focus{border-color:#B9D1F2;background:#fff;box-shadow:0 0 0 3px rgba(43,127,255,.1)}.conversation-list{overflow-x:hidden;overflow-y:auto;padding:0 8px 12px;display:flex;min-height:0;flex-direction:column}.conversation-item{position:relative;width:100%;min-width:0;min-height:62px;display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px;border:0;border-radius:8px;color:inherit;background:transparent;text-align:left}.conversation-item:hover,.conversation-item.active{background:#EEF4FD}.conversation-item.is-pinned{order:-1}.conversation-avatar{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:11px;font-weight:800}.conversation-avatar.system{color:var(--blue);background:#EDF4FF}.conversation-item:not(.is-pinned) .conversation-avatar{color:#fff;background:#4B4F56}.conversation-avatar svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7}.conversation-copy{min-width:0;max-width:100%;overflow:hidden}.conversation-name{min-width:0;overflow:hidden;color:var(--primary);font-size:12px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.conversation-preview{min-width:0;max-width:100%;overflow:hidden;margin-top:3px;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.conversation-meta{align-self:start;display:flex;align-items:flex-end;flex-direction:column;gap:3px}.conversation-time{color:var(--light);font-size:9px}.unread{min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;padding:0 5px;overflow:visible;border-radius:999px;color:#fff;background:var(--red);font-size:10px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}.conversation-state{display:grid;min-height:120px;place-items:center;padding:20px;color:var(--muted);font-size:11px;text-align:center}.conversation-state.error{color:var(--red)}.conversation-state button,.notification-retry{margin-top:8px;padding:6px 12px;border:1px solid #CBD9EA;border-radius:6px;color:var(--primary);background:#fff;font-size:11px}
-.content-area{min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:#F7F9FC}.chat-view,.system-view{height:100%;display:flex;min-height:0;flex-direction:column}.chat-head{height:64px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--line);background:#fff}.chat-person{display:flex;align-items:center;gap:10px}.mini-avatar,.bubble-avatar{display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-weight:800}.mini-avatar{width:36px;height:36px}.chat-name{color:var(--primary);font-size:14px;font-weight:800}.hr-tag{margin-left:5px;padding:2px 6px;border-radius:4px;color:var(--blue);background:var(--blue-soft);font-size:9px}.online-text{margin-top:2px;color:var(--muted);font-size:9px}.messages{flex:1;min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:18px}.time-divider{margin:0 0 16px;color:var(--light);font-size:9px;text-align:center}.message-row{display:flex;align-items:flex-end;gap:9px;margin:0 0 14px}.message-row.me{justify-content:flex-end}.bubble-avatar{width:32px;height:32px;flex:0 0 auto;font-size:10px}.bubble-wrap{max-width:68%;min-width:0}.bubble{padding:10px 13px;border:1px solid #DEE5EE;border-radius:4px 10px 10px 10px;color:#344A67;background:#fff;font-size:12px;line-height:1.65;overflow-wrap:anywhere}.message-row.me .bubble{border-color:var(--blue);border-radius:10px 4px 10px 10px;color:#fff;background:var(--blue)}.bubble-time{margin-top:4px;color:var(--light);font-size:9px}.message-row.me .bubble-time{text-align:right}.composer{display:flex;align-items:center;gap:10px;padding:14px 16px;border-top:1px solid var(--line);background:#fff}.composer-box{flex:1;display:flex;align-items:center;height:42px;padding:0 12px;border-radius:8px;background:#F2F5F9}.composer input{width:100%;min-width:0;border:0;outline:none;color:var(--text);background:transparent;font-size:11px}.send-button{height:38px;display:flex;align-items:center;gap:6px;padding:0 15px;border:0;border-radius:7px;color:#fff;background:var(--blue);font-size:11px;font-weight:700}.send-button:disabled{cursor:not-allowed;opacity:.45}.send-button svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}.empty-chat{height:100%;display:grid;place-items:center;align-content:center;gap:8px;color:var(--muted);font-size:12px}.empty-chat strong{color:var(--primary);font-size:16px}.detail-sidebar{border-left:1px solid var(--line);background:#fff}.detail-head{height:64px;display:flex;align-items:center;padding:0 17px;border-bottom:1px solid var(--line);color:var(--primary);font-size:14px;font-weight:800}.person-panel{margin:12px;padding:14px;border-radius:8px;background:#F7F9FC}.person-card{display:flex;align-items:center;gap:10px}.person-card .mini-avatar{width:46px;height:46px}.person-card strong{display:block;color:var(--primary);font-size:13px}.person-card span{display:block;color:var(--muted);font-size:10px}.person-info{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}.person-info div{margin:7px 0;color:#64758D;font-size:10px;overflow-wrap:anywhere}
-.system-view{background:var(--bg)}.system-head{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--line);background:#fff}.system-head h1{margin:0;color:var(--primary);font-size:16px}.system-head button{border:0;color:var(--blue);background:transparent;font-size:10px}.system-head button:disabled{cursor:not-allowed;color:var(--light)}.notification-list{overflow-y:auto;min-height:0;padding:14px}.notification-card{display:grid;grid-template-columns:8px minmax(0,1fr) auto;align-items:start;gap:14px;min-height:86px;margin-bottom:10px;padding:14px 18px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer}.notification-card:hover,.notification-card:focus-visible{border-color:#B8D1F1;background:#FBFDFF;outline:none}.message-shell .notice-dot{position:static;width:7px;height:7px;margin-top:5px;border:0;border-radius:50%;background:#DDE5EF}.notification-card.unread-notice .notice-dot{background:var(--blue)}.notice-copy{grid-column:2;min-width:0;width:100%}.message-shell .notice-title{margin:0;color:var(--primary);font-size:12px;font-weight:800;line-height:1.45;writing-mode:horizontal-tb;text-orientation:mixed;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.message-shell .notice-desc{margin-top:4px;color:#64758D;font-size:10px;line-height:1.6;writing-mode:horizontal-tb;text-orientation:mixed;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.notice-tag{grid-column:3;grid-row:1;padding:4px 8px;border-radius:5px;color:var(--blue);background:var(--blue-soft);font-size:9px;text-align:center;white-space:nowrap}.notice-tag.gray{color:#62758E;background:#EEF2F7}.notice-time{grid-column:3;grid-row:2;margin-top:6px;color:var(--light);font-size:10px;text-align:right;white-space:nowrap}.notification-state{display:grid;min-height:180px;place-items:center;align-content:center;gap:10px;padding:30px;color:var(--muted);font-size:12px;text-align:center}.notification-state.error{color:var(--red)}.call-modal{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:rgba(13,30,52,.48);backdrop-filter:blur(3px)}.call-dialog{width:min(390px,100%);padding:26px;border:1px solid #D9E3EF;border-radius:10px;background:#fff;box-shadow:0 22px 60px rgba(14,35,64,.24);text-align:center}.call-avatar{width:62px;height:62px;margin:0 auto 13px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:20px;font-weight:800}.call-dialog h2{margin:0;color:var(--primary);font-size:18px}.call-dialog p{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.7}.call-actions{display:flex;gap:10px;margin-top:17px}.call-actions button{height:42px;flex:1;border-radius:7px;font-weight:700}.call-cancel{border:1px solid #CFDAE8;color:var(--primary);background:#fff}.toast{position:fixed;z-index:70;right:24px;bottom:24px;padding:10px 14px;border:1px solid #CDE7DD;border-radius:8px;color:#176B50;background:#F2FBF7;opacity:0;transform:translateY(10px);transition:.18s}.toast.show{opacity:1;transform:translateY(0)}
-@media(max-width:1050px){.message-shell{width:calc(100% - 28px);grid-template-columns:250px minmax(0,1fr)}.detail-sidebar{display:none}}@media(max-width:700px){.message-shell{height:calc(100vh - 84px);min-height:580px;margin:10px auto;grid-template-columns:74px minmax(0,1fr)}.sidebar-head{padding:10px 8px}.sidebar-title span,.sidebar-title{font-size:0}.sidebar-title::after{content:"消息";font-size:13px}.search-box{display:none}.conversation-list{padding:0 6px}.conversation-item{grid-template-columns:38px;justify-content:center;padding:8px 5px}.conversation-copy,.conversation-meta{display:none}.unread{position:absolute;margin-left:28px}.system-mode{grid-template-columns:74px minmax(0,1fr)}.notification-card{grid-template-columns:7px minmax(0,1fr);gap:9px}.notice-tag,.notice-time{display:none}.bubble-wrap{max-width:84%}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
-.conversation-search{position:relative;display:block;width:100%;height:36px;margin-top:11px}.conversation-search svg{position:absolute;top:10px;left:11px;width:15px;height:15px;color:#8F9EAF;stroke:currentColor;fill:none;stroke-width:1.8;pointer-events:none}.conversation-search input{display:block;width:100%;height:36px;padding:0 12px 0 34px;border:1px solid transparent;border-radius:7px;outline:none;color:var(--text);background:#F2F5F9;font-size:11px;line-height:36px}.conversation-search input:focus{border-color:#B9D1F2;background:#fff;box-shadow:0 0 0 3px rgba(43,127,255,.1)}
-@media(max-width:700px){.conversation-search{display:none}}
+:where(.candidate-page--messages) .history-controls{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;color:#7a8aa0;font-size:12px;overflow-anchor:none}:where(.candidate-page--messages) .message-sync-state{padding:8px 16px;background:#fff7e8;color:#946109;font-size:12px}
+:where(.candidate-page--messages) .message-shell .message-row .bubble.bubble--card{padding:0;border:0;border-radius:14px;background:transparent;box-shadow:none;max-width:100%}
+:where(.candidate-page--messages) .message-shell .message-row .bubble-wrap{min-width:0}
+:where(.candidate-page--messages) .message-shell .conversation-copy,:where(.candidate-page--messages) .message-shell .conversation-name,:where(.candidate-page--messages) .message-shell .conversation-preview{display:block}
+:where(.candidate-page--messages) .message-shell .conversation-facts{display:grid;gap:14px;margin:14px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+:where(.candidate-page--messages) .message-shell .conversation-facts div{min-width:0}
+:where(.candidate-page--messages) .message-shell .conversation-facts dt{margin-bottom:5px;color:var(--light);font-size:11px;line-height:1.5}
+:where(.candidate-page--messages) .message-shell .conversation-facts dd{margin:0;color:#526780;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+:where(.candidate-page--messages) .message-shell .conversation-sidebar{padding:0}
+:where(.candidate-page--messages) .message-shell .conversation-item{position:relative}
+:where(.candidate-page--messages) .message-shell .conversation-unread{position:absolute;right:10px;top:33px;max-width:42px;margin:0;background:#D94B55;color:#fff}
+@media(max-width:700px){:where(.candidate-page--messages) .message-shell .conversation-unread{top:2px;right:0;max-width:36px;min-width:16px;height:16px;padding:0 4px;font-size:9px}}
+:where(.candidate-page--messages) .message-shell .message-text{white-space:pre-wrap;overflow-wrap:anywhere}
+:where(.candidate-page--messages) .message-shell .bubble .attachment-image-button{max-width:100%}
+:where(.candidate-page--messages) .message-shell .attachment-image,:where(.candidate-page--messages) .message-shell .attachment-name{max-width:100%}
+:where(.candidate-page--messages) .message-shell .attachment-file{min-width:0;max-width:100%;width:220px}
+:where(.candidate-page--messages) .message-shell .message-link{color:#1761bd;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
+:where(.candidate-page--messages) .message-shell .message-link:hover{color:#0d438a}
+:where(.candidate-page--messages) .message-shell .me .message-link,:where(.candidate-page--messages) .message-shell .me .message-link:hover{color:#fff}
+:where(.candidate-page--messages) .message-shell .message-emoji-picker{position:relative;flex:0 0 auto}
+:where(.candidate-page--messages) .message-shell .message-emoji-panel{position:absolute;bottom:calc(100% + 8px);left:0;z-index:10;display:grid;grid-template-columns:repeat(6,32px);gap:4px;padding:10px;border:1px solid #d8e3ef;border-radius:10px;background:#fff;box-shadow:0 6px 24px rgba(26,60,110,.16)}
+:where(.candidate-page--messages) .message-shell .message-emoji-panel button{display:grid;width:32px;height:32px;place-items:center;padding:0;border:0;border-radius:6px;background:transparent;font-family:'Segoe UI Emoji','Apple Color Emoji',sans-serif;font-size:22px;line-height:1}
+:where(.candidate-page--messages) .message-shell .message-emoji-panel button:hover,:where(.candidate-page--messages) .message-shell .message-emoji-panel button:focus-visible{background:#eaf2ff;outline:2px solid #afc9ec}
+:where(.candidate-page--messages) .message-shell .attachment-unavailable button{padding:2px 5px;border:0;color:#1761bd;background:transparent;text-decoration:underline}
+:where(.candidate-page--messages) .message-image-preview{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;padding:56px 20px;background:rgba(13,23,39,.85)}
+:where(.candidate-page--messages) .message-image-preview img{display:block;max-width:100%;max-height:100%;object-fit:contain}
+:where(.candidate-page--messages) .message-image-preview-close{position:absolute;top:12px;right:16px;display:grid;width:36px;height:36px;place-items:center;padding:0;border:1px solid #fff;border-radius:50%;color:#fff;background:#263445;font-size:25px;cursor:pointer}
+:where(.candidate-page--messages) .message-shell{--primary:#1A3C6E;--blue:#2B7FFF;--blue-soft:#EAF2FF;--bg:#F5F7FA;--text:#172B4D;--muted:#6B7A90;--light:#96A3B5;--line:#E6EBF2;--red:#D94B55;--shadow:0 5px 18px rgba(26,60,110,.045)}
+:where(.candidate-page--messages) .attachment-input{display:none}:where(.candidate-page--messages) .attachment-actions{display:flex;align-items:center;gap:6px}:where(.candidate-page--messages) .attachment-button{height:34px;padding:0 9px;border:1px solid #D8E3EF;border-radius:7px;color:var(--muted);background:#fff;font-size:10px}:where(.candidate-page--messages) .attachment-button:hover:not(:disabled){border-color:#AFC9EC;color:var(--blue);background:var(--blue-soft)}:where(.candidate-page--messages) .attachment-button:disabled{cursor:not-allowed;opacity:.5}:where(.candidate-page--messages) .bubble .attachment-image-button{display:block;max-width:220px;padding:0;border:0;border-radius:7px;background:transparent;overflow:hidden}:where(.candidate-page--messages) .attachment-image{display:block;max-width:220px;max-height:180px;border-radius:7px;object-fit:contain;background:#F2F5F9}:where(.candidate-page--messages) .attachment-name{display:block;max-width:220px;margin-top:6px;padding:0;border:0;color:inherit;background:transparent;font-size:10px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}:where(.candidate-page--messages) .attachment-name:hover{color:var(--blue)}:where(.candidate-page--messages) .attachment-unavailable{display:block;max-width:220px;padding:18px 12px;border:1px dashed #D5DEE9;border-radius:7px;color:var(--muted);font-size:10px}:where(.candidate-page--messages) .attachment-file{display:flex;align-items:center;gap:9px;min-width:180px;max-width:260px;padding:0;border:0;color:inherit;background:transparent;text-align:left;text-decoration:none}:where(.candidate-page--messages) .attachment-file:hover .attachment-file-copy strong{text-decoration:underline}:where(.candidate-page--messages) .attachment-file-icon{display:grid;width:28px;height:28px;place-items:center;flex:0 0 auto;border-radius:7px;background:rgba(255,255,255,.2);font-size:18px;font-weight:800}:where(.candidate-page--messages) .attachment-file-copy{min-width:0}:where(.candidate-page--messages) .attachment-file-copy strong,:where(.candidate-page--messages) .attachment-file-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}:where(.candidate-page--messages) .attachment-file-copy strong{font-size:11px}:where(.candidate-page--messages) .attachment-file-copy small{margin-top:3px;opacity:.72;font-size:9px}:where(.candidate-page--messages) .me .attachment-file-icon{color:#fff;background:rgba(255,255,255,.2)}
+:where(.candidate-page--messages) .message-shell,:where(.candidate-page--messages) .message-shell *{box-sizing:border-box}:where(.candidate-page--messages) .message-shell button,:where(.candidate-page--messages) .message-shell input{font:inherit}:where(.candidate-page--messages) .message-shell button{cursor:pointer}:where(.candidate-page--messages) .message-shell svg{display:block}
+:where(.candidate-page--messages) .message-shell{width:min(1380px,calc(100% - 48px));height:calc(100vh - 108px);min-height:650px;margin:18px auto;display:grid;grid-template-columns:290px minmax(0,1fr) 300px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
+:where(.candidate-page--messages) .conversation-sidebar{display:flex;min-width:0;flex-direction:column;border-right:1px solid var(--line);background:#fff}:where(.candidate-page--messages) .sidebar-head{padding:17px 15px 12px}:where(.candidate-page--messages) .sidebar-title{display:flex;align-items:center;gap:7px;color:var(--primary);font-size:17px;font-weight:800}:where(.candidate-page--messages) .sidebar-title span{color:var(--light);font-size:10px;font-weight:500}:where(.candidate-page--messages) .search-box{position:relative;margin-top:11px}:where(.candidate-page--messages) .search-box svg{position:absolute;top:10px;left:11px;width:15px;height:15px;color:#8F9EAF;stroke:currentColor;fill:none;stroke-width:1.8}:where(.candidate-page--messages) .search-box input{width:100%;height:36px;padding:0 12px 0 34px;border:1px solid transparent;border-radius:7px;outline:none;color:var(--text);background:#F2F5F9;font-size:11px}:where(.candidate-page--messages) .search-box input:focus{border-color:#B9D1F2;background:#fff;box-shadow:0 0 0 3px rgba(43,127,255,.1)}:where(.candidate-page--messages) .conversation-list{overflow-x:hidden;overflow-y:auto;padding:0 8px 12px;display:flex;min-height:0;flex-direction:column}:where(.candidate-page--messages) .conversation-item{position:relative;width:100%;min-width:0;min-height:62px;display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px;border:0;border-radius:8px;color:inherit;background:transparent;text-align:left}:where(.candidate-page--messages) .conversation-item:hover,:where(.candidate-page--messages) .conversation-item.active{background:#EEF4FD}:where(.candidate-page--messages) .conversation-item.is-pinned{order:-1}:where(.candidate-page--messages) .conversation-avatar{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:11px;font-weight:800}:where(.candidate-page--messages) .conversation-avatar.system{color:var(--blue);background:#EDF4FF}:where(.candidate-page--messages) .conversation-item:not(.is-pinned) .conversation-avatar{color:#fff;background:#4B4F56}:where(.candidate-page--messages) .conversation-avatar svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7}:where(.candidate-page--messages) .conversation-copy{min-width:0;max-width:100%;overflow:hidden}:where(.candidate-page--messages) .conversation-name{min-width:0;overflow:hidden;color:var(--primary);font-size:12px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}:where(.candidate-page--messages) .conversation-preview{min-width:0;max-width:100%;overflow:hidden;margin-top:3px;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}:where(.candidate-page--messages) .conversation-meta{align-self:start;display:flex;align-items:flex-end;flex-direction:column;gap:3px}:where(.candidate-page--messages) .conversation-time{color:var(--light);font-size:9px}:where(.candidate-page--messages) .unread{min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;padding:0 5px;overflow:visible;border-radius:999px;color:#fff;background:var(--red);font-size:10px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}:where(.candidate-page--messages) .conversation-state{display:grid;min-height:120px;place-items:center;padding:20px;color:var(--muted);font-size:11px;text-align:center}:where(.candidate-page--messages) .conversation-state.error{color:var(--red)}:where(.candidate-page--messages) .conversation-state button,:where(.candidate-page--messages) .notification-retry{margin-top:8px;padding:6px 12px;border:1px solid #CBD9EA;border-radius:6px;color:var(--primary);background:#fff;font-size:11px}
+:where(.candidate-page--messages) .content-area{min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:#F7F9FC}:where(.candidate-page--messages) .chat-view,:where(.candidate-page--messages) .system-view{height:100%;display:flex;min-height:0;flex-direction:column}:where(.candidate-page--messages) .chat-head{height:64px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--line);background:#fff}:where(.candidate-page--messages) .chat-person{display:flex;align-items:center;gap:10px}:where(.candidate-page--messages) .mini-avatar,:where(.candidate-page--messages) .bubble-avatar{display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-weight:800}:where(.candidate-page--messages) .mini-avatar{width:36px;height:36px}:where(.candidate-page--messages) .chat-name{color:var(--primary);font-size:14px;font-weight:800}:where(.candidate-page--messages) .hr-tag{margin-left:5px;padding:2px 6px;border-radius:4px;color:var(--blue);background:var(--blue-soft);font-size:9px}:where(.candidate-page--messages) .online-text{margin-top:2px;color:var(--muted);font-size:9px}:where(.candidate-page--messages) .messages{flex:1;min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:18px}:where(.candidate-page--messages) .time-divider{margin:0 0 16px;color:var(--light);font-size:9px;text-align:center}:where(.candidate-page--messages) .message-row{display:flex;align-items:flex-end;gap:9px;margin:0 0 14px}:where(.candidate-page--messages) .message-row.me{justify-content:flex-end}:where(.candidate-page--messages) .bubble-avatar{width:32px;height:32px;flex:0 0 auto;font-size:10px}:where(.candidate-page--messages) .bubble-wrap{max-width:68%;min-width:0}:where(.candidate-page--messages) .bubble{padding:10px 13px;border:1px solid #DEE5EE;border-radius:4px 10px 10px 10px;color:#344A67;background:#fff;font-size:12px;line-height:1.65;overflow-wrap:anywhere}:where(.candidate-page--messages) .message-row.me .bubble{border-color:var(--blue);border-radius:10px 4px 10px 10px;color:#fff;background:var(--blue)}:where(.candidate-page--messages) .bubble-time{margin-top:4px;color:var(--light);font-size:9px}:where(.candidate-page--messages) .message-row.me .bubble-time{text-align:right}:where(.candidate-page--messages) .composer{display:flex;align-items:center;gap:10px;padding:14px 16px;border-top:1px solid var(--line);background:#fff}:where(.candidate-page--messages) .composer-box{flex:1;display:flex;align-items:center;height:42px;padding:0 12px;border-radius:8px;background:#F2F5F9}:where(.candidate-page--messages) .composer input{width:100%;min-width:0;border:0;outline:none;color:var(--text);background:transparent;font-size:11px}:where(.candidate-page--messages) .send-button{height:38px;display:flex;align-items:center;gap:6px;padding:0 15px;border:0;border-radius:7px;color:#fff;background:var(--blue);font-size:11px;font-weight:700}:where(.candidate-page--messages) .send-button:disabled{cursor:not-allowed;opacity:.45}:where(.candidate-page--messages) .send-button svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}:where(.candidate-page--messages) .empty-chat{height:100%;display:grid;place-items:center;align-content:center;gap:8px;color:var(--muted);font-size:12px}:where(.candidate-page--messages) .empty-chat strong{color:var(--primary);font-size:16px}:where(.candidate-page--messages) .detail-sidebar{border-left:1px solid var(--line);background:#fff}:where(.candidate-page--messages) .detail-head{height:64px;display:flex;align-items:center;padding:0 17px;border-bottom:1px solid var(--line);color:var(--primary);font-size:14px;font-weight:800}:where(.candidate-page--messages) .person-panel{margin:12px;padding:14px;border-radius:8px;background:#F7F9FC}:where(.candidate-page--messages) .person-card{display:flex;align-items:center;gap:10px}:where(.candidate-page--messages) .person-card .mini-avatar{width:46px;height:46px}:where(.candidate-page--messages) .person-card strong{display:block;color:var(--primary);font-size:13px}:where(.candidate-page--messages) .person-card span{display:block;color:var(--muted);font-size:10px}:where(.candidate-page--messages) .person-info{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}:where(.candidate-page--messages) .person-info div{margin:7px 0;color:#64758D;font-size:10px;overflow-wrap:anywhere}
+:where(.candidate-page--messages) .system-view{background:var(--bg)}:where(.candidate-page--messages) .system-head{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--line);background:#fff}:where(.candidate-page--messages) .system-head h1{margin:0;color:var(--primary);font-size:16px}:where(.candidate-page--messages) .system-head button{border:0;color:var(--blue);background:transparent;font-size:10px}:where(.candidate-page--messages) .system-head button:disabled{cursor:not-allowed;color:var(--light)}:where(.candidate-page--messages) .notification-list{overflow-y:auto;min-height:0;padding:14px}:where(.candidate-page--messages) .notification-card{display:grid;grid-template-columns:8px minmax(0,1fr) auto;align-items:start;gap:14px;min-height:86px;margin-bottom:10px;padding:14px 18px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer}:where(.candidate-page--messages) .notification-card:hover,:where(.candidate-page--messages) .notification-card:focus-visible{border-color:#B8D1F1;background:#FBFDFF;outline:none}:where(.candidate-page--messages) .message-shell .notice-dot{position:static;width:7px;height:7px;margin-top:5px;border:0;border-radius:50%;background:#DDE5EF}:where(.candidate-page--messages) .notification-card.unread-notice .notice-dot{background:var(--blue)}:where(.candidate-page--messages) .notice-copy{grid-column:2;min-width:0;width:100%}:where(.candidate-page--messages) .message-shell .notice-title{margin:0;color:var(--primary);font-size:12px;font-weight:800;line-height:1.45;writing-mode:horizontal-tb;text-orientation:mixed;white-space:normal;overflow-wrap:anywhere;word-break:break-word}:where(.candidate-page--messages) .message-shell .notice-desc{margin-top:4px;color:#64758D;font-size:10px;line-height:1.6;writing-mode:horizontal-tb;text-orientation:mixed;white-space:normal;overflow-wrap:anywhere;word-break:break-word}:where(.candidate-page--messages) .notice-tag{grid-column:3;grid-row:1;padding:4px 8px;border-radius:5px;color:var(--blue);background:var(--blue-soft);font-size:9px;text-align:center;white-space:nowrap}:where(.candidate-page--messages) .notice-tag.gray{color:#62758E;background:#EEF2F7}:where(.candidate-page--messages) .notice-time{grid-column:3;grid-row:2;margin-top:6px;color:var(--light);font-size:10px;text-align:right;white-space:nowrap}:where(.candidate-page--messages) .notification-state{display:grid;min-height:180px;place-items:center;align-content:center;gap:10px;padding:30px;color:var(--muted);font-size:12px;text-align:center}:where(.candidate-page--messages) .notification-state.error{color:var(--red)}:where(.candidate-page--messages) .call-modal{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:rgba(13,30,52,.48);backdrop-filter:blur(3px)}:where(.candidate-page--messages) .call-dialog{width:min(390px,100%);padding:26px;border:1px solid #D9E3EF;border-radius:10px;background:#fff;box-shadow:0 22px 60px rgba(14,35,64,.24);text-align:center}:where(.candidate-page--messages) .call-avatar{width:62px;height:62px;margin:0 auto 13px;display:grid;place-items:center;border-radius:50%;color:var(--primary);background:var(--blue-soft);font-size:20px;font-weight:800}:where(.candidate-page--messages) .call-dialog h2{margin:0;color:var(--primary);font-size:18px}:where(.candidate-page--messages) .call-dialog p{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.7}:where(.candidate-page--messages) .call-actions{display:flex;gap:10px;margin-top:17px}:where(.candidate-page--messages) .call-actions button{height:42px;flex:1;border-radius:7px;font-weight:700}:where(.candidate-page--messages) .call-cancel{border:1px solid #CFDAE8;color:var(--primary);background:#fff}:where(.candidate-page--messages) .toast{position:fixed;z-index:70;right:24px;bottom:24px;padding:10px 14px;border:1px solid #CDE7DD;border-radius:8px;color:#176B50;background:#F2FBF7;opacity:0;transform:translateY(10px);transition:.18s}:where(.candidate-page--messages) .toast.show{opacity:1;transform:translateY(0)}
+@media(max-width:1050px){:where(.candidate-page--messages) .message-shell{width:calc(100% - 28px);grid-template-columns:250px minmax(0,1fr)}:where(.candidate-page--messages) .detail-sidebar{display:none}}@media(max-width:700px){:where(.candidate-page--messages) .message-shell{height:calc(100vh - 84px);min-height:580px;margin:10px auto;grid-template-columns:74px minmax(0,1fr)}:where(.candidate-page--messages) .sidebar-head{padding:10px 8px}:where(.candidate-page--messages) .sidebar-title span,:where(.candidate-page--messages) .sidebar-title{font-size:0}:where(.candidate-page--messages) .sidebar-title::after{content:"消息";font-size:13px}:where(.candidate-page--messages) .search-box{display:none}:where(.candidate-page--messages) .conversation-list{padding:0 6px}:where(.candidate-page--messages) .conversation-item{grid-template-columns:38px;justify-content:center;padding:8px 5px}:where(.candidate-page--messages) .conversation-copy,:where(.candidate-page--messages) .conversation-meta{display:none}:where(.candidate-page--messages) .unread{position:absolute;margin-left:28px}:where(.candidate-page--messages) .system-mode{grid-template-columns:74px minmax(0,1fr)}:where(.candidate-page--messages) .notification-card{grid-template-columns:7px minmax(0,1fr);gap:9px}:where(.candidate-page--messages) .notice-tag,:where(.candidate-page--messages) .notice-time{display:none}:where(.candidate-page--messages) .bubble-wrap{max-width:84%}}@media(prefers-reduced-motion:reduce){:where(.candidate-page--messages) *,:where(.candidate-page--messages) *::before,:where(.candidate-page--messages) *::after{transition:none!important}}
+:where(.candidate-page--messages) .conversation-search{position:relative;display:block;width:100%;height:36px;margin-top:11px}:where(.candidate-page--messages) .conversation-search svg{position:absolute;top:10px;left:11px;width:15px;height:15px;color:#8F9EAF;stroke:currentColor;fill:none;stroke-width:1.8;pointer-events:none}:where(.candidate-page--messages) .conversation-search input{display:block;width:100%;height:36px;padding:0 12px 0 34px;border:1px solid transparent;border-radius:7px;outline:none;color:var(--text);background:#F2F5F9;font-size:11px;line-height:36px}:where(.candidate-page--messages) .conversation-search input:focus{border-color:#B9D1F2;background:#fff;box-shadow:0 0 0 3px rgba(43,127,255,.1)}
+@media(max-width:700px){:where(.candidate-page--messages) .conversation-search{display:none}}
+:where(.candidate-page--messages) .message-shell .exam-invite-card{min-width:238px;max-width:320px;padding:2px 0 0;overflow-wrap:anywhere}
+:where(.candidate-page--messages) .exam-invite-head{display:flex;align-items:center;gap:7px;color:var(--primary)}
+:where(.candidate-page--messages) .exam-invite-icon{display:grid;width:28px;height:28px;place-items:center;flex:0 0 auto;border-radius:7px;color:var(--blue);background:var(--blue-soft);font-size:15px}
+:where(.candidate-page--messages) .exam-invite-head strong{font-size:12px}
+:where(.candidate-page--messages) .exam-invite-badge{margin-left:auto;padding:2px 6px;border-radius:4px;color:var(--blue);background:var(--blue-soft);font-size:9px}
+:where(.candidate-page--messages) .exam-invite-title{margin:10px 0 4px;color:var(--primary);font-size:14px}
+:where(.candidate-page--messages) .exam-invite-detail{margin:0;color:#64758D;font-size:10px;line-height:1.65}
+:where(.candidate-page--messages) .exam-invite-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+:where(.candidate-page--messages) .exam-invite-session{color:var(--light);font-size:9px;white-space:nowrap}
+:where(.candidate-page--messages) .exam-invite-action{color:var(--blue);font-size:10px;font-weight:700;text-decoration:none;white-space:nowrap}
+:where(.candidate-page--messages) .exam-invite-action:hover{color:#1761bd;text-decoration:underline}
 </style>
 
 <style>
-.person-card .mini-avatar{display:grid;place-items:center;flex:0 0 auto;overflow:hidden;color:var(--primary);background:var(--blue-soft);font-size:14px;line-height:1}
-.composer{align-items:stretch;flex-direction:column;gap:9px;padding:10px 16px 13px}.composer-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px}.composer-tool-list{display:flex;align-items:center;gap:7px}.composer-tool{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 7px;border:0;border-radius:6px;color:#60738D;background:transparent;font-size:10px}.composer-tool:hover:not(:disabled){color:var(--blue);background:var(--blue-soft)}.composer-tool:disabled{cursor:not-allowed;opacity:.45}.composer-tool svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8}.composer-hint{overflow:hidden;color:var(--light);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.composer-main{display:flex;align-items:center;gap:10px}.composer-main .composer-box{min-width:0}.composer-main .send-button{flex:0 0 auto;min-width:92px;justify-content:center}.attachment-actions{display:none}
-@media(max-width:700px){.composer{padding:9px 10px 11px}.composer-hint{display:none}.composer-main{gap:7px}.composer-main .send-button{min-width:72px;padding:0 10px}.composer-tool{padding:0 5px}}
+:where(.candidate-page--messages) .person-card .mini-avatar{display:grid;place-items:center;flex:0 0 auto;overflow:hidden;color:var(--primary);background:var(--blue-soft);font-size:14px;line-height:1}
+:where(.candidate-page--messages) .composer{align-items:stretch;flex-direction:column;gap:9px;padding:10px 16px 13px}:where(.candidate-page--messages) .composer-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px}:where(.candidate-page--messages) .composer-tool-list{display:flex;align-items:center;gap:7px}:where(.candidate-page--messages) .composer-tool{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 7px;border:0;border-radius:6px;color:#60738D;background:transparent;font-size:10px}:where(.candidate-page--messages) .composer-tool:hover:not(:disabled){color:var(--blue);background:var(--blue-soft)}:where(.candidate-page--messages) .composer-tool:disabled{cursor:not-allowed;opacity:.45}:where(.candidate-page--messages) .composer-tool svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8}:where(.candidate-page--messages) .composer-hint{overflow:hidden;color:var(--light);font-size:9px;text-overflow:ellipsis;white-space:nowrap}:where(.candidate-page--messages) .composer-main{display:flex;align-items:center;gap:10px}:where(.candidate-page--messages) .composer-main .composer-box{min-width:0}:where(.candidate-page--messages) .composer-main .send-button{flex:0 0 auto;min-width:92px;justify-content:center}:where(.candidate-page--messages) .attachment-actions{display:none}
+@media(max-width:700px){:where(.candidate-page--messages) .composer{padding:9px 10px 11px}:where(.candidate-page--messages) .composer-hint{display:none}:where(.candidate-page--messages) .composer-main{gap:7px}:where(.candidate-page--messages) .composer-main .send-button{min-width:72px;padding:0 10px}:where(.candidate-page--messages) .composer-tool{padding:0 5px}}
 </style>

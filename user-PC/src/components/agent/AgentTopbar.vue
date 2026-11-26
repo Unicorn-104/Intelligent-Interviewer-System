@@ -19,7 +19,7 @@
       </div>
       <div v-else class="agent-profile-menu">
         <button class="agent-profile-button" type="button" aria-haspopup="true">
-          <span class="agent-avatar">{{ avatarText }}</span>
+          <span class="agent-avatar"><img :src="displayAvatar" alt="个人头像" @error="handleAvatarError" /></span>
           <span class="agent-profile-meta"><span class="agent-profile-name">{{ displayName }}</span><span class="agent-profile-role">候选人</span></span>
         </button>
         <div class="agent-profile-popover" role="menu" aria-label="账号功能">
@@ -37,7 +37,8 @@
 
 <script setup>
 import { appHref } from '@/utils/agentNavigation'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import defaultAvatar from '@/assets/images/profile.jpg'
 import { ElMessageBox } from 'element-plus'
 import { clearCandidateSession, hasCandidateAccessToken } from '@/utils/agentSession'
 import { removeToken } from '@/utils/auth'
@@ -64,7 +65,14 @@ const unreadCounter = createUnreadCounter([
   async () => (await getImUnreadCount()).count
 ], count => { unreadCount.value = count })
 const displayName = computed(() => userStore.nickName || userStore.name || '求职者')
-const avatarText = computed(() => displayName.value.slice(0, 1))
+const failedAvatar = ref('')
+const avatarSource = computed(() => String(userStore.avatar || '').trim() || defaultAvatar)
+const displayAvatar = computed(() => failedAvatar.value === avatarSource.value ? defaultAvatar : avatarSource.value)
+
+function handleAvatarError(event) {
+  const source = event.currentTarget.getAttribute('src')
+  if (source === avatarSource.value && source !== defaultAvatar) failedAvatar.value = source
+}
 
 const baseNavItems = [
   { key: 'index', label: '首页', path: '/index' },
@@ -145,7 +153,8 @@ onBeforeUnmount(() => {
 .agent-auth-actions .agent-register-link{background:#2B7FFF;color:#fff}
 .agent-profile-menu{position:relative;justify-self:end;min-width:0}
 .agent-profile-button{height:48px;display:flex;align-items:center;gap:9px;min-width:0;padding:0;border:0;color:#172B4D;background:transparent}
-.agent-avatar{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#7894BE;font-size:13px;font-weight:800}
+.agent-avatar{width:34px;height:34px;flex-shrink:0;display:grid;place-items:center;overflow:hidden;border-radius:50%;color:#fff;background:#7894BE;font-size:13px;font-weight:800}
+.agent-avatar img{display:block;width:100%;height:100%;object-fit:cover}
 .agent-profile-meta{display:block;min-width:max-content;text-align:left;line-height:1.25}
 .agent-profile-name{display:block;white-space:nowrap;font-weight:700}
 .agent-profile-role{display:block;margin-top:2px;color:#6B7A90;font-size:11px;white-space:nowrap}

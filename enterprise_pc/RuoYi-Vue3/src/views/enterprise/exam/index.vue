@@ -47,7 +47,7 @@ const qFilter = reactive({ type: '', difficulty: '', skillTag: '', keyword: '', 
 const qList = ref([])
 const qTotal = ref(0)
 const qPage = ref(1)
-const qPageSize = 10
+const qPageSize = 13
 
 async function loadQuestions() {
   const res = await listQuestions({
@@ -401,7 +401,7 @@ const sFilter = reactive({ positionId: initPositionId, status: '' })
 const sList = ref([])
 const sTotal = ref(0)
 const sPage = ref(1)
-const sPageSize = 10
+const sPageSize = 20
 async function loadSchedules() {
   const res = await listSchedules({
     pageNum: sPage.value, pageSize: sPageSize,
@@ -542,7 +542,7 @@ const rFilter = reactive({ positionId: initPositionId, passStatus: '' })
 const rList = ref([])
 const rTotal = ref(0)
 const rPage = ref(1)
-const rPageSize = 10
+const rPageSize = 20
 async function loadResults() {
   const res = await listExamResults({
     pageNum: rPage.value, pageSize: rPageSize,
@@ -648,6 +648,7 @@ onMounted(async () => {
         <button class="btn" :disabled="batchRunning" @click="batchAnalyze"><WandSparkles :size="15"/>{{ batchRunning ? `解析中 ${batchProgress.done}/${batchProgress.total}` : '批量补全解析' }}</button>
         <button class="btn primary" @click="openCreateQ"><Plus :size="15"/>新增题目</button>
       </div>
+      <div class="tbl-area">
       <table class="tbl">
         <thead><tr><th>ID</th><th>题型</th><th>归属</th><th class="wide">题干</th><th>难度</th><th>标签</th><th>分值</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody>
@@ -668,6 +669,7 @@ onMounted(async () => {
           <tr v-if="!qList.length"><td colspan="9"><div class="empty">暂无题目，点击「新增题目」创建企业题库</div></td></tr>
         </tbody>
       </table>
+      </div>
       <div class="pager">
         <span class="muted tiny">共 {{ qTotal }} 题</span>
         <button class="btn sm" :disabled="qPage <= 1" @click="qPage--; loadQuestions()">上一页</button>
@@ -687,6 +689,7 @@ onMounted(async () => {
         <button class="btn primary" @click="openCreatePaper"><Plus :size="15"/>新建试卷</button>
         <button class="btn agent" @click="openAiPaper"><WandSparkles :size="15"/>Agent 组卷</button>
       </div>
+      <div class="tbl-area">
       <table class="tbl">
         <thead><tr><th>ID</th><th class="wide">试卷名称</th><th>岗位</th><th>组卷方式</th><th>题量</th><th>总分</th><th>时长</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody>
@@ -713,6 +716,7 @@ onMounted(async () => {
           <tr v-if="!pList.length"><td colspan="10"><div class="empty">暂无试卷，点击「新建试卷」开始组卷</div></td></tr>
         </tbody>
       </table>
+      </div>
     </section>
 
     <!-- ============ 考试安排 ============ -->
@@ -730,6 +734,7 @@ onMounted(async () => {
         <button class="btn" @click="loadSchedules()"><RotateCw :size="15"/>刷新</button>
         <button class="btn primary" @click="openCreateSched"><Plus :size="15"/>新建考试安排</button>
       </div>
+      <div class="tbl-area">
       <table class="tbl">
         <thead><tr><th>ID</th><th>岗位</th><th class="wide">试卷</th><th>开考时间</th><th>截止时间</th><th>次数</th><th>阈值</th><th>双机位</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>
@@ -752,6 +757,7 @@ onMounted(async () => {
           <tr v-if="!sList.length"><td colspan="10"><div class="empty">暂无考试安排，点击「新建考试安排」发布笔试</div></td></tr>
         </tbody>
       </table>
+      </div>
       <div class="pager">
         <span class="muted tiny">共 {{ sTotal }} 条</span>
         <button class="btn sm" :disabled="sPage <= 1" @click="sPage--; loadSchedules()">上一页</button>
@@ -775,6 +781,7 @@ onMounted(async () => {
         </select>
         <button class="btn" @click="loadResults()"><RotateCw :size="15"/>刷新</button>
       </div>
+      <div class="tbl-area">
       <table class="tbl">
         <thead><tr><th>候选人</th><th>岗位</th><th class="wide">试卷</th><th>交卷时间</th><th>客观分</th><th>主观分</th><th>总分</th><th>阈值</th><th>结果</th><th>操作</th></tr></thead>
         <tbody>
@@ -795,6 +802,7 @@ onMounted(async () => {
           <tr v-if="!rList.length"><td colspan="10"><div class="empty">暂无已交卷的笔试记录</div></td></tr>
         </tbody>
       </table>
+      </div>
       <div class="pager">
         <span class="muted tiny">共 {{ rTotal }} 条</span>
         <button class="btn sm" :disabled="rPage <= 1" @click="rPage--; loadResults()">上一页</button>
@@ -1299,11 +1307,12 @@ onMounted(async () => {
 .tab-btn.on{background:#fff;color:var(--primary);box-shadow:0 2px 8px rgba(24,52,98,.08)}
 .tab-btn.proctor{margin-left:6px;color:var(--primary);background:#fff;border:1px solid #d5e2f5}
 .tab-btn.proctor:hover{background:#f3f8ff}
-.panel{padding:18px}
+.panel{display:flex;flex-direction:column;padding:18px;min-height:calc(100vh - 220px)}
 .toolbar{display:flex;gap:9px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
 .slim{width:auto;min-width:130px}.grow{flex:1;min-width:180px}
+.tbl-area{flex:1;min-height:0;overflow:auto}
 .tbl{width:100%;border-collapse:collapse;font-size:12.5px}
-.tbl th{text-align:left;color:var(--subtle);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl th{text-align:left;color:var(--subtle);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:#fff;z-index:1}
 .tbl td{padding:9px 10px;border-bottom:1px solid #eef2f7;vertical-align:middle}
 .tbl tr:hover td{background:#f7faff}
 .tbl .wide{width:18%;min-width:140px}
@@ -1315,6 +1324,7 @@ onMounted(async () => {
 .icon-btn.danger{color:var(--red)}
 .icon-btn:disabled{opacity:.4;cursor:not-allowed}
 .pager{display:flex;justify-content:flex-end;align-items:center;gap:9px;margin-top:13px}
+.panel > .pager{margin-top:auto;padding-top:13px}
 .pill.sm{height:20px;font-size:11px;padding:0 7px}
 .mask{position:fixed;inset:0;background:rgba(15,30,60,.42);display:grid;place-items:center;z-index:2000;padding:20px}
 .modal{width:560px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(15,30,60,.25)}

@@ -13,32 +13,27 @@
         <div class="job-ai-guidance"><h2>怎么使用</h2><p>1. 岗位推荐、简历分析：选择一份个人简历。</p><p>2. 面试准备：选择已投递岗位，自动关联投递时使用的简历。</p><p>3. 写作润色：输入需要润色的原文，无需选择资料。</p><p>4. 自由聊天：直接输入问题即可。</p></div>
         <p class="job-ai-note">AI 只提供辅助建议，不会自动投递、修改简历或编造个人经历。</p>
       </aside>
-      <div class="job-ai-assistant"><AiAssistant standalone @close="returnToJob" /></div>
+      <section class="job-ai-assistant"><h2>全站悬浮 AI 求职助手</h2><p>助手现在可以拖到页面任意位置。拖动悬浮按钮或对话框标题栏即可调整位置，切换页面仍可继续当前对话。</p><button type="button" @click="openCandidateAssistant()">打开 AI 助手</button><p>关闭对话窗口不会清空对话；点击悬浮按钮即可继续。历史记录、简历选择和岗位选择都在助手内。</p></section>
     </main>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
-import AiAssistant from '@/components/agent/AiAssistant.vue'
+import { openCandidateAssistant } from '@/utils/agentAssistantEntry'
 import { getJob } from '@/api/agent/job'
 import { appHref } from '@/utils/agentNavigation'
 
 const route = useRoute()
-const router = useRouter()
 const job = ref(null)
 const jobLoading = ref(false)
 const jobError = ref('')
-const jobId = computed(() => /^\d+$/.test(String(route.query.id || '')) ? String(route.query.id) : '')
+const jobId = computed(() => /^\d+$/.test(String(route.query.id || route.query.job || '')) ? String(route.query.id || route.query.job) : '')
 const backPath = computed(() => jobId.value ? `/job-detail?id=${encodeURIComponent(jobId.value)}` : '/jobs')
 const backHref = computed(() => appHref(backPath.value))
 let disposed = false
-
-function returnToJob() {
-  router.push(backPath.value)
-}
 
 onMounted(async () => {
   if (!jobId.value) return
@@ -58,7 +53,8 @@ onBeforeUnmount(() => { disposed = true })
 
 <style scoped>
 .job-ai-page{min-height:100vh;background:#f4f7fc;color:#294263;font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif}
-.job-ai-workspace{display:grid;grid-template-columns:minmax(240px,330px) minmax(0,1fr);gap:24px;width:min(1180px,calc(100% - 48px));height:calc(100dvh - 110px);min-height:560px;max-height:1000px;margin:22px auto}
+.job-ai-workspace{display:grid;grid-template-columns:minmax(240px,330px) minmax(0,1fr);align-items:start;gap:24px;width:min(1180px,calc(100% - 48px));margin:22px auto}
 .job-ai-context{min-width:0;overflow-y:auto;padding:12px 10px 24px;overscroll-behavior:contain}.job-ai-back{color:#6380a1;text-decoration:none;font-size:13px}.job-ai-eyebrow{margin:34px 0 12px;color:#4a89da;font-size:12px;letter-spacing:2px}.job-ai-context h1{margin:0 0 18px;font-size:32px;line-height:1.5;font-weight:700}.job-ai-description{color:#70839d;font-size:13px;line-height:1.9}.job-ai-job{margin:24px 0;padding:18px;border:1px solid #dae7fa;border-radius:14px;background:#eef4ff}.job-ai-job>span{font-size:11px;color:#7992b2}.job-ai-job h2{margin:8px 0;font-size:17px}.job-ai-job p{color:#647e9e;font-size:12px}.job-ai-job a{color:#2b7fff;font-size:12px;text-decoration:none}.job-ai-guidance{margin-top:28px}.job-ai-guidance h2{font-size:15px}.job-ai-guidance p{font-size:12px;line-height:1.9;color:#71839c}.job-ai-note{margin-top:22px;color:#8d9cb0;font-size:11px;line-height:1.8}.job-ai-assistant{min-width:0;min-height:0}
-@media(max-width:800px){.job-ai-workspace{grid-template-columns:1fr;width:calc(100% - 24px);height:calc(100dvh - 92px);min-height:450px;margin:12px auto}.job-ai-context{display:none}}
+.job-ai-assistant{padding:28px;border:1px solid #dae7fa;border-radius:18px;background:#fff}.job-ai-assistant h2{margin-top:0;font-size:22px}.job-ai-assistant p{font-size:14px;line-height:1.9;color:#70839d}.job-ai-assistant button{padding:12px 20px;border:0;border-radius:10px;background:#2b7fff;color:#fff;cursor:pointer}
+@media(max-width:800px){.job-ai-workspace{grid-template-columns:1fr;width:calc(100% - 24px);margin:12px auto}.job-ai-assistant{padding:20px}}
 </style>

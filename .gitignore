@@ -86,6 +86,8 @@ logs/
 ######################################################################
 # 敏感配置文件（含数据库 / Redis / Token 密钥，禁止入库）
 ######################################################################
+*.pfx
+*.p12
 c-app/.flutter_tool_state
 # 后端数据源与 Druid 监控台账号密码
 backend/ruoyi-admin/src/main/resources/application-druid.yml
@@ -108,6 +110,9 @@ upload/
 uploadPath/
 resume-pdf/
 data/
+# 后台管理前端存在名为 data 的视图目录（数据监控页），属于源码而非运行时数据
+!/admin_pc/RuoYi-Vue3/src/views/**/data/
+!/admin_pc/RuoYi-Vue3/src/views/**/data/*.vue
 # Flutter API source directories are not runtime data.
 !/c-app/lib/features/*/data/
 !/c-app/lib/features/*/data/*.dart

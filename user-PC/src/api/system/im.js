@@ -8,10 +8,11 @@ export function listImSessions() {
   })
 }
 
-export function listImMessages(sessionId) {
+export function listImMessages(sessionId, params = {}) {
   return request({
-    url: `/system/im/sessions/${sessionId}/messages`,
-    method: 'get'
+    url: `/system/im/sessions/${sessionId}/messages/page`,
+    method: 'get',
+    params: { size: 30, ...params }
   })
 }
 
@@ -20,6 +21,14 @@ export function sendImMessage(data) {
     url: '/system/im/messages',
     method: 'post',
     data
+  })
+}
+
+export function getImMessageSnapshot(sessionId, messageIds) {
+  return request({
+    url: `/system/im/sessions/${sessionId}/messages/snapshot`,
+    method: 'get',
+    params: { messageIds: messageIds.join(',') }
   })
 }
 

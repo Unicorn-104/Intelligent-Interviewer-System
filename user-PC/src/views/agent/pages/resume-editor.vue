@@ -1,7 +1,14 @@
 <template>
+  <div class="candidate-page--resume-editor">
   <AgentTopbar active="" />
   <main class="main">
     <div class="breadcrumb"><a :href="appHref('/profile-resumes')">我的简历</a> / 编辑简历</div>
+    <div v-if="recoverableDraft" class="draft-banner" role="status">
+      <span>发现当前账号的未保存简历草稿，是否恢复？</span>
+      <button class="secondary" type="button" @click="restoreDraft">恢复草稿</button>
+      <button class="secondary" type="button" @click="discardDraft">丢弃草稿</button>
+    </div>
+    <div v-if="draftReady" class="draft-status" role="status">{{ dirty ? '有未保存修改。' : '已与服务器保存内容同步。' }} {{ draftStatus }}</div>
     <div v-if="loading" class="state">正在读取简历...</div>
     <div v-else-if="errorMessage" class="state error-state">
       <strong>简历暂时无法读取</strong>
@@ -9,6 +16,7 @@
       <button class="secondary" type="button" @click="loadResume">重新加载</button>
     </div>
     <template v-else>
+      <fieldset class="resume-draft-fields" :disabled="Boolean(recoverableDraft)">
       <section class="resume-overview">
         <div>
           <div class="resume-title-row">
@@ -184,20 +192,35 @@
           <button class="resume-savebar-action resume-savebar-submit" type="submit" :disabled="saving || parsing">{{ saving ? '保存中...' : '保存修改' }}</button>
         </div>
       </form>
+      </fieldset>
     </template>
   </main>
   <div v-if="toastMessage" class="toast" role="status">{{ toastMessage }}</div>
+  </div>
 </template>
 
 <script setup>
 import { appHref } from '@/utils/agentNavigation'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import useUserStore from '@/store/modules/user'
+import { clearResumeDraft, readResumeDraft, resumeDraftKey, writeResumeDraft } from '@/utils/agentResumeDraft'
 import AgentTopbar from '@/components/agent/AgentTopbar.vue'
 import { createResume, deleteResumeAttachment, getResume, getResumeAttachmentFile, getResumeAttachments, getResumeFile, importResumePdf, parseResumePdf, updateResume, uploadResumeAttachments } from '@/api/agent/resume'
 import { validateResumeAttachment, validateResumeFile } from '@/utils/agentValidation'
 import { getAppProfile } from '@/api/system/user'
 import { mergeParsedResume, profileResumeDefaults, resumeDate, resumeDegree, resumeSections } from '@/utils/agentResume'
 
+const userStore = useUserStore()
+const router = useRouter()
+let draftStorage
+try { draftStorage = window.sessionStorage } catch {}
+let activeDraftKey = resumeDraftKey(userStore.id, new URLSearchParams(window.location.search).get('id') === 'new' ? null : new URLSearchParams(window.location.search).get('id'))
+const baseline = ref('')
+const draftReady = ref(false)
+const recoverableDraft = ref(null)
+const draftStatus = ref('')
+let draftTimer
 const queryId = new URLSearchParams(window.location.search).get('id')
 const resumeId = ref(queryId && queryId !== 'new' ? Number(queryId) : null)
 const loading = ref(true)
@@ -265,6 +288,56 @@ function blankResume() {
 }
 
 const resume = reactive(blankResume())
+const snapshot = computed(() => JSON.stringify(buildPayload()))
+const dirty = computed(() => draftReady.value && (snapshot.value !== baseline.value || Boolean(pendingPdf.value)))
+
+function persistDraft() {
+  if (!draftReady.value || recoverableDraft.value || !dirty.value) return
+  draftStatus.value = writeResumeDraft(draftStorage, activeDraftKey, buildPayload(), pendingPdf.value)
+    ? '草稿已暂存于当前浏览器标签页，24 小时内可恢复（未提交服务器）'
+    : '草稿暂存不可用，请及时保存修改'
+}
+
+function prepareDraft() {
+  baseline.value = snapshot.value
+  draftReady.value = true
+  recoverableDraft.value = readResumeDraft(draftStorage, activeDraftKey)
+}
+
+function restoreDraft() {
+  const draft = recoverableDraft.value
+  if (!draft) return
+  applyResume({ ...resume, ...draft.payload, id: resume.id, attachments: resume.attachments })
+  recoverableDraft.value = null
+  draftStatus.value = draft.pendingPdf ? '文字草稿已恢复；未保存的 PDF 需要重新选择上传' : '草稿已恢复，请检查后保存修改'
+}
+
+function discardDraft() {
+  recoverableDraft.value = null
+  clearResumeDraft(draftStorage, activeDraftKey)
+  draftStatus.value = ''
+}
+
+function confirmLeave() {
+  if (!dirty.value) return true
+  persistDraft()
+  return window.confirm('简历存在尚未保存到服务器的修改，确定离开？可用的文字草稿会保留在当前标签页。')
+}
+
+function beforeUnload(event) {
+  if (!dirty.value) return
+  persistDraft()
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+watch([snapshot, pendingPdf], () => {
+  window.clearTimeout(draftTimer)
+  if (dirty.value) draftTimer = window.setTimeout(persistDraft, 500)
+  else if (draftReady.value && !recoverableDraft.value) clearResumeDraft(draftStorage, activeDraftKey)
+})
+onBeforeRouteLeave(confirmLeave)
+
 
 async function loadResume() {
   if (!resumeId.value) {
@@ -276,6 +349,7 @@ async function loadResume() {
       showToast('基础资料读取失败，可手动填写简历信息')
     } finally {
       loading.value = false
+      prepareDraft()
     }
     return
   }
@@ -285,6 +359,7 @@ async function loadResume() {
     const response = await getResume(resumeId.value)
     applyResume(response.data)
     await loadAttachments()
+    prepareDraft()
   } catch (error) {
     errorMessage.value = error?.message || '简历数据暂时无法读取'
   } finally {
@@ -348,6 +423,11 @@ async function saveResume() {
     pendingPdf.value = null
     applyResume({ ...(response.data || {}), attachments: resume.attachments })
     await loadAttachments()
+    baseline.value = snapshot.value
+    discardDraft()
+    activeDraftKey = resumeDraftKey(userStore.id, resumeId.value)
+    clearResumeDraft(draftStorage, activeDraftKey)
+    if (!queryId || queryId === 'new') await router.replace('/resume-editor?id=' + encodeURIComponent(resumeId.value))
     showToast('简历及附件已保存')
   } catch (error) {
     showToast(error?.message || '保存失败，请稍后重试')
@@ -562,10 +642,21 @@ function showToast(message) {
   }, 2600)
 }
 
-onMounted(loadResume)
+onMounted(() => {
+  window.addEventListener('beforeunload', beforeUnload)
+  loadResume()
+})
+onBeforeUnmount(() => {
+  persistDraft()
+  window.clearTimeout(draftTimer)
+  window.clearTimeout(toastTimer)
+  window.removeEventListener('beforeunload', beforeUnload)
+})
 </script>
 
 <style scoped>
+.resume-draft-fields{min-width:0;padding:0;margin:0;border:0}
+.draft-banner{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:12px;margin-bottom:12px;border:1px solid #bfd6f5;background:#f0f6ff;border-radius:8px}.draft-status{margin:12px 0;color:#586a81;font-size:12px}
 .main .check-field{grid-column:1/-1;display:inline-flex;align-items:center;justify-self:start;align-self:start;gap:8px;width:max-content;max-width:100%;min-height:24px;margin:0;padding:0;font-size:12px;line-height:20px;white-space:nowrap;cursor:pointer}
 .main .check-field > input[type="checkbox"]{flex:0 0 16px;width:16px;min-width:16px;max-width:16px;height:16px;min-height:16px;max-height:16px;margin:0;padding:0;appearance:auto;accent-color:#2B7FFF;cursor:pointer}
 .main .check-field > span{flex:0 0 auto}
@@ -577,7 +668,7 @@ onMounted(loadResume)
 .savebar .resume-savebar-action:focus-visible{outline:3px solid rgba(43,127,255,.25);outline-offset:2px}
 .savebar .resume-savebar-submit:disabled{cursor:not-allowed;opacity:.45}
 @media(max-width:620px){.savebar .resume-savebar-action{flex:1 1 0;min-width:0}}
-:global(*){box-sizing:border-box}:global(body){margin:0;color:#172B4D;background:#F5F7FA;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:14px}.main{width:min(1240px,calc(100% - 48px));margin:0 auto;padding:24px 0 105px}.breadcrumb{margin-bottom:12px;color:#96A3B5;font-size:11px}.breadcrumb a{color:#2B7FFF;text-decoration:none}.resume-overview,.section{border:1px solid #E5EAF1;border-radius:8px;background:#fff;box-shadow:0 5px 18px rgba(26,60,110,.045)}.resume-overview{display:grid;grid-template-columns:minmax(0,1fr) 320px 220px;align-items:center;gap:24px;padding:19px 22px}.resume-title-row{display:flex;align-items:center;gap:8px}.resume-title-input{width:min(380px,100%);padding:0;border:0;color:#1A3C6E;background:transparent;font-size:21px;font-weight:800}.resume-title-input:focus{outline:0;border-bottom:1px solid #2B7FFF}.resume-badge{padding:3px 7px;border-radius:4px;color:#2B7FFF;background:#EAF2FF;font-size:10px}.update-time{margin-top:6px;color:#96A3B5;font-size:10px}.progress-head{display:flex;justify-content:space-between;color:#6B7A90;font-size:10px}.progress-head strong{color:#2B7FFF;font-size:18px}.progress-track{height:7px;margin-top:8px;border-radius:99px;background:#E5ECF5}.progress-value{height:100%;border-radius:inherit;background:#2B7FFF;transition:width .2s}.progress-note{margin-top:7px;color:#96A3B5;font-size:9px}.parse-warning{display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:10px 14px;border:1px solid #F0D9A8;border-radius:6px;color:#8A621D;background:#FFF9EC;font-size:11px}.parse-warning strong{white-space:nowrap}.usage{text-align:right;color:#96A3B5;font-size:10px}.usage strong{display:block;color:#16845B;font-size:11px}.usage span{display:block;margin-top:5px}.link-button{margin-top:7px;padding:0;border:0;color:#2B7FFF;background:transparent;font-size:10px;cursor:pointer}.section{margin-top:13px;overflow:hidden}.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 20px 9px}.section-head h2{margin:0;color:#1A3C6E;font-size:15px}.section-head span{color:#96A3B5;font-size:10px}.section-body{padding:9px 20px 18px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.field.full{grid-column:1/-1}.field label{display:block;margin-bottom:5px;color:#586A81;font-size:10px}.field input,.field select,.field textarea{width:100%;min-height:37px;padding:8px 10px;border:1px solid #D7E0EC;border-radius:5px;color:#172B4D;background:#fff;font-size:11px}.field textarea{min-height:75px;resize:vertical}.field input:focus,.field select:focus,.field textarea:focus{border-color:#2B7FFF;outline:3px solid rgba(43,127,255,.1)}.entry{padding:13px 20px 17px;border-top:1px solid #EDF1F6;background:#FBFCFE}.entry-head{display:flex;justify-content:space-between;margin-bottom:9px;color:#96A3B5;font-size:10px}.remove-button{border:0;color:#CF3F4B;background:transparent;font-size:10px;cursor:pointer}.add-button{padding:4px 0;border:0;color:#2B7FFF;background:transparent;font-size:10px;cursor:pointer}.section-empty{padding:8px 20px 18px;color:#96A3B5;font-size:11px}.check-field{display:flex;align-items:center;gap:6px;align-self:end;min-height:37px;color:#586A81;font-size:10px}.check-field input{accent-color:#2B7FFF}.skill-wrap{display:flex;flex-wrap:wrap;gap:7px}.skill-tag{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:5px;color:#2B7FFF;background:#EAF2FF;font-size:10px}.skill-tag button{padding:0;border:0;color:inherit;background:transparent;cursor:pointer}.skill-add{display:flex;gap:8px;margin-top:12px}.skill-add input{width:min(280px,100%);height:36px;padding:0 10px;border:1px solid #D7E0EC;border-radius:5px}.primary,.secondary{height:38px;padding:0 16px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer}.primary{border:1px solid #2B7FFF;color:#fff;background:#2B7FFF}.primary:disabled,.secondary:disabled{cursor:not-allowed;opacity:.45}.secondary{border:1px solid #CBD9EA;color:#1A3C6E;background:#fff}.savebar{position:fixed;right:0;bottom:0;left:0;z-index:20;display:flex;justify-content:flex-end;gap:8px;padding:13px max(24px,calc((100% - 1240px) / 2));border-top:1px solid #E5EAF1;background:rgba(255,255,255,.97);backdrop-filter:blur(10px)}.savebar a{display:grid;place-items:center;text-decoration:none}.state{display:grid;place-items:center;gap:9px;min-height:250px;padding:30px;border:1px solid #E5EAF1;border-radius:8px;background:#fff;color:#6B7A90;text-align:center}.state strong{color:#1A3C6E;font-size:16px}.error-state{color:#CF3F4B}.toast{position:fixed;right:24px;bottom:80px;z-index:50;max-width:min(520px,calc(100vw - 48px));padding:11px 15px;overflow-wrap:anywhere;border:1px solid #CDE7DD;border-radius:7px;color:#176B50;background:#F2FBF7}@media(max-width:900px){.main{width:calc(100% - 32px)}.resume-overview{grid-template-columns:1fr 1fr}.usage{grid-column:1/-1;text-align:left}.grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.main{width:calc(100% - 28px)}.resume-overview{grid-template-columns:1fr}.grid,.grid.four{grid-template-columns:1fr}.section-head,.section-body{padding-inline:14px}.entry{padding-inline:14px}.savebar{padding-inline:14px}.savebar button,.savebar a{flex:1}.skill-add{flex-direction:column}.skill-add input{width:100%}}
+*{box-sizing:border-box}:where(.candidate-page--resume-editor){margin:0;color:#172B4D;background:#F5F7FA;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:14px}.main{width:min(1240px,calc(100% - 48px));margin:0 auto;padding:24px 0 105px}.breadcrumb{margin-bottom:12px;color:#96A3B5;font-size:11px}.breadcrumb a{color:#2B7FFF;text-decoration:none}.resume-overview,.section{border:1px solid #E5EAF1;border-radius:8px;background:#fff;box-shadow:0 5px 18px rgba(26,60,110,.045)}.resume-overview{display:grid;grid-template-columns:minmax(0,1fr) 320px 220px;align-items:center;gap:24px;padding:19px 22px}.resume-title-row{display:flex;align-items:center;gap:8px}.resume-title-input{width:min(380px,100%);padding:0;border:0;color:#1A3C6E;background:transparent;font-size:21px;font-weight:800}.resume-title-input:focus{outline:0;border-bottom:1px solid #2B7FFF}.resume-badge{padding:3px 7px;border-radius:4px;color:#2B7FFF;background:#EAF2FF;font-size:10px}.update-time{margin-top:6px;color:#96A3B5;font-size:10px}.progress-head{display:flex;justify-content:space-between;color:#6B7A90;font-size:10px}.progress-head strong{color:#2B7FFF;font-size:18px}.progress-track{height:7px;margin-top:8px;border-radius:99px;background:#E5ECF5}.progress-value{height:100%;border-radius:inherit;background:#2B7FFF;transition:width .2s}.progress-note{margin-top:7px;color:#96A3B5;font-size:9px}.parse-warning{display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:10px 14px;border:1px solid #F0D9A8;border-radius:6px;color:#8A621D;background:#FFF9EC;font-size:11px}.parse-warning strong{white-space:nowrap}.usage{text-align:right;color:#96A3B5;font-size:10px}.usage strong{display:block;color:#16845B;font-size:11px}.usage span{display:block;margin-top:5px}.link-button{margin-top:7px;padding:0;border:0;color:#2B7FFF;background:transparent;font-size:10px;cursor:pointer}.section{margin-top:13px;overflow:hidden}.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 20px 9px}.section-head h2{margin:0;color:#1A3C6E;font-size:15px}.section-head span{color:#96A3B5;font-size:10px}.section-body{padding:9px 20px 18px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.field.full{grid-column:1/-1}.field label{display:block;margin-bottom:5px;color:#586A81;font-size:10px}.field input,.field select,.field textarea{width:100%;min-height:37px;padding:8px 10px;border:1px solid #D7E0EC;border-radius:5px;color:#172B4D;background:#fff;font-size:11px}.field textarea{min-height:75px;resize:vertical}.field input:focus,.field select:focus,.field textarea:focus{border-color:#2B7FFF;outline:3px solid rgba(43,127,255,.1)}.entry{padding:13px 20px 17px;border-top:1px solid #EDF1F6;background:#FBFCFE}.entry-head{display:flex;justify-content:space-between;margin-bottom:9px;color:#96A3B5;font-size:10px}.remove-button{border:0;color:#CF3F4B;background:transparent;font-size:10px;cursor:pointer}.add-button{padding:4px 0;border:0;color:#2B7FFF;background:transparent;font-size:10px;cursor:pointer}.section-empty{padding:8px 20px 18px;color:#96A3B5;font-size:11px}.check-field{display:flex;align-items:center;gap:6px;align-self:end;min-height:37px;color:#586A81;font-size:10px}.check-field input{accent-color:#2B7FFF}.skill-wrap{display:flex;flex-wrap:wrap;gap:7px}.skill-tag{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:5px;color:#2B7FFF;background:#EAF2FF;font-size:10px}.skill-tag button{padding:0;border:0;color:inherit;background:transparent;cursor:pointer}.skill-add{display:flex;gap:8px;margin-top:12px}.skill-add input{width:min(280px,100%);height:36px;padding:0 10px;border:1px solid #D7E0EC;border-radius:5px}.primary,.secondary{height:38px;padding:0 16px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer}.primary{border:1px solid #2B7FFF;color:#fff;background:#2B7FFF}.primary:disabled,.secondary:disabled{cursor:not-allowed;opacity:.45}.secondary{border:1px solid #CBD9EA;color:#1A3C6E;background:#fff}.savebar{position:fixed;right:0;bottom:0;left:0;z-index:20;display:flex;justify-content:flex-end;gap:8px;padding:13px max(24px,calc((100% - 1240px) / 2));border-top:1px solid #E5EAF1;background:rgba(255,255,255,.97);backdrop-filter:blur(10px)}.savebar a{display:grid;place-items:center;text-decoration:none}.state{display:grid;place-items:center;gap:9px;min-height:250px;padding:30px;border:1px solid #E5EAF1;border-radius:8px;background:#fff;color:#6B7A90;text-align:center}.state strong{color:#1A3C6E;font-size:16px}.error-state{color:#CF3F4B}.toast{position:fixed;right:24px;bottom:80px;z-index:50;max-width:min(520px,calc(100vw - 48px));padding:11px 15px;overflow-wrap:anywhere;border:1px solid #CDE7DD;border-radius:7px;color:#176B50;background:#F2FBF7}@media(max-width:900px){.main{width:calc(100% - 32px)}.resume-overview{grid-template-columns:1fr 1fr}.usage{grid-column:1/-1;text-align:left}.grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.main{width:calc(100% - 28px)}.resume-overview{grid-template-columns:1fr}.grid,.grid.four{grid-template-columns:1fr}.section-head,.section-body{padding-inline:14px}.entry{padding-inline:14px}.savebar{padding-inline:14px}.savebar button,.savebar a{flex:1}.skill-add{flex-direction:column}.skill-add input{width:100%}}
  .usage-actions{display:flex;justify-content:flex-end;gap:10px}.unmapped-panel{margin-top:10px;padding:12px 14px;border:1px solid #D8E5F5;border-radius:6px;background:#F7FAFE;color:#586A81;font-size:11px}.unmapped-head{display:flex;flex-direction:column;gap:4px}.unmapped-head strong{color:#1A3C6E}.unmapped-head span{color:#7A8AA0}.unmapped-panel pre{max-height:180px;margin:10px 0 0;padding:10px;overflow:auto;border-radius:5px;white-space:pre-wrap;word-break:break-word;color:#3D506B;background:#fff;font:inherit;line-height:1.6}
 .attachment-panel{margin-top:13px;padding:16px 20px;border:1px solid #E5EAF1;border-radius:8px;background:#fff;box-shadow:0 6px 22px rgba(26,60,110,.04)}.attachment-head{display:flex;align-items:center;justify-content:space-between;gap:16px}.attachment-head h2{margin:0;color:#1A3C6E;font-size:15px}.attachment-head p{margin:5px 0 0;color:#96A3B5;font-size:10px}.attachment-item{display:flex;align-items:center;gap:12px;margin-top:13px;padding:12px;border:1px solid #E7EDF5;border-radius:6px;background:#F8FAFD}.attachment-file-icon{display:grid;width:40px;height:46px;place-items:center;flex:0 0 auto;border:1px solid #BFD6F5;border-radius:5px;color:#2B7FFF;background:#F0F6FF;font-size:10px;font-weight:800}.attachment-file-main{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}.attachment-file-main strong{overflow:hidden;color:#1A3C6E;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.attachment-file-main span{color:#96A3B5;font-size:10px}.attachment-item .link-button{margin-top:0;white-space:nowrap}@media(max-width:900px){.attachment-head{align-items:flex-start}.attachment-item{align-items:flex-start}}@media(max-width:620px){.attachment-panel{padding:14px}.attachment-head{display:block}.attachment-head .secondary{width:100%;margin-top:10px}}
 .attachment-head-actions{display:flex;gap:8px;flex-wrap:wrap}.attachment-list{display:grid;gap:8px}.attachment-actions{display:flex;align-items:center;gap:10px;flex:0 0 auto}.attachment-empty-panel{padding:14px;border:1px dashed #D7E0EC;border-radius:6px;color:#96A3B5;background:#FBFCFE;font-size:11px}.attachment-item .remove-button{white-space:nowrap}.attachment-item .link-button{margin-top:0}.attachment-file-icon{overflow:hidden;max-width:48px;white-space:nowrap;text-overflow:ellipsis;text-align:center}@media(max-width:620px){.attachment-head-actions{display:grid;grid-template-columns:1fr}.attachment-head-actions button{width:100%}.attachment-item{align-items:flex-start;flex-wrap:wrap}.attachment-actions{width:100%;padding-left:52px}.attachment-file-main{min-width:calc(100% - 60px)}}</style>

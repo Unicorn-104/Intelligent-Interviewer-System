@@ -79,6 +79,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- 题库文件导入：PDF 文本抽取 -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>2.0.30</version>
+        </dependency>
+
     </dependencies>
 
     <build>

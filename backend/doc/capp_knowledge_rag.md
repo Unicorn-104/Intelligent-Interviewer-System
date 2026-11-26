@@ -56,3 +56,10 @@ POST /app/ai/sessions/{id}/runs 默认自动取本人可用资料，不需要客
 后端验证 KnowledgeServiceTest、AppAiServiceTest、AgentToolsTest、S3FileStorageTest；客户端执行 flutter analyze、flutter test 和本地地址 Debug APK 构建。模拟测试不代替真实 RustFS 上传、Embedding 512 维、Qdrant 点、带证据回答和设备来源展示。
 
 关闭 app.ai.knowledge.enabled 可恢复普通 Agent，保留原文件与数据。回滚数据库前停止 worker、备份并确认删除范围，再执行 rollback_capp_knowledge_20261109.sql。回滚脚本不删除原文件或既有 AI 表，不自动迁移或删除生产数据。
+
+
+## 2026-11-24：对象存储命名空间兼容修复
+
+最新 dev 的统一对象存储校验包含 uploads 和企业投递快照，但遗漏个人知识库 private-knowledge 路径。知识库的 store/read/delete 因而在 S3 模式报告“对象文件引用无效”。本次先以真实 AWS SDK + 本机合成 HTTP 服务回归复现，再只追加 private-knowledge/{userId}/{uuid}.{pdf|docx|txt|md} 分支；保留既有上传、头像、简历和企业快照命名空间及 404 错误语义。
+
+回归涵盖四类知识库文件的写入、读取和删除，跨用户及跨命名空间访问拒绝、不向 S3 发越权请求，以及已有公开上传和简历流程。测试不需要真实对象存储凭据，不代表生产桶验收。无数据库迁移、对象搬迁或真实数据修改；回滚本兼容提交即可，已保存资料保留。
