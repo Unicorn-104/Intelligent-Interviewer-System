@@ -23,8 +23,12 @@ class QdrantMemoryIndexTest
             if (!authorized) { exchange.sendResponseHeaders(401, -1); exchange.close(); return; }
             var body = json.readTree(exchange.getRequestBody());
             inputTypes.add(body.path("input_type").asText());
-            byte[] response = ("{\"data\":[{\"embedding\":" + json.writeValueAsString(Collections.nCopies(512, 0.1)) + "}]}")
-                    .getBytes(StandardCharsets.UTF_8);
+            var responseNode = json.createObjectNode();
+            var data = responseNode.putArray("data");
+            for (int i = 0; i < body.path("input").size(); i++)
+                data.addObject().put("index", i)
+                        .set("embedding", json.valueToTree(Collections.nCopies(512, 0.1)));
+            byte[] response = json.writeValueAsString(responseNode).getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, response.length);
             exchange.getResponseBody().write(response); exchange.close();
         });
@@ -38,6 +42,8 @@ class QdrantMemoryIndexTest
             assertEquals(512, index.embed("合成查询", true).size());
             assertEquals(512, index.embed("合成事实", false).size());
             assertEquals(java.util.List.of("query", "passage"), inputTypes);
+            assertEquals(2, index.embedBatch(java.util.List.of("合成片段一", "合成片段二"), false).size());
+            assertEquals(java.util.List.of("query", "passage", "passage"), inputTypes);
             properties.setEmbeddingApiKey("synthetic-wrong-token");
             assertThrows(IllegalStateException.class, () -> index.embed("合成查询", true));
         }

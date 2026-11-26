@@ -200,7 +200,27 @@ Map<String, Object?> jobWorkflowSaveBody(Map<String, dynamic> data) {
   final template = data['template'] == null
       ? <String, dynamic>{}
       : jobObject(data['template'], '流程模板');
-  final stages = jobMaps(data['stages'], '招聘流程');
+  final rawStages = jobMaps(data['stages'], '招聘流程');
+  final byType = <int, Map<String, dynamic>>{};
+  for (final stage in rawStages) {
+    final type = int.tryParse('${stage['type']}');
+    if (type != 1 && type != 3) continue;
+    byType.putIfAbsent(type!, () => stage);
+  }
+  final stages = <Map<String, dynamic>>[];
+  for (final type in [1, 3]) {
+    final stage = byType[type];
+    if (stage == null) continue;
+    final normalized = Map<String, dynamic>.from(stage);
+    final name = '${normalized['name'] ?? ''}'.trim();
+    normalized['name'] = name.isEmpty
+        ? (type == 1
+              ? '\u5728\u7ebf\u7b14\u8bd5'
+              : 'HR\u7efc\u5408\u9762\u8bd5')
+        : name;
+    normalized['type'] = type;
+    stages.add(normalized);
+  }
   return {
     'templateName': template['name']?.toString() ?? '岗位招聘流程',
     'stages': stages.map((stage) {

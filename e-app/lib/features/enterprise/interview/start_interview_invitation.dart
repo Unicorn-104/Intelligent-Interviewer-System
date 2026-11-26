@@ -124,10 +124,7 @@ Future<void> _invite(
     );
     return;
   }
-  final modeLabel = interviewModeLabel(link['mode']);
-  final inviteTag = stageName.isEmpty
-      ? '·$modeLabel'
-      : '·$stageName·$modeLabel';
+  final inviteTag = interviewInviteTag(stageName, link['mode']);
   final company = homeText(link['companyName'], '公司');
   final position = homeText(link['positionTitle'], '岗位');
   final inviteUrl = '${AppConfig.candidateAppUrl}/conference-join?token=$token';

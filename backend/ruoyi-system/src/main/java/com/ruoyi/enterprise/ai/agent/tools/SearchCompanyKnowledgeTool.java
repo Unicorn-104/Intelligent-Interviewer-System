@@ -26,6 +26,12 @@ final class SearchCompanyKnowledgeTool implements EnterpriseAssistantTool
     {
         String query=arguments==null?null:arguments.path("query").asText(null);
         if(query==null||query.isBlank()||query.length()>300) throw new ServiceException("检索问题无效",400);
-        return Map.of("items",knowledge.search(companyId,query,java.lang.System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(8)),"limit",8);
+        try {
+            return Map.of("items",knowledge.search(companyId,query,java.lang.System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(8)),"limit",8);
+        } catch (ServiceException error) {
+            // Retrieval is optional. A temporary vector outage must not abort the whole answer run.
+            return Map.of("items",java.util.List.of(),"limit",8,"unavailable",true,
+                    "reason",error.getMessage()==null?"knowledge search unavailable":error.getMessage());
+        }
     }
 }

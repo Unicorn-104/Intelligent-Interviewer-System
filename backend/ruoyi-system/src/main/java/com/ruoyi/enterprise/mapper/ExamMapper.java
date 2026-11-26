@@ -44,15 +44,16 @@ public interface ExamMapper
     public int updateQuestionAnalysis(@Param("id") Long id, @Param("analysis") String analysis,
             @Param("forceRegenerate") boolean forceRegenerate);
 
-    /** 按条件随机抽题（只含平台题目与本企业题目，排除已选题目ID） */
+    /** 按条件随机抽题；scope=platform/enterprise 限定单一题库，为空时包含两者。 */
     public List<Map<String, Object>> drawQuestions(@Param("type") Integer type,
             @Param("difficulty") Integer difficulty, @Param("skillTag") String skillTag,
             @Param("excludeIds") List<Long> excludeIds, @Param("limit") Integer limit,
-            @Param("companyId") Long companyId);
+            @Param("scope") String scope, @Param("companyId") Long companyId);
 
     /** 满足抽题条件的可用题目数 */
     public int countDrawQuestions(@Param("type") Integer type, @Param("difficulty") Integer difficulty,
-            @Param("skillTag") String skillTag, @Param("companyId") Long companyId);
+            @Param("skillTag") String skillTag, @Param("scope") String scope,
+            @Param("companyId") Long companyId);
 
     /** 投递记录所属企业 */
     public Long selectRecordCompanyId(@Param("recordId") Long recordId);

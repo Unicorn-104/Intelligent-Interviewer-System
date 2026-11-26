@@ -223,7 +223,8 @@ class _EnterpriseMemoryPageState extends State<EnterpriseMemoryPage> {
         Text('还没有记忆', style: TextStyle(fontSize: 14, color: AppColors.body)),
         SizedBox(height: 4),
         Text(
-          '对话后会保存明确的招聘偏好',
+          '对话后自动保存明确偏好\n可能有数秒延迟，请下拉刷新确认',
+          textAlign: TextAlign.center,
           style: TextStyle(fontSize: 11, color: AppColors.textMuted),
         ),
       ],

@@ -107,6 +107,19 @@
                        <span class="attachment-file-icon" aria-hidden="true">↧</span>
                        <span class="attachment-file-copy"><strong>{{ message.content || '文件附件' }}</strong><small>点击打开或下载</small></span>
                      </button>
+                     <div v-else-if="message.examInvitation" class="exam-invite-card">
+                       <div class="exam-invite-head">
+                         <span class="exam-invite-icon" aria-hidden="true">✎</span>
+                         <strong>笔试邀请</strong>
+                         <span class="exam-invite-badge">在线笔试</span>
+                       </div>
+                       <h3 class="exam-invite-title">{{ message.examInvitation.paperName }}</h3>
+                       <p class="exam-invite-detail">{{ message.examInvitation.detail }}</p>
+                       <div class="exam-invite-footer">
+                         <span class="exam-invite-session">场次 #{{ message.examInvitation.scheduleId }}</span>
+                         <a class="exam-invite-action" :href="appHref(`/exam?scheduleId=${message.examInvitation.scheduleId}`)">查看安排 · 进入考试 →</a>
+                       </div>
+                     </div>
                      <span v-else class="message-text"><template v-for="(part, index) in message.linkParts" :key="index"><a v-if="part.href" class="message-link" :href="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a><template v-else>{{ part.text }}</template></template></span>
                    </div>
                    <div class="bubble-time">{{ formatMessageTime(message.sendTime) }}</div>
@@ -263,6 +276,7 @@ import MessageContentCard from '@/components/agent/MessageContentCard.vue'
 import { getToken } from '@/utils/auth'
 import { unreadBadge, unreadCount } from '@/utils/agentUnread'
 import { formatMessageTime, formatShortTime } from '@/utils/agentTime'
+import { parseExamInvitation } from '@/utils/examInvitation'
 import { insertMessageEmoji, isImageMessage, messageAttachmentError, messageAttachmentPath, messageContentCard, messageLinkParts, messagePreview, resolveMessageAttachment, uploadedMessageAttachmentPath } from '@/utils/agentMessage'
 
 const sessions = ref([])
@@ -403,6 +417,7 @@ function normalizeMessages(items) {
       ...message,
       type: Number(message.type),
       card: messageContentCard(message),
+      examInvitation: parseExamInvitation(message.content),
       attachmentUrl: url,
       attachmentUnavailable: old?.attachmentUrl === url && old.attachmentUnavailable,
       linkParts: messageLinkParts(message.content || '[非文本消息]')
@@ -851,6 +866,17 @@ onBeforeUnmount(() => {
 @media(max-width:1050px){:where(.candidate-page--messages) .message-shell{width:calc(100% - 28px);grid-template-columns:250px minmax(0,1fr)}:where(.candidate-page--messages) .detail-sidebar{display:none}}@media(max-width:700px){:where(.candidate-page--messages) .message-shell{height:calc(100vh - 84px);min-height:580px;margin:10px auto;grid-template-columns:74px minmax(0,1fr)}:where(.candidate-page--messages) .sidebar-head{padding:10px 8px}:where(.candidate-page--messages) .sidebar-title span,:where(.candidate-page--messages) .sidebar-title{font-size:0}:where(.candidate-page--messages) .sidebar-title::after{content:"消息";font-size:13px}:where(.candidate-page--messages) .search-box{display:none}:where(.candidate-page--messages) .conversation-list{padding:0 6px}:where(.candidate-page--messages) .conversation-item{grid-template-columns:38px;justify-content:center;padding:8px 5px}:where(.candidate-page--messages) .conversation-copy,:where(.candidate-page--messages) .conversation-meta{display:none}:where(.candidate-page--messages) .unread{position:absolute;margin-left:28px}:where(.candidate-page--messages) .system-mode{grid-template-columns:74px minmax(0,1fr)}:where(.candidate-page--messages) .notification-card{grid-template-columns:7px minmax(0,1fr);gap:9px}:where(.candidate-page--messages) .notice-tag,:where(.candidate-page--messages) .notice-time{display:none}:where(.candidate-page--messages) .bubble-wrap{max-width:84%}}@media(prefers-reduced-motion:reduce){:where(.candidate-page--messages) *,:where(.candidate-page--messages) *::before,:where(.candidate-page--messages) *::after{transition:none!important}}
 :where(.candidate-page--messages) .conversation-search{position:relative;display:block;width:100%;height:36px;margin-top:11px}:where(.candidate-page--messages) .conversation-search svg{position:absolute;top:10px;left:11px;width:15px;height:15px;color:#8F9EAF;stroke:currentColor;fill:none;stroke-width:1.8;pointer-events:none}:where(.candidate-page--messages) .conversation-search input{display:block;width:100%;height:36px;padding:0 12px 0 34px;border:1px solid transparent;border-radius:7px;outline:none;color:var(--text);background:#F2F5F9;font-size:11px;line-height:36px}:where(.candidate-page--messages) .conversation-search input:focus{border-color:#B9D1F2;background:#fff;box-shadow:0 0 0 3px rgba(43,127,255,.1)}
 @media(max-width:700px){:where(.candidate-page--messages) .conversation-search{display:none}}
+:where(.candidate-page--messages) .message-shell .exam-invite-card{min-width:238px;max-width:320px;padding:2px 0 0;overflow-wrap:anywhere}
+:where(.candidate-page--messages) .exam-invite-head{display:flex;align-items:center;gap:7px;color:var(--primary)}
+:where(.candidate-page--messages) .exam-invite-icon{display:grid;width:28px;height:28px;place-items:center;flex:0 0 auto;border-radius:7px;color:var(--blue);background:var(--blue-soft);font-size:15px}
+:where(.candidate-page--messages) .exam-invite-head strong{font-size:12px}
+:where(.candidate-page--messages) .exam-invite-badge{margin-left:auto;padding:2px 6px;border-radius:4px;color:var(--blue);background:var(--blue-soft);font-size:9px}
+:where(.candidate-page--messages) .exam-invite-title{margin:10px 0 4px;color:var(--primary);font-size:14px}
+:where(.candidate-page--messages) .exam-invite-detail{margin:0;color:#64758D;font-size:10px;line-height:1.65}
+:where(.candidate-page--messages) .exam-invite-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+:where(.candidate-page--messages) .exam-invite-session{color:var(--light);font-size:9px;white-space:nowrap}
+:where(.candidate-page--messages) .exam-invite-action{color:var(--blue);font-size:10px;font-weight:700;text-decoration:none;white-space:nowrap}
+:where(.candidate-page--messages) .exam-invite-action:hover{color:#1761bd;text-decoration:underline}
 </style>
 
 <style>

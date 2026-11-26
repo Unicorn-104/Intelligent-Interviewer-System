@@ -497,7 +497,7 @@ class _JobDetailPageState extends State<JobDetailPage>
     return null;
   }
 
-  Future<void> _openExamInvite() async {
+  Future<void> _openExamInvite({Map<String, dynamic>? candidate}) async {
     final candidates =
         _detail.data?.candidates ?? const <Map<String, dynamic>>[];
     if (!_hasExamStage || candidates.isEmpty) return;
@@ -519,6 +519,9 @@ class _JobDetailPageState extends State<JobDetailPage>
           examStageNames: examStageNames,
           examStageId: examStageId,
           examPassPercent: _examPassPercent ?? 70,
+          initialCandidateId: candidate == null
+              ? null
+              : jobPositiveId(candidate['talId']),
         ),
       ),
     );
@@ -891,6 +894,9 @@ class _JobDetailPageState extends State<JobDetailPage>
             onReloadScores: _loadScores,
             onScreen: _rescreen,
             beforeInvite: _beforeInvite,
+            examStageId: _examStageId,
+            onSendExam: (candidate) =>
+                _openExamInvite(candidate: candidate),
             onOpen: _openCandidate,
           ),
         ),

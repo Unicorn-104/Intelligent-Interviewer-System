@@ -9,6 +9,7 @@ import '../../../core/network/api_exception.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/skeleton_list.dart';
 import '../conference/conference_room_page.dart';
+import '../conference/interview_modes.dart';
 import '../jobs/job_detail_page.dart';
 import '../talent/talent_detail_page.dart';
 import '../talent/talent_discovery_profile.dart';
@@ -16,6 +17,7 @@ import '../talent/data/talent_discovery_data_source.dart';
 import '../talent/models/talent_detail_view_data.dart';
 import 'data/message_data_source.dart';
 import 'models/chat_context.dart';
+import 'models/exam_invitation.dart';
 import 'models/message_view_data.dart';
 import 'widgets/chat_composer.dart';
 import 'widgets/chat_job_card.dart';
@@ -840,6 +842,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (card != null) {
       return SharedJobCardView(card: card);
     }
+    final exam = item.examInvitation;
+    if (exam != null) {
+      return _examInvitationCard(item.id, exam, mine: item.mine);
+    }
     final reschedule = item.reschedule;
     if (reschedule != null) {
       return RescheduleChatCard(
@@ -922,6 +928,114 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return Text(
       item.display,
       style: const TextStyle(color: color, fontSize: 16, height: 1.55),
+    );
+  }
+
+  Widget _examInvitationCard(
+    int messageId,
+    ExamInvitation exam, {
+    required bool mine,
+  }) {
+    return Container(
+      key: ValueKey('chat-exam-card-$messageId'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.assignment_outlined,
+                  color: AppColors.interactive,
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  '笔试邀请',
+                  style: TextStyle(
+                    color: AppColors.brand,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            exam.paperName,
+            style: const TextStyle(
+              color: AppColors.brand,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            exam.detail,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.bodySoft,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              '考试场次 #${exam.scheduleId}',
+              style: const TextStyle(
+                color: AppColors.interactive,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 12, bottom: 10),
+            child: Divider(height: 1),
+          ),
+          Row(
+            children: [
+              Icon(
+                mine ? Icons.check_circle_outline : Icons.login_outlined,
+                color: mine ? AppColors.green : AppColors.interactive,
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  mine ? '已发送 · 求职者可点击进入考试' : '查看安排 · 进入考试',
+                  style: TextStyle(
+                    color: mine ? AppColors.bodySoft : AppColors.interactive,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -1034,10 +1148,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final tagText = tag?.group(0);
     final tagDetail = tagText == null
         ? ''
-        : tagText
-              .substring(1, tagText.length - 1)
-              .replaceFirst('面试邀请·', '')
-              .trim();
+        : cleanInterviewTitle(
+            tagText
+                .substring(1, tagText.length - 1)
+                .replaceFirst('面试邀请·', '')
+                .trim(),
+          );
     final normalized = body
         .replaceFirst(RegExp(r'视频面试[，,。]?请点击链接进入[:：]?\s*$'), '')
         .trim();
@@ -1228,6 +1344,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   item.mine && _interviewInviteLink(item.content) != null;
               final richContent =
                   item.jobCard != null ||
+                  item.examInvitation != null ||
                   item.reschedule != null ||
                   (item.type == 2 &&
                       widget.source.attachmentUrl(item.attachment) != null);

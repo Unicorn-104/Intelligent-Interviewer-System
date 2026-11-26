@@ -22,6 +22,7 @@ import com.ruoyi.enterprise.mapper.ApplicationStatusMapper;
 import com.ruoyi.enterprise.mapper.ExamMapper;
 import com.ruoyi.enterprise.service.ApplicationStatusService;
 import com.ruoyi.enterprise.ai.agent.exam.IExamAiService;
+import com.ruoyi.enterprise.service.ExamInvitationCardService;
 import com.ruoyi.enterprise.service.IExamService;
 import com.ruoyi.enterprise.service.TalStatusService;
 import com.ruoyi.system.mapper.DashboardMapper;
@@ -78,6 +79,9 @@ public class ExamServiceImpl implements IExamService
 
     @Autowired
     private ApplicationStatusMapper applicationStatusMapper;
+
+    @Autowired
+    private ExamInvitationCardService examInvitationCards;
 
     // ==================== 题库 ====================
 
@@ -659,7 +663,7 @@ public class ExamServiceImpl implements IExamService
                 continue;
             }
             List<Map<String, Object>> picked = examMapper.drawQuestions(type, filterDifficulty, null,
-                    null, count, companyId);
+                    null, count, null, companyId);
             if (picked.size() < count)
             {
                 throw new ServiceException("题库中" + TYPE_LABELS[type] + "题不足（需 " + count
@@ -798,6 +802,7 @@ public class ExamServiceImpl implements IExamService
     public Map<String, Object> previewDraw(Map<String, Object> rule, Long userId)
     {
         Long companyId = resolveCompanyId(userId);
+        String scope = resolveDrawScope(rule == null ? null : rule.get("scopes"));
         List<Map<String, Object>> rules = asRuleList(rule);
         List<Long> excludeIds = new ArrayList<>();
         List<Map<String, Object>> drawn = new ArrayList<>();
@@ -814,7 +819,7 @@ public class ExamServiceImpl implements IExamService
                 throw new ServiceException("抽题规则每题数量与分值必须大于0");
             }
             List<Map<String, Object>> picked = examMapper.drawQuestions(type, difficulty, skillTag,
-                    excludeIds.isEmpty() ? null : excludeIds, count, companyId);
+                    excludeIds.isEmpty() ? null : excludeIds, count, scope, companyId);
             if (picked.size() < count)
             {
                 throw new ServiceException("题库中满足条件的题目不足（需 " + count + " 题，仅 "
@@ -836,6 +841,72 @@ public class ExamServiceImpl implements IExamService
         return result;
     }
 
+    /**
+     * 解析随机抽题的题库范围。null 表示未指定（兼容旧规则，平台+企业都参与）；
+     * 仅选一个时返回 platform/enterprise，两个都选也返回 null。
+     */
+    static String resolveDrawScope(Object rawScopes)
+    {
+        if (rawScopes == null)
+        {
+            return null;
+        }
+        List<String> scopes = new ArrayList<>();
+        if (rawScopes instanceof List<?> list)
+        {
+            for (Object item : list)
+            {
+                addScopeValues(scopes, item);
+            }
+        }
+        else
+        {
+            addScopeValues(scopes, rawScopes);
+        }
+        if (scopes.isEmpty())
+        {
+            throw new ServiceException("请至少选择一个题库");
+        }
+        boolean platform = false;
+        boolean enterprise = false;
+        for (String scope : scopes)
+        {
+            if ("platform".equals(scope))
+            {
+                platform = true;
+            }
+            else if ("enterprise".equals(scope))
+            {
+                enterprise = true;
+            }
+            else
+            {
+                throw new ServiceException("题库范围不合法");
+            }
+        }
+        if (platform && enterprise)
+        {
+            return null;
+        }
+        return platform ? "platform" : "enterprise";
+    }
+
+    private static void addScopeValues(List<String> scopes, Object raw)
+    {
+        if (raw == null)
+        {
+            return;
+        }
+        for (String part : String.valueOf(raw).split(","))
+        {
+            String scope = part.trim();
+            if (!scope.isEmpty() && !scopes.contains(scope))
+            {
+                scopes.add(scope);
+            }
+        }
+    }
+
     /** 校验随机抽题规则并返回预计总分 */
     private BigDecimal validateRandomRule(Map<String, Object> rule, Long companyId)
     {
@@ -844,6 +915,7 @@ public class ExamServiceImpl implements IExamService
         {
             throw new ServiceException("随机抽题规则不能为空");
         }
+        String scope = resolveDrawScope(rule == null ? null : rule.get("scopes"));
         BigDecimal total = BigDecimal.ZERO;
         List<String> pickedKeys = new ArrayList<>();
         for (Map<String, Object> item : rules)
@@ -857,7 +929,7 @@ public class ExamServiceImpl implements IExamService
             {
                 throw new ServiceException("抽题规则需包含题型、每题数量与每题分值");
             }
-            int available = examMapper.countDrawQuestions(type, difficulty, skillTag, companyId);
+            int available = examMapper.countDrawQuestions(type, difficulty, skillTag, scope, companyId);
             if (available < count)
             {
                 throw new ServiceException("题型 " + type + " 可用题目不足（需 " + count + " 题，仅 "
@@ -1240,6 +1312,7 @@ public class ExamServiceImpl implements IExamService
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> sendNotify(Long userId, Long scheduleId, Map<String, Object> body)
     {
         Long companyId = resolveCompanyId(userId);
@@ -1322,7 +1395,14 @@ public class ExamServiceImpl implements IExamService
             }
             if (channels.contains("inapp"))
             {
-                examMapper.insertExamNotifyMessage(asLong(target.get("userId")), renderTitle, renderContent);
+                Long candidateUserId = asLong(target.get("userId"));
+                if (candidateUserId == null)
+                {
+                    throw new ServiceException("笔试通知接收账号无效");
+                }
+                examMapper.insertExamNotifyMessage(candidateUserId, renderTitle, renderContent);
+                examInvitationCards.sendCard(userId, candidateUserId,
+                        examInviteCardText(schedule, examUrl), examInviteCardSummary(schedule));
                 channelsResult.put("inapp", "sent");
             }
             else
@@ -1394,6 +1474,35 @@ public class ExamServiceImpl implements IExamService
         result.put("channels", channels);
         result.put("results", results);
         return result;
+    }
+
+    /** 与求职者 PC 消息中心一致的笔试邀请卡片正文；URL 用完整候选人入口。 */
+    private String examInviteCardText(Map<String, Object> schedule, String examUrl)
+    {
+        String paperName = cardText(schedule.get("paperName"), "在线笔试");
+        String positionTitle = cardText(schedule.get("positionTitle"), "应聘岗位");
+        String startAt = cardText(schedule.get("startAt"), "待定");
+        String endAt = cardText(schedule.get("endAt"), "待定");
+        String duration = cardText(schedule.get("durationMin"), "—");
+        return "【笔试邀请·" + paperName + "】" + positionTitle
+                + "，作答时间 " + startAt + " ~ " + endAt
+                + "，试卷时长 " + duration + " 分钟。请点击链接进入：" + examUrl;
+    }
+
+    private String examInviteCardSummary(Map<String, Object> schedule)
+    {
+        return "【笔试邀请】" + cardText(schedule.get("paperName"), "在线笔试");
+    }
+
+    private String cardText(Object raw, String fallback)
+    {
+        String text = StringUtils.nvl(raw == null ? null : String.valueOf(raw), "")
+                .replace("】", "").replace("\r", " ").replace("\n", " ").trim();
+        if (text.isEmpty())
+        {
+            return fallback;
+        }
+        return text.length() > 80 ? text.substring(0, 80) : text;
     }
 
     private List<String> normalizeChannels(Object raw)

@@ -210,6 +210,11 @@ void main() {
       expect(card.token, token);
       expect(card.description, '示例科技 Java开发工程师');
       expect(card.title, 'AI技术面试·AI+单面试官');
+      final pureHuman = InterviewInvitation.parse(
+        invitationText.replaceFirst('AI技术面试·AI+单面试官', 'HR 综合面试·无AI纯人工'),
+      )!;
+      expect(pureHuman.title, 'HR 综合面试');
+      expect(pureHuman.title, isNot(contains('无AI纯人工')));
       final message = ChatMessage.fromJson({
         'type': 1,
         'content': invitationText,

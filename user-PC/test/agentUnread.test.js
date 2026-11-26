@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import { computed, nextTick, reactive, ref } from 'vue'
 import { createUnreadCounter, unreadBadge, unreadCount } from '../src/utils/agentUnread.js'
 import { messageContentCard, messagePreview } from '../src/utils/agentMessage.js'
+import { parseExamInvitation } from '../src/utils/examInvitation.js'
 import { mergeMessagePages, mergeMessageSnapshot, messagePageData } from '../src/utils/agentMessagePage.js'
 
 function deferred() {
@@ -26,6 +27,7 @@ function messagePage(overrides = {}) {
   const page = componentScript('../src/views/agent/pages/messages.vue', {
     mergeMessagePages, mergeMessageSnapshot, messagePageData,
     ref, computed, nextTick, unreadCount, unreadBadge, messageContentCard, messagePreview,
+    parseExamInvitation,
     onMounted() {}, onBeforeUnmount() {},
     document,
     window: { location: { origin: 'http://app.local' }, dispatchEvent: event => events.push(event.type) },

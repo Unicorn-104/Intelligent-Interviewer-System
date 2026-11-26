@@ -12,6 +12,7 @@
 /// 可分别只看平台或企业，缺省时后端返回「平台题库 + 本企业题库」。
 library;
 
+import '../config/app_config.dart';
 import '../core/network/enterprise_api_client.dart';
 
 /// 题库列表（TableDataInfo 解包 rows）。
@@ -225,11 +226,17 @@ Future<Map<String, dynamic>> sendExamNotify(
   int scheduleId, {
   required List<int> candidateIds,
 }) async {
+  final candidateBase = AppConfig.candidateAppUrl.replaceFirst(
+    RegExp(r'/+$'),
+    '',
+  );
   final response = await EnterpriseApiClient().post(
     '/enterprise/exam/schedules/$scheduleId/notify',
     body: {
       'candidateIds': candidateIds,
       'channels': const ['inapp', 'email'],
+      // 站内卡片与邮件共用完整求职者入口，避免发送相对路径。
+      'examUrl': '$candidateBase/exam?scheduleId=$scheduleId',
     },
   );
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
@@ -243,8 +250,10 @@ Future<Map<String, dynamic>> getExamPaper(int paperId) async {
   return Map<String, dynamic>.from(response['data'] as Map? ?? const {});
 }
 
-/// 新建试卷。mode=random 时传 [rule]（[{type,difficulty,skillTag,count,score}]），
-/// 后端约定包装为 rule:{rules:[...]}；mode=manual 时传 [questions]（[{questionId,score}]）。
+/// 新建试卷。mode=random 时传 [rule]（[{type,difficulty,skillTag,count,score}]）。
+/// [bankScopes] 为参与随机抽题的题库范围：platform / enterprise；
+/// 缺省或两者都传表示平台题库 + 本企业题库。
+/// 后端约定包装为 rule:{rules:[...], scopes:[...]}；mode=manual 时传 [questions]。
 /// 返回新试卷 paperId。
 Future<int?> createExamPaper({
   required String name,
@@ -252,8 +261,11 @@ Future<int?> createExamPaper({
   required int durationMin,
   required String mode,
   List<Map<String, dynamic>>? rule,
+  List<String>? bankScopes,
   List<Map<String, dynamic>>? questions,
 }) async {
+  final ruleBody = <String, dynamic>{'rules': rule};
+  if (bankScopes != null) ruleBody['scopes'] = bankScopes;
   final response = await EnterpriseApiClient().post(
     '/enterprise/exam/papers',
     body: {
@@ -261,11 +273,7 @@ Future<int?> createExamPaper({
       'positionId': positionId,
       'durationMin': durationMin,
       'mode': mode,
-      ...?rule == null
-          ? null
-          : {
-              'rule': {'rules': rule},
-            },
+      ...?rule == null ? null : {'rule': ruleBody},
       ...?questions == null ? null : {'questions': questions},
     },
   );
@@ -275,13 +283,16 @@ Future<int?> createExamPaper({
 }
 
 /// 随机抽题预览：按 [rule] 返回会被抽中的题目列表。
-/// 后端 drawPreview 的 body 直接是 {rules:[...]}。
+/// 后端 drawPreview 的 body 是 {rules:[...], scopes:[...]}，缺省 scopes 表示两个题库。
 Future<List<Map<String, dynamic>>> previewExamDraw(
-  List<Map<String, dynamic>> rule,
-) async {
+  List<Map<String, dynamic>> rule, {
+  List<String>? bankScopes,
+}) async {
+  final body = <String, Object?>{'rules': rule};
+  if (bankScopes != null) body['scopes'] = bankScopes;
   final response = await EnterpriseApiClient().post(
     '/enterprise/exam/papers/draw-preview',
-    body: {'rules': rule},
+    body: body,
   );
   final data = response['data'];
   if (data is List) {

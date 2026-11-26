@@ -17,6 +17,24 @@ app:
         min-score: ${MEMORY_MIN_SCORE:0.45}
         connect-timeout-seconds: 3
         request-timeout-seconds: 10
+    enterprise:
+      memory:
+        enabled: ${ENTERPRISE_MEMORY_ENABLED:true}
+        collection: ${ENTERPRISE_MEMORY_COLLECTION:enterprise_memory_bge_small_zh_v1}
+        recall-limit: ${ENTERPRISE_MEMORY_RECALL_LIMIT:30}
+        rerank-top-n: ${ENTERPRISE_MEMORY_RERANK_TOP_N:5}
+        max-facts: ${ENTERPRISE_MEMORY_MAX_FACTS:500}
+        outbox-delay-ms: ${ENTERPRISE_MEMORY_OUTBOX_DELAY_MS:30000}
+        # Reranker 未部署时保持 false，部署完成并验证 /rerank 后再开启。
+        rerank:
+          enabled: ${ENTERPRISE_MEMORY_RERANK_ENABLED:false}
+          url: ${ENTERPRISE_MEMORY_RERANK_URL:http://127.0.0.1:8092/rerank}
+          model: ${ENTERPRISE_MEMORY_RERANK_MODEL:BAAI/bge-reranker-base}
+          timeout-seconds: ${ENTERPRISE_MEMORY_RERANK_TIMEOUT_SECONDS:3}
+          top-n: ${ENTERPRISE_MEMORY_RERANK_TOP_N:5}
+      rag:
+        enabled: ${ENTERPRISE_RAG_ENABLED:false}
+        collection: ${ENTERPRISE_RAG_COLLECTION:enterprise_knowledge_bge_small_zh_v1}
   resume:
     structure:
       enabled: true

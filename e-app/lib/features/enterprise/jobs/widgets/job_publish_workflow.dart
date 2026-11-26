@@ -4,11 +4,24 @@ import 'package:flutter/services.dart';
 import '../../../../theme/app_theme.dart';
 
 const jobPublishStageTypes = <int, String>{
-  1: '在线笔试',
-  2: 'AI 技术面试',
-  3: 'HR 综合面试',
-  4: '编程实操',
+  1: '\u5728\u7ebf\u7b14\u8bd5',
+  3: 'HR\u7efc\u5408\u9762\u8bd5',
 };
+
+const jobPublishStageTypeOptions = <int, String>{
+  1: '\u7b14\u8bd5',
+  3: '\u9762\u8bd5',
+};
+
+String jobPublishStageDefaultName(int type) =>
+    jobPublishStageTypes[type] ?? jobPublishStageTypes[3]!;
+
+String? validateJobPublishStageChain(Iterable<JobPublishStageDraft> stages) {
+  if (stages.any((stage) => !jobPublishStageTypes.containsKey(stage.type))) {
+    return '\u62db\u8058\u6d41\u7a0b\u53ea\u80fd\u4f7f\u7528\u7b14\u8bd5\u548c\u9762\u8bd5\u4e24\u79cd\u9636\u6bb5';
+  }
+  return null;
+}
 
 class JobPublishStageDraft {
   JobPublishStageDraft(this.id);
@@ -16,7 +29,6 @@ class JobPublishStageDraft {
     name.text = source.name.text;
     duration.text = source.duration.text;
     threshold.text = source.threshold.text;
-    target.text = source.target.text;
     type = source.type;
     required = source.required;
     skip = source.skip;
@@ -24,10 +36,9 @@ class JobPublishStageDraft {
   }
 
   final int id;
-  final name = TextEditingController(text: jobPublishStageTypes[3]);
+  final name = TextEditingController(text: jobPublishStageDefaultName(3));
   final duration = TextEditingController(text: '45');
   final threshold = TextEditingController(text: '70');
-  final target = TextEditingController();
   int type = 3;
   bool required = false;
   bool skip = true;
@@ -39,7 +50,6 @@ class JobPublishStageDraft {
     // 在线笔试时长由试卷决定，不再随招聘流程编排。
     if (type != 1) 'duration': int.tryParse(duration.text) ?? 45,
     'threshold': int.tryParse(threshold.text) ?? 70,
-    'target': target.text.trim(),
     'interviewer': '待指定',
     'required': required,
     'skip': skip,
@@ -50,7 +60,6 @@ class JobPublishStageDraft {
     name.dispose();
     duration.dispose();
     threshold.dispose();
-    target.dispose();
   }
 }
 
@@ -129,14 +138,20 @@ class JobPublishStageEditor extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      DropdownButtonFormField<int>(
-        key: ValueKey('job-publish-stage-type-${stage.id}'),
-        initialValue: stage.type,
-        isExpanded: true,
-        borderRadius: BorderRadius.circular(10),
-        dropdownColor: AppColors.canvas,
+      TextFormField(
+        key: ValueKey('job-publish-stage-name-${stage.id}'),
+        controller: stage.name,
+        enabled: enabled,
+        maxLength: 100,
         decoration: InputDecoration(
-          labelText: '面试方式 *',
+          labelText: '\u9636\u6bb5\u540d\u79f0 *',
+          hintText: jobPublishStageDefaultName(stage.type),
+          counterText: '',
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
+          ),
           filled: true,
           fillColor: AppColors.fieldBackground,
           border: OutlineInputBorder(
@@ -155,43 +170,88 @@ class JobPublishStageEditor extends StatelessWidget {
             ),
           ),
         ),
-        items: [
-          for (final entry in jobPublishStageTypes.entries)
-            DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-        ],
-        selectedItemBuilder: (context) => [
-          for (final entry in jobPublishStageTypes.entries)
-            Row(
-              children: [
-                const Icon(
-                  Icons.check_circle,
-                  color: AppColors.interactive,
-                  size: 16,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  entry.value,
-                  style: const TextStyle(
-                    color: AppColors.interactive,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-        ],
-        onChanged: enabled
-            ? (value) {
-                if (value == null) return;
-                stage.type = value;
-                onChanged();
-              }
-            : null,
+        validator: (value) {
+          final text = value?.trim() ?? '';
+          if (text.isEmpty) return '\u8bf7\u586b\u5199\u9636\u6bb5\u540d\u79f0';
+          if (text.length > 100) {
+            return '\u9636\u6bb5\u540d\u79f0\u4e0d\u80fd\u8d85\u8fc7100\u4e2a\u5b57\u7b26';
+          }
+          return null;
+        },
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 10),
+      InputDecorator(
+        key: ValueKey('job-publish-stage-type-${stage.id}'),
+        decoration: InputDecoration(
+          labelText: '阶段类型 *',
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+          filled: true,
+          fillColor: AppColors.fieldBackground,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(
+              color: AppColors.interactive,
+              width: 1.5,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            for (final entry in jobPublishStageTypeOptions.entries)
+              Expanded(
+                child: CheckboxListTile(
+                  key: ValueKey(
+                    'job-publish-stage-type-${stage.id}-${entry.key}',
+                  ),
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  activeColor: AppColors.interactive,
+                  value: stage.type == entry.key,
+                  title: Text(
+                    entry.value,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  onChanged: enabled
+                      ? (_) {
+                          if (stage.type == entry.key) return;
+                          final previousDefault = jobPublishStageDefaultName(
+                            stage.type,
+                          );
+                          if (stage.name.text.trim().isEmpty ||
+                              stage.name.text.trim() == previousDefault) {
+                            stage.name.text = jobPublishStageDefaultName(
+                              entry.key,
+                            );
+                          }
+                          stage.type = entry.key;
+                          onChanged();
+                        }
+                      : null,
+                ),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 10),
       if (stage.type == 1) ...[
         Container(
           key: ValueKey('job-publish-stage-exam-threshold-note-${stage.id}'),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: AppColors.interactiveSoft,
             borderRadius: BorderRadius.circular(10),
@@ -218,7 +278,7 @@ class JobPublishStageEditor extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
       ],
       LayoutBuilder(
         builder: (context, constraints) {
@@ -230,6 +290,11 @@ class JobPublishStageEditor extends StatelessWidget {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: InputDecoration(
               labelText: '时长（分钟）*',
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
               suffixIcon: _stepper(
                 field: 'duration',
                 controller: stage.duration,
@@ -264,6 +329,11 @@ class JobPublishStageEditor extends StatelessWidget {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: InputDecoration(
               labelText: stage.type == 1 ? '通过阈值（%）' : '通过阈值（0–100）',
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
               helperText: stage.type == 1
                   ? '按试卷总分折算，如满分 100 时 70% 即 70 分'
                   : null,
@@ -315,69 +385,48 @@ class JobPublishStageEditor extends StatelessWidget {
           );
         },
       ),
-      const SizedBox(height: 12),
-      TextFormField(
-        key: ValueKey('job-publish-stage-target-${stage.id}'),
-        controller: stage.target,
-        enabled: enabled,
-        maxLines: 2,
-        maxLength: 1000,
-        decoration: InputDecoration(
-          labelText: '重点考察项',
-          hintText: '例如：高并发场景设计、系统架构能力',
-          filled: true,
-          fillColor: AppColors.fieldBackground,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(
-              color: AppColors.interactive,
-              width: 1.5,
+      const SizedBox(height: 6),
+      Row(
+        children: [
+          Expanded(
+            child: CheckboxListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              activeColor: AppColors.interactive,
+              title: const Text('必选阶段', style: TextStyle(fontSize: 14)),
+              value: stage.required,
+              onChanged: enabled
+                  ? (value) {
+                      stage.required = value ?? false;
+                      if (stage.required) stage.skip = false;
+                      onChanged();
+                    }
+                  : null,
             ),
           ),
-        ),
-      ),
-      const SizedBox(height: 8),
-      CheckboxListTile(
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        contentPadding: EdgeInsets.zero,
-        controlAffinity: ListTileControlAffinity.leading,
-        activeColor: AppColors.interactive,
-        title: const Text('必选阶段', style: TextStyle(fontSize: 14)),
-        value: stage.required,
-        onChanged: enabled
-            ? (value) {
-                stage.required = value ?? false;
-                if (stage.required) stage.skip = false;
-                onChanged();
-              }
-            : null,
-      ),
-      CheckboxListTile(
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        contentPadding: EdgeInsets.zero,
-        controlAffinity: ListTileControlAffinity.leading,
-        activeColor: AppColors.interactive,
-        title: const Text('允许跳过', style: TextStyle(fontSize: 14)),
-        value: stage.skip,
-        onChanged: enabled
-            ? (value) {
-                stage.skip = value ?? false;
-                if (stage.skip) stage.required = false;
-                onChanged();
-              }
-            : null,
+          Expanded(
+            child: CheckboxListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              activeColor: AppColors.interactive,
+              title: const Text('允许跳过', style: TextStyle(fontSize: 14)),
+              value: stage.skip,
+              onChanged: enabled
+                  ? (value) {
+                      stage.skip = value ?? false;
+                      if (stage.skip) stage.required = false;
+                      onChanged();
+                    }
+                  : null,
+            ),
+          ),
+        ],
       ),
       CheckboxListTile(
         dense: true,
@@ -424,8 +473,10 @@ class _JobPublishStageDialogState extends State<JobPublishStageDialog> {
   Future<void> _submit({bool delete = false}) async {
     if (_saving) return;
     if (!delete) {
+      if (widget.stage.name.text.trim().isEmpty) {
+        widget.stage.name.text = jobPublishStageDefaultName(widget.stage.type);
+      }
       if (!_formKey.currentState!.validate()) return;
-      widget.stage.name.text = jobPublishStageTypes[widget.stage.type]!;
     }
     FocusScope.of(context).unfocus();
     setState(() {
@@ -457,12 +508,12 @@ class _JobPublishStageDialogState extends State<JobPublishStageDialog> {
     child: Dialog(
       backgroundColor: AppColors.canvas,
       surfaceTintColor: AppColors.canvas,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -489,7 +540,7 @@ class _JobPublishStageDialogState extends State<JobPublishStageDialog> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Flexible(
                 child: SingleChildScrollView(
                   child: Form(
@@ -504,13 +555,13 @@ class _JobPublishStageDialogState extends State<JobPublishStageDialog> {
               ),
               if (_error != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.only(top: 6),
                   child: Text(
                     _error!,
                     style: const TextStyle(color: AppColors.error),
                   ),
                 ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               if (!widget.isNew && widget.onDelete != null)
                 Align(
                   alignment: Alignment.centerLeft,
@@ -693,18 +744,6 @@ class JobPublishStageCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (stage.target.text.trim().isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                '考察：${stage.target.text.trim()}',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                ),
-              ),
-            ],
             if (stage.required || stage.skip || stage.terminate) ...[
               const SizedBox(height: 6),
               Text(
@@ -774,16 +813,6 @@ class JobPublishWorkflowPreview extends StatelessWidget {
                 fontSize: 13,
               ),
             ),
-            if (stage.target.text.trim().isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                stage.target.text.trim(),
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                ),
-              ),
-            ],
             const SizedBox(height: 6),
             Text(
               [

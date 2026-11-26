@@ -25,6 +25,8 @@ public class EnterpriseKnowledgeController extends BaseController
     { knowledge.delete(company(),id); return success(); }
     @PostMapping("/search") public AjaxResult search(@RequestBody SearchRequest body)
     { if(body==null) throw new com.ruoyi.common.exception.ServiceException("检索参数无效",400); return success(knowledge.search(company(),body.query(),System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(8))); }
+    @PostMapping("/reindex") public AjaxResult reindex()
+    { return success(knowledge.reindex(company())); }
     private long company()
     { Long id=companies.selectCompanyIdByUser(getUserId()); if(id==null||id<=0) throw new com.ruoyi.common.exception.ServiceException("请先完成企业绑定",403); return id; }
 }

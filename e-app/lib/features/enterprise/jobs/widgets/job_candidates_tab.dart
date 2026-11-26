@@ -21,6 +21,8 @@ class JobCandidatesTab extends StatefulWidget {
     required this.onScreen,
     required this.onOpen,
     this.beforeInvite,
+    this.examStageId,
+    this.onSendExam,
     required this.loadResume,
     required this.actionsSource,
     required this.job,
@@ -34,6 +36,8 @@ class JobCandidatesTab extends StatefulWidget {
   final VoidCallback onScreen;
   final ValueChanged<Map<String, dynamic>> onOpen;
   final Future<bool> Function(Map<String, dynamic> candidate)? beforeInvite;
+  final int? examStageId;
+  final Future<void> Function(Map<String, dynamic> candidate)? onSendExam;
   final Future<Map<String, dynamic>> Function(int) loadResume;
   final TalentDetailDataSource actionsSource;
   final TalentJobContext job;
@@ -65,6 +69,9 @@ class _JobCandidatesTabState extends State<JobCandidatesTab> {
       widget.loadResume;
   Future<bool> Function(Map<String, dynamic> candidate)? get beforeInvite =>
       widget.beforeInvite;
+  int? get examStageId => widget.examStageId;
+  Future<void> Function(Map<String, dynamic> candidate)? get onSendExam =>
+      widget.onSendExam;
   TalentDetailDataSource get actionsSource => widget.actionsSource;
   TalentJobContext get job => widget.job;
   int get workflowRevision => widget.workflowRevision;
@@ -428,6 +435,10 @@ class _JobCandidatesTabState extends State<JobCandidatesTab> {
               beforeInvite: beforeInvite == null
                   ? null
                   : () => beforeInvite!(filtered[index].candidate),
+              examStageId: examStageId,
+              onSendExam: onSendExam == null
+                  ? null
+                  : () => onSendExam!(filtered[index].candidate),
               onOpen: () => onOpen(filtered[index].candidate),
             ),
             // 紧凑化：卡片间距由 12 略减到 10，连续排列更密集但仍可区分
@@ -446,6 +457,8 @@ class JobCandidateCard extends StatefulWidget {
     required this.score,
     required this.onOpen,
     this.beforeInvite,
+    this.examStageId,
+    this.onSendExam,
     required this.loadResume,
     required this.actionsSource,
     required this.job,
@@ -455,6 +468,8 @@ class JobCandidateCard extends StatefulWidget {
   final num? score;
   final VoidCallback onOpen;
   final Future<bool> Function()? beforeInvite;
+  final int? examStageId;
+  final VoidCallback? onSendExam;
   final Future<Map<String, dynamic>> Function(int) loadResume;
   final TalentDetailDataSource actionsSource;
   final TalentJobContext job;
@@ -582,6 +597,13 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
 
   Widget _scoring() => _CandidateScore(score: widget.score);
 
+  bool get _isExamStage {
+    final type = int.tryParse('${widget.candidate['currentStageType']}');
+    if (type != null) return type == 1;
+    final currentStageId = int.tryParse('${widget.candidate['currentStageId']}');
+    return widget.examStageId != null && currentStageId == widget.examStageId;
+  }
+
   @override
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
@@ -626,6 +648,8 @@ class _JobCandidateCardState extends State<JobCandidateCard> {
                   source: widget.actionsSource,
                   appStatusCode: widget.candidate['statusCode'],
                   beforeInvite: widget.beforeInvite,
+                  examStage: _isExamStage,
+                  onSendExam: widget.onSendExam,
                   job: TalentJobContext(
                     positionId: widget.job.positionId,
                     title: widget.job.title,

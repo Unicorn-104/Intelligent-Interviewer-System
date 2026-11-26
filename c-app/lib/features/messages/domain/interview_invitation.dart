@@ -35,10 +35,19 @@ class InterviewInvitation {
           .trim();
       return InterviewInvitation(
         token: tokens.single,
-        title: content.substring(1, end).replaceFirst('面试邀请·', ''),
+        title: _cleanTitle(content.substring(1, end).replaceFirst('面试邀请·', '')),
         description: description.isEmpty ? '请查看面试安排并完成设备检测' : description,
       );
     }
     return null;
+  }
+
+  /// 去掉旧卡片标题中的「无AI纯人工」后缀，兼容历史消息与空格写法。
+  static String _cleanTitle(String value) {
+    var title = value.trim().replaceFirst(
+      RegExp(r'\s*[·•]?\s*无\s*AI\s*(?:[·•]\s*)?纯人工\s*$', caseSensitive: false),
+      '',
+    );
+    return title.replaceFirst(RegExp(r'[·•\s]+$'), '').trim();
   }
 }

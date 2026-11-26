@@ -13,6 +13,7 @@ import 'widgets/system_message_icon.dart';
 import '../assistant/enterprise_ai_launcher.dart';
 import '../assistant/enterprise_ai_page.dart';
 import '../assistant/enterprise_ai_data_source.dart';
+import '../conference/interview_modes.dart';
 
 // 保留旧聊天页导入入口，运行时仅使用真实接口。
 export 'conversation_page.dart' show ChatPage;
@@ -318,7 +319,7 @@ class MessageCenterPageState extends State<MessageCenterPage>
                   _row(
                     key: ValueKey('message-session-${item.id}'),
                     name: item.name,
-                    preview: item.preview,
+                    preview: cleanInterviewTitle(item.preview),
                     time: item.time,
                     unread: item.unread,
                     avatar: widget.source.avatarUrl(item.avatar),
