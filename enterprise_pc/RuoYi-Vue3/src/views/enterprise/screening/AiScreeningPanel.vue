@@ -5,7 +5,7 @@ import { FileText, UserRoundCheck, ShieldCheck, AlertTriangle, Lightbulb, Send, 
 import MiniAvatar from '@/views/enterprise/components/MiniAvatar.vue'
 import BaseModal from '@/views/enterprise/components/BaseModal.vue'
 import ToastMessage from '@/views/enterprise/components/ToastMessage.vue'
-import { listScreeningTasks, listScreeningResults, getScreeningReport, getScreeningGreeting, reviewScreeningResult, screenAllPending } from '@/api/screening'
+import { listScreeningTasks, listScreeningResults, getScreeningReport, getScreeningGreeting, reviewScreeningResult } from '@/api/screening'
 import { listUnscreenedPositions, listUnscreenedApplicants, screenUnscreenedApplicants } from '@/api/talent'
 import { APP_STATUS } from '@/views/enterprise/components/appStatus'
 import { talStatusInfo } from '@/views/enterprise/components/talStatus'
@@ -17,7 +17,8 @@ const activeTaskId = ref(null)
 const results = ref([])
 const loadingResults = ref(false)
 const group = ref(route.query.group === 'unscored' ? 'unscored' : 'scored') // scored=已评分 / pending=待人工评分 / unscored=未AI评分
-const unscoredCount = ref(0)
+// 各岗位待评分统计（positionId/pendingCount），徽标只展示当前选中岗位
+const unscreenedMeta = ref([])
 const unscoredRows = ref([])
 const unscoredTotal = ref(0)
 const unscoredLoading = ref(false)
@@ -61,6 +62,10 @@ const dimensions = [
 ]
 
 const activeTask = computed(() => tasks.value.find(t => String(t.taskId) === String(activeTaskId.value)))
+const unscoredCount = computed(() => {
+  const m = unscreenedMeta.value.find(p => String(p.positionId) === String(activeTaskId.value))
+  return Number(m?.pendingCount || 0)
+})
 const filteredTasks = computed(() => {
   const k = keyword.value.trim().toLowerCase()
   return k ? tasks.value.filter(t => (t.positionName || '').toLowerCase().includes(k)) : tasks.value
@@ -83,8 +88,11 @@ async function loadTasks() {
 }
 
 async function selectTask(taskId) {
-  if (group.value === 'unscored') group.value = 'scored'
   activeTaskId.value = taskId
+  if (group.value === 'unscored') {
+    unscoredPage.value = 1
+    loadUnscoredApplicants()
+  }
   loadingResults.value = true
   results.value = []
   try {
@@ -100,16 +108,16 @@ async function selectTask(taskId) {
 async function loadUnscoredCount() {
   try {
     const res = await listUnscreenedPositions()
-    unscoredCount.value = Number(res.data?.candidateCount || 0)
+    unscreenedMeta.value = res.data?.rows || []
   } catch (e) {
-    unscoredCount.value = 0
+    unscreenedMeta.value = []
   }
 }
 
 async function loadUnscoredApplicants() {
   unscoredLoading.value = true
   try {
-    const res = await listUnscreenedApplicants({ pageNum: unscoredPage.value, pageSize: unscoredPageSize })
+    const res = await listUnscreenedApplicants({ pageNum: unscoredPage.value, pageSize: unscoredPageSize, positionId: activeTaskId.value })
     unscoredRows.value = res.rows || []
     unscoredTotal.value = res.total || 0
   } catch (e) {
@@ -142,22 +150,6 @@ async function screenPosition(positionId) {
   try {
     await screenUnscreenedApplicants({ positionId })
     notify('已提交 AI 评分，正在后台分析')
-    await loadUnscoredCount()
-    await loadUnscoredApplicants()
-    loadTasks()
-  } catch (e) {
-    notify(e?.response?.data?.msg || e?.message || 'AI 评分提交失败，请稍后重试')
-  } finally {
-    unscoredSubmitting.value = false
-  }
-}
-
-async function screenAllUnscored() {
-  unscoredSubmitting.value = true
-  try {
-    const res = await screenAllPending()
-    notify(`已提交 ${res.data?.queuedPositions || 0} 个岗位的 AI 评分，正在后台分析`)
-    unscoredPage.value = 1
     await loadUnscoredCount()
     await loadUnscoredApplicants()
     loadTasks()
@@ -312,13 +304,13 @@ watch(() => route.query.group, (v) => { if (v === 'unscored') selectGroup('unsco
         </div>
         <template v-if="group === 'unscored'">
           <div class="unscored-head">
-            <span>共 {{ unscoredTotal }} 条待 AI 评分投递</span>
-            <button class="mini-btn lg" :disabled="unscoredSubmitting || !unscoredTotal" @click="screenAllUnscored">
-              {{ unscoredSubmitting ? '提交中…' : '全部发起评分' }}
+            <span>本岗位共 {{ unscoredTotal }} 条待 AI 评分投递</span>
+            <button class="mini-btn lg" :disabled="unscoredSubmitting || !unscoredTotal || !activeTaskId" @click="screenPosition(activeTaskId)">
+              {{ unscoredSubmitting ? '提交中…' : '发起本岗位评分' }}
             </button>
           </div>
           <div v-if="unscoredLoading" class="empty-tip big">加载中…</div>
-          <div v-else-if="!unscoredRows.length" class="empty-tip big">暂无未AI评分的候选人</div>
+          <div v-else-if="!unscoredRows.length" class="empty-tip big">本岗位暂无未AI评分的候选人</div>
           <template v-else>
             <div class="table-scroll">
               <div class="table-head unscored-cols"><span>候选人</span><span>投递岗位</span><span>联系方式</span><span>投递时间</span><span>操作</span></div>

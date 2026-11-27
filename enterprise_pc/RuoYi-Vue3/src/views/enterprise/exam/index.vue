@@ -11,7 +11,7 @@ import {
   saveNotifyConfig, listNotifyTargets, sendExamNotify,
   listExamResults, getExamResult, gradeSubjective
 } from '@/api/exam'
-import { listJobs } from '@/api/system/job'
+import { listJobs, getWorkflow } from '@/api/system/job'
 import { listInterviewers } from '@/api/system/conference'
 import { candidateAppUrl } from '@/utils/appLink'
 
@@ -412,7 +412,7 @@ async function loadSchedules() {
 }
 
 const schedModal = reactive({
-  open: false, id: null, saving: false, papers: [],
+  open: false, id: null, saving: false, papers: [], examStages: [],
   form: blankSchedule()
 })
 const interviewers = ref([])
@@ -424,19 +424,25 @@ async function loadInterviewers() {
 }
 function blankSchedule() {
   return {
-    paperId: '', startAt: '', endAt: '', maxAttempts: 1, passThreshold: 60,
+    paperId: '', stageId: null, startAt: '', endAt: '', maxAttempts: 1, passThreshold: 60,
     forceDualCamera: 0, dualAngle: '侧后方 45°，须拍到桌面与双手', dualNote: '',
     autoSubmit: true, allowEarly: true, autosaveInterval: 30,
     autoInterviewerId: '', autoInviteDays: 3, autoInviteDuration: 45
   }
 }
 async function openCreateSched() {
-  Object.assign(schedModal, { open: true, id: null, form: blankSchedule() })
+  Object.assign(schedModal, { open: true, id: null, examStages: [], form: blankSchedule() })
   if (!interviewers.value.length) loadInterviewers()
   const res = await listPapers(sFilter.positionId || undefined).catch(() => null)
   schedModal.papers = (res?.data || []).filter(p => p.status === 1)
+  if (sFilter.positionId) {
+    const wf = await getWorkflow(sFilter.positionId).catch(() => null)
+    schedModal.examStages = (wf?.data?.stages || []).filter(s => Number(s.type) === 1)
+    if (schedModal.examStages.length === 1) schedModal.form.stageId = schedModal.examStages[0].stageId
+  }
 }
 async function openEditSched(row) {
+  schedModal.examStages = []
   const res = await listPapers(row.positionId).catch(() => null)
   schedModal.papers = (res?.data || []).filter(p => p.status === 1)
   schedModal.open = true; schedModal.id = row.scheduleId
@@ -445,7 +451,7 @@ async function openEditSched(row) {
   const flow = row.autoFlow || {}
   if (!interviewers.value.length) loadInterviewers()
   schedModal.form = {
-    paperId: row.paperId, startAt: (row.startAt || '').replace(' ', 'T'), endAt: (row.endAt || '').replace(' ', 'T'),
+    paperId: row.paperId, stageId: row.stageId ?? null, startAt: (row.startAt || '').replace(' ', 'T'), endAt: (row.endAt || '').replace(' ', 'T'),
     maxAttempts: row.maxAttempts, passThreshold: Number(row.passThreshold),
     forceDualCamera: Number(row.forceDualCamera) || 0,
     dualAngle: dual.angle || '', dualNote: dual.note || '',
@@ -454,6 +460,9 @@ async function openEditSched(row) {
     autoInterviewerId: flow.interviewerId ? String(flow.interviewerId) : '',
     autoInviteDays: flow.startAfterDays ?? 3, autoInviteDuration: flow.durationMin ?? 45
   }
+  const wf = await getWorkflow(row.positionId).catch(() => null)
+  schedModal.examStages = (wf?.data?.stages || []).filter(s => Number(s.type) === 1)
+  if (!schedModal.form.stageId && schedModal.examStages.length === 1) schedModal.form.stageId = schedModal.examStages[0].stageId
 }
 const chosenPaper = computed(() => schedModal.papers.find(p => p.paperId === Number(schedModal.form.paperId)) || null)
 async function saveSchedule() {
@@ -462,6 +471,7 @@ async function saveSchedule() {
     const f = schedModal.form
     const body = {
       positionId: chosenPaper.value ? chosenPaper.value.positionId : undefined,
+      stageId: f.stageId ? Number(f.stageId) : null,
       paperId: Number(f.paperId), startAt: f.startAt, endAt: f.endAt,
       maxAttempts: Number(f.maxAttempts), passThreshold: Number(f.passThreshold),
       forceDualCamera: Number(f.forceDualCamera),
@@ -1116,6 +1126,13 @@ onMounted(async () => {
               </select>
               <small v-if="!schedModal.papers.length" class="muted tiny">当前岗位暂无启用试卷，请先在「试卷」页创建</small>
               <small v-else-if="schedModal.id && schedModal.form.paperId && !schedModal.papers.some(p => Number(p.paperId) === Number(schedModal.form.paperId))" class="muted tiny">当前试卷已禁用，请重新选择启用中的试卷</small>
+              <small v-if="!schedModal.id && !schedModal.examStages.length" class="muted tiny">该岗位无可用笔试阶段</small>
+            </div>
+            <div v-if="schedModal.examStages.length > 1" class="field full"><label>笔试阶段</label>
+              <select class="select" v-model="schedModal.form.stageId">
+                <option :value="null" disabled>请选择笔试阶段</option>
+                <option v-for="st in schedModal.examStages" :key="st.stageId" :value="st.stageId">{{ st.name }}</option>
+              </select>
             </div>
             <div class="field"><label>开考时间</label><input class="input" type="datetime-local" v-model="schedModal.form.startAt"/></div>
             <div class="field"><label>截止时间</label><input class="input" type="datetime-local" v-model="schedModal.form.endAt"/></div>

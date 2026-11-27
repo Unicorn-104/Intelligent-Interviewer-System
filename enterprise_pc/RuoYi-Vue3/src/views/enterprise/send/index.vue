@@ -90,6 +90,14 @@
             </label>
 
             <template v-if="!exam.scheduleId">
+              <label v-if="examStages.length > 1" class="sc-field">
+                <span>笔试阶段</span>
+                <select v-model="exam.stageId" class="sc-input">
+                  <option :value="null">请选择笔试阶段</option>
+                  <option v-for="s in examStages" :key="s.stageId" :value="s.stageId">{{ s.name }}</option>
+                </select>
+              </label>
+              <div v-if="!examStages.length" class="sc-note warn">该岗位无可用笔试阶段</div>
               <label class="sc-field">
                 <span>试卷</span>
                 <select v-model="exam.paperId" class="sc-input">
@@ -287,7 +295,7 @@ const schedules = ref([])
 const interviewers = ref([])
 
 const exam = reactive({
-  scheduleId: null, paperId: null, startAt: '', endAt: '',
+  scheduleId: null, stageId: null, paperId: null, startAt: '', endAt: '',
   maxAttempts: 1, passThreshold: 60,
   forceDualCamera: 0, dualAngle: '侧后方 45°，须拍到桌面与双手', dualNote: '',
   autoSubmit: true, allowEarly: true, autosaveInterval: 30,
@@ -308,6 +316,7 @@ const terminal = computed(() => current.value
   ? (context.value ? context.value.terminal : isTerminalAppStatus(current.value.appStatus))
   : false)
 const passedStages = computed(() => (context.value?.stages || []).filter(s => s.passed))
+const examStages = computed(() => (context.value?.stages || []).filter(s => Number(s.type) === 1 && !s.passed))
 const interviewStages = computed(() => (context.value?.stages || [])
   .filter(s => !s.passed && Number(s.type) !== 1))
 const currentStageName = computed(() => interviewStages.value[0]?.name || '—')
@@ -373,6 +382,8 @@ async function pickApplication(row) {
 async function loadContext(row) {
   const res = await getSendContext({ candidateId: row.talentId, positionId: row.positionId }).catch(() => null)
   context.value = res?.data || null
+  exam.stageId = null
+  if (examStages.value.length === 1) exam.stageId = examStages.value[0].stageId
   buildMultiStages()
 }
 
@@ -394,6 +405,7 @@ async function loadInterviewers() {
 
 function resetExam() {
   exam.scheduleId = null
+  exam.stageId = null
   exam.paperId = null
   exam.startAt = futureTime(24)
   exam.endAt = futureTime(26)
@@ -455,6 +467,7 @@ async function sendExam() {
   if (terminal.value) return notify('该投递已进入终态，无法发送')
   if (exam.sending) return
   if (!exam.scheduleId) {
+    if (!exam.stageId) return notify('该岗位无可用笔试阶段')
     if (!exam.paperId) return notify('请选择试卷')
     if (!exam.startAt || !exam.endAt) return notify('请选择笔试开始与截止时间')
     if (new Date(exam.endAt) <= new Date(exam.startAt)) return notify('截止时间必须晚于开始时间')
@@ -464,7 +477,7 @@ async function sendExam() {
   try {
     let scheduleId = exam.scheduleId
     if (!scheduleId) {
-      const res = await createSchedule(schedulePayload(exam, { positionId: current.value.positionId }))
+      const res = await createSchedule(schedulePayload(exam, { positionId: current.value.positionId, stageId: exam.stageId }))
       scheduleId = res.data
       exam.scheduleId = scheduleId
     }
