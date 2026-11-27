@@ -12,6 +12,7 @@ export function schedulePayload(form, options = {}) {
   const dual = Number(form.forceDualCamera) ? 1 : 0
   return {
     positionId: options.positionId,
+    stageId: options.stageId ?? form.stageId ?? null,
     paperId: Number(options.paperId ?? form.paperId),
     startAt: String(form.startAt || '').replace('T', ' '),
     endAt: String(form.endAt || '').replace('T', ' '),
